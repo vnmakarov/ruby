@@ -1,3 +1,14 @@
+Sat Apr 30 06:28:13 2016  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* hash.c (rb_dbl_long_hash): New.
+	(any_hash): Add inline.  Use common hashing for Qundef.
+	Use rb_dbl_long_hash for double hashing.
+	(rb_num_hash_start): Remove.
+	(prime1, prime2, mult_and_mix, key64_hash): New.
+	(rb_objid_hash, rb_ident_hash): Use key64_hash.
+	* internal.h (rb_dbl_long_hash): New.
+	* numeric.c (rb_dbl_hash): Call rb_dbl_long_hash.
+
 Sat Apr 30 06:25:16 2016  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* include/ruby/st.h (MAX_ST_INDEX_VAL, st_table_entry): New.
