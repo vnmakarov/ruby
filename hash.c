@@ -162,8 +162,14 @@ rb_dbl_long_hash(double d)
 #endif
 }
 
+#if SIZEOF_INT == SIZEOF_VOIDP
+static const st_index_t str_seed = 0xfa835867;
+#else
+static const st_index_t str_seed = 0xc42b5e2e6480b23bULL;
+#endif
+
 static inline st_index_t
-any_hash(VALUE a, st_index_t (*other_func)(VALUE))
+any_hash_general(VALUE a, int strong_p, st_index_t (*other_func)(VALUE))
 {
     VALUE hval;
     st_index_t hnum;
@@ -180,7 +186,9 @@ any_hash(VALUE a, st_index_t (*other_func)(VALUE))
 	hnum = rb_objid_hash((st_index_t)a);
     }
     else if (BUILTIN_TYPE(a) == T_STRING) {
-	hnum = rb_str_hash(a);
+	hnum = (strong_p
+		? rb_str_hash(a)
+		: st_hash(RSTRING_PTR(a), RSTRING_LEN(a), str_seed));
     }
     else if (BUILTIN_TYPE(a) == T_SYMBOL) {
 	hnum = RSYMBOL(a)->hashval;
@@ -208,9 +216,23 @@ obj_any_hash(VALUE obj)
     return FIX2LONG(obj);
 }
 
+static inline st_index_t
+any_hash_weak(VALUE a, st_index_t (*other_func)(VALUE)) {
+    return any_hash_general(a, FALSE, other_func);
+}
+
 static st_index_t
-rb_any_hash(VALUE a)
-{
+rb_any_hash_weak(VALUE a) {
+    return any_hash_weak(a, obj_any_hash);
+}
+
+static inline st_index_t
+any_hash(VALUE a, st_index_t (*other_func)(VALUE)) {
+    return any_hash_general(a, TRUE, other_func);
+}
+
+static st_index_t
+rb_any_hash(VALUE a) {
     return any_hash(a, obj_any_hash);
 }
 
@@ -273,6 +295,7 @@ rb_hash_iter_lev(VALUE h)
 
 static const struct st_hash_type objhash = {
     rb_any_cmp,
+    rb_any_hash_weak,
     rb_any_hash,
 };
 

@@ -1,3 +1,21 @@
+Sat Apr 30 06:32:41 2016  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* include/ruby/st.h (st_hash_type): New field strong_hash.
+	(struct st_table): New fields curr_hash and inside_rebuild_p.
+	* st.c (do_hash): Use curr_hash.
+	(make_tab_empty): Set up curr_hash.
+	(st_init_table_with_size): Initialize inside_rebuld_p.
+	(rebuild_table): Set up curr_hash and inside_rebuild_p.
+	(reset_entry_hashes): New.
+	(HIT_THRESHOULD_FOR_STRONG_HASH): New.
+	(find_table_bin_ptr_and_reserve): Switch to the strong hash when
+	it is necessary.
+	* hash.c (str_seed): New.
+	(any_hash): Rename to any_hash_general.  Add parameter
+	strong_p.  Use it to choose rb_str_hash or st_hash.
+	(any_hash_weak, rb_any_hash_weak, any_hash): New.
+	(objhash): Add rb_any_hash_weak.
+
 Sat Apr 30 06:28:13 2016  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* hash.c (rb_dbl_long_hash): New.
