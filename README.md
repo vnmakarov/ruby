@@ -7,9 +7,9 @@
   The branch `trunk` is Ruby trunk dated Aug. 28 on which branch
   `hash_tables_with_open_addressing` is based.
 
-* Here is a perfromance comparison with for latest *tables with
-  chains* for collision resolution.  The average speed results are
-  obtained on 4.2GHz i7-4790K by running:
+* Here is a performance comparison with latest *tables with chains*
+  for collision resolution.  The average speed results are obtained on
+  4.2GHz i7-4790K under FC21 by running:
   
 
 ```
@@ -21,13 +21,13 @@ ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura
  Trunk                         | 1.0                        |
  Default tables with chains    | 1.42                       |
  Above compiled for huge tables| 1.37                       |
- Above + spihash24             | 1.36                       |
+ Above + siphash24             | 1.36                       |
  Open addressing tables        | 1.45                       |
  
 
 * The *tables with chains* are hash tables with chains used for
   collisions where table elements are stored in an array as in the
-  *tables with open addressing* origionally.  *Trunk* tables use lists
+  *tables with open addressing* originally.  *Trunk* tables use lists
   to store all elements and traverse them.
 
   * The patch for *tables with chains* can be found on
@@ -41,7 +41,7 @@ ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura
 
   * If you need bigger tables you should compile MRI with non-zero
     macro `ENABLE_HUGEHASH` or use a special option during MRI
-    configuration.  The third column gives the results when the tables
+    configuration.  The third row gives the results when the tables
     is compiled with this macro.
 
   * The code with non-zero `ENABLE_HUGEHASH` results in 33% bigger
@@ -56,7 +56,7 @@ ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura
 * The *tables with chains* use siphash13 (1-iteration per element and
   3-final iterations).  Trunk and *open addressing tables* use slower
   siphash24 (2-iterations per element and 4-final iterations).  To
-  compare apples to apples, the third column presents results for the
+  compare apples to apples, the fourth presents results for the
   *tables with chains* with siphash24.
   
 
