@@ -56,7 +56,7 @@ ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura
 * The *tables with chains* use siphash13 (1-iteration per element and
   3-final iterations).  Trunk and *open addressing tables* use slower
   siphash24 (2-iterations per element and 4-final iterations).  To
-  compare apples to apples, the fourth presents results for the
+  compare apples to apples, the fourth row presents results for the
   *tables with chains* with siphash24.
   
 
