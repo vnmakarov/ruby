@@ -40,6 +40,18 @@
 # endif
 #endif
 
+#define ENC_DUMMY_FLAG (1<<24)
+static inline int
+rb_enc_asciicompat(OnigEncoding enc)
+{
+    return ONIGENC_MBC_MINLEN(enc)==1 && !((enc)->ruby_encoding_index & ENC_DUMMY_FLAG);
+}
+#undef ONIGENC_IS_MBC_ASCII_WORD
+#define ONIGENC_IS_MBC_ASCII_WORD(enc,s,end) \
+    (rb_enc_asciicompat(enc) ? (ISALNUM(*s) || *s=='_') : \
+   onigenc_ascii_is_code_ctype( \
+	ONIGENC_MBC_TO_CODE(enc,s,end),ONIGENC_CTYPE_WORD,enc))
+
 #ifdef USE_CRNL_AS_LINE_TERMINATOR
 #define ONIGENC_IS_MBC_CRNL(enc,p,end) \
   (ONIGENC_MBC_TO_CODE(enc,p,end) == 13 && \
@@ -1372,7 +1384,7 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 #define NEXT sprev = sbegin; JUMP
 #define JUMP goto *oplabels[*p++]
 
-  static void  *oplabels[] = {
+  static const void *oplabels[] = {
     &&L_OP_FINISH,               /* matching process terminator (no more alternative) */
     &&L_OP_END,                  /* pattern code terminator (success end) */
 
@@ -1561,9 +1573,6 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 
   mem_start_stk = (OnigStackIndex* )(repeat_stk + reg->num_repeat);
   mem_end_stk   = mem_start_stk + (num_mem + 1);
-  for (i = 0; i <= num_mem; i++) {
-    mem_start_stk[i] = mem_end_stk[i] = INVALID_STACK_INDEX;
-  }
 #else /* USE_SUBEXP_CALL */
   /* Stack #0 not is used. */
   n = reg->num_repeat + reg->num_mem * 2;
@@ -1579,10 +1588,14 @@ match_at(regex_t* reg, const UChar* str, const UChar* end,
 		      mem_start_stk[1]..mem_start_stk[num_mem] */
   mem_end_stk--;   /* for index start from 1,
 		      mem_end_stk[1]..mem_end_stk[num_mem] */
-  for (i = 1; i <= num_mem; i++) {
-    mem_start_stk[i] = mem_end_stk[i] = INVALID_STACK_INDEX;
-  }
 #endif /* USE_SUBEXP_CALL */
+  {
+      OnigStackIndex *pp = mem_start_stk;
+      for (; pp < (repeat_stk + n); pp+=2) {
+	  pp[0] = INVALID_STACK_INDEX;
+	  pp[1] = INVALID_STACK_INDEX;
+      }
+  }
 
 #ifdef ONIG_DEBUG_MATCH
   fprintf(stderr, "match_at: str: %"PRIdPTR" (%p), end: %"PRIdPTR" (%p), start: %"PRIdPTR" (%p), sprev: %"PRIdPTR" (%p)\n",

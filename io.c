@@ -60,13 +60,6 @@
 #if !HAVE_OFF_T && !defined(off_t)
 # define off_t  long
 #endif
-#if SIZEOF_OFF_T > SIZEOF_LONG && defined(HAVE_LONG_LONG)
-# define PRI_OFF_T_PREFIX "ll"
-#elif SIZEOF_OFF_T == SIZEOF_LONG
-# define PRI_OFF_T_PREFIX "l"
-#else
-# define PRI_OFF_T_PREFIX ""
-#endif
 
 #ifdef HAVE_SYS_TIME_H
 # include <sys/time.h>
@@ -2975,7 +2968,7 @@ swallow(rb_io_t *fptr, int term)
 }
 
 static VALUE
-rb_io_getline_fast(rb_io_t *fptr, rb_encoding *enc, VALUE io)
+rb_io_getline_fast(rb_io_t *fptr, rb_encoding *enc)
 {
     VALUE str = Qnil;
     int len = 0;
@@ -3014,22 +3007,20 @@ rb_io_getline_fast(rb_io_t *fptr, rb_encoding *enc, VALUE io)
     str = io_enc_str(str, fptr);
     ENC_CODERANGE_SET(str, cr);
     fptr->lineno++;
-    if (io == ARGF.current_file) {
-	ARGF.lineno++;
-	ARGF.last_lineno = ARGF.lineno;
-    }
-    else {
-	ARGF.last_lineno = fptr->lineno;
-    }
 
     return str;
 }
 
+struct getline_arg {
+    VALUE io;
+    VALUE rs;
+    long limit;
+};
+
 static void
-prepare_getline_args(int argc, VALUE *argv, VALUE *rsp, long *limit, VALUE io)
+extract_getline_args(int argc, VALUE *argv, VALUE *rsp, long *limit)
 {
     VALUE rs = rb_rs, lim = Qnil;
-    rb_io_t *fptr;
 
     rb_check_arity(argc, 0, 2);
     if (argc == 1) {
@@ -3047,6 +3038,16 @@ prepare_getline_args(int argc, VALUE *argv, VALUE *rsp, long *limit, VALUE io)
         if (!NIL_P(rs))
             StringValue(rs);
     }
+    *rsp = rs;
+    *limit = NIL_P(lim) ? -1L : NUM2LONG(lim);
+}
+
+static void
+check_getline_args(VALUE *rsp, long *limit, VALUE io)
+{
+    rb_io_t *fptr;
+    VALUE rs = *rsp;
+
     if (!NIL_P(rs)) {
 	rb_encoding *enc_rs, *enc_io;
 
@@ -3059,6 +3060,7 @@ prepare_getline_args(int argc, VALUE *argv, VALUE *rsp, long *limit, VALUE io)
             if (rs == rb_default_rs) {
                 rs = rb_enc_str_new(0, 0, enc_io);
                 rb_str_buf_cat_ascii(rs, "\n");
+		*rsp = rs;
             }
             else {
                 rb_raise(rb_eArgError, "encoding mismatch: %s IO with %s RS",
@@ -3067,19 +3069,22 @@ prepare_getline_args(int argc, VALUE *argv, VALUE *rsp, long *limit, VALUE io)
             }
 	}
     }
-    *rsp = rs;
-    *limit = NIL_P(lim) ? -1L : NUM2LONG(lim);
+}
+
+static void
+prepare_getline_args(int argc, VALUE *argv, VALUE *rsp, long *limit, VALUE io)
+{
+    extract_getline_args(argc, argv, rsp, limit);
+    check_getline_args(rsp, limit, io);
 }
 
 static VALUE
-rb_io_getline_1(VALUE rs, long limit, VALUE io)
+rb_io_getline_0(VALUE rs, long limit, rb_io_t *fptr)
 {
     VALUE str = Qnil;
-    rb_io_t *fptr;
     int nolimit = 0;
     rb_encoding *enc;
 
-    GetOpenFile(io, fptr);
     rb_io_check_char_readable(fptr);
     if (NIL_P(rs) && limit < 0) {
 	str = read_all(fptr, 0, Qnil);
@@ -3091,7 +3096,7 @@ rb_io_getline_1(VALUE rs, long limit, VALUE io)
     else if (rs == rb_default_rs && limit < 0 && !NEED_READCONV(fptr) &&
              rb_enc_asciicompat(enc = io_read_encoding(fptr))) {
 	NEED_NEWLINE_DECORATOR_ON_READ_CHECK(fptr);
-	return rb_io_getline_fast(fptr, enc, io);
+	return rb_io_getline_fast(fptr, enc);
     }
     else {
 	int c, newline = -1;
@@ -3165,12 +3170,28 @@ rb_io_getline_1(VALUE rs, long limit, VALUE io)
 
     if (!NIL_P(str) && !nolimit) {
 	fptr->lineno++;
+    }
+
+    return str;
+}
+
+static VALUE
+rb_io_getline_1(VALUE rs, long limit, VALUE io)
+{
+    rb_io_t *fptr;
+    int old_lineno, new_lineno;
+    VALUE str;
+
+    GetOpenFile(io, fptr);
+    old_lineno = fptr->lineno;
+    str = rb_io_getline_0(rs, limit, fptr);
+    if (!NIL_P(str) && (new_lineno = fptr->lineno) != old_lineno) {
 	if (io == ARGF.current_file) {
-	    ARGF.lineno++;
+	    ARGF.lineno += new_lineno - old_lineno;
 	    ARGF.last_lineno = ARGF.lineno;
 	}
 	else {
-	    ARGF.last_lineno = fptr->lineno;
+	    ARGF.last_lineno = new_lineno;
 	}
     }
 
@@ -3191,6 +3212,14 @@ VALUE
 rb_io_gets(VALUE io)
 {
     return rb_io_getline_1(rb_default_rs, -1, io);
+}
+
+VALUE
+rb_io_gets_internal(VALUE io)
+{
+    rb_io_t *fptr;
+    GetOpenFile(io, fptr);
+    return rb_io_getline_0(rb_default_rs, -1, fptr);
 }
 
 /*
@@ -3318,6 +3347,8 @@ rb_io_readline(int argc, VALUE *argv, VALUE io)
     return line;
 }
 
+static VALUE io_readlines(VALUE rs, long limit, VALUE io);
+
 /*
  *  call-seq:
  *     ios.readlines(sep=$/)     -> array
@@ -3339,10 +3370,18 @@ rb_io_readline(int argc, VALUE *argv, VALUE io)
 static VALUE
 rb_io_readlines(int argc, VALUE *argv, VALUE io)
 {
-    VALUE line, ary, rs;
+    VALUE rs;
     long limit;
 
     prepare_getline_args(argc, argv, &rs, &limit, io);
+    return io_readlines(rs, limit, io);
+}
+
+static VALUE
+io_readlines(VALUE rs, long limit, VALUE io)
+{
+    VALUE line, ary;
+
     if (limit == 0)
 	rb_raise(rb_eArgError, "invalid limit: 0 for readlines");
     ary = rb_ary_new();
@@ -5672,6 +5711,7 @@ pipe_del_fptr(rb_io_t *fptr)
     }
 }
 
+#if defined (_WIN32) || defined(__CYGWIN__)
 static void
 pipe_atexit(void)
 {
@@ -5684,6 +5724,7 @@ pipe_atexit(void)
 	list = tmp;
     }
 }
+#endif
 
 static void
 pipe_finalize(rb_io_t *fptr, int noraise)
@@ -5869,12 +5910,16 @@ popen_exec(void *pp, char *errmsg, size_t errmsg_len)
 }
 #endif
 
+#if defined(HAVE_WORKING_FORK) || defined(HAVE_SPAWNV)
 static VALUE
 rb_execarg_fixup_v(VALUE execarg_obj)
 {
     rb_execarg_parent_start(execarg_obj);
     return Qnil;
 }
+#else
+char *rb_execarg_commandline(const struct rb_execarg *eargp, VALUE *prog);
+#endif
 
 static VALUE
 pipe_open(VALUE execarg_obj, const char *modestr, int fmode,
@@ -5921,10 +5966,6 @@ pipe_open(VALUE execarg_obj, const char *modestr, int fmode,
     int write_fd = -1;
 #if !defined(HAVE_WORKING_FORK)
     const char *cmd = 0;
-#if !defined(HAVE_SPAWNV)
-    int argc;
-    VALUE *argv;
-#endif
 
     if (prog)
         cmd = StringValueCStr(prog);
@@ -6053,10 +6094,7 @@ pipe_open(VALUE execarg_obj, const char *modestr, int fmode,
         fd = arg.pair[1];
     }
 #else
-    if (argc) {
-	prog = rb_ary_join(rb_ary_new4(argc, argv), rb_str_new2(" "));
-	cmd = StringValueCStr(prog);
-    }
+    cmd = rb_execarg_commandline(eargp, &prog);
     if (!NIL_P(execarg_obj)) {
 	rb_execarg_parent_start(execarg_obj);
 	rb_execarg_run_options(eargp, sargp, NULL, 0);
@@ -6568,7 +6606,7 @@ rb_f_open(int argc, VALUE *argv)
 	}
     }
     if (redirect) {
-	VALUE io = rb_funcall2(argv[0], to_open, argc-1, argv+1);
+	VALUE io = rb_funcallv(argv[0], to_open, argc-1, argv+1);
 
 	if (rb_block_given_p()) {
 	    return rb_ensure(rb_yield, io, io_close, io);
@@ -7041,7 +7079,7 @@ rb_f_putc(VALUE recv, VALUE ch)
     if (recv == rb_stdout) {
 	return rb_io_putc(recv, ch);
     }
-    return rb_funcall2(rb_stdout, rb_intern("putc"), 1, &ch);
+    return rb_funcallv(rb_stdout, rb_intern("putc"), 1, &ch);
 }
 
 
@@ -7146,7 +7184,7 @@ rb_f_puts(int argc, VALUE *argv, VALUE recv)
     if (recv == rb_stdout) {
 	return rb_io_puts(argc, argv, recv);
     }
-    return rb_funcall2(rb_stdout, rb_intern("puts"), argc, argv);
+    return rb_funcallv(rb_stdout, rb_intern("puts"), argc, argv);
 }
 
 void
@@ -7241,7 +7279,7 @@ rb_f_p(int argc, VALUE *argv, VALUE self)
  *
  *  <em>produces:</em>
  *
- *     1cat456
+ *     1cat[4, 5, 6]
  */
 
 static VALUE
@@ -8168,7 +8206,7 @@ rb_f_gets(int argc, VALUE *argv, VALUE recv)
     if (recv == argf) {
 	return argf_gets(argc, argv, argf);
     }
-    return rb_funcall2(argf, idGets, argc, argv);
+    return rb_funcallv(argf, idGets, argc, argv);
 }
 
 /*
@@ -8241,7 +8279,7 @@ rb_f_readline(int argc, VALUE *argv, VALUE recv)
     if (recv == argf) {
 	return argf_readline(argc, argv, argf);
     }
-    return rb_funcall2(argf, rb_intern("readline"), argc, argv);
+    return rb_funcallv(argf, rb_intern("readline"), argc, argv);
 }
 
 
@@ -8294,7 +8332,7 @@ rb_f_readlines(int argc, VALUE *argv, VALUE recv)
     if (recv == argf) {
 	return argf_readlines(argc, argv, argf);
     }
-    return rb_funcall2(argf, rb_intern("readlines"), argc, argv);
+    return rb_funcallv(argf, rb_intern("readlines"), argc, argv);
 }
 
 /*
@@ -8606,8 +8644,8 @@ do_io_advise(rb_io_t *fptr, VALUE advice, off_t offset, off_t len)
 	/* posix_fadvise(2) doesn't set errno. On success it returns 0; otherwise
 	   it returns the error code. */
 	VALUE message = rb_sprintf("%"PRIsVALUE" "
-				   "(%"PRI_OFF_T_PREFIX"d, "
-				   "%"PRI_OFF_T_PREFIX"d, "
+				   "(%"PRI_OFFT_PREFIX"d, "
+				   "%"PRI_OFFT_PREFIX"d, "
 				   "%"PRIsVALUE")",
 				   fptr->pathv, offset, len, advice);
 	rb_syserr_fail_str(rv, message);
@@ -9290,7 +9328,7 @@ rb_io_fcntl(int argc, VALUE *argv, VALUE io)
  *  +String+ objects or +Integer+ objects. A +String+ object is passed
  *  as a pointer to the byte sequence. An +Integer+ object is passed
  *  as an integer whose bit size is same as a pointer.
- *  Up to nine parameters may be passed (14 on the Atari-ST).
+ *  Up to nine parameters may be passed.
  *
  *  The function identified by _num_ is system
  *  dependent. On some Unix systems, the numbers may be obtained from a
@@ -9314,11 +9352,7 @@ rb_io_fcntl(int argc, VALUE *argv, VALUE io)
 static VALUE
 rb_f_syscall(int argc, VALUE *argv)
 {
-#ifdef atarist
-    VALUE arg[13]; /* yes, we really need that many ! */
-#else
     VALUE arg[8];
-#endif
 #if SIZEOF_VOIDP == 8 && defined(HAVE___SYSCALL) && SIZEOF_INT != 8 /* mainly *BSD */
 # define SYSCALL __syscall
 # define NUM2SYSCALLID(x) NUM2LONG(x)
@@ -9397,32 +9431,6 @@ rb_f_syscall(int argc, VALUE *argv)
       case 8:
 	retval = SYSCALL(num, arg[0],arg[1],arg[2],arg[3],arg[4],arg[5],arg[6]);
 	break;
-#ifdef atarist
-      case 9:
-	retval = SYSCALL(num, arg[0],arg[1],arg[2],arg[3],arg[4],arg[5],arg[6],
-	  arg[7]);
-	break;
-      case 10:
-	retval = SYSCALL(num, arg[0],arg[1],arg[2],arg[3],arg[4],arg[5],arg[6],
-	  arg[7], arg[8]);
-	break;
-      case 11:
-	retval = SYSCALL(num, arg[0],arg[1],arg[2],arg[3],arg[4],arg[5],arg[6],
-	  arg[7], arg[8], arg[9]);
-	break;
-      case 12:
-	retval = SYSCALL(num, arg[0],arg[1],arg[2],arg[3],arg[4],arg[5],arg[6],
-	  arg[7], arg[8], arg[9], arg[10]);
-	break;
-      case 13:
-	retval = SYSCALL(num, arg[0],arg[1],arg[2],arg[3],arg[4],arg[5],arg[6],
-	  arg[7], arg[8], arg[9], arg[10], arg[11]);
-	break;
-      case 14:
-	retval = SYSCALL(num, arg[0],arg[1],arg[2],arg[3],arg[4],arg[5],arg[6],
-	  arg[7], arg[8], arg[9], arg[10], arg[11], arg[12]);
-        break;
-#endif
     }
 
     if (retval == -1)
@@ -9718,13 +9726,15 @@ open_key_args(int argc, VALUE *argv, VALUE opt, struct foreach_arg *arg)
 }
 
 static VALUE
-io_s_foreach(struct foreach_arg *arg)
+io_s_foreach(struct getline_arg *arg)
 {
     VALUE str;
 
-    while (!NIL_P(str = rb_io_gets_m(arg->argc, arg->argv, arg->io))) {
+    while (!NIL_P(str = rb_io_getline_1(arg->rs, arg->limit, arg->io))) {
+	rb_lastline_set(str);
 	rb_yield(str);
     }
+    rb_lastline_set(Qnil);
     return Qnil;
 }
 
@@ -9760,18 +9770,21 @@ rb_io_s_foreach(int argc, VALUE *argv, VALUE self)
     VALUE opt;
     int orig_argc = argc;
     struct foreach_arg arg;
+    struct getline_arg garg;
 
     argc = rb_scan_args(argc, argv, "13:", NULL, NULL, NULL, NULL, &opt);
     RETURN_ENUMERATOR(self, orig_argc, argv);
+    extract_getline_args(argc-1, argv+1, &garg.rs, &garg.limit);
     open_key_args(argc, argv, opt, &arg);
     if (NIL_P(arg.io)) return Qnil;
-    return rb_ensure(io_s_foreach, (VALUE)&arg, rb_io_close, arg.io);
+    check_getline_args(&garg.rs, &garg.limit, garg.io = arg.io);
+    return rb_ensure(io_s_foreach, (VALUE)&garg, rb_io_close, arg.io);
 }
 
 static VALUE
-io_s_readlines(struct foreach_arg *arg)
+io_s_readlines(struct getline_arg *arg)
 {
-    return rb_io_readlines(arg->argc, arg->argv, arg->io);
+    return io_readlines(arg->rs, arg->limit, arg->io);
 }
 
 /*
@@ -9797,11 +9810,14 @@ rb_io_s_readlines(int argc, VALUE *argv, VALUE io)
 {
     VALUE opt;
     struct foreach_arg arg;
+    struct getline_arg garg;
 
     argc = rb_scan_args(argc, argv, "13:", NULL, NULL, NULL, NULL, &opt);
+    extract_getline_args(argc-1, argv+1, &garg.rs, &garg.limit);
     open_key_args(argc, argv, opt, &arg);
     if (NIL_P(arg.io)) return Qnil;
-    return rb_ensure(io_s_readlines, (VALUE)&arg, rb_io_close, arg.io);
+    check_getline_args(&garg.rs, &garg.limit, garg.io = arg.io);
+    return rb_ensure(io_s_readlines, (VALUE)&garg, rb_io_close, arg.io);
 }
 
 static VALUE
@@ -9831,6 +9847,9 @@ seek_before_access(VALUE argp)
  *  Opens the file, optionally seeks to the given +offset+, then returns
  *  +length+ bytes (defaulting to the rest of the file).  <code>read</code>
  *  ensures the file is closed before returning.
+ *
+ *  If +name+ starts with a pipe character (<code>"|"</code>), a subprocess is
+ *  created in the same way as Kernel#open, and its output is returned.
  *
  *  === Options
  *
@@ -10845,7 +10864,7 @@ rb_io_set_encoding(int argc, VALUE *argv, VALUE io)
     VALUE v1, v2, opt;
 
     if (!RB_TYPE_P(io, T_FILE)) {
-        return rb_funcall2(io, id_set_encoding, argc, argv);
+        return rb_funcallv(io, id_set_encoding, argc, argv);
     }
 
     argc = rb_scan_args(argc, argv, "11:", &v1, &v2, &opt);
@@ -10857,7 +10876,6 @@ rb_io_set_encoding(int argc, VALUE *argv, VALUE io)
 void
 rb_stdio_set_default_encoding(void)
 {
-    extern VALUE rb_stdin, rb_stdout, rb_stderr;
     VALUE val = Qnil;
 
     rb_io_set_encoding(1, &val, rb_stdin);
@@ -12419,7 +12437,7 @@ Init_IO(void)
 
 #if 0
     /* Hack to get rdoc to regard ARGF as a class: */
-    rb_cARGF = rb_define_class("ARGF.class", rb_cObject);
+    rb_cARGF = rb_define_class("ARGF", rb_cObject);
 #endif
 
     rb_cARGF = rb_class_new(rb_cObject);

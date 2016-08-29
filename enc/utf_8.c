@@ -430,6 +430,7 @@ OnigEncodingDefine(utf_8, UTF_8) = {
   onigenc_always_true_is_allowed_reverse_match,
   ENCINDEX_UTF_8,
   ONIGENC_FLAG_UNICODE,
+  onigenc_unicode_case_map,
 };
 ENC_ALIAS("CP65001", "UTF-8")
 

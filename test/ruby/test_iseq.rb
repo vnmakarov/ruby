@@ -10,13 +10,17 @@ class TestISeq < Test::Unit::TestCase
 
   def compile(src, line = nil, opt = nil)
     EnvUtil.suppress_warning do
-      RubyVM::InstructionSequence.new(src, __FILE__, __FILE__, line, opt)
+      ISeq.new(src, __FILE__, __FILE__, line, opt)
     end
   end
 
   def lines src
     body = compile(src).to_a[13]
-    body.find_all{|e| e.kind_of? Fixnum}
+    body.find_all{|e| e.kind_of? Integer}
+  end
+
+  def test_allocate
+    assert_raise(TypeError) {ISeq.allocate}
   end
 
   def test_to_a_lines
@@ -52,9 +56,9 @@ class TestISeq < Test::Unit::TestCase
   end
 
   def test_unsupport_type
-    ary = RubyVM::InstructionSequence.compile("p").to_a
+    ary = compile("p").to_a
     ary[9] = :foobar
-    assert_raise_with_message(TypeError, /:foobar/) {RubyVM::InstructionSequence.load(ary)}
+    assert_raise_with_message(TypeError, /:foobar/) {ISeq.load(ary)}
   end if defined?(RubyVM::InstructionSequence.load)
 
   def test_loaded_cdhash_mark
@@ -98,7 +102,7 @@ class TestISeq < Test::Unit::TestCase
   end
 
   def test_line_trace
-    iseq = ISeq.compile \
+    iseq = compile \
   %q{ a = 1
       b = 2
       c = 3
@@ -163,9 +167,9 @@ class TestISeq < Test::Unit::TestCase
 
   def test_invalid_source
     bug11159 = '[ruby-core:69219] [Bug #11159]'
-    assert_raise(TypeError, bug11159) {ISeq.compile(nil)}
-    assert_raise(TypeError, bug11159) {ISeq.compile(:foo)}
-    assert_raise(TypeError, bug11159) {ISeq.compile(1)}
+    assert_raise(TypeError, bug11159) {compile(nil)}
+    assert_raise(TypeError, bug11159) {compile(:foo)}
+    assert_raise(TypeError, bug11159) {compile(1)}
   end
 
   def test_frozen_string_literal_compile_option
@@ -212,6 +216,40 @@ class TestISeq < Test::Unit::TestCase
         }.call
       }.call
       at_exit { assert_equal([:n, :x], Segfault.new.segfault.sort) }
+    end;
+  end
+
+  def test_syntax_error_message
+    feature11951 = '[Feature #11951]'
+
+    src, line = <<-'end;', __LINE__+1
+      def x@;end
+      def y@;end
+    end;
+    e1 = e2 = nil
+    m1 = EnvUtil.verbose_warning do
+      e1 = assert_raise(SyntaxError) do
+        eval(src, nil, __FILE__, line)
+      end
+    end
+    m2 = EnvUtil.verbose_warning do
+      e2 = assert_raise(SyntaxError) do
+        ISeq.new(src, __FILE__, __FILE__, line)
+      end
+    end
+    assert_equal([m1, e1.message], [m2, e2.message], feature11951)
+    e1, e2 = e1.message.lines
+    assert_send([e1, :start_with?, __FILE__])
+    assert_send([e2, :start_with?, __FILE__])
+  end
+
+  def test_translate_by_object
+    assert_separately([], <<-"end;")
+      class Object
+        def translate
+        end
+      end
+      assert_equal(0, eval("0"))
     end;
   end
 end

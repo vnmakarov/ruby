@@ -495,6 +495,8 @@ CODE
   def test_concat
     assert_equal(S("world!"), S("world").concat(33))
     assert_equal(S("world!"), S("world").concat(S('!')))
+    b = S("sn")
+    assert_equal(S("snsnsn"), b.concat(b, b))
 
     bug7090 = '[ruby-core:47751]'
     result = S("").force_encoding(Encoding::UTF_16LE)
@@ -502,6 +504,7 @@ CODE
     expected = S("\u0300".encode(Encoding::UTF_16LE))
     assert_equal(expected, result, bug7090)
     assert_raise(TypeError) { 'foo' << :foo }
+    assert_raise(RuntimeError) { 'foo'.freeze.concat('bar') }
   end
 
   def test_count
@@ -614,6 +617,18 @@ CODE
   def test_dump
     a= S("Test") << 1 << 2 << 3 << 9 << 13 << 10
     assert_equal(S('"Test\\x01\\x02\\x03\\t\\r\\n"'), a.dump)
+    b= S("\u{7F}")
+    assert_equal(S('"\\x7F"'), b.dump)
+    b= S("\u{AB}")
+    assert_equal(S('"\\u00AB"'), b.dump)
+    b= S("\u{ABC}")
+    assert_equal(S('"\\u0ABC"'), b.dump)
+    b= S("\uABCD")
+    assert_equal(S('"\\uABCD"'), b.dump)
+    b= S("\u{ABCDE}")
+    assert_equal(S('"\\u{ABCDE}"'), b.dump)
+    b= S("\u{10ABCD}")
+    assert_equal(S('"\\u{10ABCD}"'), b.dump)
   end
 
   def test_dup
@@ -1353,7 +1368,7 @@ CODE
   end
 
   def test_split
-    assert_nil($;)
+    fs, $; = $;, nil
     assert_equal([S("a"), S("b"), S("c")], S(" a   b\t c ").split)
     assert_equal([S("a"), S("b"), S("c")], S(" a   b\t c ").split(S(" ")))
 
@@ -1377,6 +1392,14 @@ CODE
     assert_equal([], "".split(//, 1))
 
     assert_equal("[2, 3]", [1,2,3].slice!(1,10000).inspect, "moved from btest/knownbug")
+  ensure
+    $; = fs
+  end
+
+  def test_fs
+    assert_raise_with_message(TypeError, /\$;/) {
+      $; = []
+    }
   end
 
   def test_split_encoding
@@ -2293,7 +2316,9 @@ CODE
   end
 
   def test_prepend
-    assert_equal(S("hello world!"), "world!".prepend("hello "))
+    assert_equal(S("hello world!"), "!".prepend("hello ", "world"))
+    b = S("ue")
+    assert_equal(S("ueueue"), b.prepend(b, b))
 
     foo = Object.new
     def foo.to_str

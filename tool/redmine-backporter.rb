@@ -299,6 +299,10 @@ def show_last_journal(http, uri)
   puts x["notes"]
 end
 
+def merger_path
+  RUBY_PLATFORM =~ /mswin|mingw/ ? 'merger' : File.expand_path('../merger.rb', __FILE__)
+end
+
 def backport_command_string
   unless @changesets.respond_to?(:validated)
     @changesets = @changesets.select do |c|
@@ -312,7 +316,7 @@ def backport_command_string
     end
     @changesets.define_singleton_method(:validated){true}
   end
-  " backport --ticket=#{@issue} #{@changesets.join(',')}"
+  " #{merger_path} --ticket=#{@issue} #{@changesets.sort.join(',')}"
 end
 
 def status_char(obj)
@@ -348,10 +352,15 @@ commands = {
   },
 
   "show" => proc{|args|
-    raise CommandSyntaxError unless /\A(\d+)\z/ =~ args
-    id = $1.to_i
-    id = @issues[id]["id"] if @issues && id < @issues.size
-    @issue = id
+    if /\A(\d+)\z/ =~ args
+      id = $1.to_i
+      id = @issues[id]["id"] if @issues && id < @issues.size
+      @issue = id
+    elsif @issue
+      id = @issue
+    else
+      raise CommandSyntaxError
+    end
     uri = "#{REDMINE_BASE}/issues/#{id}"
     uri = URI(uri+".json?include=children,attachments,relations,changesets,journals")
     res = JSON(uri.read($openuri_options))
@@ -397,17 +406,24 @@ eom
 
   "rel" => proc{|args|
     # this feature requires custom redmine which allows add_related_issue API
-    raise CommandSyntaxError unless /\A(\d+)\z/ =~ args
+    raise CommandSyntaxError unless /\Ar?(\d+)\z/ =~ args
     unless @issue
       puts "ticket not selected"
       next
     end
-    rev = $1.to_i
+    rev = $1
     uri = URI("#{REDMINE_BASE}/projects/ruby-trunk/repository/revisions/#{rev}/issues.json")
     Net::HTTP.start(uri.host, uri.port, http_options) do |http|
       res = http.post(uri.path, "issue_id=#@issue",
                      'X-Redmine-API-Key' => REDMINE_API_KEY)
+      begin
+        res.value
+      rescue
+        $stderr.puts "deployed redmine doesn't have https://github.com/ruby/bugs.ruby-lang.org/commit/01fbba60d68cb916ddbccc8a8710e68c5217171d\nask naruse or hsbt"
+        next
+      end
       puts res.body
+      @changesets << rev
       class << @changesets
         remove_method(:validated) rescue nil
       end
@@ -567,10 +583,10 @@ while true
     args = cmd
     cmd = "show"
   end
-  if commands[cmd].is_a? String
-    cmd = list[cmd]
-  end
   cmd = list[cmd]
+  if commands[cmd].is_a? String
+    cmd = list[commands[cmd]]
+  end
   begin
     if cmd
       commands[cmd].call(args)

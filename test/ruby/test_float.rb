@@ -428,6 +428,11 @@ class TestFloat < Test::Unit::TestCase
     assert_equal(1.110, 1.111.round(2))
     assert_equal(11110.0, 11111.1.round(-1))
     assert_equal(11100.0, 11111.1.round(-2))
+    assert_equal(-1.100, -1.111.round(1))
+    assert_equal(-1.110, -1.111.round(2))
+    assert_equal(-11110.0, -11111.1.round(-1))
+    assert_equal(-11100.0, -11111.1.round(-2))
+    assert_equal(0, 11111.1.round(-5))
 
     assert_equal(10**300, 1.1e300.round(-300))
     assert_equal(-10**300, -1.1e300.round(-300))
@@ -442,6 +447,89 @@ class TestFloat < Test::Unit::TestCase
     assert_raise(TypeError) {1.0.round(nil)}
     def (prec = Object.new).to_int; 2; end
     assert_equal(1.0, 0.998.round(prec))
+
+    assert_equal(+5.02, +5.015.round(2))
+    assert_equal(-5.02, -5.015.round(2))
+    assert_equal(+1.26, +1.255.round(2))
+    assert_equal(-1.26, -1.255.round(2))
+  end
+
+  def test_floor_with_precision
+    assert_equal(1.100, 1.111.floor(1))
+    assert_equal(1.110, 1.111.floor(2))
+    assert_equal(11110, 11119.9.floor(-1))
+    assert_equal(11100, 11100.0.floor(-2))
+    assert_equal(11100, 11199.9.floor(-2))
+    assert_equal(-1.200, -1.111.floor(1))
+    assert_equal(-1.120, -1.111.floor(2))
+    assert_equal(-11120, -11119.9.floor(-1))
+    assert_equal(-11100, -11100.0.floor(-2))
+    assert_equal(-11200, -11199.9.floor(-2))
+    assert_equal(0, 11111.1.floor(-5))
+
+    assert_equal(10**300, 1.1e300.floor(-300))
+    assert_equal(-2*10**300, -1.1e300.floor(-300))
+    assert_equal(1.0e-300, 1.1e-300.floor(300))
+    assert_equal(-2.0e-300, -1.1e-300.floor(300))
+
+    assert_equal(42.0, 42.0.floor(308))
+    assert_equal(1.0e307, 1.0e307.floor(2))
+
+    assert_raise(TypeError) {1.0.floor("4")}
+    assert_raise(TypeError) {1.0.floor(nil)}
+    def (prec = Object.new).to_int; 2; end
+    assert_equal(0.99, 0.998.floor(prec))
+  end
+
+  def test_ceil_with_precision
+    assert_equal(1.200, 1.111.ceil(1))
+    assert_equal(1.120, 1.111.ceil(2))
+    assert_equal(11120, 11111.1.ceil(-1))
+    assert_equal(11200, 11111.1.ceil(-2))
+    assert_equal(-1.100, -1.111.ceil(1))
+    assert_equal(-1.110, -1.111.ceil(2))
+    assert_equal(-11110, -11111.1.ceil(-1))
+    assert_equal(-11100, -11111.1.ceil(-2))
+    assert_equal(100000, 11111.1.ceil(-5))
+
+    assert_equal(2*10**300, 1.1e300.ceil(-300))
+    assert_equal(-10**300, -1.1e300.ceil(-300))
+    assert_equal(2.0e-300, 1.1e-300.ceil(300))
+    assert_equal(-1.0e-300, -1.1e-300.ceil(300))
+
+    assert_equal(42.0, 42.0.ceil(308))
+    assert_equal(1.0e307, 1.0e307.ceil(2))
+
+    assert_raise(TypeError) {1.0.ceil("4")}
+    assert_raise(TypeError) {1.0.ceil(nil)}
+    def (prec = Object.new).to_int; 2; end
+    assert_equal(0.99, 0.981.ceil(prec))
+  end
+
+  def test_truncate_with_precision
+    assert_equal(1.100, 1.111.truncate(1))
+    assert_equal(1.110, 1.111.truncate(2))
+    assert_equal(11110, 11119.9.truncate(-1))
+    assert_equal(11100, 11100.0.truncate(-2))
+    assert_equal(11100, 11199.9.truncate(-2))
+    assert_equal(-1.100, -1.111.truncate(1))
+    assert_equal(-1.110, -1.111.truncate(2))
+    assert_equal(-11110, -11111.1.truncate(-1))
+    assert_equal(-11100, -11111.1.truncate(-2))
+    assert_equal(0, 11111.1.truncate(-5))
+
+    assert_equal(10**300, 1.1e300.truncate(-300))
+    assert_equal(-10**300, -1.1e300.truncate(-300))
+    assert_equal(1.0e-300, 1.1e-300.truncate(300))
+    assert_equal(-1.0e-300, -1.1e-300.truncate(300))
+
+    assert_equal(42.0, 42.0.truncate(308))
+    assert_equal(1.0e307, 1.0e307.truncate(2))
+
+    assert_raise(TypeError) {1.0.truncate("4")}
+    assert_raise(TypeError) {1.0.truncate(nil)}
+    def (prec = Object.new).to_int; 2; end
+    assert_equal(0.99, 0.998.truncate(prec))
   end
 
   VS = [
@@ -601,7 +689,7 @@ class TestFloat < Test::Unit::TestCase
   end
 
   def test_num2dbl
-    assert_raise(ArgumentError) do
+    assert_raise(TypeError) do
       1.0.step(2.0, "0.5") {}
     end
     assert_raise(TypeError) do
@@ -704,5 +792,22 @@ class TestFloat < Test::Unit::TestCase
     assert_operator(+0.0, :eql?, -0.0)
     h = {0.0 => bug10979}
     assert_equal(bug10979, h[-0.0])
+  end
+
+  def test_aliased_quo_recursion
+    assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}")
+    begin;
+      class Float
+        $VERBOSE = nil
+        alias / quo
+      end
+      assert_raise(NameError) do
+        begin
+          1.0/2.0
+        rescue SystemStackError => e
+          raise SystemStackError, e.message
+        end
+      end
+    end;
   end
 end

@@ -239,6 +239,12 @@ again:
 	if (prec < 0) goto unable_to_coerce_without_prec;
 	if (prec > DBL_DIG+1) goto SomeOneMayDoIt;
 	d = RFLOAT_VALUE(v);
+	if (!isfinite(d)) {
+	    pv = VpCreateRbObject(prec, NULL);
+	    pv->sign = isnan(d) ? VP_SIGN_NaN :
+		d > 0 ? VP_SIGN_POSITIVE_INFINITE : VP_SIGN_NEGATIVE_FINITE;
+	    return pv;
+	}
 	if (d != 0.0) {
 	    v = rb_funcall(v, id_to_r, 0);
 	    goto again;
@@ -462,8 +468,7 @@ check_rounding_mode(VALUE const v)
 	break;
     }
 
-    Check_Type(v, T_FIXNUM);
-    sw = (unsigned short)FIX2UINT(v);
+    sw = NUM2USHORT(v);
     if (!VpIsRoundMode(sw)) {
 	rb_raise(rb_eArgError, "invalid rounding mode");
     }
@@ -516,8 +521,7 @@ BigDecimal_mode(int argc, VALUE *argv, VALUE self)
     unsigned long f,fo;
 
     rb_scan_args(argc, argv, "11", &which, &val);
-    Check_Type(which, T_FIXNUM);
-    f = (unsigned long)FIX2INT(which);
+    f = (unsigned long)NUM2INT(which);
 
     if (f & VP_EXCEPTION_ALL) {
 	/* Exception mode setting */
@@ -587,8 +591,7 @@ static SIGNED_VALUE
 GetPositiveInt(VALUE v)
 {
     SIGNED_VALUE n;
-    Check_Type(v, T_FIXNUM);
-    n = FIX2INT(v);
+    n = NUM2INT(v);
     if (n < 0) {
 	rb_raise(rb_eArgError, "argument must be positive");
     }
@@ -1103,7 +1106,7 @@ BigDecimal_comp(VALUE self, VALUE r)
  *
  * Values may be coerced to perform the comparison:
  *
- *   BigDecimal.new('1.0') == 1.0  -> true
+ *   BigDecimal.new('1.0') == 1.0  #=> true
  */
 static VALUE
 BigDecimal_eq(VALUE self, VALUE r)
@@ -1717,12 +1720,10 @@ BigDecimal_round(int argc, VALUE *argv, VALUE self)
 	iLoc = 0;
 	break;
       case 1:
-	Check_Type(vLoc, T_FIXNUM);
-	iLoc = FIX2INT(vLoc);
+	iLoc = NUM2INT(vLoc);
 	break;
       case 2:
-	Check_Type(vLoc, T_FIXNUM);
-	iLoc = FIX2INT(vLoc);
+	iLoc = NUM2INT(vLoc);
 	sw = check_rounding_mode(vRound);
 	break;
       default:
@@ -1773,8 +1774,7 @@ BigDecimal_truncate(int argc, VALUE *argv, VALUE self)
 	iLoc = 0;
     }
     else {
-	Check_Type(vLoc, T_FIXNUM);
-	iLoc = FIX2INT(vLoc);
+	iLoc = NUM2INT(vLoc);
     }
 
     GUARD_OBJ(a, GetVpValue(self, 1));
@@ -1834,8 +1834,7 @@ BigDecimal_floor(int argc, VALUE *argv, VALUE self)
 	iLoc = 0;
     }
     else {
-	Check_Type(vLoc, T_FIXNUM);
-	iLoc = FIX2INT(vLoc);
+	iLoc = NUM2INT(vLoc);
     }
 
     GUARD_OBJ(a, GetVpValue(self, 1));
@@ -1881,8 +1880,7 @@ BigDecimal_ceil(int argc, VALUE *argv, VALUE self)
     if (rb_scan_args(argc, argv, "01", &vLoc) == 0) {
 	iLoc = 0;
     } else {
-	Check_Type(vLoc, T_FIXNUM);
-	iLoc = FIX2INT(vLoc);
+	iLoc = NUM2INT(vLoc);
     }
 
     GUARD_OBJ(a, GetVpValue(self, 1));
@@ -2625,8 +2623,7 @@ BigDecimal_limit(int argc, VALUE *argv, VALUE self)
     if (rb_scan_args(argc, argv, "01", &nFig) == 1) {
 	int nf;
 	if (NIL_P(nFig)) return nCur;
-	Check_Type(nFig, T_FIXNUM);
-	nf = FIX2INT(nFig);
+	nf = NUM2INT(nFig);
 	if (nf < 0) {
 	    rb_raise(rb_eArgError, "argument must be positive");
 	}
@@ -3461,7 +3458,7 @@ VpGetException (void)
 	return RMPD_EXCEPTION_MODE_DEFAULT;
     }
 
-    return (unsigned short)FIX2UINT(vmode);
+    return NUM2USHORT(vmode);
 }
 
 static void
@@ -3531,7 +3528,7 @@ VpGetRoundMode(void)
 	return RMPD_ROUNDING_MODE_DEFAULT;
     }
 
-    return (unsigned short)FIX2INT(vmode);
+    return NUM2USHORT(vmode);
 }
 
 VP_EXPORT int

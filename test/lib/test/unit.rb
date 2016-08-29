@@ -86,8 +86,8 @@ module Test
           self.verbose = options[:verbose]
         end
 
-        opts.on '-n', '--name PATTERN', "Filter test method names on pattern: /REGEXP/ or STRING" do |a|
-          options[:filter] = a
+        opts.on '-n', '--name PATTERN', "Filter test method names on pattern: /REGEXP/, !/REGEXP/ or STRING" do |a|
+          (options[:filter] ||= []) << a
         end
 
         opts.on '--test-order=random|alpha|sorted', [:random, :alpha, :sorted] do |a|
@@ -96,6 +96,30 @@ module Test
       end
 
       def non_options(files, options)
+        filter = options[:filter]
+        if filter
+          pos_pat = /\A\/(.*)\/\z/
+          neg_pat = /\A!\/(.*)\/\z/
+          negative, positive = filter.partition {|s| neg_pat =~ s}
+          if positive.empty?
+            filter = nil
+          elsif negative.empty? and positive.size == 1 and pos_pat !~ positive[0]
+            filter = positive[0]
+          else
+            filter = Regexp.union(*positive.map! {|s| s[pos_pat, 1] || "\\A#{Regexp.quote(s)}\\z"})
+          end
+          unless negative.empty?
+            negative = Regexp.union(*negative.map! {|s| s[neg_pat, 1]})
+            filter = /\A(?=.*#{filter})(?!.*#{negative})/
+          end
+          if Regexp === filter
+            # bypass conversion in minitest
+            def filter.=~(other)    # :nodoc:
+              super unless Regexp === other
+            end
+          end
+          options[:filter] = filter
+        end
         true
       end
     end
@@ -153,7 +177,7 @@ module Test
 
       class Worker
         def self.launch(ruby,args=[])
-          io = IO.popen([*ruby,
+          io = IO.popen([*ruby, "-W1",
                         "#{File.dirname(__FILE__)}/unit/parallel.rb",
                         *args], "rb+")
           new(io, io.pid, :waiting)
@@ -257,6 +281,7 @@ module Test
         return unless @options[:parallel]
         return if @interrupt
         warn e if e
+        real_file = worker.real_file and warn "running file: #{real_file}"
         @need_quit = true
         warn ""
         warn "Some worker was crashed. It seems ruby interpreter's bug"
@@ -332,7 +357,6 @@ module Test
           # just only dots, ignore
         when /^okay$/
           worker.status = :running
-          jobs_status
         when /^ready(!)?$/
           bang = $1
           worker.status = :ready
@@ -345,7 +369,7 @@ module Test
           worker.run(task, type)
           @test_count += 1
 
-          jobs_status
+          jobs_status(worker)
         when /^done (.+?)$/
           begin
             r = Marshal.load($1.unpack("m")[0])
@@ -360,7 +384,7 @@ module Test
         when /^p (.+?)$/
           del_jobs_status
           print $1.unpack("m")[0]
-          jobs_status if @options[:job_status] == :replace
+          jobs_status(worker) if @options[:job_status] == :replace
         when /^after (.+?)$/
           @warnings << Marshal.load($1.unpack("m")[0])
         when /^bye (.+?)$/
@@ -426,7 +450,7 @@ module Test
             suites.map! {|r| eval("::"+r[:testcase])}
             del_status_line or puts
             unless suites.empty?
-              puts "Retrying..."
+              puts "\n""Retrying..."
               _run_suites(suites, type)
             end
           end
@@ -473,11 +497,16 @@ module Test
             end
           }
         end
+        del_status_line
         result
       end
     end
 
     module Skipping # :nodoc: all
+      def failed(s)
+        super if !s or @options[:hide_skip]
+      end
+
       private
       def setup_options(opts, options)
         super
@@ -501,6 +530,7 @@ module Test
         report.reject!{|r| r.start_with? "Skipped:" } if @options[:hide_skip]
         report.sort_by!{|r| r.start_with?("Skipped:") ? 0 : \
                            (r.start_with?("Failure:") ? 1 : 2) }
+        failed(nil)
         result
       end
     end
@@ -522,31 +552,31 @@ module Test
 
       def del_status_line(flush = true)
         @status_line_size ||= 0
-        unless @options[:job_status] == :replace
-          $stdout.puts
-          return
+        if @options[:job_status] == :replace
+          $stdout.print "\r"+" "*@status_line_size+"\r"
+        else
+          $stdout.puts if @status_line_size > 0
         end
-        print "\r"+" "*@status_line_size+"\r"
         $stdout.flush if flush
         @status_line_size = 0
       end
 
-      def add_status(line, flush: true)
-        unless @options[:job_status] == :replace
-          print(line)
-          return
-        end
+      def add_status(line)
         @status_line_size ||= 0
-        line = line[0...(terminal_width-@status_line_size)]
+        if @options[:job_status] == :replace
+          line = line[0...(terminal_width-@status_line_size)]
+        end
         print line
-        $stdout.flush if flush
         @status_line_size += line.size
       end
 
-      def jobs_status
-        return unless @options[:job_status]
-        puts "" unless @options[:verbose] or @options[:job_status] == :replace
-        status_line = @workers.map(&:to_s).join(" ")
+      def jobs_status(worker)
+        return if !@options[:job_status] or @options[:verbose]
+        if @options[:job_status] == :replace
+          status_line = @workers.map(&:to_s).join(" ")
+        else
+          status_line = worker.to_s
+        end
         update_status(status_line) or (puts; nil)
       end
 
@@ -587,11 +617,9 @@ module Test
         end
         if color or @options[:job_status] == :replace
           @verbose = !options[:parallel]
-          @output = Output.new(self)
         end
-        if /\A\/(.*)\/\z/ =~ (filter = options[:filter])
-          filter = Regexp.new($1)
-        end
+        @output = Output.new(self) unless @options[:testing]
+        filter = options[:filter]
         type = "#{type}_methods"
         total = if filter
                   suites.inject(0) {|n, suite| n + suite.send(type).grep(filter).size}
@@ -609,17 +637,20 @@ module Test
 
       def update_status(s)
         count = @test_count.to_s(10).rjust(@total_tests.size)
-        del_status_line(false) if @options[:job_status] == :replace
+        del_status_line(false)
         print(@passed_color)
-        add_status("[#{count}/#{@total_tests}]", flush: false)
+        add_status("[#{count}/#{@total_tests}]")
         print(@reset_color)
         add_status(" #{s}")
+        $stdout.print "\r" if @options[:job_status] == :replace and !@verbose
+        $stdout.flush
       end
 
       def _print(s); $stdout.print(s); end
       def succeed; del_status_line; end
 
       def failed(s)
+        return if s and @options[:job_status] != :replace
         sep = "\n"
         @report_count ||= 0
         report.each do |msg|
@@ -660,9 +691,9 @@ module Test
 
         options[:job_status] = nil
 
-        opts.on '--jobs-status [TYPE]', [:normal, :replace],
+        opts.on '--jobs-status [TYPE]', [:normal, :replace, :none],
                 "Show status of jobs every file; Disabled when --jobs isn't specified." do |type|
-          options[:job_status] = type || :normal
+          options[:job_status] = (type || :normal if type != :none)
         end
 
         opts.on '--color[=WHEN]',
@@ -688,7 +719,7 @@ module Test
           when /\A(.*\#.*) = \z/
             runner.new_test($1)
           when /\A(.* s) = \z/
-            runner.add_status(" = "+$1.chomp)
+            runner.add_status(" = #$1")
           when /\A\.+\z/
             runner.succeed
           when /\A[EFS]\z/
@@ -725,6 +756,7 @@ module Test
 
     module GlobOption # :nodoc: all
       @@testfile_prefix = "test"
+      @@testfile_suffix = "test"
 
       def setup_options(parser, options)
         super
@@ -751,7 +783,7 @@ module Test
               next if f.empty?
               path = f
             end
-            if !(match = Dir["#{path}/**/#{@@testfile_prefix}_*.rb"]).empty?
+            if !(match = (Dir["#{path}/**/#{@@testfile_prefix}_*.rb"] + Dir["#{path}/**/*_#{@@testfile_suffix}.rb"]).uniq).empty?
               if reject
                 match.reject! {|n|
                   n[(prefix.length+1)..-1] if prefix
@@ -856,7 +888,7 @@ module Test
               nil
             else
               instance ||= new({})
-              instance.instance_eval(src)
+              instance.instance_eval(src, path)
             end
           end
           instance

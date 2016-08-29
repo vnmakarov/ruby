@@ -42,7 +42,7 @@ class Rational_Test < Test::Unit::TestCase
   end
 
   def test_hash
-    assert_instance_of(Fixnum, Rational(1,2).hash)
+    assert_kind_of(Integer, Rational(1,2).hash)
 
     h = {}
     h[Rational(0)] = 0
@@ -112,9 +112,7 @@ class Rational_Test < Test::Unit::TestCase
     assert_raise(TypeError){Rational(nil)}
     assert_raise(ArgumentError){Rational('')}
     assert_raise_with_message(ArgumentError, /\u{221a 2668}/) {
-      EnvUtil.with_default_external(Encoding::UTF_8) {
-        Rational("\u{221a 2668}")
-      }
+      Rational("\u{221a 2668}")
     }
     assert_raise(TypeError){Rational(Object.new)}
     assert_raise(ArgumentError){Rational()}
@@ -941,4 +939,13 @@ class Rational_Test < Test::Unit::TestCase
   def test_known_bug
   end
 
+  def test_finite_p
+    assert_predicate(1/2r, :finite?)
+    assert_predicate(-1/2r, :finite?)
+  end
+
+  def test_infinite_p
+    assert_nil((1/2r).infinite?)
+    assert_nil((-1/2r).infinite?)
+  end
 end

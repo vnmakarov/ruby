@@ -1,6 +1,9 @@
 # vcs
 require 'fileutils'
 
+# This library is used by several other tools/ scripts to detect the current
+# VCS in use (e.g. SVN, Git) or to interact with that VCS.
+
 ENV.delete('PWD')
 
 unless File.respond_to? :realpath
@@ -73,15 +76,11 @@ class VCS
 
   def self.detect(path)
     @@dirs.each do |dir, klass, pred|
-      if pred ? pred[path, dir] : File.directory?(File.join(path, dir))
-        return klass.new(path)
-      end
-      prev = path
+      curr = path
       loop {
-        curr = File.realpath(File.join(prev, '..'))
-        break if curr == prev	# stop at the root directory
-        return klass.new(path) if File.directory?(File.join(curr, dir))
-        prev = curr
+        return klass.new(curr) if pred ? pred[curr, dir] : File.directory?(File.join(curr, dir))
+        prev, curr = curr, File.realpath(File.join(curr, '..'))
+        break if curr == prev # stop at the root directory
       }
     end
     raise VCS::NotFoundError, "does not seem to be under a vcs: #{path}"
@@ -139,7 +138,7 @@ class VCS
   end
 
   def modified(path)
-    last, changed, modified, *rest = get_revisions(path)
+    _, _, modified, * = get_revisions(path)
     modified
   end
 

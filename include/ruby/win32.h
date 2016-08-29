@@ -127,7 +127,7 @@ typedef unsigned int uintptr_t;
 
 #define WNOHANG -1
 
-#define O_SHARE_DELETE 0x80000000 /* for rb_w32_open(), rb_w32_wopen() */
+#define O_SHARE_DELETE 0x20000000 /* for rb_w32_open(), rb_w32_wopen() */
 
 typedef int clockid_t;
 #define CLOCK_REALTIME  0
@@ -403,8 +403,9 @@ __declspec(dllimport) extern int finite(double);
 
 #define SUFFIX
 
-extern int 	 rb_w32_ftruncate(int fd, off_t length);
-extern int 	 rb_w32_truncate(const char *path, off_t length);
+extern int rb_w32_ftruncate(int fd, off_t length);
+extern int rb_w32_truncate(const char *path, off_t length);
+extern int rb_w32_utruncate(const char *path, off_t length);
 
 #undef HAVE_FTRUNCATE
 #define HAVE_FTRUNCATE 1

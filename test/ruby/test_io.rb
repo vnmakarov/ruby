@@ -1227,7 +1227,7 @@ class TestIO < Test::Unit::TestCase
       t.value
       assert_equal("", s)
     end
-  end
+  end if /cygwin/ !~ RUBY_PLATFORM
 
   def test_read
     pipe(proc do |w|
@@ -1280,7 +1280,7 @@ class TestIO < Test::Unit::TestCase
       t.value
       assert_equal("xxx", s)
     end
-  end
+  end if /cygwin/ !~ RUBY_PLATFORM
 
   def test_write_nonblock
     pipe(proc do |w|
@@ -3173,7 +3173,7 @@ End
       assert_nothing_raised(RuntimeError, bug8669) { str.clear }
       assert_raise(RuntimeError) { t.join }
     }
-  end
+  end if /cygwin/ !~ RUBY_PLATFORM
 
   def test_readpartial_unlocktmp_ensure
     bug8669 = '[ruby-core:56121] [Bug #8669]'
@@ -3187,7 +3187,7 @@ End
       assert_nothing_raised(RuntimeError, bug8669) { str.clear }
       assert_raise(RuntimeError) { t.join }
     }
-  end
+  end if /cygwin/ !~ RUBY_PLATFORM
 
   def test_readpartial_bad_args
     IO.pipe do |r, w|
@@ -3212,7 +3212,7 @@ End
       assert_nothing_raised(RuntimeError, bug8669) { str.clear }
       assert_raise(RuntimeError) { t.join }
     }
-  end
+  end if /cygwin/ !~ RUBY_PLATFORM
 
   def test_exception_at_close
     bug10153 = '[ruby-core:64463] [Bug #10153] exception in close at the end of block'
@@ -3253,7 +3253,7 @@ End
         assert_equal("foo", t1_value)
       EOS
     }
-  end if /mswin|mingw|bccwin/ !~ RUBY_PLATFORM
+  end if /mswin|mingw|bccwin|cygwin/ !~ RUBY_PLATFORM
 
   def test_open_flag
     make_tempfile do |t|
@@ -3276,4 +3276,72 @@ End
       end
     end
   end if File::BINARY != 0
+
+  if RUBY_ENGINE == "ruby" # implementation details
+    def test_foreach_rs_conversion
+      make_tempfile {|t|
+        a = []
+        rs = Struct.new(:count).new(0)
+        def rs.to_str; self.count += 1; "\n"; end
+        IO.foreach(t.path, rs) {|x| a << x }
+        assert_equal(["foo\n", "bar\n", "baz\n"], a)
+        assert_equal(1, rs.count)
+      }
+    end
+
+    def test_foreach_rs_invalid
+      make_tempfile {|t|
+        rs = Object.new
+        def rs.to_str; raise "invalid rs"; end
+        assert_raise(RuntimeError) do
+          IO.foreach(t.path, rs, mode:"w") {}
+        end
+        assert_equal(["foo\n", "bar\n", "baz\n"], IO.foreach(t.path).to_a)
+      }
+    end
+
+    def test_foreach_limit_conversion
+      make_tempfile {|t|
+        a = []
+        lim = Struct.new(:count).new(0)
+        def lim.to_int; self.count += 1; -1; end
+        IO.foreach(t.path, lim) {|x| a << x }
+        assert_equal(["foo\n", "bar\n", "baz\n"], a)
+        assert_equal(1, lim.count)
+      }
+    end
+
+    def test_foreach_limit_invalid
+      make_tempfile {|t|
+        lim = Object.new
+        def lim.to_int; raise "invalid limit"; end
+        assert_raise(RuntimeError) do
+          IO.foreach(t.path, lim, mode:"w") {}
+        end
+        assert_equal(["foo\n", "bar\n", "baz\n"], IO.foreach(t.path).to_a)
+      }
+    end
+
+    def test_readlines_rs_invalid
+      make_tempfile {|t|
+        rs = Object.new
+        def rs.to_str; raise "invalid rs"; end
+        assert_raise(RuntimeError) do
+          IO.readlines(t.path, rs, mode:"w")
+        end
+        assert_equal(["foo\n", "bar\n", "baz\n"], IO.readlines(t.path))
+      }
+    end
+
+    def test_readlines_limit_invalid
+      make_tempfile {|t|
+        lim = Object.new
+        def lim.to_int; raise "invalid limit"; end
+        assert_raise(RuntimeError) do
+          IO.readlines(t.path, lim, mode:"w")
+        end
+        assert_equal(["foo\n", "bar\n", "baz\n"], IO.readlines(t.path))
+      }
+    end
+  end
 end

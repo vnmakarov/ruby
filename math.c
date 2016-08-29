@@ -9,6 +9,9 @@
 
 **********************************************************************/
 
+#ifdef _MSC_VER
+# define _USE_MATH_DEFINES 1
+#endif
 #include "internal.h"
 #include <float.h>
 #include <math.h>
@@ -280,7 +283,14 @@ math_sinh(VALUE obj, VALUE x)
 double
 tanh(double x)
 {
-    return sinh(x) / cosh(x);
+# if defined(HAVE_SINH) && defined(HAVE_COSH)
+    const double c = cosh(x);
+    if (!isinf(c)) return sinh(x) / c;
+# else
+    const double e = exp(x+x);
+    if (!isinf(e)) return (e - 1) / (e + 1);
+# endif
+    return x > 0 ? 1.0 : -1.0;
 }
 #endif
 
@@ -408,6 +418,13 @@ math_exp(VALUE obj, VALUE x)
 # define log10(x) ((x) < 0.0 ? nan("") : log10(x))
 #endif
 
+#ifndef M_LN2
+# define M_LN2 0.693147180559945309417232121458176568
+#endif
+#ifndef M_LN10
+# define M_LN10 2.30258509299404568401799145468436421
+#endif
+
 static double math_log1(VALUE x);
 
 /*
@@ -446,9 +463,8 @@ math_log(int argc, const VALUE *argv, VALUE obj)
 }
 
 static double
-math_log1(VALUE x)
+get_double_rshift(VALUE x, size_t *pnumbits)
 {
-    double d;
     size_t numbits;
 
     if (RB_BIGNUM_TYPE_P(x) && BIGNUM_POSITIVE_P(x) &&
@@ -459,14 +475,22 @@ math_log1(VALUE x)
     else {
 	numbits = 0;
     }
+    *pnumbits = numbits;
+    return Get_Double(x);
+}
 
-    d = Get_Double(x);
+static double
+math_log1(VALUE x)
+{
+    size_t numbits;
+    double d = get_double_rshift(x, &numbits);
+
     /* check for domain error */
     if (d < 0.0) domain_error("log");
     /* check for pole error */
     if (d == 0.0) return -INFINITY;
 
-    return log(d) + numbits * log(2); /* log(d * 2 ** numbits) */
+    return log(d) + numbits * M_LN2; /* log(d * 2 ** numbits) */
 }
 
 #ifndef log2
@@ -501,19 +525,9 @@ extern double log2(double);
 static VALUE
 math_log2(VALUE obj, VALUE x)
 {
-    double d;
     size_t numbits;
+    double d = get_double_rshift(x, &numbits);
 
-    if (RB_BIGNUM_TYPE_P(x) && BIGNUM_POSITIVE_P(x) &&
-            DBL_MAX_EXP <= (numbits = rb_absint_numwords(x, 1, NULL))) {
-        numbits -= DBL_MANT_DIG;
-        x = rb_big_rshift(x, SIZET2NUM(numbits));
-    }
-    else {
-	numbits = 0;
-    }
-
-    d = Get_Double(x);
     /* check for domain error */
     if (d < 0.0) domain_error("log2");
     /* check for pole error */
@@ -541,25 +555,15 @@ math_log2(VALUE obj, VALUE x)
 static VALUE
 math_log10(VALUE obj, VALUE x)
 {
-    double d;
     size_t numbits;
+    double d = get_double_rshift(x, &numbits);
 
-    if (RB_BIGNUM_TYPE_P(x) && BIGNUM_POSITIVE_P(x) &&
-            DBL_MAX_EXP <= (numbits = rb_absint_numwords(x, 1, NULL))) {
-        numbits -= DBL_MANT_DIG;
-        x = rb_big_rshift(x, SIZET2NUM(numbits));
-    }
-    else {
-	numbits = 0;
-    }
-
-    d = Get_Double(x);
     /* check for domain error */
     if (d < 0.0) domain_error("log10");
     /* check for pole error */
     if (d == 0.0) return DBL2NUM(-INFINITY);
 
-    return DBL2NUM(log10(d) + numbits * log10(2)); /* log10(d * 2 ** numbits) */
+    return DBL2NUM(log10(d) + numbits * M_LN2/M_LN10); /* log10(d * 2 ** numbits) */
 }
 
 /*
@@ -591,8 +595,41 @@ math_log10(VALUE obj, VALUE x)
 static VALUE
 math_sqrt(VALUE obj, VALUE x)
 {
+    return rb_math_sqrt(x);
+}
+
+#define f_boolcast(x) ((x) ? Qtrue : Qfalse)
+inline static VALUE
+f_negative_p(VALUE x)
+{
+    if (FIXNUM_P(x))
+        return f_boolcast(FIX2LONG(x) < 0);
+    return rb_funcall(x, '<', 1, INT2FIX(0));
+}
+inline static VALUE
+f_signbit(VALUE x)
+{
+    if (RB_TYPE_P(x, T_FLOAT)) {
+        double f = RFLOAT_VALUE(x);
+        return f_boolcast(!isnan(f) && signbit(f));
+    }
+    return f_negative_p(x);
+}
+
+VALUE
+rb_math_sqrt(VALUE x)
+{
     double d;
 
+    if (RB_TYPE_P(x, T_COMPLEX)) {
+	VALUE neg = f_signbit(RCOMPLEX(x)->imag);
+	double re = Get_Double(RCOMPLEX(x)->real), im;
+	d = Get_Double(rb_complex_abs(x));
+	im = sqrt((d - re) / 2.0);
+	re = sqrt((d + re) / 2.0);
+	if (neg) im = -im;
+	return rb_complex_new(DBL2NUM(re), DBL2NUM(im));
+    }
     d = Get_Double(x);
     /* check for domain error */
     if (d < 0.0) domain_error("sqrt");
@@ -734,14 +771,39 @@ math_erfc(VALUE obj, VALUE x)
     return DBL2NUM(erfc(Get_Double(x)));
 }
 
-#ifdef __MINGW32__
+#if defined __MINGW32__
 static inline double
-mingw_tgamma(const double d)
+ruby_tgamma(const double d)
 {
     const double g = tgamma(d);
-    return (isnan(g) && !signbit(d)) ? INFINITY : g;
+    if (isinf(g)) {
+	if (d == 0.0 && signbit(d)) return -INFINITY;
+    }
+    if (isnan(g)) {
+	if (!signbit(d)) return INFINITY;
+    }
+    return g;
 }
-#define tgamma(d) mingw_tgamma(d)
+#define tgamma(d) ruby_tgamma(d)
+#endif
+
+#if defined LGAMMA_R_PM0_FIX
+static inline double
+ruby_lgamma_r(const double d, int *sign)
+{
+    const double g = lgamma_r(d, sign);
+    if (isinf(g)) {
+	if (d == 0.0 && signbit(d)) {
+	    *sign = -1;
+	    return INFINITY;
+	} else if (d == 0.0 && !signbit(d)) {
+	    *sign = 1;
+	    return INFINITY;
+	}
+    }
+    return g;
+}
+#define lgamma_r(d, sign) ruby_lgamma_r(d, sign)
 #endif
 
 /*

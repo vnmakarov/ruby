@@ -651,6 +651,8 @@ class TestTime < Test::Unit::TestCase
     assert_equal("UTC", t2000.strftime("%Z"))
     assert_equal("%", t2000.strftime("%%"))
     assert_equal("0", t2000.strftime("%-S"))
+    assert_equal("12:00:00 AM", t2000.strftime("%r"))
+    assert_equal("Sat 2000-01-01T00:00:00", t2000.strftime("%3a %FT%T"))
 
     assert_equal("", t2000.strftime(""))
     assert_equal("foo\0bar\x0000\x0000\x0000", t2000.strftime("foo\0bar\0%H\0%M\0%S"))
@@ -678,6 +680,12 @@ class TestTime < Test::Unit::TestCase
     t = Time.at(946684800, 123456.789)
     assert_equal("946684800", t.strftime("%s"))
     assert_equal("946684800", t.utc.strftime("%s"))
+
+    t = Time.at(10000000000000000000000)
+    assert_equal("<<10000000000000000000000>>", t.strftime("<<%s>>"))
+    assert_equal("<<010000000000000000000000>>", t.strftime("<<%24s>>"))
+    assert_equal("<<010000000000000000000000>>", t.strftime("<<%024s>>"))
+    assert_equal("<< 10000000000000000000000>>", t.strftime("<<%_24s>>"))
   end
 
   def test_strftime_zone
@@ -728,6 +736,13 @@ class TestTime < Test::Unit::TestCase
     assert_equal(" 2", t.strftime("%l"))
     assert_equal("02", t.strftime("%0l"))
     assert_equal(" 2", t.strftime("%_l"))
+    assert_equal("MON", t.strftime("%^a"))
+    assert_equal("OCT", t.strftime("%^b"))
+
+    t = get_t2000
+    assert_equal("UTC", t.strftime("%^Z"))
+    assert_equal("utc", t.strftime("%#Z"))
+    assert_equal("SAT JAN  1 00:00:00 2000", t.strftime("%^c"))
   end
 
   def test_strftime_invalid_flags
@@ -747,6 +762,12 @@ class TestTime < Test::Unit::TestCase
     t = Time.utc(-1,1,4)
     assert_equal("-0001", t.strftime("%Y"))
     assert_equal("-0001", t.strftime("%G"))
+
+    t = Time.utc(10000000000000000000000,1,1)
+    assert_equal("<<10000000000000000000000>>", t.strftime("<<%Y>>"))
+    assert_equal("<<010000000000000000000000>>", t.strftime("<<%24Y>>"))
+    assert_equal("<<010000000000000000000000>>", t.strftime("<<%024Y>>"))
+    assert_equal("<< 10000000000000000000000>>", t.strftime("<<%_24Y>>"))
   end
 
   def test_strftime_weeknum
@@ -810,8 +831,7 @@ class TestTime < Test::Unit::TestCase
   end
 
   def test_strftime_too_wide
-    bug4457 = '[ruby-dev:43285]'
-    assert_raise(Errno::ERANGE, bug4457) {Time.now.strftime('%8192z')}
+    assert_equal(8192, Time.now.strftime('%8192z').size)
   end
 
   def test_strfimte_zoneoffset

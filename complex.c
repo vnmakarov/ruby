@@ -110,7 +110,7 @@ f_mul(VALUE x, VALUE y)
     if (FIXNUM_P(y)) {
 	long iy = FIX2LONG(y);
 	if (iy == 0) {
-	    if (FIXNUM_P(x) || RB_TYPE_P(x, T_BIGNUM))
+	    if (RB_INTEGER_TYPE_P(x))
 		return ZERO;
 	}
 	else if (iy == 1)
@@ -119,7 +119,7 @@ f_mul(VALUE x, VALUE y)
     else if (FIXNUM_P(x)) {
 	long ix = FIX2LONG(x);
 	if (ix == 0) {
-	    if (FIXNUM_P(y) || RB_TYPE_P(y, T_BIGNUM))
+	    if (RB_INTEGER_TYPE_P(y))
 		return ZERO;
 	}
 	else if (ix == 1)
@@ -238,13 +238,13 @@ k_numeric_p(VALUE x)
 inline static VALUE
 k_fixnum_p(VALUE x)
 {
-    return f_kind_of_p(x, rb_cFixnum);
+    return FIXNUM_P(x);
 }
 
 inline static VALUE
 k_bignum_p(VALUE x)
 {
-    return f_kind_of_p(x, rb_cBignum);
+    return RB_TYPE_P(x, T_BIGNUM);
 }
 
 inline static VALUE
@@ -270,13 +270,10 @@ k_complex_p(VALUE x)
 #define k_exact_zero_p(x) (k_exact_p(x) && f_zero_p(x))
 
 #define get_dat1(x) \
-    struct RComplex *dat;\
-    dat = ((struct RComplex *)(x))
+    struct RComplex *dat = RCOMPLEX(x)
 
 #define get_dat2(x,y) \
-    struct RComplex *adat, *bdat;\
-    adat = ((struct RComplex *)(x));\
-    bdat = ((struct RComplex *)(y))
+    struct RComplex *adat = RCOMPLEX(x), *bdat = RCOMPLEX(y)
 
 inline static VALUE
 nucomp_s_new_internal(VALUE klass, VALUE real, VALUE imag)
@@ -471,7 +468,7 @@ f_complex_new2(VALUE klass, VALUE x, VALUE y)
 static VALUE
 nucomp_f_complex(int argc, VALUE *argv, VALUE klass)
 {
-    return rb_funcall2(rb_cComplex, id_convert, argc, argv);
+    return rb_funcallv(rb_cComplex, id_convert, argc, argv);
 }
 
 #define imp1(n) \
@@ -538,6 +535,21 @@ m_sin(VALUE x)
 #if 0
 imp1(sqrt)
 
+VALUE
+rb_complex_sqrt(VALUE x)
+{
+    int pos;
+    VALUE a, re, im;
+    get_dat1(x);
+
+    pos = f_positive_p(dat->imag);
+    a = f_abs(x);
+    re = m_sqrt_bang(f_div(f_add(a, dat->real), TWO));
+    im = m_sqrt_bang(f_div(f_sub(a, dat->real), TWO));
+    if (!pos) im = f_negate(im);
+    return f_complex_new2(rb_cComplex, re, im);
+}
+
 static VALUE
 m_sqrt(VALUE x)
 {
@@ -546,18 +558,7 @@ m_sqrt(VALUE x)
 	    return m_sqrt_bang(x);
 	return f_complex_new2(rb_cComplex, ZERO, m_sqrt_bang(f_negate(x)));
     }
-    else {
-	get_dat1(x);
-
-	if (f_negative_p(dat->imag))
-	    return f_conj(m_sqrt(f_conj(x)));
-	else {
-	    VALUE a = f_abs(x);
-	    return f_complex_new2(rb_cComplex,
-				  m_sqrt_bang(f_div(f_add(a, dat->real), TWO)),
-				  m_sqrt_bang(f_div(f_sub(a, dat->real), TWO)));
-	}
-    }
+    return rb_complex_sqrt(x);
 }
 #endif
 
@@ -718,11 +719,11 @@ f_addsub(VALUE self, VALUE other,
  *    Complex(20, 9) + 9.8             #=> (29.8+9i)
  */
 VALUE
-rb_nucomp_add(VALUE self, VALUE other)
+rb_complex_plus(VALUE self, VALUE other)
 {
     return f_addsub(self, other, f_add, '+');
 }
-#define nucomp_add rb_nucomp_add
+#define nucomp_add rb_complex_plus
 
 /*
  * call-seq:
@@ -768,7 +769,7 @@ safe_mul(VALUE a, VALUE b, int az, int bz)
  *    Complex(20, 9) * 9.8             #=> (196.0+88.2i)
  */
 VALUE
-rb_nucomp_mul(VALUE self, VALUE other)
+rb_complex_mul(VALUE self, VALUE other)
 {
     if (k_complex_p(other)) {
 	VALUE real, imag;
@@ -797,7 +798,7 @@ rb_nucomp_mul(VALUE self, VALUE other)
     }
     return rb_num_coerce_bin(self, other, '*');
 }
-#define nucomp_mul rb_nucomp_mul
+#define nucomp_mul rb_complex_mul
 
 inline static VALUE
 f_divide(VALUE self, VALUE other,
@@ -1330,6 +1331,68 @@ nucomp_inspect(VALUE self)
     return s;
 }
 
+/*
+ * call-seq:
+ *    cmp.finite?  ->  true or false
+ *
+ * Returns +true+ if +cmp+'s magnitude is finite number,
+ * oterwise returns +false+.
+ */
+static VALUE
+rb_complex_finite_p(VALUE self)
+{
+    VALUE magnitude = nucomp_abs(self);
+    double f;
+
+    switch (TYPE(magnitude)) {
+    case T_FIXNUM: case T_BIGNUM: case T_RATIONAL:
+	return Qtrue;
+
+    case T_FLOAT:
+	f = RFLOAT_VALUE(magnitude);
+	return isinf(f) ? Qfalse : Qtrue;
+
+    default:
+	return rb_funcall(magnitude, rb_intern("finite?"), 0);
+    }
+}
+
+/*
+ * call-seq:
+ *    cmp.infinite?  ->  nil or 1 or -1
+ *
+ * Returns values corresponding to the value of +cmp+'s magnitude:
+ *
+ * +finite+::    +nil+
+ * ++Infinity+:: ++1+
+ *
+ *  For example:
+ *
+ *     (1+1i).infinite?                   #=> nil
+ *     (Float::INFINITY + 1i).infinite?   #=> 1
+ */
+static VALUE
+rb_complex_infinite_p(VALUE self)
+{
+    VALUE magnitude = nucomp_abs(self);
+    double f;
+
+    switch (TYPE(magnitude)) {
+    case T_FIXNUM: case T_BIGNUM: case T_RATIONAL:
+	return Qnil;
+
+    case T_FLOAT:
+	f = RFLOAT_VALUE(magnitude);
+	if (isinf(f)) {
+	    return INT2FIX(f < 0 ? -1 : 1);
+	}
+	return Qnil;
+
+    default:
+	return rb_funcall(magnitude, rb_intern("infinite?"), 0);
+    }
+}
+
 /* :nodoc: */
 static VALUE
 nucomp_dumper(VALUE self)
@@ -1414,8 +1477,14 @@ rb_complex_set_real(VALUE cmp, VALUE r)
 VALUE
 rb_complex_set_imag(VALUE cmp, VALUE i)
 {
-    RCOMPLEX_SET_REAL(cmp, i);
+    RCOMPLEX_SET_IMAG(cmp, i);
     return cmp;
+}
+
+VALUE
+rb_complex_abs(VALUE cmp)
+{
+    return nucomp_abs(cmp);
 }
 
 /*
@@ -1513,7 +1582,7 @@ nucomp_rationalize(int argc, VALUE *argv, VALUE self)
        rb_raise(rb_eRangeError, "can't convert %"PRIsVALUE" into Rational",
                 self);
     }
-    return rb_funcall2(dat->real, rb_intern("rationalize"), argc, argv);
+    return rb_funcallv(dat->real, rb_intern("rationalize"), argc, argv);
 }
 
 /*
@@ -2225,6 +2294,9 @@ Init_Complex(void)
 
     rb_undef_method(rb_cComplex, "positive?");
     rb_undef_method(rb_cComplex, "negative?");
+
+    rb_define_method(rb_cComplex, "finite?", rb_complex_finite_p, 0);
+    rb_define_method(rb_cComplex, "infinite?", rb_complex_infinite_p, 0);
 
     rb_define_private_method(rb_cComplex, "marshal_dump", nucomp_marshal_dump, 0);
     compat = rb_define_class_under(rb_cComplex, "compatible", rb_cObject); /* :nodoc: */

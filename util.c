@@ -191,6 +191,11 @@ ruby_strtoul(const char *str, char **endptr, int base)
 #   define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 
+#if !defined HAVE_BSD_QSORT_R && defined HAVE_QSORT_S
+# define qsort_r(base, nel, size, arg, cmp) qsort_s(base, nel, size, cmp, arg)
+# define cmp_bsd_qsort cmp_ms_qsort
+# define HAVE_BSD_QSORT_R 1
+#endif
 #if defined HAVE_BSD_QSORT_R
 typedef int (cmpfunc_t)(const void*, const void*, void*);
 
@@ -748,12 +753,12 @@ ruby_getcwd(void)
 #ifdef MALLOC
 extern void *MALLOC(size_t);
 #else
-#define MALLOC malloc
+#define MALLOC xmalloc
 #endif
 #ifdef FREE
 extern void FREE(void*);
 #else
-#define FREE free
+#define FREE xfree
 #endif
 
 #ifndef Omit_Private_Memory
@@ -2140,7 +2145,7 @@ break2:
         for (; c >= '0' && c <= '9'; c = *++s) {
 have_dig:
             nz++;
-            if (nf > DBL_DIG * 4) continue;
+            if (nd > DBL_DIG * 4) continue;
             if (c -= '0') {
                 nf += nz;
                 for (i = 1; i < nz; i++)
@@ -3447,7 +3452,11 @@ ruby_dtoa(double d_, int mode, int ndigits, int *decpt, int *sign, char **rve)
                     ilim = i;
                 *s++ = '0' + (int)L;
                 if (i == ilim) {
+                    double x;
                     if (dval(d) > 0.5 + dval(eps))
+                        goto bump_up;
+                    else if (!isinf(x = d_ * tens[ilim-1] + 0.5) &&
+                             dval(d) > modf(x, &x))
                         goto bump_up;
                     else if (dval(d) < 0.5 - dval(eps)) {
                         while (*--s == '0') ;

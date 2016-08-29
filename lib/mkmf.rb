@@ -250,6 +250,7 @@ module MakeMakefile
 
   OUTFLAG = CONFIG['OUTFLAG']
   COUTFLAG = CONFIG['COUTFLAG']
+  CSRCFLAG = CONFIG['CSRCFLAG']
   CPPOUTFILE = config_string('CPPOUTFILE') {|str| str.sub(/\bconftest\b/, CONFTEST)}
 
   def rm_f(*files)
@@ -748,6 +749,8 @@ int main() {printf("%"PRI_CONFTEST_PREFIX"#{neg ? 'd' : 'u'}\\n", conftest_const
       decltype = proc {|x|"const volatile void *#{x}"}
     when /\)$/
       call = func
+    when nil
+      call = ""
     else
       call = "#{func}()"
       decltype = proc {|x| "void ((*#{x})())"}
@@ -956,7 +959,10 @@ SRC
             break noun = noun.send(meth, *args)
           end
         end
-        msg << " #{pre} #{noun}" unless noun.empty?
+        unless noun.empty?
+          msg << " #{pre} " unless msg.empty?
+          msg << noun
+        end
       end
       msg
     end
@@ -987,9 +993,8 @@ SRC
   # <code>--with-FOOlib</code> configuration option.
   #
   def have_library(lib, func = nil, headers = nil, opt = "", &b)
-    func = "main" if !func or func.empty?
     lib = with_config(lib+'lib', lib)
-    checking_for checking_message(func.funcall_style, LIBARG%lib, opt) do
+    checking_for checking_message(func && func.funcall_style, LIBARG%lib, opt) do
       if COMMON_LIBS.include?(lib)
         true
       else
@@ -1013,10 +1018,9 @@ SRC
   # library paths searched and linked against.
   #
   def find_library(lib, func, *paths, &b)
-    func = "main" if !func or func.empty?
     lib = with_config(lib+'lib', lib)
     paths = paths.collect {|path| path.split(File::PATH_SEPARATOR)}.flatten
-    checking_for checking_message(func.funcall_style, LIBARG%lib) do
+    checking_for checking_message(func && func.funcall_style, LIBARG%lib) do
       libpath = $LIBPATH
       libs = append_library($libs, lib)
       begin
@@ -1551,6 +1555,7 @@ SRC
     end
     file = nil
     path.each do |dir|
+      dir.sub!(/\A"(.*)"\z/m, '\1') if $mswin or $mingw
       return file if executable_file.call(file = File.join(dir, bin))
       if exts
         exts.each {|ext| executable_file.call(ext = file + ext) and return ext}
@@ -1787,7 +1792,7 @@ SRC
     elsif ($PKGCONFIG ||=
            (pkgconfig = with_config("pkg-config", ("pkg-config" unless CROSS_COMPILING))) &&
            find_executable0(pkgconfig) && pkgconfig) and
-        system("#{$PKGCONFIG} --exists #{pkg}")
+        xsystem("#{$PKGCONFIG} --exists #{pkg}")
       # default to pkg-config command
       pkgconfig = $PKGCONFIG
       get = proc {|opt|
@@ -1936,6 +1941,7 @@ VPATH = #{vpath.join(CONFIG['PATH_SEPARATOR'])}
     extconf_h = $extconf_h ? "-DRUBY_EXTCONF_H=\\\"$(RUBY_EXTCONF_H)\\\" " : $defs.join(" ") << " "
     headers = %w[
       $(hdrdir)/ruby.h
+      $(hdrdir)/ruby/backward.h
       $(hdrdir)/ruby/ruby.h
       $(hdrdir)/ruby/defines.h
       $(hdrdir)/ruby/missing.h
@@ -1943,6 +1949,7 @@ VPATH = #{vpath.join(CONFIG['PATH_SEPARATOR'])}
       $(hdrdir)/ruby/st.h
       $(hdrdir)/ruby/subst.h
     ]
+    headers += $headers
     if RULE_SUBST
       headers.each {|h| h.sub!(/.*/, &RULE_SUBST.method(:%))}
     end
@@ -1959,6 +1966,7 @@ LIBRUBYARG_STATIC = #$LIBRUBYARG_STATIC
 empty =
 OUTFLAG = #{OUTFLAG}$(empty)
 COUTFLAG = #{COUTFLAG}$(empty)
+CSRCFLAG = #{CSRCFLAG}$(empty)
 
 RUBY_EXTCONF_H = #{$extconf_h}
 cflags   = #{CONFIG['cflags']}
@@ -2201,11 +2209,15 @@ RULES
     RbConfig.expand(srcdir = srcprefix.dup)
 
     ext = ".#{$OBJEXT}"
-    orig_srcs = Dir[File.join(srcdir, "*.{#{SRC_EXT.join(%q{,})}}")]
+    orig_srcs = Dir[File.join(srcdir, "*.{#{SRC_EXT.join(%q{,})}}")].sort
     if not $objs
       srcs = $srcs || orig_srcs
-      objs = srcs.inject(Hash.new {[]}) {|h, f| h[File.basename(f, ".*") << ext] <<= f; h}
-      $objs = objs.keys
+      $objs = []
+      objs = srcs.inject(Hash.new {[]}) {|h, f|
+        h.key?(o = File.basename(f, ".*") << ext) or $objs << o
+        h[o] <<= f
+        h
+      }
       unless objs.delete_if {|b, f| f.size == 1}.empty?
         dups = objs.sort.map {|b, f|
           "#{b[/.*\./]}{#{f.collect {|n| n[/([^.]+)\z/]}.join(',')}}"
@@ -2278,6 +2290,7 @@ ORIG_SRCS = #{orig_srcs.collect(&File.method(:basename)).join(' ')}
 SRCS = $(ORIG_SRCS) #{(srcs - orig_srcs).collect(&File.method(:basename)).join(' ')}
 OBJS = #{$objs.join(" ")}
 HDRS = #{hdrs.map{|h| '$(srcdir)/' + File.basename(h)}.join(' ')}
+LOCAL_HDRS = #{$headers.join(' ')}
 TARGET = #{target}
 TARGET_NAME = #{target && target[/\A\w+/]}
 TARGET_ENTRY = #{EXPORT_PREFIX || ''}Init_$(TARGET_NAME)
@@ -2292,14 +2305,14 @@ TIMESTAMP_DIR = #{$extout ? '$(extout)/.timestamp' : '.'}
     n = ($extout ? '$(RUBYARCHDIR)/' : '') + '$(TARGET)'
     mfile.print "
 TARGET_SO     = #{($extout ? '$(RUBYARCHDIR)/' : '')}$(DLLIB)
-CLEANLIBS     = #{n}.#{CONFIG['DLEXT']} #{config_string('cleanlibs') {|t| t.gsub(/\$\*/) {n}}}
+CLEANLIBS     = $(TARGET_SO) #{config_string('cleanlibs') {|t| t.gsub(/\$\*/) {n}}}
 CLEANOBJS     = *.#{$OBJEXT} #{config_string('cleanobjs') {|t| t.gsub(/\$\*/, "$(TARGET)#{deffile ? '-$(arch)': ''}")} if target} *.bak
 
 all:    #{$extout ? "install" : target ? "$(DLLIB)" : "Makefile"}
 static: #{$extmk && !$static ? "all" : "$(STATIC_LIB)#{!$extmk ? " install-rb" : ""}"}
 .PHONY: all install static install-so install-rb
 .PHONY: clean clean-so clean-static clean-rb
-"
+" #"
     mfile.print CLEANINGS
     fsep = config_string('BUILD_FILE_SEPARATOR') {|s| s unless s == "/"}
     if fsep
@@ -2321,7 +2334,7 @@ static: #{$extmk && !$static ? "all" : "$(STATIC_LIB)#{!$extmk ? " install-rb" :
     mfile.print("install-so: ")
     if target
       f = "$(DLLIB)"
-      dest = "#{dir}/#{f}"
+      dest = "$(TARGET_SO)"
       stamp = timestamp_file(dir, target_prefix)
       if $extout
         mfile.puts dest
@@ -2433,8 +2446,7 @@ site-install-rb: install-rb
       end
     end
 
-    mfile.print "$(RUBYARCHDIR)/" if $extout
-    mfile.print "$(DLLIB): "
+    mfile.print "$(TARGET_SO): "
     mfile.print "$(DEFFILE) " if makedef
     mfile.print "$(OBJS) Makefile"
     mfile.print " #{timestamp_file('$(RUBYARCHDIR)', target_prefix)}" if $extout
@@ -2519,6 +2531,7 @@ site-install-rb: install-rb
 
     $objs = nil
     $srcs = nil
+    $headers = []
     $libs = ""
     if $enable_shared or RbConfig.expand(config["LIBRUBY"].dup) != RbConfig.expand(config["LIBRUBY_A"].dup)
       $LIBRUBYARG = config['LIBRUBYARG']
@@ -2644,12 +2657,12 @@ MESSAGE
   ##
   # Command which will compile C files in the generated Makefile
 
-  COMPILE_C = config_string('COMPILE_C') || '$(CC) $(INCFLAGS) $(CPPFLAGS) $(CFLAGS) $(COUTFLAG)$@ -c $<'
+  COMPILE_C = config_string('COMPILE_C') || '$(CC) $(INCFLAGS) $(CPPFLAGS) $(CFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$<'
 
   ##
   # Command which will compile C++ files in the generated Makefile
 
-  COMPILE_CXX = config_string('COMPILE_CXX') || '$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) $(COUTFLAG)$@ -c $<'
+  COMPILE_CXX = config_string('COMPILE_CXX') || '$(CXX) $(INCFLAGS) $(CPPFLAGS) $(CXXFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$<'
 
   ##
   # Command which will translate C files to assembler sources in the generated Makefile

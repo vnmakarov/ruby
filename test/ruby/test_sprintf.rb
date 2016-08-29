@@ -177,6 +177,10 @@ class TestSprintf < Test::Unit::TestCase
     assert_equal("x"*10+"     1.0", sprintf("x"*10+"%8.1f", 1r), bug11766)
   end
 
+  def test_rational_precision
+    assert_match(/\A0\.\d{600}\z/, sprintf("%.600f", 600**~60))
+  end
+
   def test_hash
     options = {:capture=>/\d+/}
     assert_equal("with options {:capture=>/\\d+/}", sprintf("with options %p" % options))
@@ -276,6 +280,10 @@ class TestSprintf < Test::Unit::TestCase
     bug3979 = '[ruby-dev:42453]'
     assert_equal("          0x0.000p+0", sprintf("%20.3a",  0), bug3979)
     assert_equal("          0x1.000p+0", sprintf("%20.3a",  1), bug3979)
+  end
+
+  def test_float_prec
+    assert_equal("5.03", sprintf("%.2f",5.025))
   end
 
   BSIZ = 120

@@ -3229,7 +3229,7 @@ fetch_token_in_cc(OnigToken* tok, UChar** src, UChar* end, ScanEnv* env)
 	PUNFETCH;
 	prev = p;
 	num = scan_unsigned_octal_number(&p, end, 3, enc);
-	if (num < 0) return ONIGERR_TOO_BIG_NUMBER;
+	if (num < 0 || 0xff < num) return ONIGERR_TOO_BIG_NUMBER;
 	if (p == prev) {  /* can't read nothing. */
 	  num = 0; /* but, it's not error */
 	}
@@ -6460,7 +6460,10 @@ parse_regexp(Node** top, UChar** src, UChar* end, ScanEnv* env)
     NENCLOSE(np)->regnum = num;
     NENCLOSE(np)->target = *top;
     r = scan_env_set_mem_node(env, num, np);
-    if (r != 0) return r;
+    if (r != 0) {
+	onig_node_free(np);
+	return r;
+    }
     *top = np;
   }
 #endif

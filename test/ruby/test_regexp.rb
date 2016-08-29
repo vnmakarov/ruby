@@ -111,8 +111,10 @@ class TestRegexp < Test::Unit::TestCase
     assert_equal('#<MatchData "&amp; y" foo:"amp" foo:"y">',
       /&(?<foo>.*?); (?<foo>y)/.match("aaa &amp; yyy").inspect)
 
-    /(?<id>[A-Za-z_]+)/ =~ "!abc"
-    assert_equal("abc", Regexp.last_match(:id))
+    /(?<_id>[A-Za-z_]+)/ =~ "!abc"
+    assert_not_nil(Regexp.last_match)
+    assert_equal("abc", Regexp.last_match(1))
+    assert_equal("abc", Regexp.last_match(:_id))
 
     /a/ =~ "b" # doesn't match.
     assert_equal(nil, Regexp.last_match)
@@ -372,15 +374,46 @@ class TestRegexp < Test::Unit::TestCase
 
   def test_match_aref
     m = /(...)(...)(...)(...)?/.match("foobarbaz")
+    assert_equal("foobarbaz", m[0])
     assert_equal("foo", m[1])
+    assert_equal("foo", m[-4])
+    assert_nil(m[-1])
+    assert_nil(m[-11])
+    assert_nil(m[-11, 1])
+    assert_nil(m[-11..1])
+    assert_nil(m[5])
+    assert_nil(m[9])
     assert_equal(["foo", "bar", "baz"], m[1..3])
+    assert_equal(["foo", "bar", "baz"], m[1, 3])
+    assert_equal([], m[3..1])
+    assert_equal([], m[3, 0])
+    assert_equal(nil, m[3, -1])
+    assert_equal(nil, m[9, 1])
+    assert_equal(["baz"], m[3, 1])
+    assert_equal(["baz", nil], m[3, 5])
     assert_nil(m[5])
     assert_raise(IndexError) { m[:foo] }
+    assert_raise(TypeError) { m[nil] }
   end
 
   def test_match_values_at
+    idx = Object.new
+    def idx.to_int; 2; end
     m = /(...)(...)(...)(...)?/.match("foobarbaz")
     assert_equal(["foo", "bar", "baz"], m.values_at(1, 2, 3))
+    assert_equal(["foo", "bar", "baz"], m.values_at(1..3))
+    assert_equal(["foo", "bar", "baz", nil, nil], m.values_at(1..5))
+    assert_equal([], m.values_at(3..1))
+    assert_equal([nil, nil, nil, nil, nil], m.values_at(5..9))
+    assert_equal(["bar"], m.values_at(idx))
+    assert_raise(RangeError){ m.values_at(-11..1) }
+    assert_raise(TypeError){ m.values_at(nil) }
+
+    m = /(?<a>\d+) *(?<op>[+\-*\/]) *(?<b>\d+)/.match("1 + 2")
+    assert_equal(["1", "2", "+"], m.values_at(:a, 'b', :op))
+    assert_equal(["+"], m.values_at(idx))
+    assert_raise(TypeError){ m.values_at(nil) }
+    assert_raise(IndexError){ m.values_at(:foo) }
   end
 
   def test_match_string
@@ -406,6 +439,9 @@ class TestRegexp < Test::Unit::TestCase
     assert_equal(arg_encoding_none, Regexp.new("", nil, "N").options)
 
     assert_raise(RegexpError) { Regexp.new(")(") }
+    assert_raise(RegexpError) { Regexp.new('[\\40000000000') }
+    assert_raise(RegexpError) { Regexp.new('[\\600000000000.') }
+    assert_raise(RegexpError) { Regexp.new("((?<v>))\\g<0>") }
   end
 
   def test_unescape
@@ -491,6 +527,29 @@ class TestRegexp < Test::Unit::TestCase
     $_ = "abc"; assert_equal(1, ~/bc/)
     $_ = "abc"; assert_nil(~/d/)
     $_ = nil; assert_nil(~/./)
+  end
+
+  def test_match_p
+    /backref/ =~ 'backref'
+    # must match here, but not in a separate method, e.g., assert_send,
+    # to check if $~ is affected or not.
+    assert_equal(false, //.match?(nil))
+    assert_equal(true, //.match?(""))
+    assert_equal(true, /.../.match?(:abc))
+    assert_raise(TypeError) { /.../.match?(Object.new) }
+    assert_equal(true, /b/.match?('abc'))
+    assert_equal(true, /b/.match?('abc', 1))
+    assert_equal(true, /../.match?('abc', 1))
+    assert_equal(true, /../.match?('abc', -2))
+    assert_equal(false, /../.match?("abc", -4))
+    assert_equal(false, /../.match?("abc", 4))
+    assert_equal(true, /../n.match?("\u3042" + '\x', 1))
+    assert_equal(true, /\z/.match?(""))
+    assert_equal(true, /\z/.match?("abc"))
+    assert_equal(true, /R.../.match?("Ruby"))
+    assert_equal(false, /R.../.match?("Ruby", 1))
+    assert_equal(false, /P.../.match?("Ruby"))
+    assert_equal('backref', $&)
   end
 
   def test_eqq
@@ -586,9 +645,7 @@ class TestRegexp < Test::Unit::TestCase
     key = "\u{3042}"
     [Encoding::UTF_8, Encoding::Shift_JIS, Encoding::EUC_JP].each do |enc|
       idx = key.encode(enc)
-      EnvUtil.with_default_external(enc) do
-        assert_raise_with_message(IndexError, /#{idx}/, bug10877) {$~[idx]}
-      end
+      assert_raise_with_message(IndexError, /#{idx}/, bug10877) {$~[idx]}
     end
   end
 
@@ -1013,7 +1070,7 @@ class TestRegexp < Test::Unit::TestCase
   def test_error_message_on_failed_conversion
     bug7539 = '[ruby-core:50733]'
     assert_equal false, /x/=== 42
-    assert_raise_with_message(TypeError, 'no implicit conversion of Fixnum into String', bug7539) {
+    assert_raise_with_message(TypeError, 'no implicit conversion of Integer into String', bug7539) {
       Regexp.quote(42)
     }
   end
@@ -1024,6 +1081,9 @@ class TestRegexp < Test::Unit::TestCase
     conds = {"xy"=>true, "yx"=>true, "xx"=>false, "yy"=>false}
     assert_match_each(/\A((x)|(y))(?(2)y|x)\z/, conds, bug8583)
     assert_match_each(/\A((?<x>x)|(?<y>y))(?(<x>)y|x)\z/, conds, bug8583)
+
+    bug12418 = '[ruby-core:75694] [Bug #12418]'
+    assert_raise(RegexpError, bug12418){ Regexp.new('(0?0|(?(5)||)|(?(5)||))?') }
   end
 
   def test_options_in_look_behind

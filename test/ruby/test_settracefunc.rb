@@ -35,9 +35,9 @@ class TestSetTraceFunc < Test::Unit::TestCase
                  events.shift)
     assert_equal(["line", 4, __method__, self.class],
                  events.shift)
-    assert_equal(["c-call", 4, :+, Fixnum],
+    assert_equal(["c-call", 4, :+, Integer],
                  events.shift)
-    assert_equal(["c-return", 4, :+, Fixnum],
+    assert_equal(["c-return", 4, :+, Integer],
                  events.shift)
     assert_equal(["line", 5, __method__, self.class],
                  events.shift)
@@ -73,9 +73,9 @@ class TestSetTraceFunc < Test::Unit::TestCase
                  events.shift)
     assert_equal(["line", 5, :add, self.class],
                  events.shift)
-    assert_equal(["c-call", 5, :+, Fixnum],
+    assert_equal(["c-call", 5, :+, Integer],
                  events.shift)
-    assert_equal(["c-return", 5, :+, Fixnum],
+    assert_equal(["c-return", 5, :+, Integer],
                  events.shift)
     assert_equal(["return", 6, :add, self.class],
                  events.shift)
@@ -353,8 +353,8 @@ class TestSetTraceFunc < Test::Unit::TestCase
      ["c-return", 8, :new, Class],
      ["call", 4, :foo, ThreadTraceInnerClass],
      ["line", 5, :foo, ThreadTraceInnerClass],
-     ["c-call", 5, :+, Fixnum],
-     ["c-return", 5, :+, Fixnum],
+     ["c-call", 5, :+, Integer],
+     ["c-return", 5, :+, Integer],
      ["return", 6, :foo, ThreadTraceInnerClass],
      ["line", 9, __method__, self.class],
      ["c-call", 9, :set_trace_func, Thread]].each do |e|
@@ -768,10 +768,10 @@ class TestSetTraceFunc < Test::Unit::TestCase
     # pp events
     # expected_events =
     [[:b_call, :test_tracepoint_block, TestSetTraceFunc, TestSetTraceFunc, nil],
-     [:c_call, :times, Integer, Fixnum, nil],
+     [:c_call, :times, Integer, Integer, nil],
      [:b_call, :test_tracepoint_block, TestSetTraceFunc, TestSetTraceFunc, nil],
      [:b_return, :test_tracepoint_block, TestSetTraceFunc, TestSetTraceFunc, 3],
-     [:c_return, :times, Integer, Fixnum, 1],
+     [:c_return, :times, Integer, Integer, 1],
      [:call, :method_for_test_tracepoint_block, TestSetTraceFunc, TestSetTraceFunc, nil],
      [:b_call, :test_tracepoint_block, TestSetTraceFunc, TestSetTraceFunc, nil],
      [:b_return, :test_tracepoint_block, TestSetTraceFunc, TestSetTraceFunc, 4],
@@ -1397,6 +1397,25 @@ class TestSetTraceFunc < Test::Unit::TestCase
       dummy << (1) + (2)
     }
     assert_equal [__LINE__ - 3, __LINE__ - 2], lines, 'Bug #10449'
+  end
+
+  def test_elsif_line_event
+    bug10763 = '[ruby-core:67720] [Bug #10763]'
+    lines = []
+    line = nil
+
+    TracePoint.new(:line){|tp|
+      next unless target_thread?
+      lines << tp.lineno if line
+    }.enable{
+      line = __LINE__
+      if !line
+        1
+      elsif line
+        2
+      end
+    }
+    assert_equal [line+1, line+3, line+4], lines, bug10763
   end
 
   class Bug10724

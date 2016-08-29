@@ -3,24 +3,31 @@
  * included by eval.c
  */
 
-static void
-warn_printf(const char *fmt, ...)
-{
-    VALUE str;
-    va_list args;
-
-    va_init_list(args, fmt);
-    str = rb_vsprintf(fmt, args);
-    va_end(args);
-    rb_write_error_str(str);
-}
-
+#ifdef HAVE_BUILTIN___BUILTIN_CONSTANT_P
+#define warn_print(x) RB_GNUC_EXTENSION_BLOCK(	\
+    (__builtin_constant_p(x)) ? 		\
+	rb_write_error2((x), (long)strlen(x)) : \
+	rb_write_error(x)			\
+)
+#else
 #define warn_print(x) rb_write_error(x)
+#endif
 #define warn_print2(x,l) rb_write_error2((x),(l))
 #define warn_print_str(x) rb_write_error_str(x)
 
+static VALUE error_pos_str(void);
+
 static void
 error_pos(void)
+{
+    VALUE str = error_pos_str();
+    if (!NIL_P(str)) {
+	warn_print_str(str);
+    }
+}
+
+static VALUE
+error_pos_str(void)
 {
     int sourceline;
     VALUE sourcefile = rb_source_location(&sourceline);
@@ -28,16 +35,18 @@ error_pos(void)
     if (sourcefile) {
 	ID caller_name;
 	if (sourceline == 0) {
-	    warn_printf("%"PRIsVALUE, sourcefile);
+	    return rb_sprintf("%"PRIsVALUE": ", sourcefile);
 	}
 	else if ((caller_name = rb_frame_callee()) != 0) {
-	    warn_printf("%"PRIsVALUE":%d:in `%"PRIsVALUE"'", sourcefile, sourceline,
-			rb_id2str(caller_name));
+	    return rb_sprintf("%"PRIsVALUE":%d:in `%"PRIsVALUE"': ",
+			      sourcefile, sourceline,
+			      rb_id2str(caller_name));
 	}
 	else {
-	    warn_printf("%"PRIsVALUE":%d", sourcefile, sourceline);
+	    return rb_sprintf("%"PRIsVALUE":%d: ", sourcefile, sourceline);
 	}
     }
+    return Qnil;
 }
 
 static VALUE
@@ -57,8 +66,6 @@ rb_get_backtrace(VALUE info)
     return get_backtrace(info);
 }
 
-VALUE rb_exc_set_backtrace(VALUE exc, VALUE bt);
-
 static void
 set_backtrace(VALUE info, VALUE bt)
 {
@@ -77,15 +84,20 @@ set_backtrace(VALUE info, VALUE bt)
 }
 
 static void
-error_print(void)
+error_print(rb_thread_t *th)
+{
+    rb_threadptr_error_print(th, th->errinfo);
+}
+
+void
+rb_threadptr_error_print(rb_thread_t *th, VALUE errinfo)
 {
     volatile VALUE errat = Qundef;
-    rb_thread_t *th = GET_THREAD();
-    VALUE errinfo = th->errinfo;
     int raised_flag = th->raised_flag;
     volatile VALUE eclass = Qundef, e = Qundef;
     const char *volatile einfo;
     volatile long elen;
+    VALUE mesg;
 
     if (NIL_P(errinfo))
 	return;
@@ -104,27 +116,13 @@ error_print(void)
     else {
 	goto no_message;
     }
-    if (NIL_P(errat)) {
-	int line;
-	const char *file = rb_source_loc(&line);
-	if (!file)
-	    warn_printf("%d", line);
-	else if (!line)
-	    warn_printf("%s", file);
-	else
-	    warn_printf("%s:%d", file, line);
-    }
-    else if (RARRAY_LEN(errat) == 0) {
+    if (NIL_P(errat) || RARRAY_LEN(errat) == 0 ||
+	NIL_P(mesg = RARRAY_AREF(errat, 0))) {
 	error_pos();
     }
     else {
-	VALUE mesg = RARRAY_AREF(errat, 0);
-
-	if (NIL_P(mesg))
-	    error_pos();
-	else {
-	    warn_print_str(mesg);
-	}
+	warn_print_str(mesg);
+	warn_print(": ");
     }
 
     eclass = CLASS_OF(errinfo);
@@ -140,19 +138,18 @@ error_print(void)
 	elen = 0;
     }
     if (eclass == rb_eRuntimeError && elen == 0) {
-	warn_print(": unhandled exception\n");
+	warn_print("unhandled exception\n");
     }
     else {
 	VALUE epath;
 
 	epath = rb_class_name(eclass);
 	if (elen == 0) {
-	    warn_print(": ");
 	    warn_print_str(epath);
 	    warn_print("\n");
 	}
 	else {
-	    char *tail = 0;
+	    const char *tail = 0;
 	    long len = elen;
 
 	    if (RSTRING_PTR(epath)[0] == '#')
@@ -161,7 +158,6 @@ error_print(void)
 		len = tail - einfo;
 		tail++;		/* skip newline */
 	    }
-	    warn_print(": ");
 	    warn_print_str(tail ? rb_str_subseq(e, 0, len) : e);
 	    if (epath) {
 		warn_print(" (");
@@ -187,11 +183,11 @@ error_print(void)
 	for (i = 1; i < len; i++) {
 	    VALUE line = RARRAY_AREF(errat, i);
 	    if (RB_TYPE_P(line, T_STRING)) {
-		warn_printf("\tfrom %"PRIsVALUE"\n", line);
+		warn_print_str(rb_sprintf("\tfrom %"PRIsVALUE"\n", line));
 	    }
 	    if (skip && i == TRACE_HEAD && len > TRACE_MAX) {
-		warn_printf("\t ... %ld levels...\n",
-			    len - TRACE_HEAD - TRACE_TAIL);
+		warn_print_str(rb_sprintf("\t ... %ld levels...\n",
+					  len - TRACE_HEAD - TRACE_TAIL));
 		i = len - TRACE_TAIL;
 	    }
 	}
@@ -205,7 +201,7 @@ error_print(void)
 void
 ruby_error_print(void)
 {
-    error_print();
+    error_print(GET_THREAD());
 }
 
 #define undef_mesg_for(v, k) rb_fstring_cstr("undefined"v" method `%1$s' for "k" `%2$s'")
@@ -282,31 +278,31 @@ error_handle(int ex)
 
       case TAG_RETURN:
 	error_pos();
-	warn_print(": unexpected return\n");
+	warn_print("unexpected return\n");
 	break;
       case TAG_NEXT:
 	error_pos();
-	warn_print(": unexpected next\n");
+	warn_print("unexpected next\n");
 	break;
       case TAG_BREAK:
 	error_pos();
-	warn_print(": unexpected break\n");
+	warn_print("unexpected break\n");
 	break;
       case TAG_REDO:
 	error_pos();
-	warn_print(": unexpected redo\n");
+	warn_print("unexpected redo\n");
 	break;
       case TAG_RETRY:
 	error_pos();
-	warn_print(": retry outside of rescue clause\n");
+	warn_print("retry outside of rescue clause\n");
 	break;
       case TAG_THROW:
 	/* TODO: fix me */
 	error_pos();
-	warn_printf(": unexpected throw\n");
+	warn_print("unexpected throw\n");
 	break;
       case TAG_RAISE: {
-	VALUE errinfo = GET_THREAD()->errinfo;
+	VALUE errinfo = th->errinfo;
 	if (rb_obj_is_kind_of(errinfo, rb_eSystemExit)) {
 	    status = sysexit_status(errinfo);
 	}
@@ -315,12 +311,12 @@ error_handle(int ex)
 	    /* no message when exiting by signal */
 	}
 	else {
-	    error_print();
+	    error_print(th);
 	}
 	break;
       }
       case TAG_FATAL:
-	error_print();
+	error_print(th);
 	break;
       default:
 	unknown_longjmp_status(ex);

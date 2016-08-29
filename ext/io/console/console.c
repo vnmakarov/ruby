@@ -14,6 +14,12 @@
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
 #endif
+#ifndef RARRAY_CONST_PTR
+# define RARRAY_CONST_PTR(ary) RARRAY_PTR(ary)
+#endif
+#ifndef HAVE_RB_FUNCALLV
+# define rb_funcallv rb_funcall2
+#endif
 
 #if defined HAVE_TERMIOS_H
 # include <termios.h>
@@ -95,6 +101,10 @@ rb_f_send(int argc, VALUE *argv, VALUE recv)
     }
     return rb_funcallv(recv, vid, argc, argv);
 }
+#endif
+
+#ifndef HAVE_RB_SYM2STR
+# define rb_sym2str(sym) rb_id2str(SYM2ID(sym))
 #endif
 
 typedef struct {
@@ -378,7 +388,7 @@ console_set_cooked(VALUE io)
 static VALUE
 getc_call(VALUE io)
 {
-    return rb_funcall2(io, id_getc, 0, 0);
+    return rb_funcallv(io, id_getc, 0, 0);
 }
 
 /*
@@ -718,15 +728,17 @@ console_key_pressed_p(VALUE io, VALUE k)
     }
     else {
 	const struct vktable *t;
+	const char *kn;
 	if (SYMBOL_P(k)) {
 	    k = rb_sym2str(k);
+	    kn = RSTRING_PTR(k);
 	}
 	else {
-	    StringValueCStr(k);
+	    kn = StringValuePtr(k);
 	}
-	t = console_win32_vk(RSTRING_PTR(k), RSTRING_LEN(k));
+	t = console_win32_vk(kn, RSTRING_LEN(k));
 	if (!t || (vk = (short)t->vk) == -1) {
-	    rb_raise(rb_eArgError, "unknown virtual key code: %"PRIsVALUE, k);
+	    rb_raise(rb_eArgError, "unknown virtual key code: % "PRIsVALUE, k);
 	}
     }
     return GetKeyState(vk) & 0x80 ? Qtrue : Qfalse;
@@ -844,7 +856,7 @@ console_dev(int argc, VALUE *argv, VALUE klass)
 static VALUE
 io_getch(int argc, VALUE *argv, VALUE io)
 {
-    return rb_funcall2(io, id_getc, argc, argv);
+    return rb_funcallv(io, id_getc, argc, argv);
 }
 
 #if ENABLE_IO_GETPASS

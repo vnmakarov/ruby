@@ -12,9 +12,6 @@
 # This program is free software. You can re-distribute and/or
 # modify this program under the same terms as Ruby itself.
 #
-# NOTE: You can find Japanese version of this document at:
-# http://www.ruby-lang.org/ja/man/html/net_smtp.html
-#
 # $Id$
 #
 # See Net::SMTP for documentation.
@@ -926,7 +923,15 @@ module Net
 
     private
 
+    def validate_line(line)
+      # A bare CR or LF is not allowed in RFC5321.
+      if /[\r\n]/ =~ line
+        raise ArgumentError, "A line must not contain CR or LF"
+      end
+    end
+
     def getok(reqline)
+      validate_line reqline
       res = critical {
         @socket.writeline reqline
         recv_response()
@@ -936,6 +941,7 @@ module Net
     end
 
     def get_response(reqline)
+      validate_line reqline
       @socket.writeline reqline
       recv_response()
     end

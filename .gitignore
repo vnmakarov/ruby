@@ -3,10 +3,12 @@
 *-*-*.lib
 *.a
 *.bak
+*.bc
 *.dSYM
 *.dmyh
 *.dylib
 *.elc
+*.i
 *.inc
 *.log
 *.o
@@ -14,6 +16,7 @@
 *.orig
 *.pdb
 *.rej
+*.s
 *.sav
 *.swp
 *.yarb
@@ -103,7 +106,7 @@ y.tab.c
 /rubicon
 /ruby
 /ruby-runner
-/ruby-runner.c
+/ruby-runner.h
 /ruby-man.rd.gz
 /sizes.c
 /test.rb
@@ -163,9 +166,6 @@ y.tab.c
 /ext/socket/constants.h
 /ext/socket/constdefs.h
 /ext/socket/constdefs.c
-
-# /ext/tk/
-/ext/tk/config_list
 
 # /gems
 /gems/*.gem

@@ -135,12 +135,6 @@ bitset_is_empty(BitSetRef bs)
 
 #ifdef ONIG_DEBUG
 static int
-onig_is_prelude(void)
-{
-    return !rb_const_defined(rb_cThread, rb_intern_const("MUTEX_FOR_THREAD_EXCLUSIVE"));
-}
-
-static int
 bitset_on_num(BitSetRef bs)
 {
   int i, n;
@@ -1592,13 +1586,15 @@ compile_length_tree(Node* node, regex_t* reg)
 
   case NT_ALT:
     {
-      int n;
-
-      n = r = 0;
+      int n = 0;
+      len = 0;
       do {
-	r += compile_length_tree(NCAR(node), reg);
-	n++;
+        r = compile_length_tree(NCAR(node), reg);
+        if (r < 0) return r;
+        len += r;
+        n++;
       } while (IS_NOT_NULL(node = NCDR(node)));
+      r = len;
       r += (SIZE_OP_PUSH + SIZE_OP_JUMP) * (n - 1);
     }
     break;
@@ -1874,17 +1870,16 @@ noname_disable_map(Node** plink, GroupNumRemap* map, int* counter)
 	  (*counter)++;
 	  map[en->regnum].new_val = *counter;
 	  en->regnum = *counter;
-	  r = noname_disable_map(&(en->target), map, counter);
 	}
-	else {
+	else if (en->regnum != 0) {
 	  *plink = en->target;
 	  en->target = NULL_NODE;
 	  onig_node_free(node);
 	  r = noname_disable_map(plink, map, counter);
+	  break;
 	}
       }
-      else
-	r = noname_disable_map(&(en->target), map, counter);
+      r = noname_disable_map(&(en->target), map, counter);
     }
     break;
 
@@ -5268,7 +5263,7 @@ optimize_node_left(Node* node, NodeOptInfo* opt, OptEnv* env)
 
   default:
 #ifdef ONIG_DEBUG
-    if (!onig_is_prelude()) fprintf(stderr, "optimize_node_left: undefined node type %d\n",
+    fprintf(stderr, "optimize_node_left: undefined node type %d\n",
 	    NTYPE(node));
 #endif
     r = ONIGERR_TYPE_BUG;
@@ -5358,7 +5353,7 @@ set_sub_anchor(regex_t* reg, OptAncInfo* anc)
   reg->sub_anchor |= anc->right_anchor & ANCHOR_END_LINE;
 }
 
-#ifdef ONIG_DEBUG
+#if defined(ONIG_DEBUG_COMPILE) || defined(ONIG_DEBUG_MATCH)
 static void print_optimize_info(FILE* f, regex_t* reg);
 #endif
 
@@ -5414,7 +5409,7 @@ set_optimize_info_from_tree(Node* node, regex_t* reg, ScanEnv* scan_env)
   }
 
 #if defined(ONIG_DEBUG_COMPILE) || defined(ONIG_DEBUG_MATCH)
-  if (!onig_is_prelude()) print_optimize_info(stderr, reg);
+  print_optimize_info(stderr, reg);
 #endif
   return r;
 }
@@ -5468,7 +5463,9 @@ static void print_enc_string(FILE* fp, OnigEncoding enc,
 
   fprintf(fp, "/ (%s)\n", enc->name);
 }
+#endif	/* ONIG_DEBUG */
 
+#if defined(ONIG_DEBUG_COMPILE) || defined(ONIG_DEBUG_MATCH)
 static void
 print_distance_range(FILE* f, OnigDistance a, OnigDistance b)
 {
@@ -5586,7 +5583,7 @@ print_optimize_info(FILE* f, regex_t* reg)
     }
   }
 }
-#endif /* ONIG_DEBUG */
+#endif /* ONIG_DEBUG_COMPILE || ONIG_DEBUG_MATCH */
 
 
 extern void
@@ -5687,7 +5684,7 @@ onig_chain_reduce(regex_t* reg)
   }
 }
 
-#ifdef ONIG_DEBUG
+#ifdef ONIG_DEBUG_COMPILE
 static void print_compiled_byte_code_list P_((FILE* f, regex_t* reg));
 #endif
 #ifdef ONIG_DEBUG_PARSE_TREE
@@ -5715,7 +5712,7 @@ onig_compile(regex_t* reg, const UChar* pattern, const UChar* pattern_end,
   reg->state = ONIG_STATE_COMPILING;
 
 #ifdef ONIG_DEBUG
-  if (!onig_is_prelude()) print_enc_string(stderr, reg->enc, pattern, pattern_end);
+  print_enc_string(stderr, reg->enc, pattern, pattern_end);
 #endif
 
   if (reg->alloc == 0) {
@@ -5742,9 +5739,7 @@ onig_compile(regex_t* reg, const UChar* pattern, const UChar* pattern_end,
 #ifdef ONIG_DEBUG_PARSE_TREE
 # if 0
   fprintf(stderr, "ORIGINAL PARSE TREE:\n");
-  if (!onig_is_prelude()) {
-    print_tree(stderr, root);
-  }
+  print_tree(stderr, root);
 # endif
 #endif
 
@@ -5784,7 +5779,7 @@ onig_compile(regex_t* reg, const UChar* pattern, const UChar* pattern_end,
   if (r != 0) goto err_unset;
 
 #ifdef ONIG_DEBUG_PARSE_TREE
-  if (!onig_is_prelude()) print_tree(stderr, root);
+  print_tree(stderr, root);
 #endif
 
   reg->capture_history  = scan_env.capture_history;
@@ -5864,9 +5859,9 @@ onig_compile(regex_t* reg, const UChar* pattern, const UChar* pattern_end,
 
 #ifdef ONIG_DEBUG_COMPILE
 #ifdef USE_NAMED_GROUP
-  if (!onig_is_prelude()) onig_print_names(stderr, reg);
+  onig_print_names(stderr, reg);
 #endif
-  if (!onig_is_prelude()) print_compiled_byte_code_list(stderr, reg);
+  print_compiled_byte_code_list(stderr, reg);
 #endif
 
  end:
@@ -6062,7 +6057,7 @@ onig_end(void)
   exec_end_call_list();
 
 #ifdef ONIG_DEBUG_STATISTICS
-  if (!onig_is_prelude()) onig_print_statistics(stderr);
+  onig_print_statistics(stderr);
 #endif
 
 #ifdef USE_SHARED_CCLASS_TABLE
@@ -6277,15 +6272,17 @@ op2arg_type(int opcode)
   return ARG_SPECIAL;
 }
 
+#ifdef ONIG_DEBUG_PARSE_TREE
 static void
 Indent(FILE* f, int indent)
 {
   int i;
   for (i = 0; i < indent; i++) putc(' ', f);
 }
+#endif /* ONIG_DEBUG_PARSE_TREE */
 
 static void
-p_string(FILE* f, int len, UChar* s)
+p_string(FILE* f, ptrdiff_t len, UChar* s)
 {
   fputs(":", f);
   while (len-- > 0) { fputc(*s++, f); }
@@ -6550,6 +6547,7 @@ onig_print_compiled_byte_code(FILE* f, UChar* bp, UChar* bpend, UChar** nextp,
   if (nextp) *nextp = bp;
 }
 
+#ifdef ONIG_DEBUG_COMPILE
 static void
 print_compiled_byte_code_list(FILE* f, regex_t* reg)
 {
@@ -6571,7 +6569,9 @@ print_compiled_byte_code_list(FILE* f, regex_t* reg)
 
   fprintf(f, "\n");
 }
+#endif /* ONIG_DEBUG_COMPILE */
 
+#ifdef ONIG_DEBUG_PARSE_TREE
 static void
 print_indent_tree(FILE* f, Node* node, int indent)
 {
@@ -6743,12 +6743,11 @@ print_indent_tree(FILE* f, Node* node, int indent)
 
   fflush(f);
 }
-#endif /* ONIG_DEBUG */
 
-#ifdef ONIG_DEBUG_PARSE_TREE
 static void
 print_tree(FILE* f, Node* node)
 {
   print_indent_tree(f, node, 0);
 }
-#endif
+#endif /* ONIG_DEBUG_PARSE_TREE */
+#endif /* ONIG_DEBUG */

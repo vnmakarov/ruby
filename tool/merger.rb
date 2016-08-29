@@ -3,8 +3,10 @@
 exec "${RUBY-ruby}" "-x" "$0" "$@" && [ ] if false
 #!ruby
 # This needs ruby 1.9 and subversion.
-# run this in a repository to commit.
+# As a Ruby committer, run this in an SVN repository
+# to commit a change.
 
+require 'fileutils'
 require 'tempfile'
 
 $repos = 'svn+ssh://svn@ci.ruby-lang.org/ruby/'
@@ -47,7 +49,7 @@ def version
   open 'version.h', 'rb' do |f|
     f.each_line do |l|
       case l
-      when /^#define RUBY_VERSION "(\d)\.(\d)\.(\d)"$/
+      when /^#define RUBY_VERSION "(\d+)\.(\d+)\.(\d+)"$/
         v = $~.captures
       when /^#define RUBY_PATCHLEVEL (-?\d+)$/
         p = $1
@@ -167,12 +169,19 @@ when nil, "-h", "--help"
   exit
 else
   system 'svn up'
+  system 'ruby tool/file2lastrev.rb --revision.h . > revision.tmp'
+  system 'tool/ifchange "--timestamp=.revision.time" "revision.h" "revision.tmp"'
+  FileUtils.rm_f('revision.tmp')
 
-  if /--ticket=(.*)/ =~ ARGV[0]
-    tickets = $1.split(/,/).map{|num| " [Backport ##{num}]"}
+  case ARGV[0]
+  when /--ticket=(.*)/
+    tickets = $1.split(/,/).map{|num| " [Backport ##{num}]"}.join
     ARGV.shift
+  when /merge revision\(s\) ([\d,\-]+):( \[.*)/
+    tickets = $2
+    ARGV[0] = $1
   else
-    tickets = []
+    tickets = ''
   end
 
   q = $repos + (ARGV[1] || default_merge_branch)
@@ -237,7 +246,7 @@ else
 
   version_up
   f = Tempfile.new 'merger.rb'
-  f.printf "merge revision(s) %s:%s\n", revstr, tickets.join
+  f.printf "merge revision(s) %s:%s\n", revstr, tickets
   f.write log_svn
   f.flush
   f.close

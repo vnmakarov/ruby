@@ -48,8 +48,8 @@ class Complex_Test < Test::Unit::TestCase
   end
 
   def test_hash
-    assert_instance_of(Fixnum, Complex(1,2).hash)
-    assert_instance_of(Fixnum, Complex(1.0,2.0).hash)
+    assert_kind_of(Integer, Complex(1,2).hash)
+    assert_kind_of(Integer, Complex(1.0,2.0).hash)
 
     h = {}
     h[Complex(0)] = 0
@@ -824,6 +824,30 @@ class Complex_Test < Test::Unit::TestCase
     if (1.0/0).infinite?
       assert_nothing_raised{(1.0/0).to_c}
     end
+  end
+
+  def test_finite_p
+    assert_predicate(1+1i, :finite?)
+    assert_predicate(1-1i, :finite?)
+    assert_predicate(-1+1i, :finite?)
+    assert_predicate(-1-1i, :finite?)
+    assert_not_predicate(Float::INFINITY + 1i, :finite?)
+    assert_not_predicate(Complex(1, Float::INFINITY), :finite?)
+  end
+
+  def test_infinite_p
+    assert_nil((1+1i).infinite?)
+    assert_nil((1-1i).infinite?)
+    assert_nil((-1+1i).infinite?)
+    assert_nil((-1-1i).infinite?)
+    assert_equal(1, (Float::INFINITY + 1i).infinite?)
+    assert_equal(1, (Float::INFINITY - 1i).infinite?)
+    assert_equal(1, (-Float::INFINITY + 1i).infinite?)
+    assert_equal(1, (-Float::INFINITY - 1i).infinite?)
+    assert_equal(1, Complex(1, Float::INFINITY).infinite?)
+    assert_equal(1, Complex(-1, Float::INFINITY).infinite?)
+    assert_equal(1, Complex(1, -Float::INFINITY).infinite?)
+    assert_equal(1, Complex(-1, -Float::INFINITY).infinite?)
   end
 
   def test_supp

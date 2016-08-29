@@ -48,14 +48,13 @@ end
 #
 
 module SecureRandom
-  if defined? OpenSSL::Random
+  if defined?(OpenSSL::Random) && /mswin|mingw/ !~ RUBY_PLATFORM
     def self.gen_random(n)
       @pid = 0 unless defined?(@pid)
       pid = $$
       unless @pid == pid
         now = Process.clock_gettime(Process::CLOCK_REALTIME, :nanosecond)
-        ary = [now, @pid, pid]
-        OpenSSL::Random.random_add(ary.join("").to_s, 0.0)
+        OpenSSL::Random.random_add([now, @pid, pid].join(""), 0.0)
         seed = Random.raw_seed(16)
         if (seed)
           OpenSSL::Random.random_add(seed, 16)
@@ -75,6 +74,10 @@ module SecureRandom
       end
       ret
     end
+  end
+
+  class << self
+    alias bytes gen_random
   end
 end
 

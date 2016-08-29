@@ -16,10 +16,6 @@ module CGI::Util
   #   string = CGI::unescape("%27Stop%21%27+said+Fred")
   #      # => "'Stop!' said Fred"
   def unescape(string,encoding=@@accept_charset)
-    _unescape(string,encoding)
-  end
-
-  private def _unescape(string, encoding)
     str=string.tr('+', ' ').b.gsub(/((?:%[0-9a-fA-F]{2})+)/) do |m|
       [m.delete('%')].pack('H*')
     end.force_encoding(encoding)
@@ -35,7 +31,7 @@ module CGI::Util
     '>' => '&gt;',
   }
 
-  # Escape special characters in HTML, namely &\"<>
+  # Escape special characters in HTML, namely '&\"<>
   #   CGI::escapeHTML('Usage: foo "bar" <baz>')
   #      # => "Usage: foo &quot;bar&quot; &lt;baz&gt;"
   def escapeHTML(string)

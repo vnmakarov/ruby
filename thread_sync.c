@@ -14,9 +14,11 @@ typedef struct rb_mutex_struct {
     int allow_trap;
 } rb_mutex_t;
 
+#if defined(HAVE_WORKING_FORK)
 static void rb_mutex_abandon_all(rb_mutex_t *mutexes);
 static void rb_mutex_abandon_keeping_mutexes(rb_thread_t *th);
 static void rb_mutex_abandon_locking_mutex(rb_thread_t *th);
+#endif
 static const char* rb_mutex_unlock_th(rb_mutex_t *mutex, rb_thread_t volatile *th);
 
 /*
@@ -378,6 +380,7 @@ rb_mutex_unlock(VALUE self)
     return self;
 }
 
+#if defined(HAVE_WORKING_FORK)
 static void
 rb_mutex_abandon_keeping_mutexes(rb_thread_t *th)
 {
@@ -412,6 +415,7 @@ rb_mutex_abandon_all(rb_mutex_t *mutexes)
 	mutex->next_mutex = 0;
     }
 }
+#endif
 
 static VALUE
 rb_mutex_sleep_forever(VALUE time)
@@ -632,7 +636,13 @@ queue_do_close(VALUE self, int is_szq)
 /*
  *  Document-class: Queue
  *
- *  This class provides a way to synchronize communication between threads.
+ *  The Queue class implements multi-producer, multi-consumer queues.
+ *  It is especially useful in threaded programming when information
+ *  must be exchanged safely between multiple threads. The Queue class
+ *  implements all the required locking semantics.
+ *
+ *  The class implements FIFO type of queue. In a FIFO queue, the first
+ *  tasks added are the first retrieved.
  *
  *  Example:
  *
@@ -1147,7 +1157,7 @@ static VALUE
 do_sleep(VALUE args)
 {
     struct sleep_call *p = (struct sleep_call *)args;
-    return rb_funcall2(p->mutex, id_sleep, 1, &p->timeout);
+    return rb_funcallv(p->mutex, id_sleep, 1, &p->timeout);
 }
 
 static VALUE
@@ -1215,6 +1225,12 @@ undumpable(VALUE obj)
 {
     rb_raise(rb_eTypeError, "can't dump %"PRIsVALUE, rb_obj_class(obj));
     UNREACHABLE;
+}
+
+static void
+alias_global_const(const char *name, VALUE klass)
+{
+    rb_define_const(rb_cObject, name, klass);
 }
 
 static void
@@ -1298,12 +1314,8 @@ Init_thread_sync(void)
     rb_define_method(rb_cConditionVariable, "signal", rb_condvar_signal, 0);
     rb_define_method(rb_cConditionVariable, "broadcast", rb_condvar_broadcast, 0);
 
-#define ALIAS_GLOBAL_CONST(name) do {	              \
-	ID id = rb_intern_const(#name);	              \
-	if (!rb_const_defined_at(rb_cObject, id)) {   \
-	    rb_const_set(rb_cObject, id, rb_c##name); \
-	}                                             \
-    } while (0)
+#define ALIAS_GLOBAL_CONST(name) \
+    alias_global_const(#name, rb_c##name)
 
     ALIAS_GLOBAL_CONST(Mutex);
     ALIAS_GLOBAL_CONST(Queue);

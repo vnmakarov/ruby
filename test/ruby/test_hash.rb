@@ -742,6 +742,28 @@ class TestHash < Test::Unit::TestCase
     assert_instance_of(Hash, h)
   end
 
+  def test_to_h_instance_variable
+    @h.instance_variable_set(:@x, 42)
+    h = @h.to_h
+    if @cls == Hash
+      assert_equal(42, h.instance_variable_get(:@x))
+    else
+      assert_not_send([h, :instance_variable_defined?, :@x])
+    end
+  end
+
+  def test_to_h_default_value
+    @h.default = :foo
+    h = @h.to_h
+    assert_equal(:foo, h.default)
+  end
+
+  def test_to_h_default_proc
+    @h.default_proc = ->(_,k) {"nope#{k}"}
+    h = @h.to_h
+    assert_equal("nope42", h[42])
+  end
+
   def test_nil_to_h
     h = nil.to_h
     assert_equal({}, h)
@@ -804,7 +826,7 @@ class TestHash < Test::Unit::TestCase
   def test_create
     assert_equal({1=>2, 3=>4}, @cls[[[1,2],[3,4]]])
     assert_raise(ArgumentError) { Hash[0, 1, 2] }
-    assert_warning(/wrong element type Fixnum at 1 /) {@cls[[[1, 2], 3]]}
+    assert_warning(/wrong element type Integer at 1 /) {@cls[[[1, 2], 3]]}
     bug5406 = '[ruby-core:39945]'
     assert_raise(ArgumentError, bug5406) { @cls[[[1, 2], [3, 4, 5]]] }
     assert_equal({1=>2, 3=>4}, @cls[1,2,3,4])
@@ -1391,6 +1413,27 @@ class TestHash < Test::Unit::TestCase
     }
 
     assert_equal([10, 20, 30], [1, 2, 3].map(&h))
+  end
+
+  def test_map_v
+    x = @cls[a: 1, b: 2, c: 3]
+    y = x.map_v {|v| v ** 2 }
+    assert_equal([1, 4, 9], y.values_at(:a, :b, :c))
+    assert_not_same(x, y)
+
+    y = x.map_v.with_index {|v, i| "#{v}.#{i}" }
+    assert_equal(%w(1.0  2.1  3.2), y.values_at(:a, :b, :c))
+  end
+
+  def test_map_v_bang
+    x = @cls[a: 1, b: 2, c: 3]
+    y = x.map_v! {|v| v ** 2 }
+    assert_equal([1, 4, 9], y.values_at(:a, :b, :c))
+    assert_same(x, y)
+
+    x = @cls[a: 1, b: 2, c: 3]
+    y = x.map_v!.with_index {|v, i| "#{v}.#{i}" }
+    assert_equal(%w(1.0  2.1  3.2), y.values_at(:a, :b, :c))
   end
 
   class TestSubHash < TestHash

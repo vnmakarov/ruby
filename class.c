@@ -547,6 +547,7 @@ Init_class_hierarchy(void)
 {
     rb_cBasicObject = boot_defclass("BasicObject", 0);
     rb_cObject = boot_defclass("Object", rb_cBasicObject);
+    rb_gc_register_mark_object(rb_cObject);
 
     /* resolve class name ASAP for order-independence */
     rb_class_name(rb_cObject);
@@ -630,12 +631,12 @@ rb_class_inherited(VALUE super, VALUE klass)
  * Defines a top-level class.
  * \param name   name of the class
  * \param super  a class from which the new class will derive.
- *               NULL means \c Object class.
  * \return the created class
  * \throw TypeError if the constant name \a name is already taken but
  *                  the constant is not a \c Class.
- * \throw NameError if the class is already defined but the class can not
+ * \throw TypeError if the class is already defined but the class can not
  *                  be reopened because its superclass is not \a super.
+ * \throw ArgumentError if the \a super is NULL.
  * \post top-level constant named \a name refers the returned class.
  *
  * \note if a class named \a name is already defined and its superclass is
@@ -660,7 +661,7 @@ rb_define_class(const char *name, VALUE super)
 	return klass;
     }
     if (!super) {
-	rb_warn("no super class for `%s', Object assumed", name);
+	rb_raise(rb_eArgError, "no super class for `%s'", name);
     }
     klass = rb_define_class_id(id, super);
     rb_vm_add_root_module(id, klass);
@@ -732,8 +733,8 @@ rb_define_class_id_under(VALUE outer, ID id, VALUE super)
 	return klass;
     }
     if (!super) {
-	rb_warn("no super class for `%"PRIsVALUE"::%"PRIsVALUE"', Object assumed",
-		rb_class_path(outer), rb_id2str(id));
+	rb_raise(rb_eArgError, "no super class for `%"PRIsVALUE"::%"PRIsVALUE"'",
+		 rb_class_path(outer), rb_id2str(id));
     }
     klass = rb_define_class_id(id, super);
     rb_set_class_path_string(klass, outer, rb_id2str(id));
@@ -854,11 +855,7 @@ rb_include_module(VALUE klass, VALUE module)
     int changed = 0;
 
     rb_frozen_class_p(klass);
-
-    if (!RB_TYPE_P(module, T_MODULE)) {
-	Check_Type(module, T_MODULE);
-    }
-
+    Check_Type(module, T_MODULE);
     OBJ_INFECT(klass, module);
 
     changed = include_modules_at(klass, RCLASS_ORIGIN(klass), module, TRUE);
@@ -970,9 +967,7 @@ rb_prepend_module(VALUE klass, VALUE module)
     int changed = 0;
 
     rb_frozen_class_p(klass);
-
     Check_Type(module, T_MODULE);
-
     OBJ_INFECT(klass, module);
 
     origin = RCLASS_ORIGIN(klass);
@@ -1754,141 +1749,6 @@ rb_obj_basic_to_s_p(VALUE obj)
     return 0;
 }
 
-#include <stdarg.h>
-
-int
-rb_scan_args(int argc, const VALUE *argv, const char *fmt, ...)
-{
-    int i;
-    const char *p = fmt;
-    VALUE *var;
-    va_list vargs;
-    int f_var = 0, f_hash = 0, f_block = 0;
-    int n_lead = 0, n_opt = 0, n_trail = 0, n_mand;
-    int argi = 0;
-    VALUE hash = Qnil;
-
-    if (ISDIGIT(*p)) {
-	n_lead = *p - '0';
-	p++;
-	if (ISDIGIT(*p)) {
-	    n_opt = *p - '0';
-	    p++;
-	    if (ISDIGIT(*p)) {
-		n_trail = *p - '0';
-		p++;
-		goto block_arg;
-	    }
-	}
-    }
-    if (*p == '*') {
-	f_var = 1;
-	p++;
-	if (ISDIGIT(*p)) {
-	    n_trail = *p - '0';
-	    p++;
-	}
-    }
-  block_arg:
-    if (*p == ':') {
-	f_hash = 1;
-	p++;
-    }
-    if (*p == '&') {
-	f_block = 1;
-	p++;
-    }
-    if (*p != '\0') {
-	rb_fatal("bad scan arg format: %s", fmt);
-    }
-    n_mand = n_lead + n_trail;
-
-    if (argc < n_mand)
-	goto argc_error;
-
-    va_start(vargs, fmt);
-
-    /* capture an option hash - phase 1: pop */
-    if (f_hash && n_mand < argc) {
-	VALUE last = argv[argc - 1];
-
-	if (NIL_P(last)) {
-	    /* nil is taken as an empty option hash only if it is not
-	       ambiguous; i.e. '*' is not specified and arguments are
-	       given more than sufficient */
-	    if (!f_var && n_mand + n_opt < argc)
-		argc--;
-	}
-	else {
-	    hash = rb_check_hash_type(last);
-	    if (!NIL_P(hash)) {
-		VALUE opts = rb_extract_keywords(&hash);
-		if (!hash) argc--;
-		hash = opts ? opts : Qnil;
-	    }
-	}
-    }
-    /* capture leading mandatory arguments */
-    for (i = n_lead; i-- > 0; ) {
-	var = va_arg(vargs, VALUE *);
-	if (var) *var = argv[argi];
-	argi++;
-    }
-    /* capture optional arguments */
-    for (i = n_opt; i-- > 0; ) {
-	var = va_arg(vargs, VALUE *);
-	if (argi < argc - n_trail) {
-	    if (var) *var = argv[argi];
-	    argi++;
-	}
-	else {
-	    if (var) *var = Qnil;
-	}
-    }
-    /* capture variable length arguments */
-    if (f_var) {
-	int n_var = argc - argi - n_trail;
-
-	var = va_arg(vargs, VALUE *);
-	if (0 < n_var) {
-	    if (var) *var = rb_ary_new4(n_var, &argv[argi]);
-	    argi += n_var;
-	}
-	else {
-	    if (var) *var = rb_ary_new();
-	}
-    }
-    /* capture trailing mandatory arguments */
-    for (i = n_trail; i-- > 0; ) {
-	var = va_arg(vargs, VALUE *);
-	if (var) *var = argv[argi];
-	argi++;
-    }
-    /* capture an option hash - phase 2: assignment */
-    if (f_hash) {
-	var = va_arg(vargs, VALUE *);
-	if (var) *var = hash;
-    }
-    /* capture iterator block */
-    if (f_block) {
-	var = va_arg(vargs, VALUE *);
-	if (rb_block_given_p()) {
-	    *var = rb_block_proc();
-	}
-	else {
-	    *var = Qnil;
-	}
-    }
-    va_end(vargs);
-
-    if (argi < argc) {
-      argc_error:
-	rb_error_arity(argc, n_mand, f_var ? UNLIMITED_ARGUMENTS : n_mand + n_opt);
-    }
-
-    return argc;
-}
-
 VALUE
 rb_keyword_error_new(const char *error, VALUE keys)
 {
@@ -2015,6 +1875,134 @@ rb_get_kwargs(VALUE keyword_hash, const ID *table, int required, int optional, V
     }
     return j;
 #undef extract_kwarg
+}
+
+#undef rb_scan_args
+int
+rb_scan_args(int argc, const VALUE *argv, const char *fmt, ...)
+{
+    int i;
+    const char *p = fmt;
+    VALUE *var;
+    va_list vargs;
+    int f_var = 0, f_hash = 0, f_block = 0;
+    int n_lead = 0, n_opt = 0, n_trail = 0, n_mand;
+    int argi = 0;
+    VALUE hash = Qnil;
+
+    if (ISDIGIT(*p)) {
+	n_lead = *p - '0';
+	p++;
+	if (ISDIGIT(*p)) {
+	    n_opt = *p - '0';
+	    p++;
+	}
+    }
+    if (*p == '*') {
+	f_var = 1;
+	p++;
+    }
+    if (ISDIGIT(*p)) {
+	n_trail = *p - '0';
+	p++;
+    }
+    if (*p == ':') {
+	f_hash = 1;
+	p++;
+    }
+    if (*p == '&') {
+	f_block = 1;
+	p++;
+    }
+    if (*p != '\0') {
+	rb_fatal("bad scan arg format: %s", fmt);
+    }
+    n_mand = n_lead + n_trail;
+
+    if (argc < n_mand)
+	goto argc_error;
+
+    va_start(vargs, fmt);
+
+    /* capture an option hash - phase 1: pop */
+    if (f_hash && n_mand < argc) {
+	VALUE last = argv[argc - 1];
+
+	if (NIL_P(last)) {
+	    /* nil is taken as an empty option hash only if it is not
+	       ambiguous; i.e. '*' is not specified and arguments are
+	       given more than sufficient */
+	    if (!f_var && n_mand + n_opt < argc)
+		argc--;
+	}
+	else {
+	    hash = rb_check_hash_type(last);
+	    if (!NIL_P(hash)) {
+		VALUE opts = rb_extract_keywords(&hash);
+		if (!hash) argc--;
+		hash = opts ? opts : Qnil;
+	    }
+	}
+    }
+    /* capture leading mandatory arguments */
+    for (i = n_lead; i-- > 0; ) {
+	var = va_arg(vargs, VALUE *);
+	if (var) *var = argv[argi];
+	argi++;
+    }
+    /* capture optional arguments */
+    for (i = n_opt; i-- > 0; ) {
+	var = va_arg(vargs, VALUE *);
+	if (argi < argc - n_trail) {
+	    if (var) *var = argv[argi];
+	    argi++;
+	}
+	else {
+	    if (var) *var = Qnil;
+	}
+    }
+    /* capture variable length arguments */
+    if (f_var) {
+	int n_var = argc - argi - n_trail;
+
+	var = va_arg(vargs, VALUE *);
+	if (0 < n_var) {
+	    if (var) *var = rb_ary_new4(n_var, &argv[argi]);
+	    argi += n_var;
+	}
+	else {
+	    if (var) *var = rb_ary_new();
+	}
+    }
+    /* capture trailing mandatory arguments */
+    for (i = n_trail; i-- > 0; ) {
+	var = va_arg(vargs, VALUE *);
+	if (var) *var = argv[argi];
+	argi++;
+    }
+    /* capture an option hash - phase 2: assignment */
+    if (f_hash) {
+	var = va_arg(vargs, VALUE *);
+	if (var) *var = hash;
+    }
+    /* capture iterator block */
+    if (f_block) {
+	var = va_arg(vargs, VALUE *);
+	if (rb_block_given_p()) {
+	    *var = rb_block_proc();
+	}
+	else {
+	    *var = Qnil;
+	}
+    }
+    va_end(vargs);
+
+    if (argi < argc) {
+      argc_error:
+	rb_error_arity(argc, n_mand, f_var ? UNLIMITED_ARGUMENTS : n_mand + n_opt);
+    }
+
+    return argc;
 }
 
 int

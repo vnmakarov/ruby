@@ -36,11 +36,9 @@
 
 /* Make alloca work the best possible way.  */
 #ifdef __GNUC__
-# ifndef atarist
-#  ifndef alloca
-#   define alloca __builtin_alloca
-#  endif
-# endif	/* atarist */
+# ifndef alloca
+#  define alloca __builtin_alloca
+# endif
 #else
 # ifdef HAVE_ALLOCA_H
 #  include <alloca.h>
@@ -812,8 +810,7 @@ next_line:
 
 #include <stdarg.h>
 #define MAXNBUF (sizeof(intmax_t) * CHAR_BIT + 1)
-extern int rb_toupper(int c);
-#define    toupper(c)  rb_toupper(c)
+static inline int toupper(int c) { return ('A' <= c && c <= 'Z') ? (c&0x5f) : c; }
 #define    hex2ascii(hex)  (hex2ascii_data[hex])
 char const hex2ascii_data[] = "0123456789abcdefghijklmnopqrstuvwxyz";
 static inline int imax(int a, int b) { return (a > b ? a : b); }

@@ -271,11 +271,9 @@ class TestEval < Test::Unit::TestCase
     eval 'while false; bad = true; print "foo\n" end'
     assert(!bad)
 
-    assert(eval('TRUE'))
+    assert(eval('Object'))
     assert(eval('true'))
-    assert(!eval('NIL'))
     assert(!eval('nil'))
-    assert(!eval('FALSE'))
     assert(!eval('false'))
 
     $foo = 'assert(true)'
@@ -402,10 +400,10 @@ class TestEval < Test::Unit::TestCase
 
   def test_cvar_scope_with_instance_eval
     # TODO: check
-    Fixnum.class_eval "@@test_cvar_scope_with_instance_eval = 1" # depends on [ruby-dev:24229]
+    Integer.class_eval "@@test_cvar_scope_with_instance_eval = 1" # depends on [ruby-dev:24229]
     @@test_cvar_scope_with_instance_eval = 4
     assert_equal(4, 1.instance_eval("@@test_cvar_scope_with_instance_eval"), "[ruby-dev:24223]")
-    Fixnum.__send__(:remove_class_variable, :@@test_cvar_scope_with_instance_eval)
+    Integer.__send__(:remove_class_variable, :@@test_cvar_scope_with_instance_eval)
   end
 
   def test_eval_and_define_method

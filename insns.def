@@ -58,7 +58,7 @@ getlocal
 (VALUE val)
 {
     int i, lev = (int)level;
-    VALUE *ep = GET_EP();
+    const VALUE *ep = GET_EP();
 
     /* optimized insns generated for level == (0|1) in defs/opt_operand.def */
     for (i = 0; i < lev; i++) {
@@ -81,13 +81,13 @@ setlocal
 ()
 {
     int i, lev = (int)level;
-    VALUE *ep = GET_EP();
+    const VALUE *ep = GET_EP();
 
     /* optimized insns generated for level == (0|1) in defs/opt_operand.def */
     for (i = 0; i < lev; i++) {
 	ep = GET_PREV_EP(ep);
     }
-    *(ep - idx) = val;
+    vm_env_write(ep, -(int)idx, val);
 }
 
 /**
@@ -365,13 +365,7 @@ concatstrings
 (...)
 (VALUE val) // inc += 1 - num;
 {
-    rb_num_t i = num - 1;
-
-    val = rb_str_resurrect(TOPN(i));
-    while (i-- > 0) {
-	const VALUE v = TOPN(i);
-	rb_str_append_literal(val, v);
-    }
+    val = rb_str_concat_literals(num, &TOPN(num-1));
     POPN(num);
 }
 
@@ -423,7 +417,7 @@ toregexp
     rb_num_t i;
     const VALUE ary = rb_ary_tmp_new(cnt);
     for (i = 0; i < cnt; i++) {
-        rb_ary_store(ary, cnt-i-1, TOPN(i));
+	rb_ary_store(ary, cnt-i-1, TOPN(i));
     }
     POPN(cnt);
     val = rb_reg_new_ary(ary, (int)opt);
@@ -796,7 +790,7 @@ checkkeyword
 	ret = (bits & (0x01 << keyword_index)) ? Qfalse : Qtrue;
     }
     else {
-	assert(RB_TYPE_P(kw_bits, T_HASH));
+	VM_ASSERT(RB_TYPE_P(kw_bits, T_HASH));
 	ret = rb_hash_has_key(kw_bits, INT2FIX(keyword_index)) ? Qfalse : Qtrue;
     }
 }
@@ -815,24 +809,24 @@ trace
     rb_event_flag_t flag = (rb_event_flag_t)nf;
 
     if (RUBY_DTRACE_METHOD_ENTRY_ENABLED() ||
-        RUBY_DTRACE_METHOD_RETURN_ENABLED() ||
-        RUBY_DTRACE_CMETHOD_ENTRY_ENABLED() ||
-        RUBY_DTRACE_CMETHOD_RETURN_ENABLED()) {
+	RUBY_DTRACE_METHOD_RETURN_ENABLED() ||
+	RUBY_DTRACE_CMETHOD_ENTRY_ENABLED() ||
+	RUBY_DTRACE_CMETHOD_RETURN_ENABLED()) {
 
-        switch (flag) {
-          case RUBY_EVENT_CALL:
-            RUBY_DTRACE_METHOD_ENTRY_HOOK(th, 0, 0);
-            break;
-          case RUBY_EVENT_C_CALL:
-            RUBY_DTRACE_CMETHOD_ENTRY_HOOK(th, 0, 0);
-            break;
-          case RUBY_EVENT_RETURN:
-            RUBY_DTRACE_METHOD_RETURN_HOOK(th, 0, 0);
-            break;
-          case RUBY_EVENT_C_RETURN:
-            RUBY_DTRACE_CMETHOD_RETURN_HOOK(th, 0, 0);
-            break;
-        }
+	switch (flag) {
+	  case RUBY_EVENT_CALL:
+	    RUBY_DTRACE_METHOD_ENTRY_HOOK(th, 0, 0);
+	    break;
+	  case RUBY_EVENT_C_CALL:
+	    RUBY_DTRACE_CMETHOD_ENTRY_HOOK(th, 0, 0);
+	    break;
+	  case RUBY_EVENT_RETURN:
+	    RUBY_DTRACE_METHOD_RETURN_HOOK(th, 0, 0);
+	    break;
+	  case RUBY_EVENT_C_RETURN:
+	    RUBY_DTRACE_CMETHOD_RETURN_HOOK(th, 0, 0);
+	    break;
+	}
     }
 
     EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0 /* id and klass are resolved at callee */,
@@ -871,10 +865,6 @@ defineclass
 		     rb_obj_class(super));
 	}
 
-	if (super == Qnil) {
-	    super = rb_cObject;
-	}
-
 	vm_check_if_namespace(cbase);
 
 	/* find klass */
@@ -887,7 +877,7 @@ defineclass
 		rb_raise(rb_eTypeError, "%"PRIsVALUE" is not a class", rb_id2str(id));
 	    }
 
-	    if (super != rb_cObject) {
+	    if (VM_DEFINECLASS_HAS_SUPERCLASS_P(flags)) {
 		VALUE tmp;
 		tmp = rb_class_real(RCLASS_SUPER(klass));
 
@@ -898,6 +888,9 @@ defineclass
 	    }
 	}
 	else {
+	    if (!VM_DEFINECLASS_HAS_SUPERCLASS_P(flags)) {
+		super = rb_cObject;
+	    }
 	    /* new class declaration */
 	    klass = rb_define_class_id(id, super);
 	    rb_set_class_path_string(klass, cbase, rb_id2str(id));
@@ -939,11 +932,11 @@ defineclass
     rb_iseq_check(class_iseq);
 
     /* enter scope */
-    vm_push_frame(th, class_iseq, VM_FRAME_MAGIC_CLASS, klass,
-		  VM_ENVVAL_BLOCK_PTR(GET_BLOCK_PTR()),
+    vm_push_frame(th, class_iseq, VM_FRAME_MAGIC_CLASS | VM_ENV_FLAG_LOCAL, klass,
+		  GET_BLOCK_HANDLER(),
 		  (VALUE)vm_cref_push(th, klass, NULL, FALSE),
 		  class_iseq->body->iseq_encoded, GET_SP(),
-		  class_iseq->body->local_size,
+		  class_iseq->body->local_table_size,
 		  class_iseq->body->stack_max);
     RESTORE_REGS();
     NEXT_INSN();
@@ -986,6 +979,74 @@ opt_str_freeze
     }
 }
 
+DEFINE_INSN
+opt_newarray_max
+(rb_num_t num)
+(...)
+(VALUE val) // inc += 1 - num;
+{
+#define id_cmp  idCmp
+    if (BASIC_OP_UNREDEFINED_P(BOP_MAX, ARRAY_REDEFINED_OP_FLAG)) {
+	if (num == 0) {
+	    val = Qnil;
+	}
+	else {
+	    struct cmp_opt_data cmp_opt = { 0, 0 };
+	    VALUE result = Qundef;
+	    rb_num_t i = num - 1;
+	    result = TOPN(i);
+	    while (i-- > 0) {
+		const VALUE v = TOPN(i);
+		if (result == Qundef || OPTIMIZED_CMP(v, result, cmp_opt) > 0) {
+		    result = v;
+		}
+	    }
+	    val = result == Qundef ? Qnil : result;
+	}
+	POPN(num);
+    }
+    else {
+	VALUE ary = rb_ary_new4((long)num, STACK_ADDR_FROM_TOP(num));
+	val = rb_funcall(ary, idMax, 0);
+	POPN(num);
+    }
+#undef id_cmp
+}
+
+DEFINE_INSN
+opt_newarray_min
+(rb_num_t num)
+(...)
+(VALUE val) // inc += 1 - num;
+{
+#define id_cmp  idCmp
+    if (BASIC_OP_UNREDEFINED_P(BOP_MIN, ARRAY_REDEFINED_OP_FLAG)) {
+	if (num == 0) {
+	    val = Qnil;
+	}
+	else {
+	    struct cmp_opt_data cmp_opt = { 0, 0 };
+	    VALUE result = Qundef;
+	    rb_num_t i = num - 1;
+	    result = TOPN(i);
+	    while (i-- > 0) {
+		const VALUE v = TOPN(i);
+		if (result == Qundef || OPTIMIZED_CMP(v, result, cmp_opt) < 0) {
+		    result = v;
+		}
+	    }
+	    val = result == Qundef ? Qnil : result;
+	}
+	POPN(num);
+    }
+    else {
+	VALUE ary = rb_ary_new4((long)num, STACK_ADDR_FROM_TOP(num));
+	val = rb_funcall(ary, idMin, 0);
+	POPN(num);
+    }
+#undef id_cmp
+}
+
 /**
   @c optimize
   @e Invoke method without block
@@ -998,7 +1059,7 @@ opt_send_without_block
 (VALUE val) // inc += -ci->orig_argc;
 {
     struct rb_calling_info calling;
-    calling.blockptr = NULL;
+    calling.block_handler = VM_BLOCK_HANDLER_NONE;
     vm_search_method(ci, cc, calling.recv = TOPN(calling.argc = ci->orig_argc));
     CALL_METHOD(&calling, ci, cc);
 }
@@ -1036,7 +1097,7 @@ invokeblock
 {
     struct rb_calling_info calling;
     calling.argc = ci->orig_argc;
-    calling.blockptr = NULL;
+    calling.block_handler = VM_BLOCK_HANDLER_NONE;
     calling.recv = GET_SELF();
 
     val = vm_invoke_block(th, GET_CFP(), &calling, ci);
@@ -1067,9 +1128,7 @@ leave
 
     RUBY_VM_CHECK_INTS(th);
 
-    if (UNLIKELY(VM_FRAME_TYPE_FINISH_P(GET_CFP()))) {
-	vm_pop_frame(th);
-
+    if (vm_pop_frame(th, GET_CFP(), GET_EP())) {
 #if OPT_CALL_THREADED_CODE
 	th->retval = val;
 	return 0;
@@ -1078,7 +1137,6 @@ leave
 #endif
     }
     else {
-	vm_pop_frame(th);
 	RESTORE_REGS();
     }
 }
@@ -1283,9 +1341,8 @@ opt_case_dispatch
       case T_STRING:
 	if (BASIC_OP_UNREDEFINED_P(BOP_EQQ,
 				   SYMBOL_REDEFINED_OP_FLAG |
-				   FIXNUM_REDEFINED_OP_FLAG |
+				   INTEGER_REDEFINED_OP_FLAG |
 				   FLOAT_REDEFINED_OP_FLAG |
-				   BIGNUM_REDEFINED_OP_FLAG |
 				   NIL_REDEFINED_OP_FLAG    |
 				   TRUE_REDEFINED_OP_FLAG   |
 				   FALSE_REDEFINED_OP_FLAG  |
@@ -1318,21 +1375,16 @@ opt_plus
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_PLUS,FIXNUM_REDEFINED_OP_FLAG)) {
+	BASIC_OP_UNREDEFINED_P(BOP_PLUS,INTEGER_REDEFINED_OP_FLAG)) {
 	/* fixnum + fixnum */
 #ifndef LONG_LONG_VALUE
-	val = (recv + (obj & (~1)));
-	if ((~(recv ^ obj) & (recv ^ val)) &
-	    ((VALUE)0x01 << ((sizeof(VALUE) * CHAR_BIT) - 1))) {
-	    val = rb_big_plus(rb_int2big(FIX2LONG(recv)),
-			      rb_int2big(FIX2LONG(obj)));
+	VALUE msb = (VALUE)1 << ((sizeof(VALUE) * CHAR_BIT) - 1);
+	val = recv - 1 + obj;
+	if ((~(recv ^ obj) & (recv ^ val)) & msb) {
+	    val = rb_int2big((SIGNED_VALUE)((val>>1) | (recv & msb)));
 	}
 #else
-	long a, b, c;
-	a = FIX2LONG(recv);
-	b = FIX2LONG(obj);
-	c = a + b;
-	val = LONG2NUM(c);
+	val = LONG2NUM(FIX2LONG(recv) + FIX2LONG(obj));
 #endif
     }
     else if (FLONUM_2_P(recv, obj) &&
@@ -1376,7 +1428,7 @@ opt_minus
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_MINUS, FIXNUM_REDEFINED_OP_FLAG)) {
+	BASIC_OP_UNREDEFINED_P(BOP_MINUS, INTEGER_REDEFINED_OP_FLAG)) {
 	long a, b, c;
 
 	a = FIX2LONG(recv);
@@ -1418,26 +1470,8 @@ opt_mult
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_MULT, FIXNUM_REDEFINED_OP_FLAG)) {
-	long a = FIX2LONG(recv);
-#ifdef HAVE_INT128_T
-	VALUE rb_int128t2big(int128_t n);
-	int128_t r = (int128_t)a * (int128_t)FIX2LONG(obj);
-	if (RB_FIXABLE(r)) {
-		val = LONG2FIX((long)r);
-	}
-	else {
-		val = rb_int128t2big(r);
-	}
-#else
-	long b = FIX2LONG(obj);
-	if (MUL_OVERFLOW_FIXNUM_P(a, b)) {
-		val = rb_big_mul(rb_int2big(a), rb_int2big(b));
-	}
-	else {
-		val = LONG2FIX(a * b);
-	}
-#endif
+	BASIC_OP_UNREDEFINED_P(BOP_MULT, INTEGER_REDEFINED_OP_FLAG)) {
+	val = rb_fix_mul_fix(recv, obj);
     }
     else if (FLONUM_2_P(recv, obj) &&
 	     BASIC_OP_UNREDEFINED_P(BOP_MULT, FLOAT_REDEFINED_OP_FLAG)) {
@@ -1472,35 +1506,9 @@ opt_div
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_DIV, FIXNUM_REDEFINED_OP_FLAG)) {
-	long x, y, div;
-
-	x = FIX2LONG(recv);
-	y = FIX2LONG(obj);
-	{
-	    /* copied from numeric.c#fixdivmod */
-	    long mod;
-	    if (y == 0)
-		goto INSN_LABEL(normal_dispatch);
-	    if (y < 0) {
-		if (x < 0)
-		    div = -x / -y;
-		else
-		    div = -(x / -y);
-	    }
-	    else {
-		if (x < 0)
-		    div = -(-x / y);
-		else
-		    div = x / y;
-	    }
-	    mod = x - div * y;
-	    if ((mod < 0 && y > 0) || (mod > 0 && y < 0)) {
-		mod += y;
-		div -= 1;
-	    }
-	}
-	val = LONG2NUM(div);
+	BASIC_OP_UNREDEFINED_P(BOP_DIV, INTEGER_REDEFINED_OP_FLAG)) {
+	if (FIX2LONG(obj) == 0) goto INSN_LABEL(normal_dispatch);
+	val = rb_fix_div_fix(recv, obj);
     }
     else if (FLONUM_2_P(recv, obj) &&
 	     BASIC_OP_UNREDEFINED_P(BOP_DIV, FLOAT_REDEFINED_OP_FLAG)) {
@@ -1535,39 +1543,9 @@ opt_mod
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_MOD, FIXNUM_REDEFINED_OP_FLAG )) {
-	long x, y;
-
-	x = FIX2LONG(recv);
-	y = FIX2LONG(obj);
-	if (x > 0 && y > 0) {
-	    val = LONG2FIX(x % y);
-	}
-	else {
-	    /* copied from numeric.c#fixdivmod */
-	    long div, mod;
-
-	    if (y == 0)
-		rb_num_zerodiv();
-	    if (y < 0) {
-		if (x < 0)
-		    div = -x / -y;
-		else
-		    div = -(x / -y);
-	    }
-	    else {
-		if (x < 0)
-		    div = -(-x / y);
-		else
-		    div = x / y;
-	    }
-	    mod = x - div * y;
-	    if ((mod < 0 && y > 0) || (mod > 0 && y < 0)) {
-		mod += y;
-		div -= 1;
-	    }
-	    val = LONG2FIX(mod);
-	}
+	BASIC_OP_UNREDEFINED_P(BOP_MOD, INTEGER_REDEFINED_OP_FLAG )) {
+	if (FIX2LONG(obj) == 0) goto INSN_LABEL(normal_dispatch);
+	val = rb_fix_mod_fix(recv, obj);
     }
     else if (FLONUM_2_P(recv, obj) &&
 	     BASIC_OP_UNREDEFINED_P(BOP_MOD, FLOAT_REDEFINED_OP_FLAG)) {
@@ -1655,7 +1633,7 @@ opt_lt
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_LT, FIXNUM_REDEFINED_OP_FLAG)) {
+	BASIC_OP_UNREDEFINED_P(BOP_LT, INTEGER_REDEFINED_OP_FLAG)) {
 	SIGNED_VALUE a = recv, b = obj;
 
 	if (a < b) {
@@ -1699,7 +1677,7 @@ opt_le
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_LE, FIXNUM_REDEFINED_OP_FLAG)) {
+	BASIC_OP_UNREDEFINED_P(BOP_LE, INTEGER_REDEFINED_OP_FLAG)) {
 	SIGNED_VALUE a = recv, b = obj;
 
 	if (a <= b) {
@@ -1734,7 +1712,7 @@ opt_gt
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_GT, FIXNUM_REDEFINED_OP_FLAG)) {
+	BASIC_OP_UNREDEFINED_P(BOP_GT, INTEGER_REDEFINED_OP_FLAG)) {
 	SIGNED_VALUE a = recv, b = obj;
 
 	if (a > b) {
@@ -1778,7 +1756,7 @@ opt_ge
 (VALUE val)
 {
     if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_GE, FIXNUM_REDEFINED_OP_FLAG)) {
+	BASIC_OP_UNREDEFINED_P(BOP_GE, INTEGER_REDEFINED_OP_FLAG)) {
 	SIGNED_VALUE a = recv, b = obj;
 
 	if (a >= b) {
@@ -2059,13 +2037,13 @@ opt_succ
 {
     if (SPECIAL_CONST_P(recv)) {
 	if (FIXNUM_P(recv) &&
-	    BASIC_OP_UNREDEFINED_P(BOP_SUCC, FIXNUM_REDEFINED_OP_FLAG)) {
-	    const VALUE obj = INT2FIX(1);
+	    BASIC_OP_UNREDEFINED_P(BOP_SUCC, INTEGER_REDEFINED_OP_FLAG)) {
 	    /* fixnum + INT2FIX(1) */
-	    val = (recv + (obj & (~1)));
-	    if ((~(recv ^ obj) & (recv ^ val)) & ((unsigned long)LONG_MAX + 1)) {
-		val = rb_big_plus(rb_int2big(FIX2LONG(recv)),
-				  rb_int2big(FIX2LONG(obj)));
+	    if (recv != LONG2FIX(FIXNUM_MAX)) {
+		val = recv - 1 + INT2FIX(1);
+	    }
+	    else {
+		val = LONG2NUM(FIXNUM_MAX + 1);
 	    }
 	}
 	else {
@@ -2100,8 +2078,6 @@ opt_not
 (VALUE recv)
 (VALUE val)
 {
-    extern VALUE rb_obj_not(VALUE obj);
-
     vm_search_method(ci, cc, recv);
 
     if (check_cfunc(cc->me, rb_obj_not)) {

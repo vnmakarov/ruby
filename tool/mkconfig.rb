@@ -8,28 +8,19 @@
 # avoid warnings with -d.
 $install_name ||= nil
 $so_name ||= nil
+$cross_compiling ||= nil
+$unicode_version ||= nil
 arch = $arch or raise "missing -arch"
 version = $version or raise "missing -version"
 
 srcdir = File.expand_path('../..', __FILE__)
-$:.replace [srcdir+"/lib"] unless defined?(CROSS_COMPILING)
+$:.replace [srcdir+"/lib"] unless $cross_compiling == "yes"
 $:.unshift(".")
 
 require "fileutils"
 mkconfig = File.basename($0)
 
-rbconfig_rb = ARGV[0] || 'rbconfig.rb'
-unless File.directory?(dir = File.dirname(rbconfig_rb))
-  FileUtils.makedirs(dir, :verbose => true)
-end
-
-config = ""
-def config.write(arg)
-  concat(arg.to_s)
-end
-$stdout = config
-
-fast = {'prefix'=>TRUE, 'ruby_install_name'=>TRUE, 'INSTALL'=>TRUE, 'EXEEXT'=>TRUE}
+fast = {'prefix'=>true, 'ruby_install_name'=>true, 'INSTALL'=>true, 'EXEEXT'=>true}
 
 win32 = /mswin/ =~ arch
 universal = /universal.*darwin/ =~ arch
@@ -245,6 +236,9 @@ end
 
 print(*v_fast)
 print(*v_others)
+print <<EOS if $unicode_version
+  CONFIG["UNICODE_VERSION"] = #{$unicode_version.dump}
+EOS
 print <<EOS if /darwin/ =~ arch
   CONFIG["SDKROOT"] = ENV["SDKROOT"] || "" # don't run xcrun everytime, usually useless.
 EOS
@@ -285,22 +279,5 @@ print <<EOS
 end
 CROSS_COMPILING = nil unless defined? CROSS_COMPILING
 EOS
-
-$stdout = STDOUT
-mode = IO::RDWR|IO::CREAT
-mode |= IO::BINARY if defined?(IO::BINARY)
-open(rbconfig_rb, mode) do |f|
-  if $timestamp and f.stat.size == config.size and f.read == config
-    puts "#{rbconfig_rb} unchanged"
-  else
-    puts "#{rbconfig_rb} updated"
-    f.rewind
-    f.truncate(0)
-    f.print(config)
-  end
-end
-if String === $timestamp
-  FileUtils.touch($timestamp)
-end
 
 # vi:set sw=2:

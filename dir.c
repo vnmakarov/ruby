@@ -83,14 +83,19 @@ char *strchr(char*,char);
 #include <sys/attr.h>
 #endif
 
+#define USE_NAME_ON_FS_REAL_BASENAME 1	/* platform dependent APIs to
+					 * get real basenames */
+#define USE_NAME_ON_FS_BY_FNMATCH 2	/* select the matching
+					 * basename by fnmatch */
+
 #ifdef HAVE_GETATTRLIST
-# define USE_NAME_ON_FS 1
+# define USE_NAME_ON_FS USE_NAME_ON_FS_REAL_BASENAME
 # define RUP32(size) ((size)+3/4)
 # define SIZEUP32(type) RUP32(sizeof(type))
 #elif defined _WIN32
-# define USE_NAME_ON_FS 1
+# define USE_NAME_ON_FS USE_NAME_ON_FS_REAL_BASENAME
 #elif defined DOSISH
-# define USE_NAME_ON_FS 2	/* by fnmatch */
+# define USE_NAME_ON_FS USE_NAME_ON_FS_BY_FNMATCH
 #else
 # define USE_NAME_ON_FS 0
 #endif
@@ -908,8 +913,8 @@ dir_rewind(VALUE dir)
  *  call-seq:
  *     dir.close -> nil
  *
- *  Closes the directory stream. Any further attempts to access
- *  <em>dir</em> will raise an <code>IOError</code>.
+ *  Closes the directory stream.
+ *  Calling this method on closed Dir object is ignored since Ruby 2.3.
  *
  *     d = Dir.new("testdir")
  *     d.close   #=> nil
@@ -1638,7 +1643,7 @@ replace_real_basename(char *path, long base, rb_encoding *enc, int norm_p, int f
     }
     return path;
 }
-#elif USE_NAME_ON_FS == 1
+#elif USE_NAME_ON_FS == USE_NAME_ON_FS_REAL_BASENAME
 # error not implemented
 #endif
 
@@ -1714,7 +1719,7 @@ glob_helper(
 	    plain = 1;
 	    break;
 	  case ALPHA:
-#if USE_NAME_ON_FS == 1
+#if USE_NAME_ON_FS == USE_NAME_ON_FS_REAL_BASENAME
 	    plain = 1;
 #else
 	    magical = 1;
@@ -1769,11 +1774,11 @@ glob_helper(
     if (magical || recursive) {
 	struct dirent *dp;
 	DIR *dirp;
-# if USE_NAME_ON_FS == 2
+# if USE_NAME_ON_FS == USE_NAME_ON_FS_BY_FNMATCH
 	char *plainname = 0;
 # endif
 	IF_NORMALIZE_UTF8PATH(int norm_p);
-# if USE_NAME_ON_FS == 2
+# if USE_NAME_ON_FS == USE_NAME_ON_FS_BY_FNMATCH
 	if (cur + 1 == end && (*cur)->type <= ALPHA) {
 	    plainname = join_path(path, pathlen, dirsep, (*cur)->str, strlen((*cur)->str));
 	    if (!plainname) return -1;
@@ -1873,7 +1878,7 @@ glob_helper(
 		}
 		switch (p->type) {
 		  case ALPHA:
-# if USE_NAME_ON_FS == 2
+# if USE_NAME_ON_FS == USE_NAME_ON_FS_BY_FNMATCH
 		    if (plainname) {
 			*new_end++ = p->next;
 			break;
@@ -1945,7 +1950,7 @@ glob_helper(
 		    status = -1;
 		    break;
 		}
-#if USE_NAME_ON_FS == 1
+#if USE_NAME_ON_FS == USE_NAME_ON_FS_REAL_BASENAME
 		if ((*cur)->type == ALPHA) {
 		    long base = pathlen + (dirsep != 0);
 		    buf = replace_real_basename(buf, base, enc, IF_NORMALIZE_UTF8PATH(1)+0,
@@ -2359,7 +2364,7 @@ dir_s_glob(int argc, VALUE *argv, VALUE obj)
 static VALUE
 dir_open_dir(int argc, VALUE *argv)
 {
-    VALUE dir = rb_funcall2(rb_cDir, rb_intern("open"), argc, argv);
+    VALUE dir = rb_funcallv(rb_cDir, rb_intern("open"), argc, argv);
 
     rb_check_typeddata(dir, &dir_data_type);
     return dir;

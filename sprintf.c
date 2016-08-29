@@ -65,12 +65,20 @@ sign_bits(int base, const char *p)
 
 #define PUSH(s, l) do { \
     CHECK(l);\
+    PUSH_(s, l);\
+} while (0)
+
+#define PUSH_(s, l) do { \
     memcpy(&buf[blen], (s), (l));\
     blen += (l);\
 } while (0)
 
 #define FILL(c, l) do { \
     CHECK(l);\
+    FILL_(c, l);\
+} while (0)
+
+#define FILL_(c, l) do { \
     memset(&buf[blen], (c), (l));\
     blen += (l);\
 } while (0)
@@ -1034,9 +1042,8 @@ rb_str_format(int argc, const VALUE *argv, VALUE fmt)
 	    {
 		VALUE val = GETARG(), num, den;
 		int sign = (flags&FPLUS) ? 1 : 0, zero = 0;
-		long len, done = 0;
-		int prefix = 0;
-		if (FIXNUM_P(val) || RB_TYPE_P(val, T_BIGNUM)) {
+		long len, fill;
+		if (RB_INTEGER_TYPE_P(val)) {
 		    den = INT2FIX(1);
 		    num = val;
 		}
@@ -1056,76 +1063,57 @@ rb_str_format(int argc, const VALUE *argv, VALUE fmt)
 			sign = -1;
 		    }
 		}
-		else if (rb_num_negative_p(num)) {
+		else if (BIGNUM_NEGATIVE_P(num)) {
 		    sign = -1;
-		    num = rb_funcallv(num, idUMinus, 0, 0);
+		    num = rb_big_uminus(num);
 		}
-		if (den != INT2FIX(1) || prec > 1) {
-		    const ID idDiv = rb_intern("div");
-		    VALUE p10 = rb_int_positive_pow(10, prec);
-		    VALUE den_2 = rb_funcall(den, idDiv, 1, INT2FIX(2));
-		    num = rb_funcallv(num, '*', 1, &p10);
-		    num = rb_funcallv(num, '+', 1, &den_2);
-		    num = rb_funcallv(num, idDiv, 1, &den);
+		if (den != INT2FIX(1)) {
+		    num = rb_int_mul(num, rb_int_positive_pow(10, prec));
+		    num = rb_int_plus(num, rb_int_idiv(den, INT2FIX(2)));
+		    num = rb_int_idiv(num, den);
 		}
 		else if (prec >= 0) {
 		    zero = prec;
 		}
-		val = rb_obj_as_string(num);
+		val = rb_int2str(num, 10);
 		len = RSTRING_LEN(val) + zero;
-		if (prec >= len) ++len; /* integer part 0 */
+		if (prec >= len) len = prec + 1; /* integer part 0 */
 		if (sign || (flags&FSPACE)) ++len;
 		if (prec > 0) ++len; /* period */
 		CHECK(len > width ? len : width);
+		fill = width > len ? width - len : 0;
+		if (fill && !(flags&FMINUS) && !(flags&FZERO)) {
+		    FILL_(' ', fill);
+		}
 		if (sign || (flags&FSPACE)) {
 		    buf[blen++] = sign > 0 ? '+' : sign < 0 ? '-' : ' ';
-		    prefix++;
-		    done++;
+		}
+		if (fill && !(flags&FMINUS) && (flags&FZERO)) {
+		    FILL_('0', fill);
 		}
 		len = RSTRING_LEN(val) + zero;
 		t = RSTRING_PTR(val);
 		if (len > prec) {
-		    memcpy(&buf[blen], t, len - prec);
-		    blen += len - prec;
-		    done += len - prec;
+		    PUSH_(t, len - prec);
 		}
 		else {
 		    buf[blen++] = '0';
-		    done++;
 		}
 		if (prec > 0) {
 		    buf[blen++] = '.';
-		    done++;
 		}
 		if (zero) {
-		    FILL('0', zero);
-		    done += zero;
+		    FILL_('0', zero);
 		}
 		else if (prec > len) {
-		    FILL('0', prec - len);
-		    memcpy(&buf[blen], t, len);
-		    blen += len;
-		    done += prec;
+		    FILL_('0', prec - len);
+		    PUSH_(t, len);
 		}
 		else if (prec > 0) {
-		    memcpy(&buf[blen], t + len - prec, prec);
-		    blen += prec;
-		    done += prec;
+		    PUSH_(t + len - prec, prec);
 		}
-		if ((flags & FWIDTH) && width > done) {
-		    int fill = ' ';
-		    long shifting = 0;
-		    if (!(flags&FMINUS)) {
-			shifting = done;
-			if (flags&FZERO) {
-			    shifting -= prefix;
-			    fill = '0';
-			}
-			blen -= shifting;
-			memmove(&buf[blen + width - done], &buf[blen], shifting);
-		    }
-		    FILL(fill, width - done);
-		    blen += shifting;
+		if (fill && (flags&FMINUS)) {
+		    FILL_(' ', fill);
 		}
 		RB_GC_GUARD(val);
 		break;
@@ -1361,8 +1349,8 @@ ruby__sfvextra(rb_printf_buffer *fp, size_t valsize, void *valp, long *sz, int s
 	    if (value == rb_cNilClass) {
 		return LITERAL("nil");
 	    }
-	    else if (value == rb_cFixnum) {
-		return LITERAL("Fixnum");
+	    else if (value == rb_cInteger) {
+		return LITERAL("Integer");
 	    }
 	    else if (value == rb_cSymbol) {
 		return LITERAL("Symbol");

@@ -83,9 +83,7 @@ rb_class_clear_method_cache(VALUE klass, VALUE arg)
 void
 rb_clear_cache(void)
 {
-    rb_warning("rb_clear_cache() is deprecated.");
-    INC_GLOBAL_METHOD_STATE();
-    INC_GLOBAL_CONSTANT_STATE();
+    ONLY_FOR_INTERNAL_USE("rb_clear_cache()");
 }
 
 void
@@ -612,7 +610,7 @@ rb_method_entry_make(VALUE klass, ID mid, VALUE defined_class, rb_method_visibil
 	    recv_class = rb_ivar_get((klass), attached);	\
 	    hook_id = singleton_##hook;			\
 	}						\
-	rb_funcall2(recv_class, hook_id, 1, &arg);	\
+	rb_funcallv(recv_class, hook_id, 1, &arg);	\
     } while (0)
 
 static void
@@ -735,16 +733,18 @@ method_entry_get_without_cache(VALUE klass, ID id,
 	    ent->mid = id;
 
 	    if (UNDEFINED_METHOD_ENTRY_P(me)) {
-		ent->me = 0;
-		me = 0;
+		me = ent->me = NULL;
 	    }
 	    else {
 		ent->me = me;
 	    }
 	}
 	else if (UNDEFINED_METHOD_ENTRY_P(me)) {
-	    me = 0;
+	    me = NULL;
 	}
+    }
+    else if (UNDEFINED_METHOD_ENTRY_P(me)) {
+	me = NULL;
     }
 
     if (defined_class_ptr)
@@ -818,9 +818,9 @@ prepare_callable_method_entry(VALUE defined_class, ID id, const rb_method_entry_
     }
     else {
 	cme = (const rb_callable_method_entry_t *)me;
+	VM_ASSERT(callable_method_entry_p(cme));
     }
 
-    VM_ASSERT(callable_method_entry_p(cme));
     return cme;
 }
 
@@ -1552,10 +1552,10 @@ rb_alias(VALUE klass, ID alias_name, ID original_name)
     if (visi == METHOD_VISI_UNDEF) visi = METHOD_ENTRY_VISI(orig_me);
 
     if (orig_me->defined_class == 0) {
-	rb_method_entry_t *alias_me;
-
-	alias_me = rb_add_method(target_klass, alias_name, VM_METHOD_TYPE_ALIAS, (void *)rb_method_entry_clone(orig_me), visi);
-	alias_me->def->original_id = orig_me->called_id;
+	rb_method_entry_make(target_klass, alias_name, target_klass, visi,
+			     VM_METHOD_TYPE_ALIAS, NULL, orig_me->called_id,
+			     (void *)rb_method_entry_clone(orig_me));
+	method_added(target_klass, alias_name);
     }
     else {
 	rb_method_entry_t *alias_me;
@@ -1859,7 +1859,9 @@ rb_mod_modfunc(int argc, VALUE *argv, VALUE module)
 int
 rb_method_basic_definition_p(VALUE klass, ID id)
 {
-    const rb_method_entry_t *me = rb_method_entry(klass, id);
+    const rb_method_entry_t *me;
+    if (!klass) return TRUE; /* hidden object cannot be overridden */
+    me = rb_method_entry(klass, id);
     return (me && METHOD_ENTRY_BASIC(me)) ? TRUE : FALSE;
 }
 
@@ -1869,9 +1871,9 @@ call_method_entry(rb_thread_t *th, VALUE defined_class, VALUE obj, ID id,
 {
     const rb_callable_method_entry_t *cme =
 	prepare_callable_method_entry(defined_class, id, me);
-    const rb_block_t *passed_block = th->passed_block;
+    VALUE passed_block_handler = vm_passed_block_handler(th);
     VALUE result = vm_call0(th, obj, id, argc, argv, cme);
-    th->passed_block = passed_block;
+    vm_passed_block_handler_set(th, passed_block_handler);
     return result;
 }
 
@@ -1916,7 +1918,7 @@ vm_respond_to(rb_thread_t *th, VALUE klass, VALUE obj, ID id, int priv)
     const rb_method_entry_t *const me =
 	method_entry_get(klass, resid, &defined_class);
 
-    if (!me) return TRUE;
+    if (!me) return -1;
     if (METHOD_ENTRY_BASIC(me)) {
 	return -1;
     }

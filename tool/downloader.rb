@@ -1,3 +1,6 @@
+# Used by configure and make to download or update mirrored Ruby and GCC
+# files. This will use HTTPS if possible, falling back to HTTP.
+
 require 'open-uri'
 begin
   require 'net/https'
@@ -57,26 +60,26 @@ class Downloader
     def self.download(name, dir = nil, since = true, options = {})
       require 'rubygems'
       require 'rubygems/package'
-      options[:ssl_ca_cert] = Dir.glob(File.expand_path("../lib/rubygems/ssl_certs/*.pem", File.dirname(__FILE__)))
+      verify = options.delete(:verify) {Gem::VERSION >= "2.4."}
+      options[:ssl_ca_cert] = Dir.glob(File.expand_path("../lib/rubygems/ssl_certs/**/*.pem", File.dirname(__FILE__)))
       file = under(dir, name)
       super("https://rubygems.org/downloads/#{name}", file, nil, since, options) or
         return false
+      return true unless verify
       policy = Gem::Security::LowSecurity
       (policy = policy.dup).ui = Gem::SilentUI.new if policy.respond_to?(:'ui=')
       pkg = Gem::Package.new(file)
       pkg.security_policy = policy
       begin
+        $stdout.puts "verifying #{name}"
         pkg.verify
       rescue Gem::Security::Exception => e
-        $stderr.puts e.message
+        $stderr.puts "#{name}: #{e.message}"
         File.unlink(file)
         false
       else
         true
       end
-    end
-
-    def self.verify(pkg)
     end
   end
 
@@ -134,6 +137,7 @@ class Downloader
   #   download 'http://www.unicode.org/Public/UCD/latest/ucd/UnicodeData.txt',
   #            'UnicodeData.txt', 'enc/unicode/data'
   def self.download(url, name, dir = nil, since = true, options = {})
+    options.delete(:verify)
     file = under(dir, name)
     if since.nil? and File.exist?(file)
       if $VERBOSE
@@ -194,6 +198,10 @@ class Downloader
     raise "failed to download #{name}\n#{e.message}: #{url}"
   end
 
+  def self.verify(file)
+    true
+  end
+
   def self.under(dir, name)
     dir ? File.join(dir, File.basename(name)) : name
   end
@@ -203,6 +211,7 @@ Downloader.https = https.freeze
 
 if $0 == __FILE__
   since = true
+  options = {}
   until ARGV.empty?
     case ARGV[0]
     when '-d'
@@ -217,6 +226,8 @@ if $0 == __FILE__
       since = nil
     when '-a'
       since = false
+    when '-V'
+      options[:verify] = true
     when /\A-/
       abort "#{$0}: unknown option #{ARGV[0]}"
     else
@@ -233,10 +244,10 @@ if $0 == __FILE__
     ARGV.shift
     ARGV.each do |name|
       name = "#{prefix}/#{File.basename(name)}" if prefix
-      dl.download(name, destdir, since)
+      dl.download(name, destdir, since, options)
     end
   else
     abort "usage: #{$0} url name" unless ARGV.size == 2
-    Downloader.download(ARGV[0], ARGV[1], destdir, since)
+    Downloader.download(ARGV[0], ARGV[1], destdir, since, options)
   end
 end

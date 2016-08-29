@@ -65,7 +65,7 @@ iconinc=-I$(icondirs: = -I)
 .SUFFIXES: .def .lib
 
 !if !defined(CC)
-CC = cl
+CC = cl -nologo
 !endif
 !if !defined(CPP) || "$(CPP)" == "cl"
 CPP = $(CC) -E
@@ -200,8 +200,15 @@ DOCTARGETS = nodoc
 ! endif
 !endif
 
+!if !defined(OUTFLAG)
 OUTFLAG       = -Fe
+!endif
+!if !defined(COUTFLAG)
 COUTFLAG      = -Fo
+!endif
+!if !defined(CSRCFLAG)
+CSRCFLAG      = -Tc
+!endif
 !if !defined(RUNTIMEFLAG)
 RUNTIMEFLAG   = -MD
 !endif
@@ -256,10 +263,9 @@ MISSING = $(MISSING) explicit_bzero.obj
 DLNOBJ = dln.obj
 
 ARFLAGS = -machine:$(MACHINE) -out:
-CC = $(CC) -nologo
 LD = $(CC)
 LDSHARED = $(LD) -LD
-XCFLAGS = -DRUBY_EXPORT -I. -I$(arch_hdrdir) -I$(hdrdir) -I$(srcdir) -I$(srcdir)/missing $(XCFLAGS)
+XCFLAGS = -DRUBY_EXPORT $(INCFLAGS) $(XCFLAGS)
 !if $(MSC_VER) >= 1400
 # Prevents VC++ 2005 (cl ver 14) warnings
 MANIFESTTOOL = mt -nologo
@@ -412,6 +418,7 @@ prog: config
 ruby: $(PROGRAM)
 rubyw: $(WPROGRAM)
 stub: $(STUBPROGRAM)
+rubystub: $(STUBPROGRAM)
 
 !if !exist(enc/trans/newline.c) && exist($(srcdir)/enc/trans/newline.c)
 NEWLINE_C = $(srcdir)/enc/trans/newline.c
@@ -468,6 +475,7 @@ update-mspec:
 	@echo retrieving mspec ...
 	@cd $(srcdir:/=\) && git clone $(MSPEC_GIT_URL) spec/mspec
 !endif
+	@cd $(srcdir:/=\)\spec\mspec && git --no-pager log -1 --oneline
 
 update-rubyspec: update-mspec
 !if exist($(srcdir)/spec/rubyspec)
@@ -477,6 +485,7 @@ update-rubyspec: update-mspec
 	@echo retrieving rubyspec ...
 	@cd $(srcdir:/=\) && git clone $(RUBYSPEC_GIT_URL) spec/rubyspec
 !endif
+	@cd $(srcdir:/=\)\spec\rubyspec && git --no-pager log -1 --oneline
 
 test-rubyspec-precheck:
 !if !exist($(srcdir)/spec/rubyspec/.)
@@ -594,6 +603,7 @@ $(CONFIG_H): $(MKFILES) $(srcdir)/win32/Makefile.sub $(win_srcdir)/Makefile.sub
 #define DEPRECATED_TYPE(mesg, x) __declspec(deprecated mesg) x
 #define NOINLINE(x) __declspec(noinline) x
 !endif
+#define ALWAYS_INLINE(x) __forceinline x
 #define UNREACHABLE __assume(0)
 #define ASSUME(x) __assume(!!(x))
 #define FUNC_STDCALL(x) __stdcall x
@@ -739,6 +749,9 @@ $(CONFIG_H): $(MKFILES) $(srcdir)/win32/Makefile.sub $(win_srcdir)/Makefile.sub
 #define HAVE_TZNAME 1
 #define HAVE_DAYLIGHT 1
 #define HAVE_GMTIME_R 1
+!if $(RT_VER) > 120
+#define HAVE_QSORT_S
+!endif
 #define HAVE_TYPE_NET_LUID 1
 #define SETPGRP_VOID 1
 #define RSHIFT(x,y) ((x)>>(int)y)
@@ -900,6 +913,7 @@ s,@ENABLE_SHARED@,yes,;t t
 s,@BASERUBY@,$(BASERUBY),;t t
 s,@OUTFLAG@,$(OUTFLAG),;t t
 s,@COUTFLAG@,$(COUTFLAG),;t t
+s,@CSRCFLAG@,$(CSRCFLAG),;t t
 s,@CPPOUTFILE@,-P,;t t
 s,@LIBPATHFLAG@, -libpath:%s,;t t
 s,@RPATHFLAG@,,;t t
@@ -910,9 +924,9 @@ s,@LINK_SO@,@if exist $$(@).manifest $$(RUBY) -run -e wait_writable -- -n 10 $$(
 s,@LINK_SO@,@if exist $$(@).manifest $(MANIFESTTOOL) -manifest $$(@).manifest -outputresource:$$(@);2,;t t
 s,@LINK_SO@,@if exist $$(@).manifest $$(RM) $$(@:/=\).manifest,;t t
 !endif
-s,@COMPILE_C@,$$(CC) $$(INCFLAGS) $$(CFLAGS) $$(CPPFLAGS) $$(COUTFLAG)$$(@) -c -Tc$$(<:\=/),;t t
+s,@COMPILE_C@,$$(CC) $$(INCFLAGS) $$(CFLAGS) $$(CPPFLAGS) $$(COUTFLAG)$$(@) -c $$(CSRCFLAG)$$(<:\=/),;t t
 s,@COMPILE_CXX@,$$(CXX) $$(INCFLAGS) $$(CXXFLAGS) $$(CPPFLAGS) $$(COUTFLAG)$$(@) -c -Tp$$(<:\=/),;t t
-s,@ASSEMBLE_C@,$$(CC) $$(CFLAGS) $$(CPPFLAGS) -Fa$$(@) -c -Tc$$(<:\=/),;t t
+s,@ASSEMBLE_C@,$$(CC) $$(CFLAGS) $$(CPPFLAGS) -Fa$$(@) -c $$(CSRCFLAG)$$(<:\=/),;t t
 s,@ASSEMBLE_CXX@,$$(CXX) $$(CXXFLAGS) $$(CPPFLAGS) -Fa$$(@) -c -Tp$$(<:\=/),;t t
 s,@COMPILE_RULES@,{$$(*VPATH*)}.%s.%s: .%s.%s:,;t t
 s,@RULE_SUBST@,{.;$$(VPATH)}%s,;t t
@@ -992,9 +1006,9 @@ $(WPROGRAM):	$(MAINOBJ) $(WINMAINOBJ) $(LIBRUBY_SO) $(RUBYW_INSTALL_NAME).res
 !endif
 
 !if "$(STUBPROGRAM)" != ""
-$(STUBPROGRAM):	win32/stub.$(OBJEXT) $(LIBRUBY) $(LIBRUBY_SO) $(RUBY_INSTALL_NAME).res
+$(STUBPROGRAM):	rubystub.$(OBJEXT) $(LIBRUBY) $(LIBRUBY_SO) $(RUBY_INSTALL_NAME).res
 		$(ECHO) linking $(@:\=/)
-		$(Q) $(PURIFY) $(CC) win32/stub.$(OBJEXT) $(RUBY_INSTALL_NAME).res \
+		$(Q) $(PURIFY) $(CC) rubystub.$(OBJEXT) $(RUBY_INSTALL_NAME).res \
 			$(OUTFLAG)$@ $(LIBRUBYARG) -link $(LDFLAGS) $(XLDFLAGS)
 		$(Q) $(LDSHARED_0)
 		$(Q) $(LDSHARED_1)
@@ -1062,7 +1076,7 @@ clean-extout:
 clean-enc distclean-enc realclean-enc:
 !if exist($(ENC_MK))
 	@echo $(@:-enc=ing) encodings
-	@-$(MAKE) -f $(ENC_MK) $(MFLAGS) V=$(V) $(@:-enc=)
+	@-$(MAKE) $(MAKE_ENC) $(@:-enc=)
 !endif
 
 $(RBCONFIG): $(PREP)
@@ -1081,48 +1095,48 @@ $(ruby_pc): $(RBCONFIG)
 
 {$(srcdir)/enc/trans}.c.obj:
 	$(ECHO) compiling $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(<:\=/)
 {$(srcdir)/enc}.c.obj:
 	$(ECHO) compiling $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(<:\=/)
 {$(srcdir)/missing}.c.obj:
 	$(ECHO) compiling $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(<:\=/)
 {$(win_srcdir)}.c.obj:
 	$(ECHO) compiling $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(<:\=/)
 {$(srcdir)}.c{}.obj:
 	$(ECHO) compiling $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(<:\=/)
 .c.obj:
 	$(ECHO) compiling $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(<:\=/)
 
 {$(srcdir)/missing}.c.asm:
 	$(ECHO) translating $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -Fa$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -Fa$@ -c $(CSRCFLAG)$(<:\=/)
 {$(win_srcdir)}.c.asm:
 	$(ECHO) translating $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -Fa$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -Fa$@ -c $(CSRCFLAG)$(<:\=/)
 {$(srcdir)}.c{}.asm:
 	$(ECHO) translating $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -Fa$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -Fa$@ -c $(CSRCFLAG)$(<:\=/)
 .c.asm:
 	$(ECHO) translating $(<:\=/)
-	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -Fa$@ -c -Tc$(<:\=/)
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -Fa$@ -c $(CSRCFLAG)$(<:\=/)
 
 {$(srcdir)/missing}.c.i:
 	$(ECHO) preprocessing $(<:\=/)
-	$(Q) $(CC) $(XCFLAGS) $(CPPFLAGS) -P -Tc$(<:\=/) > $@
+	$(Q) $(CC) $(XCFLAGS) $(CPPFLAGS) -P $(CSRCFLAG)$(<:\=/) > $@
 {$(win_srcdir)}.c.i:
 	$(ECHO) preprocessing $(<:\=/)
-	$(Q) $(CC) $(XCFLAGS) $(CPPFLAGS) -P -Tc$(<:\=/)
+	$(Q) $(CC) $(XCFLAGS) $(CPPFLAGS) -P $(CSRCFLAG)$(<:\=/)
 {$(srcdir)}.c{}.i:
 	$(ECHO) preprocessing $(<:\=/)
-	$(Q) $(CC) $(XCFLAGS) $(CPPFLAGS) -P -Tc$(<:\=/)
+	$(Q) $(CC) $(XCFLAGS) $(CPPFLAGS) -P $(CSRCFLAG)$(<:\=/)
 .c.i:
 	$(ECHO) preprocessing $(<:\=/)
-	$(Q) $(CC) $(XCFLAGS) $(CPPFLAGS) -P -Tc$(<:\=/)
+	$(Q) $(CC) $(XCFLAGS) $(CPPFLAGS) -P $(CSRCFLAG)$(<:\=/)
 
 .rc.res:
 	$(ECHO) compiling $(<:\=/)
@@ -1130,11 +1144,6 @@ $(ruby_pc): $(RBCONFIG)
 
 lex.c: {$(srcdir)}lex.c.blt
 	copy $(?:/=\) $@
-
-enc/unicode/name2ctype.h: {$(srcdir)}enc/unicode/name2ctype.h.blt
-	@if not exist $(@D:/=\) md $(@D:/=\)
-	$(ECHO) copying $@
-	$(Q) copy $(?:/=\) $(@:/=\) > nul
 
 enc/jis/props.h: {$(srcdir)}enc/jis/props.h.blt
 	@if not exist $(@D:/=\) md $(@D:/=\)

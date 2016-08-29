@@ -780,8 +780,9 @@ reg_names_iter(const OnigUChar *name, const OnigUChar *name_end,
 static VALUE
 rb_reg_names(VALUE re)
 {
-    VALUE ary = rb_ary_new();
+    VALUE ary;
     rb_reg_check(re);
+    ary = rb_ary_new_capa(onig_number_of_names(RREGEXP_PTR(re)));
     onig_foreach_name(RREGEXP_PTR(re), reg_names_iter, (void*)ary);
     return ary;
 }
@@ -1370,11 +1371,21 @@ reg_enc_error(VALUE re, VALUE str)
 	     rb_enc_name(rb_enc_get(str)));
 }
 
+static inline int
+str_coderange(VALUE str)
+{
+    int cr = ENC_CODERANGE(str);
+    if (cr == ENC_CODERANGE_UNKNOWN) {
+	cr = rb_enc_str_coderange(str);
+    }
+    return cr;
+}
+
 static rb_encoding*
 rb_reg_prepare_enc(VALUE re, VALUE str, int warn)
 {
     rb_encoding *enc = 0;
-    int cr = rb_enc_str_coderange(str);
+    int cr = str_coderange(str);
 
     if (cr == ENC_CODERANGE_BROKEN) {
         rb_raise(rb_eArgError,
@@ -1384,25 +1395,23 @@ rb_reg_prepare_enc(VALUE re, VALUE str, int warn)
 
     rb_reg_check(re);
     enc = rb_enc_get(str);
-    if (!rb_enc_str_asciicompat_p(str)) {
-        if (RREGEXP_PTR(re)->enc != enc) {
-	    reg_enc_error(re, str);
-	}
+    if (RREGEXP_PTR(re)->enc == enc) {
+    }
+    else if (cr == ENC_CODERANGE_7BIT &&
+	    RREGEXP_PTR(re)->enc == rb_usascii_encoding()) {
+	enc = RREGEXP_PTR(re)->enc;
+    }
+    else if (!rb_enc_asciicompat(enc)) {
+	reg_enc_error(re, str);
     }
     else if (rb_reg_fixed_encoding_p(re)) {
-        if (RREGEXP_PTR(re)->enc != enc &&
-	    (!rb_enc_asciicompat(RREGEXP_PTR(re)->enc) ||
+        if ((!rb_enc_asciicompat(RREGEXP_PTR(re)->enc) ||
 	     cr != ENC_CODERANGE_7BIT)) {
 	    reg_enc_error(re, str);
 	}
 	enc = RREGEXP_PTR(re)->enc;
     }
-    else if (cr == ENC_CODERANGE_7BIT &&
-	    (RREGEXP_PTR(re)->enc == rb_usascii_encoding()
-	     )) {
-	enc = RREGEXP_PTR(re)->enc;
-    }
-    if (warn && (RBASIC(re)->flags & REG_ENCODING_NONE) &&
+    else if (warn && (RBASIC(re)->flags & REG_ENCODING_NONE) &&
 	enc != rb_ascii8bit_encoding() &&
 	cr != ENC_CODERANGE_7BIT) {
 	rb_warn("regexp match /.../n against to %s string",
@@ -1412,10 +1421,9 @@ rb_reg_prepare_enc(VALUE re, VALUE str, int warn)
 }
 
 regex_t *
-rb_reg_prepare_re(VALUE re, VALUE str)
+rb_reg_prepare_re0(VALUE re, VALUE str, onig_errmsg_buffer err)
 {
     regex_t *reg = RREGEXP_PTR(re);
-    onig_errmsg_buffer err = "";
     int r;
     OnigErrorInfo einfo;
     const char *pattern;
@@ -1448,6 +1456,13 @@ rb_reg_prepare_re(VALUE re, VALUE str)
 
     RB_GC_GUARD(unescaped);
     return reg;
+}
+
+regex_t *
+rb_reg_prepare_re(VALUE re, VALUE str)
+{
+    onig_errmsg_buffer err = "";
+    return rb_reg_prepare_re0(re, str, err);
 }
 
 long
@@ -1491,13 +1506,14 @@ rb_reg_search0(VALUE re, VALUE str, long pos, int reverse, int set_backref_str)
     char *range = RSTRING_PTR(str);
     regex_t *reg;
     int tmpreg;
+    onig_errmsg_buffer err = "";
 
     if (pos > RSTRING_LEN(str) || pos < 0) {
 	rb_backref_set(Qnil);
 	return -1;
     }
 
-    reg = rb_reg_prepare_re(re, str);
+    reg = rb_reg_prepare_re0(re, str, err);
     tmpreg = reg != RREGEXP_PTR(re);
     if (!tmpreg) RREGEXP(re)->usecnt++;
 
@@ -1540,7 +1556,6 @@ rb_reg_search0(VALUE re, VALUE str, long pos, int reverse, int set_backref_str)
 	    return result;
 	}
 	else {
-	    onig_errmsg_buffer err = "";
 	    onig_error_code_to_str((UChar*)err, (int)result);
 	    rb_reg_raise(RREGEXP_SRC_PTR(re), RREGEXP_SRC_LEN(re), err, re);
 	}
@@ -1815,6 +1830,64 @@ name_to_backref_error(VALUE name)
 	     name);
 }
 
+static int
+namev_to_backref_number(struct re_registers *regs, VALUE re, VALUE name)
+{
+    int num;
+
+    switch (TYPE(name)) {
+      case T_SYMBOL:
+	name = rb_sym2str(name);
+	/* fall through */
+      case T_STRING:
+	if (NIL_P(re) || !rb_enc_compatible(RREGEXP_SRC(re), name) ||
+		(num = name_to_backref_number(regs, re,
+					      RSTRING_PTR(name), RSTRING_END(name))) < 1) {
+	    name_to_backref_error(name);
+	}
+	return num;
+
+      default:
+	return -1;
+    }
+}
+
+static VALUE
+match_ary_subseq(VALUE match, long beg, long len, VALUE result)
+{
+    long olen = RMATCH_REGS(match)->num_regs;
+    long j, end = olen < beg+len ? olen : beg+len;
+    if (NIL_P(result)) result = rb_ary_new_capa(len);
+    if (len == 0) return result;
+
+    for (j = beg; j < end; j++) {
+	rb_ary_push(result, rb_reg_nth_match((int)j, match));
+    }
+    if (beg + len > j) {
+	rb_ary_resize(result, RARRAY_LEN(result) + (beg + len) - j);
+    }
+    return result;
+}
+
+static VALUE
+match_ary_aref(VALUE match, VALUE idx, VALUE result)
+{
+    long beg, len;
+    int num_regs = RMATCH_REGS(match)->num_regs;
+
+    /* check if idx is Range */
+    switch (rb_range_beg_len(idx, &beg, &len, (long)num_regs, !NIL_P(result))) {
+      case Qfalse:
+	if (NIL_P(result)) return rb_reg_nth_match(NUM2INT(idx), match);
+	rb_ary_push(result, rb_reg_nth_match(NUM2INT(idx), match));
+	return result;
+      case Qnil:
+	return Qnil;
+      default:
+	return match_ary_subseq(match, beg, len, result);
+    }
+}
+
 /*
  *  call-seq:
  *     mtch[i]               -> str or nil
@@ -1845,51 +1918,45 @@ name_to_backref_error(VALUE name)
 static VALUE
 match_aref(int argc, VALUE *argv, VALUE match)
 {
-    VALUE idx, rest, re;
+    VALUE idx, length;
 
     match_check(match);
-    rb_scan_args(argc, argv, "11", &idx, &rest);
+    rb_scan_args(argc, argv, "11", &idx, &length);
 
-    if (NIL_P(rest)) {
+    if (NIL_P(length)) {
 	if (FIXNUM_P(idx)) {
-	    if (FIX2INT(idx) >= 0) {
-		return rb_reg_nth_match(FIX2INT(idx), match);
-	    }
+	    return rb_reg_nth_match(FIX2INT(idx), match);
 	}
 	else {
-	    const char *p;
-	    int num;
-
-	    switch (TYPE(idx)) {
-	      case T_SYMBOL:
-		idx = rb_sym2str(idx);
-		/* fall through */
-	      case T_STRING:
-		p = StringValuePtr(idx);
-		re = RMATCH(match)->regexp;
-		if (NIL_P(re) || !rb_enc_compatible(RREGEXP_SRC(re), idx) ||
-		    (num = name_to_backref_number(RMATCH_REGS(match), RMATCH(match)->regexp,
-						  p, p + RSTRING_LEN(idx))) < 1) {
-		    name_to_backref_error(idx);
-		}
+	    int num = namev_to_backref_number(RMATCH_REGS(match), RMATCH(match)->regexp, idx);
+	    if (num >= 0) {
 		return rb_reg_nth_match(num, match);
-
-	      default:
-		break;
+	    }
+	    else {
+		return match_ary_aref(match, idx, Qnil);
 	    }
 	}
     }
-
-    return rb_ary_aref(argc, argv, match_to_a(match));
+    else {
+	long beg = NUM2LONG(idx);
+	long len = NUM2LONG(length);
+	long num_regs = RMATCH_REGS(match)->num_regs;
+	if (len < 0) {
+	    return Qnil;
+	}
+	if (beg < 0) {
+	    beg += num_regs;
+	    if (beg < 0) return Qnil;
+	}
+	else if (beg > num_regs) {
+	    return Qnil;
+	}
+	else if (beg+len > num_regs) {
+	    len = num_regs - beg;
+	}
+	return match_ary_subseq(match, beg, len, Qnil);
+    }
 }
-
-static VALUE
-match_entry(VALUE match, long n)
-{
-    /* n should not exceed num_regs */
-    return rb_reg_nth_match((int)n, match);
-}
-
 
 /*
  *  call-seq:
@@ -1902,16 +1969,36 @@ match_entry(VALUE match, long n)
  *     m = /(.)(.)(\d+)(\d)/.match("THX1138: The Movie")
  *     m.to_a               #=> ["HX1138", "H", "X", "113", "8"]
  *     m.values_at(0, 2, -2)   #=> ["HX1138", "X", "113"]
+ *
+ *     m = /(?<a>\d+) *(?<op>[+\-*\/]) *(?<b>\d+)/.match("1 + 2")
+ *     m.to_a               #=> ["1 + 2", "1", "+", "2"]
+ *     m.values_at(:a, :b, :op) #=> ["1", "2", "+"]
  */
 
 static VALUE
 match_values_at(int argc, VALUE *argv, VALUE match)
 {
-    struct re_registers *regs;
+    VALUE result;
+    int i;
 
     match_check(match);
-    regs = RMATCH_REGS(match);
-    return rb_get_values_at(match, regs->num_regs, argc, argv, match_entry);
+    result = rb_ary_new2(argc);
+
+    for (i=0; i<argc; i++) {
+	if (FIXNUM_P(argv[i])) {
+	    rb_ary_push(result, rb_reg_nth_match(FIX2INT(argv[i]), match));
+	}
+	else {
+	    int num = namev_to_backref_number(RMATCH_REGS(match), RMATCH(match)->regexp, argv[i]);
+	    if (num >= 0) {
+		rb_ary_push(result, rb_reg_nth_match(num, match));
+	    }
+	    else {
+		match_ary_aref(match, argv[i], result);
+	    }
+	}
+    }
+    return result;
 }
 
 
@@ -2405,8 +2492,8 @@ unescape_nonascii(const char *p, const char *end, rb_encoding *enc,
               case '1': case '2': case '3':
               case '4': case '5': case '6': case '7': /* \O, \OO, \OOO or backref */
                 {
-                    size_t octlen;
-                    if (ruby_scan_oct(p-1, end-(p-1), &octlen) <= 0177) {
+                    size_t len = end-(p-1), octlen;
+                    if (ruby_scan_oct(p-1, len < 3 ? len : 3, &octlen) <= 0177) {
                         /* backref or 7bit octal.
                            no need to unescape anyway.
                            re-escaping may break backref */
@@ -2558,7 +2645,7 @@ rb_reg_preprocess_dregexp(VALUE ary, int options)
 	src_enc = rb_enc_get(str);
 	if (options & ARG_ENCODING_NONE &&
 		src_enc != ascii8bit) {
-	    if (rb_enc_str_coderange(str) != ENC_CODERANGE_7BIT)
+	    if (str_coderange(str) != ENC_CODERANGE_7BIT)
 		rb_raise(rb_eRegexpError, "/.../n has a non escaped non ASCII character in non ASCII-8BIT script");
 	    else
 		src_enc = ascii8bit;
@@ -2669,7 +2756,7 @@ rb_reg_initialize_str(VALUE obj, VALUE str, int options, onig_errmsg_buffer err,
     if (options & ARG_ENCODING_NONE) {
         rb_encoding *ascii8bit = rb_ascii8bit_encoding();
         if (enc != ascii8bit) {
-            if (rb_enc_str_coderange(str) != ENC_CODERANGE_7BIT) {
+            if (str_coderange(str) != ENC_CODERANGE_7BIT) {
                 errcpy(err, "/.../n has a non escaped non ASCII character in non ASCII-8BIT script");
                 return -1;
             }
@@ -3117,6 +3204,78 @@ rb_reg_match_m(int argc, VALUE *argv, VALUE re)
 }
 
 /*
+ *  call-seq:
+ *     rxp.match?(str)       -> true or false
+ *     rxp.match?(str,pos)   -> true or false
+ *
+ *  Returns a <code>true</code> or <code>false</code> indicates whether the
+ *  regexp is matched or not without updating $~ and other related variables.
+ *  If the second parameter is present, it specifies the position in the string
+ *  to begin the search.
+ *
+ *     /R.../.match?("Ruby")    #=> true
+ *     /R.../.match?("Ruby", 1) #=> false
+ *     /P.../.match?("Ruby")    #=> false
+ *     $&                       #=> nil
+ */
+
+static VALUE
+rb_reg_match_m_p(int argc, VALUE *argv, VALUE re)
+{
+    VALUE str, initpos;
+    long pos = 0;
+    regex_t *reg;
+    onig_errmsg_buffer err = "";
+    OnigPosition result;
+    const UChar *start, *end;
+    int tmpreg;
+
+    rb_scan_args(argc, argv, "11", &str, &initpos);
+    if (NIL_P(str)) return Qfalse;
+    str = SYMBOL_P(str) ? rb_sym2str(str) : rb_str_to_str(str);
+    if (argc == 2) {
+	pos = NUM2LONG(initpos);
+	if (pos < 0) {
+	    pos += NUM2LONG(rb_str_length(str));
+	    if (pos < 0) return Qfalse;
+	}
+	if (pos > 0) {
+	    long len = 0;
+	    char *beg = rb_str_subpos(str, pos, &len);
+	    if (!beg) return Qfalse;
+	    pos = beg - RSTRING_PTR(str);
+	}
+    }
+    reg = rb_reg_prepare_re0(re, str, err);
+    tmpreg = reg != RREGEXP_PTR(re);
+    if (!tmpreg) RREGEXP(re)->usecnt++;
+    start = ((UChar*)RSTRING_PTR(str));
+    end = start + RSTRING_LEN(str);
+    result = onig_search(reg, start, end, start + pos, end,
+			 NULL, ONIG_OPTION_NONE);
+    if (!tmpreg) RREGEXP(re)->usecnt--;
+    if (tmpreg) {
+	if (RREGEXP(re)->usecnt) {
+	    onig_free(reg);
+	}
+	else {
+	    onig_free(RREGEXP_PTR(re));
+	    RREGEXP_PTR(re) = reg;
+	}
+    }
+    if (result < 0) {
+	if (result == ONIG_MISMATCH) {
+	    return Qfalse;
+	}
+	else {
+	    onig_error_code_to_str((UChar*)err, (int)result);
+	    rb_reg_raise(RREGEXP_SRC_PTR(re), RREGEXP_SRC_LEN(re), err, re);
+	}
+    }
+    return Qtrue;
+}
+
+/*
  * Document-method: compile
  *
  * Alias for <code>Regexp.new</code>
@@ -3408,7 +3567,7 @@ rb_reg_s_union(VALUE self, VALUE args0)
                 rb_encoding *enc;
                 StringValue(e);
                 enc = rb_enc_get(e);
-                if (!rb_enc_str_asciicompat_p(e)) {
+                if (!rb_enc_asciicompat(enc)) {
                     if (!has_ascii_incompat)
                         has_ascii_incompat = enc;
                     else if (has_ascii_incompat != enc)
@@ -3779,6 +3938,7 @@ Init_Regexp(void)
     rb_define_method(rb_cRegexp, "===", rb_reg_eqq, 1);
     rb_define_method(rb_cRegexp, "~", rb_reg_match2, 0);
     rb_define_method(rb_cRegexp, "match", rb_reg_match_m, -1);
+    rb_define_method(rb_cRegexp, "match?", rb_reg_match_m_p, -1);
     rb_define_method(rb_cRegexp, "to_s", rb_reg_to_s, 0);
     rb_define_method(rb_cRegexp, "inspect", rb_reg_inspect, 0);
     rb_define_method(rb_cRegexp, "source", rb_reg_source, 0);

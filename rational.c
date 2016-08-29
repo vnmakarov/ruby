@@ -106,7 +106,7 @@ f_mul(VALUE x, VALUE y)
     if (FIXNUM_P(y)) {
 	long iy = FIX2LONG(y);
 	if (iy == 0) {
-	    if (FIXNUM_P(x) || RB_TYPE_P(x, T_BIGNUM))
+	    if (RB_INTEGER_TYPE_P(x))
 		return ZERO;
 	}
 	else if (iy == 1)
@@ -115,7 +115,7 @@ f_mul(VALUE x, VALUE y)
     else if (FIXNUM_P(x)) {
 	long ix = FIX2LONG(x);
 	if (ix == 0) {
-	    if (FIXNUM_P(y) || RB_TYPE_P(y, T_BIGNUM))
+	    if (RB_INTEGER_TYPE_P(y))
 		return ZERO;
 	}
 	else if (ix == 1)
@@ -395,13 +395,10 @@ f_lcm(VALUE x, VALUE y)
 }
 
 #define get_dat1(x) \
-    struct RRational *dat;\
-    dat = ((struct RRational *)(x))
+    struct RRational *dat = RRATIONAL(x)
 
 #define get_dat2(x,y) \
-    struct RRational *adat, *bdat;\
-    adat = ((struct RRational *)(x));\
-    bdat = ((struct RRational *)(y))
+    struct RRational *adat = RRATIONAL(x), *bdat = RRATIONAL(y)
 
 #define RRATIONAL_SET_NUM(rat, n) RB_OBJ_WRITE((rat), &((struct RRational *)(rat))->num,(n))
 #define RRATIONAL_SET_DEN(rat, d) RB_OBJ_WRITE((rat), &((struct RRational *)(rat))->den,(d))
@@ -608,7 +605,7 @@ f_rational_new_no_reduce2(VALUE klass, VALUE x, VALUE y)
 static VALUE
 nurat_f_rational(int argc, VALUE *argv, VALUE klass)
 {
-    return rb_funcall2(rb_cRational, id_convert, argc, argv);
+    return rb_funcallv(rb_cRational, id_convert, argc, argv);
 }
 
 /*
@@ -744,8 +741,8 @@ f_addsub(VALUE self, VALUE anum, VALUE aden, VALUE bnum, VALUE bden, int k)
  *    Rational(9, 8)  + 4                #=> (41/8)
  *    Rational(20, 9) + 9.8              #=> 12.022222222222222
  */
-static VALUE
-nurat_add(VALUE self, VALUE other)
+VALUE
+rb_rational_plus(VALUE self, VALUE other)
 {
     if (RB_TYPE_P(other, T_FIXNUM) || RB_TYPE_P(other, T_BIGNUM)) {
 	{
@@ -2541,7 +2538,7 @@ Init_Rational(void)
     rb_define_method(rb_cRational, "numerator", nurat_numerator, 0);
     rb_define_method(rb_cRational, "denominator", nurat_denominator, 0);
 
-    rb_define_method(rb_cRational, "+", nurat_add, 1);
+    rb_define_method(rb_cRational, "+", rb_rational_plus, 1);
     rb_define_method(rb_cRational, "-", nurat_sub, 1);
     rb_define_method(rb_cRational, "*", nurat_mul, 1);
     rb_define_method(rb_cRational, "/", nurat_div, 1);

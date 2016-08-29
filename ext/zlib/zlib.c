@@ -52,8 +52,6 @@ max_uint(long n)
 #define MAX_UINT(n) (uInt)(n)
 #endif
 
-#define sizeof(x) ((int)sizeof(x))
-
 static ID id_dictionaries;
 
 /*--------- Prototypes --------*/
@@ -1365,7 +1363,6 @@ rb_zstream_set_avail_out(VALUE obj, VALUE size)
 {
     struct zstream *z = get_zstream(obj);
 
-    Check_Type(size, T_FIXNUM);
     zstream_expand_buffer_into(z, FIX2INT(size));
     return size;
 }
@@ -1451,7 +1448,7 @@ rb_zstream_closed_p(VALUE obj)
 
 #define FIXNUMARG(val, ifnil) \
     (NIL_P((val)) ? (ifnil) \
-    : ((void)Check_Type((val), T_FIXNUM), FIX2INT((val))))
+    : (FIX2INT((val))))
 
 #define ARG_LEVEL(val)     FIXNUMARG((val), Z_DEFAULT_COMPRESSION)
 #define ARG_WBITS(val)     FIXNUMARG((val), MAX_WBITS)
@@ -2523,7 +2520,7 @@ gzfile_make_header(struct gzfile *gz)
     gzfile_set32((unsigned long)gz->mtime, &buf[4]);
     buf[8] = extraflags;
     buf[9] = gz->os_code;
-    zstream_append_buffer(&gz->z, buf, sizeof(buf));
+    zstream_append_buffer(&gz->z, buf, (long)sizeof(buf));
 
     if (!NIL_P(gz->orig_name)) {
 	zstream_append_buffer2(&gz->z, gz->orig_name);
@@ -2544,7 +2541,7 @@ gzfile_make_footer(struct gzfile *gz)
 
     gzfile_set32(gz->crc, buf);
     gzfile_set32(gz->z.stream.total_in, &buf[4]);
-    zstream_append_buffer(&gz->z, buf, sizeof(buf));
+    zstream_append_buffer(&gz->z, buf, (long)sizeof(buf));
     gz->z.flags |= GZFILE_FLAG_FOOTER_FINISHED;
 }
 

@@ -86,15 +86,15 @@ ossl_spki_initialize(int argc, VALUE *argv, VALUE self)
 	return self;
     }
     StringValue(buffer);
-    if (!(spki = NETSCAPE_SPKI_b64_decode(RSTRING_PTR(buffer), -1))) {
+    if (!(spki = NETSCAPE_SPKI_b64_decode(RSTRING_PTR(buffer), RSTRING_LENINT(buffer)))) {
+	ossl_clear_error();
 	p = (unsigned char *)RSTRING_PTR(buffer);
 	if (!(spki = d2i_NETSCAPE_SPKI(NULL, &p, RSTRING_LEN(buffer)))) {
 	    ossl_raise(eSPKIError, NULL);
 	}
     }
     NETSCAPE_SPKI_free(DATA_PTR(self));
-    DATA_PTR(self) = spki;
-    ERR_clear_error();
+    SetSPKI(self, spki);
 
     return self;
 }
@@ -380,7 +380,8 @@ void
 Init_ossl_ns_spki(void)
 {
 #if 0
-    mOSSL = rb_define_module("OpenSSL"); /* let rdoc know about mOSSL */
+    mOSSL = rb_define_module("OpenSSL");
+    eOSSLError = rb_define_class_under(mOSSL, "OpenSSLError", rb_eStandardError);
 #endif
 
     mNetscape = rb_define_module_under(mOSSL, "Netscape");

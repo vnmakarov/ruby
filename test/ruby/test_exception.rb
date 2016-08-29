@@ -430,11 +430,9 @@ end.join
     bug3237 = '[ruby-core:29948]'
     str = "\u2600"
     id = :"\u2604"
-    EnvUtil.with_default_external(Encoding::UTF_8) do
-      msg = "undefined method `#{id}' for #{str.inspect}:String"
-      assert_raise_with_message(NoMethodError, msg, bug3237) do
-        str.__send__(id)
-      end
+    msg = "undefined method `#{id}' for \"#{str}\":String"
+    assert_raise_with_message(NoMethodError, msg, bug3237) do
+      str.__send__(id)
     end
   end
 
@@ -725,48 +723,91 @@ end.join
     assert_in_out_err([], "raise Class.new(RuntimeError), 'foo'", [], /foo\n/)
   end
 
-  def test_name_error_info
-    obj = BasicObject.new
-    class << obj
+  PrettyObject =
+    Class.new(BasicObject) do
       alias object_id __id__
       def pretty_inspect; "`obj'"; end
+      alias inspect pretty_inspect
     end
+
+  def test_name_error_info_const
+    obj = PrettyObject.new
+
     e = assert_raise(NameError) {
       obj.instance_eval("Object")
     }
     assert_equal(:Object, e.name)
+
     e = assert_raise(NameError) {
       BasicObject::X
     }
     assert_same(BasicObject, e.receiver)
+    assert_equal(:X, e.name)
+  end
+
+  def test_name_error_info_method
+    obj = PrettyObject.new
+
     e = assert_raise(NameError) {
       obj.instance_eval {foo}
     }
     assert_equal(:foo, e.name)
     assert_same(obj, e.receiver)
+
     e = assert_raise(NoMethodError) {
       obj.foo(1, 2)
     }
     assert_equal(:foo, e.name)
     assert_equal([1, 2], e.args)
     assert_same(obj, e.receiver)
+    assert_not_predicate(e, :private_call?)
+
     e = assert_raise(NoMethodError) {
       obj.instance_eval {foo(1, 2)}
     }
     assert_equal(:foo, e.name)
     assert_equal([1, 2], e.args)
     assert_same(obj, e.receiver)
+    assert_predicate(e, :private_call?)
+  end
+
+  def test_name_error_info_local_variables
+    obj = PrettyObject.new
     def obj.test(a, b=nil, *c, &d)
       e = a
       1.times {|f| g = foo; g}
       e
     end
+
     e = assert_raise(NameError) {
       obj.test(3)
     }
     assert_equal(:foo, e.name)
     assert_same(obj, e.receiver)
     assert_equal(%i[a b c d e f g], e.local_variables.sort)
+  end
+
+  def test_name_error_info_method_missing
+    obj = PrettyObject.new
+    def obj.method_missing(*)
+      super
+    end
+
+    e = assert_raise(NoMethodError) {
+      obj.foo(1, 2)
+    }
+    assert_equal(:foo, e.name)
+    assert_equal([1, 2], e.args)
+    assert_same(obj, e.receiver)
+    assert_not_predicate(e, :private_call?)
+
+    e = assert_raise(NoMethodError) {
+      obj.instance_eval {foo(1, 2)}
+    }
+    assert_equal(:foo, e.name)
+    assert_equal([1, 2], e.args)
+    assert_same(obj, e.receiver)
+    assert_predicate(e, :private_call?)
   end
 
   def test_name_error_info_parent_iseq_mark

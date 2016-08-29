@@ -15,25 +15,11 @@
 VALUE mPKey;
 VALUE cPKey;
 VALUE ePKeyError;
-ID id_private_q;
+static ID id_private_q;
 
 /*
  * callback for generating keys
  */
-void
-ossl_generate_cb(int p, int n, void *arg)
-{
-    VALUE ary;
-
-    ary = rb_ary_new2(2);
-    rb_ary_store(ary, 0, INT2NUM(p));
-    rb_ary_store(ary, 1, INT2NUM(n));
-
-    rb_yield(ary);
-}
-
-#if HAVE_BN_GENCB
-/* OpenSSL 2nd version of GN generation callback */
 int
 ossl_generate_cb_2(int p, int n, BN_GENCB *cb)
 {
@@ -41,7 +27,7 @@ ossl_generate_cb_2(int p, int n, BN_GENCB *cb)
     struct ossl_generate_cb_arg *arg;
     int state;
 
-    arg = (struct ossl_generate_cb_arg *)cb->arg;
+    arg = (struct ossl_generate_cb_arg *)BN_GENCB_get_arg(cb);
     if (arg->yield) {
 	ary = rb_ary_new2(2);
 	rb_ary_store(ary, 0, INT2NUM(p));
@@ -66,7 +52,6 @@ ossl_generate_cb_stop(void *ptr)
     struct ossl_generate_cb_arg *arg = (struct ossl_generate_cb_arg *)ptr;
     arg->stop = 1;
 }
-#endif
 
 static void
 ossl_evp_pkey_free(void *ptr)
@@ -91,7 +76,7 @@ ossl_pkey_new(EVP_PKEY *pkey)
     if (!pkey) {
 	ossl_raise(ePKeyError, "Cannot make new key from NULL.");
     }
-    switch (EVP_PKEY_type(pkey->type)) {
+    switch (EVP_PKEY_base_id(pkey)) {
 #if !defined(OPENSSL_NO_RSA)
     case EVP_PKEY_RSA:
 	return ossl_rsa_new(pkey);
@@ -121,8 +106,8 @@ ossl_pkey_new_from_file(VALUE filename)
     FILE *fp;
     EVP_PKEY *pkey;
 
-    SafeStringValue(filename);
-    if (!(fp = fopen(RSTRING_PTR(filename), "r"))) {
+    rb_check_safe_obj(filename);
+    if (!(fp = fopen(StringValueCStr(filename), "r"))) {
 	ossl_raise(ePKeyError, "%s", strerror(errno));
     }
     rb_fd_fix_cloexec(fileno(fp));
@@ -138,48 +123,46 @@ ossl_pkey_new_from_file(VALUE filename)
 
 /*
  *  call-seq:
- *     OpenSSL::PKey.read(string [, pwd ] ) -> PKey
- *     OpenSSL::PKey.read(file [, pwd ]) -> PKey
+ *     OpenSSL::PKey.read(string [, pwd ]) -> PKey
+ *     OpenSSL::PKey.read(io [, pwd ]) -> PKey
+ *
+ * Reads a DER or PEM encoded string from +string+ or +io+ and returns an
+ * instance of the appropriate PKey class.
  *
  * === Parameters
  * * +string+ is a DER- or PEM-encoded string containing an arbitrary private
- * or public key.
- * * +file+ is an instance of +File+ containing a DER- or PEM-encoded
- * arbitrary private or public key.
+ *   or public key.
+ * * +io+ is an instance of +IO+ containing a DER- or PEM-encoded
+ *   arbitrary private or public key.
  * * +pwd+ is an optional password in case +string+ or +file+ is an encrypted
- * PEM resource.
+ *   PEM resource.
  */
 static VALUE
 ossl_pkey_new_from_data(int argc, VALUE *argv, VALUE self)
 {
-     EVP_PKEY *pkey;
-     BIO *bio;
-     VALUE data, pass;
-     char *passwd = NULL;
+    EVP_PKEY *pkey;
+    BIO *bio;
+    VALUE data, pass;
 
-     rb_scan_args(argc, argv, "11", &data, &pass);
+    rb_scan_args(argc, argv, "11", &data, &pass);
+    pass = ossl_pem_passwd_value(pass);
 
-     bio = ossl_obj2bio(data);
-     if (!(pkey = d2i_PrivateKey_bio(bio, NULL))) {
+    bio = ossl_obj2bio(data);
+    if (!(pkey = d2i_PrivateKey_bio(bio, NULL))) {
 	OSSL_BIO_reset(bio);
-	if (!NIL_P(pass)) {
-	    passwd = StringValuePtr(pass);
-	}
-	if (!(pkey = PEM_read_bio_PrivateKey(bio, NULL, ossl_pem_passwd_cb, passwd))) {
+	if (!(pkey = PEM_read_bio_PrivateKey(bio, NULL, ossl_pem_passwd_cb, (void *)pass))) {
 	    OSSL_BIO_reset(bio);
 	    if (!(pkey = d2i_PUBKEY_bio(bio, NULL))) {
 		OSSL_BIO_reset(bio);
-		if (!NIL_P(pass)) {
-		    passwd = StringValuePtr(pass);
-		}
-		pkey = PEM_read_bio_PUBKEY(bio, NULL, ossl_pem_passwd_cb, passwd);
+		pkey = PEM_read_bio_PUBKEY(bio, NULL, ossl_pem_passwd_cb, (void *)pass);
 	    }
 	}
     }
 
     BIO_free(bio);
     if (!pkey)
-	ossl_raise(rb_eArgError, "Could not parse PKey");
+	ossl_raise(ePKeyError, "Could not parse PKey");
+
     return ossl_pkey_new(pkey);
 }
 
@@ -212,21 +195,7 @@ DupPKeyPtr(VALUE obj)
     EVP_PKEY *pkey;
 
     SafeGetPKey(obj, pkey);
-    CRYPTO_add(&pkey->references, 1, CRYPTO_LOCK_EVP_PKEY);
-
-    return pkey;
-}
-
-EVP_PKEY *
-DupPrivPKeyPtr(VALUE obj)
-{
-    EVP_PKEY *pkey;
-
-    if (rb_funcallv(obj, id_private_q, 0, NULL) != Qtrue) {
-	ossl_raise(rb_eArgError, "Private key is needed.");
-    }
-    SafeGetPKey(obj, pkey);
-    CRYPTO_add(&pkey->references, 1, CRYPTO_LOCK_EVP_PKEY);
+    EVP_PKEY_up_ref(pkey);
 
     return pkey;
 }
@@ -286,21 +255,24 @@ static VALUE
 ossl_pkey_sign(VALUE self, VALUE digest, VALUE data)
 {
     EVP_PKEY *pkey;
-    EVP_MD_CTX ctx;
+    const EVP_MD *md;
+    EVP_MD_CTX *ctx;
     unsigned int buf_len;
     VALUE str;
     int result;
 
-    if (rb_funcallv(self, id_private_q, 0, NULL) != Qtrue) {
-	ossl_raise(rb_eArgError, "Private key is needed.");
-    }
-    GetPKey(self, pkey);
-    EVP_SignInit(&ctx, GetDigestPtr(digest));
+    pkey = GetPrivPKeyPtr(self);
+    md = GetDigestPtr(digest);
     StringValue(data);
-    EVP_SignUpdate(&ctx, RSTRING_PTR(data), RSTRING_LEN(data));
     str = rb_str_new(0, EVP_PKEY_size(pkey)+16);
-    result = EVP_SignFinal(&ctx, (unsigned char *)RSTRING_PTR(str), &buf_len, pkey);
-    EVP_MD_CTX_cleanup(&ctx);
+
+    ctx = EVP_MD_CTX_new();
+    if (!ctx)
+	ossl_raise(ePKeyError, "EVP_MD_CTX_new");
+    EVP_SignInit(ctx, md);
+    EVP_SignUpdate(ctx, RSTRING_PTR(data), RSTRING_LEN(data));
+    result = EVP_SignFinal(ctx, (unsigned char *)RSTRING_PTR(str), &buf_len, pkey);
+    EVP_MD_CTX_free(ctx);
     if (!result)
 	ossl_raise(ePKeyError, NULL);
     assert((long)buf_len <= RSTRING_LEN(str));
@@ -334,18 +306,25 @@ static VALUE
 ossl_pkey_verify(VALUE self, VALUE digest, VALUE sig, VALUE data)
 {
     EVP_PKEY *pkey;
-    EVP_MD_CTX ctx;
+    const EVP_MD *md;
+    EVP_MD_CTX *ctx;
     int result;
 
     GetPKey(self, pkey);
+    md = GetDigestPtr(digest);
     StringValue(sig);
     StringValue(data);
-    EVP_VerifyInit(&ctx, GetDigestPtr(digest));
-    EVP_VerifyUpdate(&ctx, RSTRING_PTR(data), RSTRING_LEN(data));
-    result = EVP_VerifyFinal(&ctx, (unsigned char *)RSTRING_PTR(sig), RSTRING_LENINT(sig), pkey);
-    EVP_MD_CTX_cleanup(&ctx);
+
+    ctx = EVP_MD_CTX_new();
+    if (!ctx)
+	ossl_raise(ePKeyError, "EVP_MD_CTX_new");
+    EVP_VerifyInit(ctx, md);
+    EVP_VerifyUpdate(ctx, RSTRING_PTR(data), RSTRING_LEN(data));
+    result = EVP_VerifyFinal(ctx, (unsigned char *)RSTRING_PTR(sig), RSTRING_LENINT(sig), pkey);
+    EVP_MD_CTX_free(ctx);
     switch (result) {
     case 0:
+	ossl_clear_error();
 	return Qfalse;
     case 1:
 	return Qtrue;
@@ -362,7 +341,8 @@ void
 Init_ossl_pkey(void)
 {
 #if 0
-    mOSSL = rb_define_module("OpenSSL"); /* let rdoc know about mOSSL */
+    mOSSL = rb_define_module("OpenSSL");
+    eOSSLError = rb_define_class_under(mOSSL, "OpenSSLError", rb_eStandardError);
 #endif
 
     /* Document-module: OpenSSL::PKey

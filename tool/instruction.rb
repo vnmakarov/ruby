@@ -1,7 +1,8 @@
 #!./miniruby
 # -*- coding: us-ascii -*-
 #
-#
+# This library is used by insns2vm.rb as part of autogenerating
+# instruction files with .inc extensions like insns.inc and vm.inc.
 
 require 'erb'
 $:.unshift(File.dirname(__FILE__))
@@ -453,9 +454,9 @@ class RubyVM
         pops.concat e_pops
         rets.concat e_rets
         defopes.concat e_defs
-        sp_inc += "#{insn.sp_inc}"
+        sp_inc << "#{insn.sp_inc}"
 
-        body += "{ /* unif: #{i} */\n" +
+        body << "{ /* unif: #{i} */\n" +
                 passed_vars.map{|rpvars|
                   pv = rpvars[0]
                   rv = rpvars[1]
@@ -463,15 +464,22 @@ class RubyVM
                 }.join("\n") +
                 "\n" +
                 redef_vars.map{|v, type|
-                  "#define #{v} #{v}_#{i}"
-                }.join("\n") + "\n" +
-                insn.body +
-                passed_vars.map{|rpvars|
-                  "#undef #{rpvars[0][1]}"
+                  "#{type} #{v} = #{v}_#{i};"
+                }.join("\n") + "\n"
+        if line = insn.body.instance_variable_get(:@line_no)
+          file = insn.body.instance_variable_get(:@file)
+          body << "#line #{line+1} \"#{file}\"\n"
+          body << insn.body
+          body << "\n#line __CURRENT_LINE__ \"__CURRENT_FILE__\"\n"
+        else
+          body << insn.body
+        end
+        body << redef_vars.keys.map{|v|
+                  "#{v}_#{i} = #{v};"
                 }.join("\n") +
                 "\n" +
-                redef_vars.keys.map{|v|
-                  "#undef  #{v}"
+                passed_vars.map{|rpvars|
+                  "#undef #{rpvars[0][1]}"
                 }.join("\n") +
                 "\n}\n"
       }
@@ -893,7 +901,7 @@ class RubyVM
           commit insn.body
           commit '#line __CURRENT_LINE__ "__CURRENT_FILE__"'
         else
-          insn.body
+          commit insn.body
         end
         make_footer(insn)
       end

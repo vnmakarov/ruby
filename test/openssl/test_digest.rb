@@ -3,7 +3,7 @@ require_relative 'utils'
 
 if defined?(OpenSSL::TestUtils)
 
-class OpenSSL::TestDigest < Test::Unit::TestCase
+class OpenSSL::TestDigest < OpenSSL::TestCase
   def setup
     @d1 = OpenSSL::Digest.new("MD5")
     @d2 = OpenSSL::Digest::MD5.new
@@ -12,6 +12,7 @@ class OpenSSL::TestDigest < Test::Unit::TestCase
   end
 
   def teardown
+    super
     @d1 = @d2 = @md = nil
   end
 
@@ -58,9 +59,9 @@ class OpenSSL::TestDigest < Test::Unit::TestCase
   end
 
   def test_digest_constants
-    algs = %w(DSS1 MD4 MD5 RIPEMD160 SHA1)
-    if !libressl?  || !version_since([2,3])
-      algs += %w(SHA)
+    algs = %w(MD4 MD5 RIPEMD160 SHA1)
+    if OpenSSL::OPENSSL_VERSION_NUMBER < 0x10100000
+      algs += %w(DSS1 SHA)
     end
     if OpenSSL::OPENSSL_VERSION_NUMBER > 0x00908000
       algs += %w(SHA224 SHA256 SHA384 SHA512)

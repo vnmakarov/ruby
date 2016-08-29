@@ -253,6 +253,9 @@ typedef unsigned long unsigned_clock_t;
 #elif defined(HAVE_LONG_LONG) && SIZEOF_CLOCK_T == SIZEOF_LONG_LONG
 typedef unsigned LONG_LONG unsigned_clock_t;
 #endif
+#ifndef HAVE_SIG_T
+typedef void (*sig_t) (int);
+#endif
 
 static ID id_in, id_out, id_err, id_pid, id_uid, id_gid;
 static ID id_close, id_child;
@@ -978,18 +981,17 @@ rb_waitpid(rb_pid_t pid, int *st, int flags)
 static VALUE
 proc_wait(int argc, VALUE *argv)
 {
-    VALUE vpid, vflags;
     rb_pid_t pid;
     int flags, status;
 
     flags = 0;
-    if (argc == 0) {
+    if (rb_check_arity(argc, 0, 2) == 0) {
 	pid = -1;
     }
     else {
-	rb_scan_args(argc, argv, "02", &vpid, &vflags);
-	pid = NUM2PIDT(vpid);
-	if (argc == 2 && !NIL_P(vflags)) {
+	VALUE vflags;
+	pid = NUM2PIDT(argv[0]);
+	if (argc == 2 && !NIL_P(vflags = argv[1])) {
 	    flags = NUM2UINT(vflags);
 	}
     }
@@ -1987,12 +1989,24 @@ rb_check_argv(int argc, VALUE *argv)
 }
 
 static VALUE
+check_hash(VALUE obj)
+{
+    if (RB_SPECIAL_CONST_P(obj)) return Qnil;
+    switch (RB_BUILTIN_TYPE(obj)) {
+      case T_STRING:
+      case T_ARRAY:
+	return Qnil;
+    }
+    return rb_check_hash_type(obj);
+}
+
+static VALUE
 rb_exec_getargs(int *argc_p, VALUE **argv_p, int accept_shell, VALUE *env_ret, VALUE *opthash_ret)
 {
     VALUE hash, prog;
 
     if (0 < *argc_p) {
-        hash = rb_check_hash_type((*argv_p)[*argc_p-1]);
+        hash = check_hash((*argv_p)[*argc_p-1]);
         if (!NIL_P(hash)) {
             *opthash_ret = hash;
             (*argc_p)--;
@@ -2000,7 +2014,7 @@ rb_exec_getargs(int *argc_p, VALUE **argv_p, int accept_shell, VALUE *env_ret, V
     }
 
     if (0 < *argc_p) {
-        hash = rb_check_hash_type((*argv_p)[0]);
+        hash = check_hash((*argv_p)[0]);
         if (!NIL_P(hash)) {
             *env_ret = hash;
             (*argc_p)--;
@@ -2573,7 +2587,7 @@ rb_f_exec(int argc, const VALUE *argv)
     rb_exec_fail(eargp, err, errmsg);
     RB_GC_GUARD(execarg_obj);
     rb_syserr_fail_str(err, fail_str);
-    return Qnil;		/* dummy */
+    UNREACHABLE;
 }
 
 #define ERRMSG(str) do { if (errmsg && 0 < errmsg_buflen) strlcpy(errmsg, (str), errmsg_buflen); } while (0)
@@ -3486,40 +3500,10 @@ disable_child_handler_fork_child(struct child_handler_disabler_state *old, char 
 {
     int sig;
     int ret;
-#ifdef POSIX_SIGNAL
-    struct sigaction act, oact;
-
-    act.sa_handler = SIG_DFL;
-    act.sa_flags = 0;
-    ret = sigemptyset(&act.sa_mask); /* async-signal-safe */
-    if (ret == -1) {
-        ERRMSG("sigemptyset");
-        return -1;
-    }
-#else
-    sig_t handler;
-#endif
 
     for (sig = 1; sig < NSIG; sig++) {
-        int reset = 0;
-#ifdef SIGPIPE
-        if (sig == SIGPIPE)
-            reset = 1;
-#endif
-        if (!reset) {
-#ifdef POSIX_SIGNAL
-            ret = sigaction(sig, NULL, &oact); /* async-signal-safe */
-            if (ret == -1 && errno == EINVAL) {
-                continue; /* Ignore invalid signal number. */
-            }
-            if (ret == -1) {
-                ERRMSG("sigaction to obtain old action");
-                return -1;
-            }
-            reset = (oact.sa_flags & SA_SIGINFO) ||
-                    (oact.sa_handler != SIG_IGN && oact.sa_handler != SIG_DFL);
-#else
-            handler = signal(sig, SIG_DFL);
+            sig_t handler = signal(sig, SIG_DFL);
+
             if (handler == SIG_ERR && errno == EINVAL) {
                 continue; /* Ignore invalid signal number */
             }
@@ -3527,24 +3511,15 @@ disable_child_handler_fork_child(struct child_handler_disabler_state *old, char 
                 ERRMSG("signal to obtain old action");
                 return -1;
             }
-            reset = (handler != SIG_IGN && handler != SIG_DFL);
-#endif
-        }
-        if (reset) {
-#ifdef POSIX_SIGNAL
-            ret = sigaction(sig, &act, NULL); /* async-signal-safe */
-            if (ret == -1) {
-                ERRMSG("sigaction to set default action");
-                return -1;
+#ifdef SIGPIPE
+            if (sig == SIGPIPE) {
+                continue;
             }
-#else
-           handler = signal(sig, handler);
-           if (handler == SIG_ERR) {
-                ERRMSG("signal to set default action");
-                return -1;
-           }
 #endif
-        }
+            /* it will be reset to SIG_DFL at execve time, instead */
+            if (handler == SIG_IGN) {
+                signal(sig, SIG_IGN);
+            }
     }
 
     ret = sigprocmask(SIG_SETMASK, &old->sigmask, NULL); /* async-signal-safe */
@@ -3705,7 +3680,6 @@ rb_f_fork(VALUE obj)
 	rb_thread_atfork();
 	if (rb_block_given_p()) {
 	    int status;
-
 	    rb_protect(rb_yield, Qundef, &status);
 	    ruby_stop(status);
 	}
@@ -3760,11 +3734,10 @@ exit_status_code(VALUE status)
 static VALUE
 rb_f_exit_bang(int argc, VALUE *argv, VALUE obj)
 {
-    VALUE status;
     int istatus;
 
-    if (argc > 0 && rb_scan_args(argc, argv, "01", &status) == 1) {
-	istatus = exit_status_code(status);
+    if (rb_check_arity(argc, 0, 1) == 1) {
+	istatus = exit_status_code(argv[0]);
     }
     else {
 	istatus = EXIT_FAILURE;
@@ -3832,11 +3805,10 @@ rb_exit(int status)
 VALUE
 rb_f_exit(int argc, const VALUE *argv)
 {
-    VALUE status;
     int istatus;
 
-    if (argc > 0 && rb_scan_args(argc, argv, "01", &status) == 1) {
-	istatus = exit_status_code(status);
+    if (rb_check_arity(argc, 0, 1) == 1) {
+	istatus = exit_status_code(argv[0]);
     }
     else {
 	istatus = EXIT_SUCCESS;
@@ -3851,7 +3823,7 @@ rb_f_exit(int argc, const VALUE *argv)
  *  call-seq:
  *     abort
  *     Kernel::abort([msg])
- *     Process::abort([msg])
+ *     Process.abort([msg])
  *
  *  Terminate execution immediately, effectively by calling
  *  <code>Kernel.exit(false)</code>. If _msg_ is given, it is written
@@ -3889,6 +3861,29 @@ rb_syswait(rb_pid_t pid)
     rb_waitpid(pid, &status, 0);
 }
 
+#if !defined HAVE_WORKING_FORK && !defined HAVE_SPAWNV
+char *
+rb_execarg_commandline(const struct rb_execarg *eargp, VALUE *prog)
+{
+    VALUE cmd = *prog;
+    if (eargp && !eargp->use_shell) {
+	VALUE str = eargp->invoke.cmd.argv_str;
+	VALUE buf = eargp->invoke.cmd.argv_buf;
+	char *p, **argv = ARGVSTR2ARGV(str);
+	long i, argc = ARGVSTR2ARGC(str);
+	const char *start = RSTRING_PTR(buf);
+	cmd = rb_str_new(start, RSTRING_LEN(buf));
+	p = RSTRING_PTR(cmd);
+	for (i = 1; i < argc; ++i) {
+	    p[argv[i] - start - 1] = ' ';
+	}
+	*prog = cmd;
+	return p;
+    }
+    return StringValueCStr(*prog);
+}
+#endif
+
 static rb_pid_t
 rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 {
@@ -3896,6 +3891,9 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 #if !defined HAVE_WORKING_FORK || USE_SPAWNV
     VALUE prog;
     struct rb_execarg sarg;
+# if !defined HAVE_SPAWNV
+    int status;
+# endif
 #endif
 
 #if defined HAVE_WORKING_FORK && !USE_SPAWNV
@@ -3922,12 +3920,7 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
     if (pid == -1)
 	rb_last_status_set(0x7f << 8, 0);
 # else
-    if (!eargp->use_shell) {
-        char **argv = ARGVSTR2ARGV(eargp->invoke.cmd.argv_str);
-        int argc = ARGVSTR2ARGC(eargp->invoke.cmd.argv_str);
-        prog = rb_ary_join(rb_ary_new4(argc, argv), rb_str_new2(" "));
-    }
-    status = system(StringValuePtr(prog));
+    status = system(rb_execarg_commandline(eargp, &prog));
     rb_last_status_set((status & 0xff) << 8, 0);
     pid = 1;			/* dummy */
 # endif
@@ -4515,14 +4508,12 @@ static VALUE
 proc_getsid(int argc, VALUE *argv)
 {
     rb_pid_t sid;
-    VALUE pid;
+    rb_pid_t pid = 0;
 
-    rb_scan_args(argc, argv, "01", &pid);
+    if (rb_check_arity(argc, 0, 1) == 1 && !NIL_P(argv[0]))
+	pid = NUM2PIDT(argv[0]);
 
-    if (NIL_P(pid))
-	pid = INT2FIX(0);
-
-    sid = getsid(NUM2PIDT(pid));
+    sid = getsid(pid);
     if (sid < 0) rb_sys_fail(0);
     return PIDT2NUM(sid);
 }
@@ -4949,8 +4940,10 @@ proc_setrlimit(int argc, VALUE *argv, VALUE obj)
     VALUE resource, rlim_cur, rlim_max;
     struct rlimit rlim;
 
-    rb_scan_args(argc, argv, "21", &resource, &rlim_cur, &rlim_max);
-    if (rlim_max == Qnil)
+    rb_check_arity(argc, 2, 3);
+    resource = argv[0];
+    rlim_cur = argv[1];
+    if (argc < 3 || NIL_P(rlim_max = argv[2]))
         rlim_max = rlim_cur;
 
     rlim.rlim_cur = rlimit_resource_value(rlim_cur);
@@ -5985,13 +5978,15 @@ static int rb_daemon(int nochdir, int noclose);
 static VALUE
 proc_daemon(int argc, VALUE *argv)
 {
-    VALUE nochdir, noclose;
-    int n;
+    int n, nochdir = FALSE, noclose = FALSE;
 
-    rb_scan_args(argc, argv, "02", &nochdir, &noclose);
+    switch (rb_check_arity(argc, 0, 2)) {
+      case 2: noclose = RTEST(argv[1]);
+      case 1: nochdir = RTEST(argv[0]);
+    }
 
     prefork();
-    n = rb_daemon(RTEST(nochdir), RTEST(noclose));
+    n = rb_daemon(nochdir, noclose);
     if (n < 0) rb_sys_fail("daemon");
     return INT2FIX(n);
 }
@@ -6906,6 +6901,7 @@ typedef long timetick_int_t;
 #define TIMETICK_INT2NUM(v) LONG2NUM(v)
 #endif
 
+CONSTFUNC(static timetick_int_t gcd_timetick_int(timetick_int_t, timetick_int_t));
 static timetick_int_t
 gcd_timetick_int(timetick_int_t a, timetick_int_t b)
 {
@@ -7221,7 +7217,6 @@ get_mach_timebase_info(void)
 VALUE
 rb_clock_gettime(int argc, VALUE *argv)
 {
-    VALUE clk_id, unit;
     int ret;
 
     struct timetick tt;
@@ -7230,7 +7225,8 @@ rb_clock_gettime(int argc, VALUE *argv)
     int num_numerators = 0;
     int num_denominators = 0;
 
-    rb_scan_args(argc, argv, "11", &clk_id, &unit);
+    VALUE unit = (rb_check_arity(argc, 1, 2) == 2) ? argv[1] : Qnil;
+    VALUE clk_id = argv[0];
 
     if (SYMBOL_P(clk_id)) {
         /*
@@ -7416,15 +7412,14 @@ rb_clock_gettime(int argc, VALUE *argv)
 VALUE
 rb_clock_getres(int argc, VALUE *argv)
 {
-    VALUE clk_id, unit;
-
     struct timetick tt;
     timetick_int_t numerators[2];
     timetick_int_t denominators[2];
     int num_numerators = 0;
     int num_denominators = 0;
 
-    rb_scan_args(argc, argv, "11", &clk_id, &unit);
+    VALUE unit = (rb_check_arity(argc, 1, 2) == 2) ? argv[1] : Qnil;
+    VALUE clk_id = argv[0];
 
     if (SYMBOL_P(clk_id)) {
 #ifdef RUBY_GETTIMEOFDAY_BASED_CLOCK_REALTIME

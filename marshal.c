@@ -1174,19 +1174,11 @@ long_toobig(int size)
 	     STRINGIZE(SIZEOF_LONG)", given %d)", size);
 }
 
-#undef SIGN_EXTEND_CHAR
-#if __STDC__
-# define SIGN_EXTEND_CHAR(c) ((signed char)(c))
-#else  /* not __STDC__ */
-/* As in Harbison and Steele.  */
-# define SIGN_EXTEND_CHAR(c) ((((unsigned char)(c)) ^ 128) - 128)
-#endif
-
 static long
 r_long(struct load_arg *arg)
 {
     register long x;
-    int c = SIGN_EXTEND_CHAR(r_byte(arg));
+    int c = (signed char)r_byte(arg);
     long i;
 
     if (c == 0) return 0;
@@ -1585,6 +1577,7 @@ r_object0(struct load_arg *arg, int *ivp, VALUE extmod)
 	{
 	    VALUE path = r_unique(arg);
 	    VALUE m = rb_path_to_class(path);
+	    if (NIL_P(extmod)) extmod = rb_ary_tmp_new(0);
 
 	    if (RB_TYPE_P(m, T_CLASS)) { /* prepended */
 		VALUE c;
@@ -1604,7 +1597,6 @@ r_object0(struct load_arg *arg, int *ivp, VALUE extmod)
 	    }
 	    else {
 		must_be_module(m, path);
-		if (NIL_P(extmod)) extmod = rb_ary_tmp_new(0);
 		rb_ary_push(extmod, m);
 
 		v = r_object0(arg, 0, extmod);
@@ -1965,6 +1957,11 @@ r_object0(struct load_arg *arg, int *ivp, VALUE extmod)
 	rb_raise(rb_eArgError, "dump format error(0x%x)", type);
 	break;
     }
+
+    if (v == Qundef) {
+	rb_raise(rb_eArgError, "dump format error (bad link)");
+    }
+
     return v;
 }
 

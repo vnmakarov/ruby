@@ -1528,7 +1528,7 @@ lazy_map(VALUE obj)
 static VALUE
 lazy_flat_map_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, yielder))
 {
-    return rb_funcall2(yielder, id_yield, argc, argv);
+    return rb_funcallv(yielder, id_yield, argc, argv);
 }
 
 static VALUE
@@ -1830,7 +1830,7 @@ lazy_take_func(RB_BLOCK_CALL_FUNC_ARGLIST(val, args))
 	memo = args;
     }
 
-    rb_funcall2(argv[0], id_yield, argc - 1, argv + 1);
+    rb_funcallv(argv[0], id_yield, argc - 1, argv + 1);
     if ((remain = NUM2LONG(memo)-1) == 0) {
 	return Qundef;
     }
@@ -1875,7 +1875,7 @@ lazy_take_while_func(RB_BLOCK_CALL_FUNC_ARGLIST(val, args))
 {
     VALUE result = rb_yield_values2(argc - 1, &argv[1]);
     if (!RTEST(result)) return Qundef;
-    rb_funcall2(argv[0], id_yield, argc - 1, argv + 1);
+    rb_funcallv(argv[0], id_yield, argc - 1, argv + 1);
     return Qnil;
 }
 
@@ -1913,7 +1913,7 @@ lazy_drop_func(RB_BLOCK_CALL_FUNC_ARGLIST(val, args))
 	memo = args;
     }
     if ((remain = NUM2LONG(memo)) == 0) {
-	rb_funcall2(argv[0], id_yield, argc - 1, argv + 1);
+	rb_funcallv(argv[0], id_yield, argc - 1, argv + 1);
     }
     else {
 	rb_ivar_set(argv[0], id_memo, LONG2NUM(--remain));
@@ -1942,7 +1942,7 @@ lazy_drop_while_func(RB_BLOCK_CALL_FUNC_ARGLIST(val, args))
 	rb_ivar_set(argv[0], id_memo, memo = Qtrue);
     }
     if (memo == Qtrue) {
-	rb_funcall2(argv[0], id_yield, argc - 1, argv + 1);
+	rb_funcallv(argv[0], id_yield, argc - 1, argv + 1);
     }
     return Qnil;
 }
@@ -1956,6 +1956,41 @@ lazy_drop_while(VALUE obj)
     return lazy_set_method(rb_block_call(rb_cLazy, id_new, 1, &obj,
 					 lazy_drop_while_func, 0),
 			   Qnil, 0);
+}
+
+static VALUE
+lazy_uniq_i(VALUE i, VALUE hash, int argc, const VALUE *argv, VALUE yielder)
+{
+    if (rb_hash_add_new_element(hash, i, Qfalse))
+	return Qnil;
+    return rb_funcallv(yielder, id_yield, argc, argv);
+}
+
+static VALUE
+lazy_uniq_func(RB_BLOCK_CALL_FUNC_ARGLIST(i, hash))
+{
+    VALUE yielder = (--argc, *argv++);
+    i = rb_enum_values_pack(argc, argv);
+    return lazy_uniq_i(i, hash, argc, argv, yielder);
+}
+
+static VALUE
+lazy_uniq_iter(RB_BLOCK_CALL_FUNC_ARGLIST(i, hash))
+{
+    VALUE yielder = (--argc, *argv++);
+    i = rb_yield_values2(argc, argv);
+    return lazy_uniq_i(i, hash, argc, argv, yielder);
+}
+
+static VALUE
+lazy_uniq(VALUE obj)
+{
+    rb_block_call_func *const func =
+	rb_block_given_p() ? lazy_uniq_iter : lazy_uniq_func;
+    VALUE hash = rb_obj_hide(rb_hash_new());
+    return lazy_set_method(rb_block_call(rb_cLazy, id_new, 1, &obj,
+					 func, hash),
+			   0, 0);
 }
 
 static VALUE
@@ -2074,6 +2109,7 @@ InitVM_Enumerator(void)
     rb_define_method(rb_cLazy, "slice_before", lazy_super, -1);
     rb_define_method(rb_cLazy, "slice_after", lazy_super, -1);
     rb_define_method(rb_cLazy, "slice_when", lazy_super, -1);
+    rb_define_method(rb_cLazy, "uniq", lazy_uniq, 0);
 
     rb_define_alias(rb_cLazy, "force", "to_a");
 

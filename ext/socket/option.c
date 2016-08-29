@@ -645,7 +645,7 @@ inspect_timeval_as_interval(int level, int optname, VALUE data, VALUE ret)
  */
 
 #if !defined HAVE_INET_NTOP && ! defined _WIN32
-static const char *
+const char *
 inet_ntop(int af, const void *addr, char *numaddr, size_t numaddr_len)
 {
 #ifdef HAVE_INET_NTOA
@@ -660,10 +660,6 @@ inet_ntop(int af, const void *addr, char *numaddr, size_t numaddr_len)
 #endif
     return numaddr;
 }
-#elif defined __MINGW32__
-# define inet_ntop(f,a,n,l)      rb_w32_inet_ntop(f,a,n,l)
-#elif defined _MSC_VER && RUBY_MSVCRT_VERSION < 90
-const char *WSAAPI inet_ntop(int, const void *, char *, size_t);
 #endif
 
 /* Although the buffer size needed depends on the prefixes, "%u" may generate "4294967295".  */
@@ -930,7 +926,12 @@ inspect_tcpi_usec(VALUE ret, const char *prefix, uint32_t t)
     rb_str_catf(ret, "%s%u.%06us", prefix, t / 1000000, t % 1000000);
 }
 
-#if defined(__linux__) || defined(__sun)
+#if !defined __FreeBSD__ && ( \
+    defined HAVE_STRUCT_TCP_INFO_TCPI_LAST_DATA_SENT || \
+    defined HAVE_STRUCT_TCP_INFO_TCPI_LAST_DATA_RECV || \
+    defined HAVE_STRUCT_TCP_INFO_TCPI_LAST_ACK_SENT  || \
+    defined HAVE_STRUCT_TCP_INFO_TCPI_LAST_ACK_RECV  || \
+    0)
 static void
 inspect_tcpi_msec(VALUE ret, const char *prefix, uint32_t t)
 {

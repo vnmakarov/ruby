@@ -53,6 +53,7 @@ OnigEncodingDefine(ascii, ASCII) = {
   onigenc_always_true_is_allowed_reverse_match,
   ENCINDEX_ASCII,
   ONIGENC_FLAG_NONE,
+  onigenc_single_byte_ascii_only_case_map,
 };
 ENC_ALIAS("BINARY", "ASCII-8BIT")
 ENC_REPLICATE("IBM437", "ASCII-8BIT")

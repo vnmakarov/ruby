@@ -37,13 +37,12 @@ calc_lineno(const rb_iseq_t *iseq, const VALUE *pc)
 int
 rb_vm_get_sourceline(const rb_control_frame_t *cfp)
 {
-    int lineno = 0;
-    const rb_iseq_t *iseq = cfp->iseq;
-
-    if (RUBY_VM_NORMAL_ISEQ_P(iseq)) {
-	lineno = calc_lineno(cfp->iseq, cfp->pc);
+    if (VM_FRAME_RUBYFRAME_P(cfp) && cfp->iseq) {
+	return calc_lineno(cfp->iseq, cfp->pc);
     }
-    return lineno;
+    else {
+	return 0;
+    }
 }
 
 typedef struct rb_backtrace_location_struct {
@@ -1191,7 +1190,7 @@ rb_debug_inspector_open(rb_debug_inspector_func_t func, void *data)
     /* invalidate bindings? */
 
     if (state) {
-	JUMP_TAG(state);
+	TH_JUMP_TAG(th, state);
     }
 
     return result;
@@ -1344,12 +1343,12 @@ frame2klass(VALUE frame)
 
     if (RB_TYPE_P(frame, T_IMEMO)) {
 	const rb_callable_method_entry_t *cme = (rb_callable_method_entry_t *)frame;
-	VM_ASSERT(imemo_type(frame) == imemo_ment);
-	return cme->defined_class;
+
+	if (imemo_type(frame) == imemo_ment) {
+	    return cme->defined_class;
+	}
     }
-    else {
-	return Qnil;
-    }
+    return Qnil;
 }
 
 VALUE

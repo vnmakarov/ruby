@@ -71,10 +71,6 @@ static const unsigned short EncUNICODE_ISO_8859_1_CtypeTable[256] = {
   0x30e2, 0x30e2, 0x30e2, 0x30e2, 0x30e2, 0x30e2, 0x30e2, 0x30e2
 };
 
-/* use bottom bytes for actual code point count; 3 bits is more than enough */
-#define OnigCodePointCount(n) ((n)&0x7)
-#define OnigCaseFoldFlags(n) ((n)&~0x7)
-
 typedef struct {
   int n;
   OnigCodePoint code[3];
@@ -141,19 +137,44 @@ code3_equal(const OnigCodePoint *x, const OnigCodePoint *y)
   return 1;
 }
 
+/* macros related to ONIGENC_CASE flags */
+/* defined here because not used in other files */
+#define ONIGENC_CASE_SPECIALS       (ONIGENC_CASE_TITLECASE|ONIGENC_CASE_IS_TITLECASE|ONIGENC_CASE_UP_SPECIAL|ONIGENC_CASE_DOWN_SPECIAL)
+
+/* macros for length in CaseMappingSpecials array in enc/unicode/casefold.h */
+#define SpecialsLengthOffset 25  /* needs to be higher than the 22 bits used for Unicode codepoints */
+#define SpecialsLengthExtract(n)    ((n)>>SpecialsLengthOffset)
+#define SpecialsCodepointExtract(n) ((n)&((1<<SpecialsLengthOffset)-1))
+#define SpecialsLengthEncode(n)     ((n)<<SpecialsLengthOffset)
+
+#define OnigSpecialIndexMask        (((1<<OnigSpecialIndexWidth)-1)<<OnigSpecialIndexShift)
+#define OnigSpecialIndexEncode(n)   ((n)<<OnigSpecialIndexShift)
+#define OnigSpecialIndexDecode(n)   (((n)&OnigSpecialIndexMask)>>OnigSpecialIndexShift)
+
+/* macros to shorten "enc/unicode/casefold.h", undefined immediately after including the file */
 #define U ONIGENC_CASE_UPCASE
 #define D ONIGENC_CASE_DOWNCASE
 #define F ONIGENC_CASE_FOLD
-#define T(n) ONIGENC_CASE_TITLECASE
+#define ST ONIGENC_CASE_TITLECASE
+#define SU ONIGENC_CASE_UP_SPECIAL
+#define SL ONIGENC_CASE_DOWN_SPECIAL
+#define IT ONIGENC_CASE_IS_TITLECASE
+#define I(n) OnigSpecialIndexEncode(n)
+#define L(n) SpecialsLengthEncode(n)
 
-#include "enc/unicode/casefold.h"
+#include "casefold.h"
 
 #undef U
 #undef D
 #undef F
-#undef T
+#undef ST
+#undef SU
+#undef SL
+#undef IT
+#undef I
+#undef L
 
-#include "enc/unicode/name2ctype.h"
+#include "name2ctype.h"
 
 #define CODE_RANGES_NUM numberof(CodeRanges)
 
@@ -427,6 +448,8 @@ onigenc_unicode_apply_all_case_fold(OnigCaseFoldType flag,
   return 0;
 }
 
+#define CodePointListValidP(x) (OnigCodePointCount((x)->n) <= numberof((x)->code))
+
 extern int
 onigenc_unicode_get_case_fold_codes_by_str(OnigEncoding enc,
     OnigCaseFoldType flag, const OnigUChar* p, const OnigUChar* end,
@@ -479,7 +502,8 @@ onigenc_unicode_get_case_fold_codes_by_str(OnigEncoding enc,
       n++;
 
       code = to->code[0];
-      if ((to = onigenc_unicode_unfold1_lookup(code)) != 0) {
+      if ((to = onigenc_unicode_unfold1_lookup(code)) != 0 &&
+	  CodePointListValidP(to)) {
 	for (i = 0; i < OnigCodePointCount(to->n); i++) {
 	  if (to->code[i] != orig_code) {
 	    items[n].byte_len = len;
@@ -517,7 +541,8 @@ onigenc_unicode_get_case_fold_codes_by_str(OnigEncoding enc,
 	  }
 	}
 
-	if ((z2 = onigenc_unicode_unfold2_lookup(to->code)) != 0) {
+	if ((z2 = onigenc_unicode_unfold2_lookup(to->code)) != 0 &&
+	    CodePointListValidP(z2)) {
 	  for (i = 0; i < OnigCodePointCount(z2->n); i++) {
 	    if (z2->code[i] == code) continue;
 
@@ -542,7 +567,8 @@ onigenc_unicode_get_case_fold_codes_by_str(OnigEncoding enc,
 	  }
 	}
 
-	if ((z2 = onigenc_unicode_unfold3_lookup(to->code)) != 0) {
+	if ((z2 = onigenc_unicode_unfold3_lookup(to->code)) != 0 &&
+	    CodePointListValidP(z2)) {
 	  for (i = 0; i < OnigCodePointCount(z2->n); i++) {
 	    if (z2->code[i] == code) continue;
 
@@ -559,7 +585,8 @@ onigenc_unicode_get_case_fold_codes_by_str(OnigEncoding enc,
     }
   }
   else {
-    if ((to = onigenc_unicode_unfold1_lookup(code)) != 0) {
+    if ((to = onigenc_unicode_unfold1_lookup(code)) != 0 &&
+	CodePointListValidP(to)) {
       for (i = 0; i < OnigCodePointCount(to->n); i++) {
 	items[n].byte_len = len;
 	items[n].code_len = 1;
@@ -586,7 +613,8 @@ onigenc_unicode_get_case_fold_codes_by_str(OnigEncoding enc,
 
       clen = enclen(enc, p, end);
       len += clen;
-      if ((z2 = onigenc_unicode_unfold2_lookup(codes)) != 0) {
+      if ((z2 = onigenc_unicode_unfold2_lookup(codes)) != 0 &&
+	  CodePointListValidP(z2)) {
 	for (i = 0; i < OnigCodePointCount(z2->n); i++) {
 	  items[n].byte_len = len;
 	  items[n].code_len = 1;
@@ -607,7 +635,8 @@ onigenc_unicode_get_case_fold_codes_by_str(OnigEncoding enc,
 
 	clen = enclen(enc, p, end);
 	len += clen;
-	if ((z2 = onigenc_unicode_unfold3_lookup(codes)) != 0) {
+	if ((z2 = onigenc_unicode_unfold3_lookup(codes)) != 0 &&
+	    CodePointListValidP(z2)) {
 	  for (i = 0; i < OnigCodePointCount(z2->n); i++) {
 	    items[n].byte_len = len;
 	    items[n].code_len = 1;
@@ -634,12 +663,20 @@ onigenc_unicode_case_map(OnigCaseFoldType* flagP,
     OnigCodePoint code;
     OnigUChar *to_start = to;
     OnigCaseFoldType flags = *flagP;
-    to_end -= CASE_MAPPING_SLACK;
+    int codepoint_length;
 
-    /* hopelessly preliminary implementation, just dealing with ASCII and Turkic */
+    to_end -= CASE_MAPPING_SLACK;
+    /* copy flags ONIGENC_CASE_UPCASE     and ONIGENC_CASE_DOWNCASE over to
+     *            ONIGENC_CASE_UP_SPECIAL and ONIGENC_CASE_DOWN_SPECIAL */
+    flags |= (flags&(ONIGENC_CASE_UPCASE|ONIGENC_CASE_DOWNCASE))<<ONIGENC_CASE_SPECIAL_OFFSET;
+
     while (*pp<end && to<=to_end) {
+	codepoint_length = ONIGENC_PRECISE_MBC_ENC_LEN(enc, *pp, end);
+	if (codepoint_length < 0)
+	    return codepoint_length; /* encoding invalid */
 	code = ONIGENC_MBC_TO_CODE(enc, *pp, end);
-	*pp += enclen(enc, *pp, end);
+	*pp += codepoint_length;
+
 	if (code<='z') { /* ASCII comes first */
 	    if (code>='a' && code<='z') {
 	        if (flags&ONIGENC_CASE_UPCASE) {
@@ -664,55 +701,112 @@ onigenc_unicode_case_map(OnigCaseFoldType* flagP,
 	    const CodePointList3 *folded;
 
 	    if (code==I_WITH_DOT_ABOVE) {
-		if (flags&ONIGENC_CASE_DOWNCASE) {
+		if (flags&(ONIGENC_CASE_DOWNCASE|ONIGENC_CASE_FOLD)) {
 		    MODIFIED;
-		    if (flags&ONIGENC_CASE_FOLD_TURKISH_AZERI)
-			code = 'i';
-		    else { /* make dot above explicit */
-			to += ONIGENC_CODE_TO_MBC(enc, 'i', to);
+		    code = 'i';
+		    if (!(flags&ONIGENC_CASE_FOLD_TURKISH_AZERI)) { /* make dot above explicit */
+			to += ONIGENC_CODE_TO_MBC(enc, code, to);
 			code = DOT_ABOVE;
 		    }
 		}
 	    }
-	    /* the following special case for  DOTLESS i -> I
-	     * can be removed once we rely on data,
-	     * because the mapping is always the same */
-	    else if (code==DOTLESS_i && (flags&ONIGENC_CASE_UPCASE)) {
-		code = 'I'; MODIFIED;
+	    else if (code==DOTLESS_i) { /* handle this manually, because it isn't involved in folding */
+		if (flags&ONIGENC_CASE_UPCASE)
+		    MODIFIED, code = 'I';
 	    }
-	    else if ((folded = onigenc_unicode_fold_lookup(code)) != 0) {
-		if (flags&OnigCaseFoldFlags(folded->n)) {
-		    int count = OnigCodePointCount(folded->n);
-		    const OnigCodePoint *next = folded->code;
+	    else if ((folded = onigenc_unicode_fold_lookup(code)) != 0) { /* data about character found in CaseFold_11_Table */
+		if ((flags&ONIGENC_CASE_TITLECASE)                                 /* Titlecase needed, */
+		    && (OnigCaseFoldFlags(folded->n)&ONIGENC_CASE_IS_TITLECASE)) { /* but already Titlecase  */
+		    /* already Titlecase, no changes needed */
+		}
+		else if (flags&OnigCaseFoldFlags(folded->n)) { /* needs and data availability match */
+		    const OnigCodePoint *next;
+		    int count;
+
 		    MODIFIED;
+		    if (flags&OnigCaseFoldFlags(folded->n)&ONIGENC_CASE_SPECIALS) { /* special */
+			OnigCodePoint *SpecialsStart = CaseMappingSpecials + OnigSpecialIndexDecode(folded->n);
+
+			if (OnigCaseFoldFlags(folded->n)&ONIGENC_CASE_IS_TITLECASE) { /* swapCASE available */
+			    if ((flags&(ONIGENC_CASE_UPCASE|ONIGENC_CASE_DOWNCASE))
+				    == (ONIGENC_CASE_UPCASE|ONIGENC_CASE_DOWNCASE)) /* swapCASE needed */
+			        goto SpecialsCopy;
+			    else /* swapCASE not needed */
+			        SpecialsStart += SpecialsLengthExtract(*SpecialsStart);
+			}
+			if (OnigCaseFoldFlags(folded->n)&ONIGENC_CASE_TITLECASE) { /* Titlecase available */
+			    if (flags&ONIGENC_CASE_TITLECASE) /* Titlecase needed, but not yet Titlecase */
+				goto SpecialsCopy;
+			    else /* Titlecase not needed */
+				SpecialsStart += SpecialsLengthExtract(*SpecialsStart);
+			}
+			if (OnigCaseFoldFlags(folded->n)&ONIGENC_CASE_DOWN_SPECIAL) {
+			    if (!(flags&ONIGENC_CASE_DOWN_SPECIAL))
+				SpecialsStart += SpecialsLengthExtract(*SpecialsStart);
+			}
+			/* here, we know we use ONIGENC_CASE_UP_SPECIAL, and the position is right */
+		      SpecialsCopy:
+		        count = SpecialsLengthExtract(*SpecialsStart);
+			next = SpecialsStart;
+			code = SpecialsCodepointExtract(*next++);
+		    }
+		    else { /* no specials */
+			count = OnigCodePointCount(folded->n);
+			next = folded->code;
+			code = *next++;
+		    }
 		    if (count==1)
-		        code = *next;
+			;
 		    else if (count==2) {
-			to += ONIGENC_CODE_TO_MBC(enc, *next++, to);
+			to += ONIGENC_CODE_TO_MBC(enc, code, to);
 			code = *next;
 		    }
 		    else { /* count == 3 */
-			to += ONIGENC_CODE_TO_MBC(enc, *next++, to);
+			to += ONIGENC_CODE_TO_MBC(enc, code, to);
 			to += ONIGENC_CODE_TO_MBC(enc, *next++, to);
 			code = *next;
 		    }
 		}
 	    }
-	    else if ((folded = onigenc_unicode_unfold1_lookup(code)) != 0) {
-		if (flags&OnigCaseFoldFlags(folded->n)) {
-		    int count = OnigCodePointCount(folded->n);
-		    const OnigCodePoint *next = folded->code;
+	    else if ((folded = onigenc_unicode_unfold1_lookup(code)) != 0) {  /* data about character found in CaseUnfold_11_Table */
+		if (flags&OnigCaseFoldFlags(folded->n)) { /* needs and data availability match */
 		    MODIFIED;
-		    if (count==1)
-		        code = *next;
+		    if (flags&OnigCaseFoldFlags(folded->n)&ONIGENC_CASE_TITLECASE)
+		        code = folded->code[1];
+		    else
+			code = folded->code[0];
+		}
+		else if ((flags&(ONIGENC_CASE_UPCASE))
+			 && (code==0x03B9||code==0x03BC)) { /* GREEK SMALL LETTERs IOTA/MU */
+		    MODIFIED;
+		    code = folded->code[1];
 		}
 	    }
 	}
 	to += ONIGENC_CODE_TO_MBC(enc, code, to);
 	/* switch from titlecase to lowercase for capitalize */
 	if (flags & ONIGENC_CASE_TITLECASE)
-	    flags ^= (ONIGENC_CASE_UPCASE|ONIGENC_CASE_TITLECASE|ONIGENC_CASE_DOWNCASE);
+	    flags ^= (ONIGENC_CASE_UPCASE    |ONIGENC_CASE_DOWNCASE|ONIGENC_CASE_TITLECASE|
+		      ONIGENC_CASE_UP_SPECIAL|ONIGENC_CASE_DOWN_SPECIAL);
     }
     *flagP = flags;
     return (int)(to-to_start);
 }
+
+#if 0
+const char onigenc_unicode_version_string[] =
+#ifdef ONIG_UNICODE_VERSION_STRING
+    ONIG_UNICODE_VERSION_STRING
+#endif
+    "";
+
+const int onigenc_unicode_version_number[3] = {
+#ifdef ONIG_UNICODE_VERSION_MAJOR
+    ONIG_UNICODE_VERSION_MAJOR,
+    ONIG_UNICODE_VERSION_MINOR,
+    ONIG_UNICODE_VERSION_TEENY,
+#else
+    0
+#endif
+};
+#endif

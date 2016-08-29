@@ -12,13 +12,10 @@
 #include "internal.h"
 #include "ruby/util.h"
 #include "id.h"
+#include <assert.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdio.h>
-
-#if defined(__FreeBSD__) && __FreeBSD__ < 4
-#include <floatingpoint.h>
-#endif
 
 #ifdef HAVE_FLOAT_H
 #include <float.h>
@@ -26,14 +23,6 @@
 
 #ifdef HAVE_IEEEFP_H
 #include <ieeefp.h>
-#endif
-
-#if !defined HAVE_ISFINITE && !defined isfinite
-#if defined HAVE_FINITE && !defined finite && !defined _WIN32
-extern int finite(double);
-# define HAVE_ISFINITE 1
-# define isfinite(x) finite(x)
-#endif
 #endif
 
 /* use IEEE 64bit values if not defined */
@@ -103,9 +92,42 @@ round(double x)
 }
 #endif
 
+static double
+round_to_nearest(double x, double s)
+{
+    double f, xs = x * s;
+
+#ifdef HAVE_ROUND
+    f = round(xs);
+#endif
+    if (x > 0) {
+#ifndef HAVE_ROUND
+	f = floor(xs);
+#endif
+	if ((double)((f + 0.5) / s) <= x) f += 1;
+	x = f;
+    }
+    else {
+#ifndef HAVE_ROUND
+	f = ceil(xs);
+#endif
+	if ((double)((f - 0.5) / s) >= x) f -= 1;
+	x = f;
+    }
+    return x;
+}
+
 static VALUE fix_uminus(VALUE num);
 static VALUE fix_mul(VALUE x, VALUE y);
+static VALUE fix_lshift(long, unsigned long);
+static VALUE fix_rshift(long, unsigned long);
 static VALUE int_pow(long x, unsigned long y);
+static VALUE int_cmp(VALUE x, VALUE y);
+static int int_round_zero_p(VALUE num, int ndigits);
+VALUE rb_int_floor(VALUE num, int ndigits);
+VALUE rb_int_ceil(VALUE num, int ndigits);
+static VALUE flo_to_i(VALUE num);
+static int float_invariant_round(double number, int ndigits, VALUE *num);
 
 static ID id_coerce, id_div, id_divmod;
 #define id_to_i idTo_i
@@ -115,7 +137,9 @@ static ID id_coerce, id_div, id_divmod;
 VALUE rb_cNumeric;
 VALUE rb_cFloat;
 VALUE rb_cInteger;
+#ifndef RUBY_INTEGER_UNIFICATION
 VALUE rb_cFixnum;
+#endif
 
 VALUE rb_eZeroDivError;
 VALUE rb_eFloatDomainError;
@@ -173,17 +197,47 @@ compare_with_zero(VALUE num, ID mid)
     return r;
 }
 
+#define FIXNUM_POSITIVE_P(num) ((SIGNED_VALUE)(num) > (SIGNED_VALUE)INT2FIX(0))
+#define FIXNUM_NEGATIVE_P(num) ((SIGNED_VALUE)(num) < 0)
+#define FIXNUM_ZERO_P(num) ((num) == INT2FIX(0))
+
+#if 0
+static inline int
+int_pos_p(VALUE num)
+{
+    if (FIXNUM_P(num)) {
+	return FIXNUM_POSITIVE_P(num);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return BIGNUM_POSITIVE_P(num);
+    }
+    return Qnil;
+}
+#endif
+
+static inline int
+int_neg_p(VALUE num)
+{
+    if (FIXNUM_P(num)) {
+	return FIXNUM_NEGATIVE_P(num);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return BIGNUM_NEGATIVE_P(num);
+    }
+    return Qnil;
+}
+
 static inline int
 positive_int_p(VALUE num)
 {
     const ID mid = '>';
 
     if (FIXNUM_P(num)) {
-	if (method_basic_p(rb_cFixnum))
-	    return (SIGNED_VALUE)num > 0;
+	if (method_basic_p(rb_cInteger))
+	    return FIXNUM_POSITIVE_P(num);
     }
     else if (RB_TYPE_P(num, T_BIGNUM)) {
-	if (method_basic_p(rb_cBignum))
+	if (method_basic_p(rb_cInteger))
 	    return BIGNUM_POSITIVE_P(num);
     }
     return RTEST(compare_with_zero(num, mid));
@@ -195,11 +249,11 @@ negative_int_p(VALUE num)
     const ID mid = '<';
 
     if (FIXNUM_P(num)) {
-	if (method_basic_p(rb_cFixnum))
-	    return (SIGNED_VALUE)num < 0;
+	if (method_basic_p(rb_cInteger))
+	    return FIXNUM_NEGATIVE_P(num);
     }
     else if (RB_TYPE_P(num, T_BIGNUM)) {
-	if (method_basic_p(rb_cBignum))
+	if (method_basic_p(rb_cInteger))
 	    return BIGNUM_NEGATIVE_P(num);
     }
     return RTEST(compare_with_zero(num, mid));
@@ -209,6 +263,62 @@ int
 rb_num_negative_p(VALUE num)
 {
     return negative_int_p(num);
+}
+
+static VALUE
+num_funcall_op_0(VALUE x, VALUE arg, int recursive)
+{
+    ID func = (ID)arg;
+    if (recursive) {
+	const char *name = rb_id2name(func);
+	if (ISALNUM(name[0])) {
+	    rb_name_error(func, "%"PRIsVALUE".%"PRIsVALUE,
+			  x, ID2SYM(func));
+	}
+	else if (name[0] && name[1] == '@' && !name[2]) {
+	    rb_name_error(func, "%c%"PRIsVALUE,
+			  name[0], x);
+	}
+	else {
+	    rb_name_error(func, "%"PRIsVALUE"%"PRIsVALUE,
+			  ID2SYM(func), x);
+	}
+    }
+    return rb_funcall(x, func, 0, 0);
+}
+
+static VALUE
+num_funcall0(VALUE x, ID func)
+{
+    return rb_exec_recursive(num_funcall_op_0, x, (VALUE)func);
+}
+
+static VALUE
+num_funcall_op_1(VALUE x, VALUE arg, int recursive)
+{
+    ID func = (ID)((VALUE *)arg)[0];
+    VALUE y = ((VALUE *)arg)[1];
+    if (recursive) {
+	const char *name = rb_id2name(func);
+	if (ISALNUM(name[0])) {
+	    rb_name_error(func, "%"PRIsVALUE".%"PRIsVALUE"(%"PRIsVALUE")",
+			  x, ID2SYM(func), y);
+	}
+	else {
+	    rb_name_error(func, "%"PRIsVALUE"%"PRIsVALUE"%"PRIsVALUE,
+			  x, ID2SYM(func), y);
+	}
+    }
+    return rb_funcall(x, func, 1, y);
+}
+
+static VALUE
+num_funcall1(VALUE x, ID func, VALUE y)
+{
+    VALUE args[2];
+    args[0] = (VALUE)func;
+    args[1] = y;
+    return rb_exec_recursive_paired(num_funcall_op_1, x, y, (VALUE)args);
 }
 
 /*
@@ -414,7 +524,7 @@ num_uminus(VALUE num)
     zero = INT2FIX(0);
     do_coerce(&zero, &num, TRUE);
 
-    return rb_funcall(zero, '-', 1, num);
+    return num_funcall1(zero, '-', num);
 }
 
 /*
@@ -447,7 +557,7 @@ static VALUE
 num_div(VALUE x, VALUE y)
 {
     if (rb_equal(INT2FIX(0), y)) rb_num_zerodiv();
-    return rb_funcall(rb_funcall(x, '/', 1, y), rb_intern("floor"), 0);
+    return rb_funcall(num_funcall1(x, '/', y), rb_intern("floor"), 0);
 }
 
 
@@ -465,9 +575,9 @@ num_div(VALUE x, VALUE y)
 static VALUE
 num_modulo(VALUE x, VALUE y)
 {
+    VALUE q = num_funcall1(x, id_div, y);
     return rb_funcall(x, '-', 1,
-		      rb_funcall(y, '*', 1,
-				 rb_funcall(x, id_div, 1, y)));
+		      rb_funcall(y, '*', 1, q));
 }
 
 /*
@@ -482,7 +592,7 @@ num_modulo(VALUE x, VALUE y)
 static VALUE
 num_remainder(VALUE x, VALUE y)
 {
-    VALUE z = rb_funcall(x, '%', 1, y);
+    VALUE z = num_funcall1(x, '%', y);
 
     if ((!rb_equal(z, INT2FIX(0))) &&
 	((negative_int_p(x) &&
@@ -589,7 +699,7 @@ static VALUE
 num_abs(VALUE num)
 {
     if (negative_int_p(num)) {
-	return rb_funcall(num, idUMinus, 0);
+	return num_funcall0(num, idUMinus);
     }
     return num;
 }
@@ -605,7 +715,15 @@ num_abs(VALUE num)
 static VALUE
 num_zero_p(VALUE num)
 {
-    if (rb_equal(num, INT2FIX(0))) {
+    if (FIXNUM_P(num)) {
+	if (FIX2LONG(num) == 0) {
+	    return Qtrue;
+	}
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_bigzero_p(num);
+    }
+    else if (rb_equal(num, INT2FIX(0))) {
 	return Qtrue;
     }
     return Qfalse;
@@ -628,10 +746,38 @@ num_zero_p(VALUE num)
 static VALUE
 num_nonzero_p(VALUE num)
 {
-    if (RTEST(rb_funcallv(num, rb_intern("zero?"), 0, 0))) {
+    if (RTEST(num_funcall0(num, rb_intern("zero?")))) {
 	return Qnil;
     }
     return num;
+}
+
+/*
+ *  call-seq:
+ *     num.finite?  ->  true or false
+ *
+ *  Return true if +num+ is finite number, oterwise returns false.
+ */
+static VALUE
+num_finite_p(VALUE num)
+{
+    return Qtrue;
+}
+
+/*
+ *  call-seq:
+ *     num.infinite?  ->  nil or 1 or -1
+ *
+ *  Returns values corresponding to the value of +num+'s magnitude:
+ *
+ *  +finite+::    +nil+
+ *  +-Infinity+:: +-1+
+ *  ++Infinity+:: ++1+
+ */
+static VALUE
+num_infinite_p(VALUE num)
+{
+    return Qnil;
 }
 
 /*
@@ -648,7 +794,7 @@ num_nonzero_p(VALUE num)
 static VALUE
 num_to_int(VALUE num)
 {
-    return rb_funcallv(num, id_to_i, 0, 0);
+    return num_funcall0(num, id_to_i);
 }
 
 /*
@@ -664,11 +810,11 @@ num_positive_p(VALUE num)
     const ID mid = '>';
 
     if (FIXNUM_P(num)) {
-	if (method_basic_p(rb_cFixnum))
+	if (method_basic_p(rb_cInteger))
 	    return (SIGNED_VALUE)num > (SIGNED_VALUE)INT2FIX(0) ? Qtrue : Qfalse;
     }
     else if (RB_TYPE_P(num, T_BIGNUM)) {
-	if (method_basic_p(rb_cBignum))
+	if (method_basic_p(rb_cInteger))
 	    return BIGNUM_POSITIVE_P(num) && !rb_bigzero_p(num) ? Qtrue : Qfalse;
     }
     return compare_with_zero(num, mid);
@@ -733,8 +879,11 @@ flo_to_s(VALUE flt)
     char *p, *e;
     int sign, decpt, digs;
 
-    if (isinf(value))
-	return rb_usascii_str_new2(value < 0 ? "-Infinity" : "Infinity");
+    if (isinf(value)) {
+	static const char minf[] = "-Infinity";
+	const int pos = (value > 0); /* skip "-" */
+	return rb_usascii_str_new(minf+pos, strlen(minf)-pos);
+    }
     else if (isnan(value))
 	return rb_usascii_str_new2("NaN");
 
@@ -934,7 +1083,7 @@ flo_div(VALUE x, VALUE y)
 static VALUE
 flo_quo(VALUE x, VALUE y)
 {
-    return rb_funcall(x, '/', 1, y);
+    return num_funcall1(x, '/', y);
 }
 
 static void
@@ -963,8 +1112,10 @@ flodivmod(double x, double y, double *divp, double *modp)
     }
     if (isinf(x) && !isinf(y))
 	div = x;
-    else
+    else {
 	div = (x - mod) / y;
+	if (modp && divp) div = round(div);
+    }
     if (y*mod < 0) {
 	mod += y;
 	div -= 1.0;
@@ -1021,7 +1172,6 @@ flo_mod(VALUE x, VALUE y)
 static VALUE
 dbl2ival(double d)
 {
-    d = round(d);
     if (FIXABLE(d)) {
 	return LONG2FIX((long)d);
     }
@@ -1088,7 +1238,7 @@ flo_pow(VALUE x, VALUE y)
 	dx = RFLOAT_VALUE(x);
 	dy = RFLOAT_VALUE(y);
 	if (dx < 0 && dy != round(dy))
-	    return rb_funcall(rb_complex_raw1(x), idPow, 1, y);
+	    return num_funcall1(rb_complex_raw1(x), idPow, y);
     }
     else {
 	return rb_num_coerce_bin(x, y, idPow);
@@ -1101,17 +1251,23 @@ flo_pow(VALUE x, VALUE y)
  *     num.eql?(numeric)  ->  true or false
  *
  *  Returns +true+ if +num+ and +numeric+ are the same type and have equal
- *  values.
+ *  values.  Contrast this with <code>Numeric#==</code>, which performs
+ *  type conversions.
  *
  *     1 == 1.0          #=> true
  *     1.eql?(1.0)       #=> false
  *     (1.0).eql?(1.0)   #=> true
+ *     68719476736.eql?(68719476736.0)   #=> false
  */
 
 static VALUE
 num_eql(VALUE x, VALUE y)
 {
     if (TYPE(x) != TYPE(y)) return Qfalse;
+
+    if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_eql(x, y);
+    }
 
     return rb_equal(x, y);
 }
@@ -1135,7 +1291,7 @@ static VALUE
 num_equal(VALUE x, VALUE y)
 {
     if (x == y) return Qtrue;
-    return rb_funcall(y, id_eq, 1, x);
+    return num_funcall1(y, id_eq, x);
 }
 
 /*
@@ -1671,22 +1827,56 @@ flo_prev_float(VALUE vx)
 
 /*
  *  call-seq:
- *     float.floor  ->  integer
+ *     float.floor([ndigits])  ->  integer or float
  *
- *  Returns the largest integer less than or equal to +float+.
+ *  Returns the largest number less than or equal to +float+ in
+ *  decimal digits (default 0 digits).
+ *
+ *  Precision may be negative.  Returns a floating point number when +ndigits+
+ *  is positive, +self+ for zero, and floor down for negative.
  *
  *     1.2.floor      #=> 1
  *     2.0.floor      #=> 2
  *     (-1.2).floor   #=> -2
  *     (-2.0).floor   #=> -2
+ *
+ *     1.234567.floor(2)  #=> 1.23
+ *     1.234567.floor(3)  #=> 1.234
+ *     1.234567.floor(4)  #=> 1.2345
+ *     1.234567.floor(5)  #=> 1.23456
+ *
+ *     34567.89.floor(-5) #=> 0
+ *     34567.89.floor(-4) #=> 30000
+ *     34567.89.floor(-3) #=> 34000
+ *     34567.89.floor(-2) #=> 34500
+ *     34567.89.floor(-1) #=> 34560
+ *     34567.89.floor(0)  #=> 34567
+ *     34567.89.floor(1)  #=> 34567.8
+ *     34567.89.floor(2)  #=> 34567.89
+ *     34567.89.floor(3)  #=> 34567.89
  */
 
 static VALUE
-flo_floor(VALUE num)
+flo_floor(int argc, VALUE *argv, VALUE num)
 {
-    double f = floor(RFLOAT_VALUE(num));
+    double number, f;
     long val;
+    int ndigits = 0;
 
+    if (rb_check_arity(argc, 0, 1)) {
+	ndigits = NUM2INT(argv[0]);
+    }
+    if (ndigits < 0) {
+	return rb_int_floor(flo_to_i(num), ndigits);
+    }
+    number = RFLOAT_VALUE(num);
+    if (ndigits > 0) {
+	if (float_invariant_round(number, ndigits, &num)) return num;
+	f = pow(10, ndigits);
+	f = floor(number * f) / f;
+	return DBL2NUM(f);
+    }
+    f = floor(number);
     if (!FIXABLE(f)) {
 	return rb_dbl2big(f);
     }
@@ -1696,42 +1886,82 @@ flo_floor(VALUE num)
 
 /*
  *  call-seq:
- *     float.ceil  ->  integer
+ *     float.ceil([ndigits])  ->  integer or float
  *
- *  Returns the smallest Integer greater than or equal to +float+.
+ *  Returns the smallest number greater than or equal to +float+ in decimal
+ *  digits (default 0 digits).
+ *
+ *  Precision may be negative.  Returns a floating point number when +ndigits+
+ *  is positive, +self+ for zero, and ceil up for negative.
  *
  *     1.2.ceil      #=> 2
  *     2.0.ceil      #=> 2
  *     (-1.2).ceil   #=> -1
  *     (-2.0).ceil   #=> -2
+ *     1.234567.ceil(2)  #=> 1.24
+ *     1.234567.ceil(3)  #=> 1.235
+ *     1.234567.ceil(4)  #=> 1.2346
+ *     1.234567.ceil(5)  #=> 1.23457
+ *
+ *     34567.89.ceil(-5) #=> 100000
+ *     34567.89.ceil(-4) #=> 40000
+ *     34567.89.ceil(-3) #=> 35000
+ *     34567.89.ceil(-2) #=> 34600
+ *     34567.89.ceil(-1) #=> 34570
+ *     34567.89.ceil(0)  #=> 34568
+ *     34567.89.ceil(1)  #=> 34567.9
+ *     34567.89.ceil(2)  #=> 34567.89
+ *     34567.89.ceil(3)  #=> 34567.89
  */
 
 static VALUE
-flo_ceil(VALUE num)
+flo_ceil(int argc, VALUE *argv, VALUE num)
 {
-    double f = ceil(RFLOAT_VALUE(num));
-    long val;
+    double number, f;
+    int ndigits = 0;
 
-    if (!FIXABLE(f)) {
-	return rb_dbl2big(f);
+    if (rb_check_arity(argc, 0, 1)) {
+       ndigits = NUM2INT(argv[0]);
     }
-    val = (long)f;
-    return LONG2FIX(val);
+    number = RFLOAT_VALUE(num);
+    if (ndigits < 0) {
+	return rb_int_ceil(dbl2ival(ceil(number)), ndigits);
+    }
+    if (ndigits == 0) {
+	return dbl2ival(ceil(number));
+    }
+    if (float_invariant_round(number, ndigits, &num)) return num;
+    f = pow(10, ndigits);
+    return DBL2NUM(ceil(number * f) / f);
+}
+
+static int
+int_round_zero_p(VALUE num, int ndigits)
+{
+    long bytes;
+    /* If 10**N / 2 > num, then return 0 */
+    /* We have log_256(10) > 0.415241 and log_256(1/2) = -0.125, so */
+    if (FIXNUM_P(num)) {
+	bytes = sizeof(long);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	bytes = rb_big_size(num);
+    }
+    else {
+	bytes = NUM2LONG(rb_funcall(num, idSize, 0));
+    }
+    return (-0.415241 * ndigits - 0.125 > bytes);
 }
 
 /*
  * Assumes num is an Integer, ndigits <= 0
  */
-static VALUE
-int_round_0(VALUE num, int ndigits)
+VALUE
+rb_int_round(VALUE num, int ndigits)
 {
     VALUE n, f, h, r;
-    long bytes;
-    ID op;
-    /* If 10**N / 2 > num, then return 0 */
-    /* We have log_256(10) > 0.415241 and log_256(1/2) = -0.125, so */
-    bytes = FIXNUM_P(num) ? sizeof(long) : rb_funcall(num, idSize, 0);
-    if (-0.415241 * ndigits - 0.125 > bytes ) {
+
+    if (int_round_zero_p(num, ndigits)) {
 	return INT2FIX(0);
     }
 
@@ -1748,18 +1978,92 @@ int_round_0(VALUE num, int ndigits)
 	/* then int_pow overflow */
 	return INT2FIX(0);
     }
-    h = rb_funcall(f, '/', 1, INT2FIX(2));
-    r = rb_funcall(num, '%', 1, f);
-    n = rb_funcall(num, '-', 1, r);
-    op = negative_int_p(num) ? idLE : '<';
-    if (!RTEST(rb_funcall(r, op, 1, h))) {
-	n = rb_funcall(n, '+', 1, f);
+    h = rb_int_idiv(f, INT2FIX(2));
+    r = rb_int_modulo(num, f);
+    n = rb_int_minus(num, r);
+    r = int_cmp(r, h);
+    if (FIXNUM_POSITIVE_P(r) || (FIXNUM_ZERO_P(r) && !int_neg_p(num))) {
+	n = rb_int_plus(n, f);
     }
     return n;
 }
 
-static VALUE
-flo_truncate(VALUE num);
+VALUE
+rb_int_floor(VALUE num, int ndigits)
+{
+    VALUE f;
+
+    if (int_round_zero_p(num, ndigits))
+	return INT2FIX(0);
+    f = int_pow(10, -ndigits);
+    if (FIXNUM_P(num) && FIXNUM_P(f)) {
+	SIGNED_VALUE x = FIX2LONG(num), y = FIX2LONG(f);
+	int neg = x < 0;
+	if (neg) x = -x + y - 1;
+	x = x / y * y;
+	if (neg) x = -x;
+	return LONG2NUM(x);
+    }
+    if (RB_TYPE_P(f, T_FLOAT)) {
+	/* then int_pow overflow */
+	return INT2FIX(0);
+    }
+    return rb_int_minus(num, rb_int_modulo(num, f));
+}
+
+VALUE
+rb_int_ceil(VALUE num, int ndigits)
+{
+    VALUE f;
+
+    if (int_round_zero_p(num, ndigits))
+	return INT2FIX(0);
+    f = int_pow(10, -ndigits);
+    if (FIXNUM_P(num) && FIXNUM_P(f)) {
+	SIGNED_VALUE x = FIX2LONG(num), y = FIX2LONG(f);
+	int neg = x < 0;
+	if (neg) x = -x;
+	else x += y - 1;
+	x = (x / y) * y;
+	if (neg) x = -x;
+	return LONG2NUM(x);
+    }
+    if (RB_TYPE_P(f, T_FLOAT)) {
+	/* then int_pow overflow */
+	return INT2FIX(0);
+    }
+    return rb_int_plus(num, rb_int_minus(f, rb_int_modulo(num, f)));
+}
+
+VALUE
+rb_int_truncate(VALUE num, int ndigits)
+{
+    VALUE f;
+    VALUE m;
+
+    if (int_round_zero_p(num, ndigits))
+	return INT2FIX(0);
+    f = int_pow(10, -ndigits);
+    if (FIXNUM_P(num) && FIXNUM_P(f)) {
+	SIGNED_VALUE x = FIX2LONG(num), y = FIX2LONG(f);
+	int neg = x < 0;
+	if (neg) x = -x;
+	x = x / y * y;
+	if (neg) x = -x;
+	return LONG2NUM(x);
+    }
+    if (RB_TYPE_P(f, T_FLOAT)) {
+	/* then int_pow overflow */
+	return INT2FIX(0);
+    }
+    m = rb_int_modulo(num, f);
+    if (int_neg_p(num)) {
+	return rb_int_plus(num, rb_int_minus(f, m));
+    }
+    else {
+	return rb_int_minus(num, m);
+    }
+}
 
 /*
  *  call-seq:
@@ -1795,22 +2099,31 @@ flo_truncate(VALUE num);
 static VALUE
 flo_round(int argc, VALUE *argv, VALUE num)
 {
-    VALUE nd;
-    double number, f;
+    double number, f, x;
     int ndigits = 0;
-    int binexp;
-    enum {float_dig = DBL_DIG+2};
 
-    if (argc > 0 && rb_scan_args(argc, argv, "01", &nd) == 1) {
-	ndigits = NUM2INT(nd);
+    if (rb_check_arity(argc, 0, 1)) {
+	ndigits = NUM2INT(argv[0]);
     }
     if (ndigits < 0) {
-	return int_round_0(flo_truncate(num), ndigits);
+	return rb_int_round(flo_to_i(num), ndigits);
     }
     number  = RFLOAT_VALUE(num);
     if (ndigits == 0) {
-	return dbl2ival(number);
+	return dbl2ival(round(number));
     }
+    if (float_invariant_round(number, ndigits, &num)) return num;
+    f = pow(10, ndigits);
+    x = round_to_nearest(number, f);
+    return DBL2NUM(x / f);
+}
+
+static int
+float_invariant_round(double number, int ndigits, VALUE *num)
+{
+    enum {float_dig = DBL_DIG+2};
+    int binexp;
+
     frexp(number, &binexp);
 
 /* Let `exp` be such that `number` is written as:"0.#{digits}e#{exp}",
@@ -1832,28 +2145,27 @@ flo_round(int argc, VALUE *argv, VALUE num)
 */
     if (isinf(number) || isnan(number) ||
 	(ndigits >= float_dig - (binexp > 0 ? binexp / 4 : binexp / 3 - 1))) {
-	return num;
+	return TRUE;
     }
     if (ndigits < - (binexp > 0 ? binexp / 3 + 1 : binexp / 4)) {
-	return DBL2NUM(0);
+	*num = DBL2NUM(0);
+	return TRUE;
     }
-    f = pow(10, ndigits);
-    return DBL2NUM(round(number * f) / f);
+    return FALSE;
 }
 
 /*
  *  call-seq:
  *     float.to_i      ->  integer
  *     float.to_int    ->  integer
- *     float.truncate  ->  integer
  *
  *  Returns the +float+ truncated to an Integer.
  *
- *  Synonyms are #to_i, #to_int, and #truncate.
+ *  Synonyms are #to_i and #to_int
  */
 
 static VALUE
-flo_truncate(VALUE num)
+flo_to_i(VALUE num)
 {
     double f = RFLOAT_VALUE(num);
     long val;
@@ -1866,6 +2178,24 @@ flo_truncate(VALUE num)
     }
     val = (long)f;
     return LONG2FIX(val);
+}
+
+/*
+ *  call-seq:
+ *     float.truncate([ndigits])  ->  integer or float
+ *
+ *  Truncates +float+ to a given precision in decimal digits (default 0 digits).
+ *
+ *  Precision may be negative.  Returns a floating point number when +ndigits+
+ *  is more than zero.
+ */
+static VALUE
+flo_truncate(int argc, VALUE *argv, VALUE num)
+{
+    if (signbit(RFLOAT_VALUE(num)))
+	return flo_ceil(argc, argv, num);
+    else
+	return flo_floor(argc, argv, num);
 }
 
 /*
@@ -1898,7 +2228,7 @@ flo_negative_p(VALUE num)
 
 /*
  *  call-seq:
- *     num.floor  ->  integer
+ *     num.floor([ndigits])  ->  integer or float
  *
  *  Returns the largest integer less than or equal to +num+.
  *
@@ -1910,15 +2240,15 @@ flo_negative_p(VALUE num)
  */
 
 static VALUE
-num_floor(VALUE num)
+num_floor(int argc, VALUE *argv, VALUE num)
 {
-    return flo_floor(rb_Float(num));
+    return flo_floor(argc, argv, rb_Float(num));
 }
 
 
 /*
  *  call-seq:
- *     num.ceil  ->  integer
+ *     num.ceil([ndigits])  ->  integer or float
  *
  *  Returns the smallest possible Integer that is greater than or equal to
  *  +num+.
@@ -1933,9 +2263,9 @@ num_floor(VALUE num)
  */
 
 static VALUE
-num_ceil(VALUE num)
+num_ceil(int argc, VALUE *argv, VALUE num)
 {
-    return flo_ceil(rb_Float(num));
+    return flo_ceil(argc, argv, rb_Float(num));
 }
 
 /*
@@ -1959,7 +2289,7 @@ num_round(int argc, VALUE* argv, VALUE num)
 
 /*
  *  call-seq:
- *     num.truncate  ->  integer
+ *     num.truncate([ndigits])  ->  integer or float
  *
  *  Returns +num+ truncated to an Integer.
  *
@@ -1968,9 +2298,9 @@ num_round(int argc, VALUE* argv, VALUE num)
  */
 
 static VALUE
-num_truncate(VALUE num)
+num_truncate(int argc, VALUE *argv, VALUE num)
 {
-    return flo_truncate(rb_Float(num));
+    return flo_truncate(argc, argv, rb_Float(num));
 }
 
 static double
@@ -2078,6 +2408,34 @@ ruby_num_interval_step_size(VALUE from, VALUE to, VALUE step, int excl)
     }
 }
 
+static VALUE
+num_step_compare_with_zero(VALUE num)
+{
+    VALUE zero = INT2FIX(0);
+    return rb_check_funcall(num, '>', 1, &zero);
+}
+
+static int
+num_step_negative_p(VALUE num)
+{
+    const ID mid = '<';
+    VALUE r;
+
+    if (FIXNUM_P(num)) {
+	if (method_basic_p(rb_cInteger))
+	    return (SIGNED_VALUE)num < 0;
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	if (method_basic_p(rb_cInteger))
+	    return BIGNUM_NEGATIVE_P(num);
+    }
+    r = rb_rescue(num_step_compare_with_zero, num, coerce_rescue_quiet, Qnil);
+    if (r == Qundef) {
+	coerce_failed(num, INT2FIX(0));
+    }
+    return !RTEST(r);
+}
+
 static int
 num_step_scan_args(int argc, const VALUE *argv, VALUE *to, VALUE *step)
 {
@@ -2112,7 +2470,7 @@ num_step_scan_args(int argc, const VALUE *argv, VALUE *to, VALUE *step)
     if (NIL_P(*step)) {
 	*step = INT2FIX(1);
     }
-    desc = !positive_int_p(*step);
+    desc = num_step_negative_p(*step);
     if (NIL_P(*to)) {
 	*to = desc ? DBL2NUM(-INFINITY) : DBL2NUM(INFINITY);
     }
@@ -2193,7 +2551,7 @@ num_step(int argc, VALUE *argv, VALUE from)
     RETURN_SIZED_ENUMERATOR(from, argc, argv, num_step_size);
 
     desc = num_step_scan_args(argc, argv, &to, &step);
-    if (RTEST(rb_num_coerce_cmp(step, INT2FIX(0), id_eq))) {
+    if (rb_equal(step, INT2FIX(0))) {
 	inf = 1;
     }
     else if (RB_TYPE_P(to, T_FLOAT)) {
@@ -2427,7 +2785,8 @@ rb_fix2int(VALUE val)
 }
 #endif
 
-void
+NORETURN(static void rb_out_of_short(SIGNED_VALUE num));
+static void
 rb_out_of_short(SIGNED_VALUE num)
 {
     rb_raise(rb_eRangeError, "integer %"PRIdVALUE " too %s to convert to `short'",
@@ -2607,7 +2966,7 @@ rb_num2ull(VALUE val)
  *
  *  As +int+ is already an Integer, all these methods simply return the receiver.
  *
- *  Synonyms are #to_int, #floor, #ceil, #truncate.
+ *  Synonyms is #to_int
  */
 
 static VALUE
@@ -2639,7 +2998,15 @@ int_int_p(VALUE num)
 static VALUE
 int_odd_p(VALUE num)
 {
-    if (rb_funcall(num, '%', 1, INT2FIX(2)) != INT2FIX(0)) {
+    if (FIXNUM_P(num)) {
+	if (num & 2) {
+	    return Qtrue;
+	}
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_big_odd_p(num);
+    }
+    else if (rb_funcall(num, '%', 1, INT2FIX(2)) != INT2FIX(0)) {
 	return Qtrue;
     }
     return Qfalse;
@@ -2655,13 +3022,25 @@ int_odd_p(VALUE num)
 static VALUE
 int_even_p(VALUE num)
 {
-    if (rb_funcall(num, '%', 1, INT2FIX(2)) == INT2FIX(0)) {
+    if (FIXNUM_P(num)) {
+	if ((num & 2) == 0) {
+	    return Qtrue;
+	}
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_big_even_p(num);
+    }
+    else if (rb_funcall(num, '%', 1, INT2FIX(2)) == INT2FIX(0)) {
 	return Qtrue;
     }
     return Qfalse;
 }
 
 /*
+ *  Document-method: Integer#succ
+ *  Document-method: Integer#next
+ *  Document-method: Fixnum#succ
+ *  Document-method: Fixnum#next
  *  call-seq:
  *     int.next  ->  integer
  *     int.succ  ->  integer
@@ -2670,24 +3049,8 @@ int_even_p(VALUE num)
  *
  *     1.next      #=> 2
  *     (-1).next   #=> 0
- */
-
-static VALUE
-fix_succ(VALUE num)
-{
-    long i = FIX2LONG(num) + 1;
-    return LONG2NUM(i);
-}
-
-/*
- *  call-seq:
- *     int.next  ->  integer
- *     int.succ  ->  integer
- *
- *  Returns the Integer equal to +int+ + 1, same as Fixnum#next.
- *
- *     1.next      #=> 2
- *     (-1).next   #=> 0
+ *     1.succ      #=> 2
+ *     (-1).succ   #=> 0
  */
 
 VALUE
@@ -2700,7 +3063,7 @@ rb_int_succ(VALUE num)
     if (RB_TYPE_P(num, T_BIGNUM)) {
 	return rb_big_plus(num, INT2FIX(1));
     }
-    return rb_funcall(num, '+', 1, INT2FIX(1));
+    return num_funcall1(num, '+', INT2FIX(1));
 }
 
 #define int_succ rb_int_succ
@@ -2725,10 +3088,23 @@ rb_int_pred(VALUE num)
     if (RB_TYPE_P(num, T_BIGNUM)) {
 	return rb_big_minus(num, INT2FIX(1));
     }
-    return rb_funcall(num, '-', 1, INT2FIX(1));
+    return num_funcall1(num, '-', INT2FIX(1));
 }
 
 #define int_pred rb_int_pred
+
+/*
+ *  Document-method: Integer#chr
+ *  call-seq:
+ *     int.chr([encoding])  ->  string
+ *
+ *  Returns a string containing the character represented by the +int+'s value
+ *  according to +encoding+.
+ *
+ *     65.chr    #=> "A"
+ *     230.chr   #=> "\346"
+ *     255.chr(Encoding::UTF_8)   #=> "\303\277"
+ */
 
 VALUE
 rb_enc_uint_chr(unsigned int code, rb_encoding *enc)
@@ -2751,18 +3127,6 @@ rb_enc_uint_chr(unsigned int code, rb_encoding *enc)
     }
     return str;
 }
-
-/*
- *  call-seq:
- *     int.chr([encoding])  ->  string
- *
- *  Returns a string containing the character represented by the +int+'s value
- *  according to +encoding+.
- *
- *     65.chr    #=> "A"
- *     230.chr   #=> "\346"
- *     255.chr(Encoding::UTF_8)   #=> "\303\277"
- */
 
 static VALUE
 int_chr(int argc, VALUE *argv, VALUE num)
@@ -2848,10 +3212,12 @@ int_ord(VALUE num)
 
 
 /*
+ * Document-method: Integer#-@
  * call-seq:
- *   -fix  ->  integer
+ *   -int  ->  integer
  *
- * Negates +fix+, which may return a Bignum.
+ * Negates +int+.
+ * (returns an integer whose value is 0-int)
  */
 
 static VALUE
@@ -2861,10 +3227,41 @@ fix_uminus(VALUE num)
 }
 
 VALUE
+rb_int_uminus(VALUE num)
+{
+    if (FIXNUM_P(num)) {
+	return fix_uminus(num);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_big_uminus(num);
+    }
+    return num_funcall0(num, idUMinus);
+}
+
+/*
+ *  Document-method: Integer#to_s
+ *  call-seq:
+ *     int.to_s(base=10)  ->  string
+ *
+ *  Returns a string containing the representation of +int+ radix +base+
+ *  (between 2 and 36).
+ *
+ *     12345.to_s       #=> "12345"
+ *     12345.to_s(2)    #=> "11000000111001"
+ *     12345.to_s(8)    #=> "30071"
+ *     12345.to_s(10)   #=> "12345"
+ *     12345.to_s(16)   #=> "3039"
+ *     12345.to_s(36)   #=> "9ix"
+ *     78546939656932.to_s(36)  #=> "rubyrules"
+ *
+ */
+
+VALUE
 rb_fix2str(VALUE x, int base)
 {
-    char buf[SIZEOF_VALUE*CHAR_BIT + 2], *b = buf + sizeof buf;
+    char buf[SIZEOF_VALUE*CHAR_BIT + 1], *const e = buf + sizeof buf, *b = e;
     long val = FIX2LONG(x);
+    unsigned long u;
     int neg = 0;
 
     if (base < 2 || 36 < base) {
@@ -2874,54 +3271,52 @@ rb_fix2str(VALUE x, int base)
 	return rb_usascii_str_new2("0");
     }
     if (val < 0) {
-	val = -val;
+	u = 1 + (unsigned long)(-(val + 1)); /* u = -val avoiding overflow */
 	neg = 1;
     }
-    *--b = '\0';
+    else {
+	u = val;
+    }
     do {
-	*--b = ruby_digitmap[(int)(val % base)];
-    } while (val /= base);
+	*--b = ruby_digitmap[(int)(u % base)];
+    } while (u /= base);
     if (neg) {
 	*--b = '-';
     }
 
-    return rb_usascii_str_new2(b);
+    return rb_usascii_str_new(b, e - b);
 }
 
-/*
- *  call-seq:
- *     fix.to_s(base=10)  ->  string
- *
- *  Returns a string containing the representation of +fix+ radix +base+
- *  (between 2 and 36).
- *
- *     12345.to_s       #=> "12345"
- *     12345.to_s(2)    #=> "11000000111001"
- *     12345.to_s(8)    #=> "30071"
- *     12345.to_s(10)   #=> "12345"
- *     12345.to_s(16)   #=> "3039"
- *     12345.to_s(36)   #=> "9ix"
- *
- */
 static VALUE
-fix_to_s(int argc, VALUE *argv, VALUE x)
+int_to_s(int argc, VALUE *argv, VALUE x)
 {
     int base;
 
-    if (argc == 0) base = 10;
-    else {
-	VALUE b;
+    if (rb_check_arity(argc, 0, 1))
+	base = NUM2INT(argv[0]);
+    else
+	base = 10;
+    return rb_int2str(x, base);
+}
 
-	rb_scan_args(argc, argv, "01", &b);
-	base = NUM2INT(b);
+VALUE
+rb_int2str(VALUE x, int base)
+{
+    if (FIXNUM_P(x)) {
+	return rb_fix2str(x, base);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big2str(x, base);
     }
 
-    return rb_fix2str(x, base);
+    return rb_any_to_s(x);
 }
 
 /*
+ * Document-method: Integer#+
+ * Document-method: Fixnum#+
  * call-seq:
- *   fix + numeric  ->  numeric_result
+ *   int + numeric  ->  numeric_result
  *
  * Performs addition: the class of the resulting object depends on the class of
  * +numeric+ and on the magnitude of the result. It may return a Bignum.
@@ -2948,17 +3343,36 @@ fix_plus(VALUE x, VALUE y)
 	return DBL2NUM((double)FIX2LONG(x) + RFLOAT_VALUE(y));
     }
     else if (RB_TYPE_P(y, T_COMPLEX)) {
-	VALUE rb_nucomp_add(VALUE, VALUE);
-	return rb_nucomp_add(y, x);
+	return rb_complex_plus(y, x);
     }
     else {
 	return rb_num_coerce_bin(x, y, '+');
     }
 }
 
+VALUE
+rb_fix_plus(VALUE x, VALUE y)
+{
+    return fix_plus(x, y);
+}
+
+VALUE
+rb_int_plus(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_plus(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_plus(x, y);
+    }
+    return rb_num_coerce_bin(x, y, '+');
+}
+
 /*
+ * Document-method: Integer#-
+ * Document-method: Fixnum#-
  * call-seq:
- *   fix - numeric  ->  numeric_result
+ *   int - numeric  ->  numeric_result
  *
  * Performs subtraction: the class of the resulting object depends on the class
  * of +numeric+ and on the magnitude of the result. It may return a Bignum.
@@ -2990,13 +3404,28 @@ fix_minus(VALUE x, VALUE y)
     }
 }
 
+VALUE
+rb_int_minus(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_minus(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_minus(x, y);
+    }
+    return rb_num_coerce_bin(x, y, '-');
+}
+
+
 #define SQRT_LONG_MAX ((SIGNED_VALUE)1<<((SIZEOF_LONG*CHAR_BIT-1)/2))
 /*tests if N*N would overflow*/
 #define FIT_SQRT_LONG(n) (((n)<SQRT_LONG_MAX)&&((n)>=-SQRT_LONG_MAX))
 
 /*
+ * Document-method: Integer#*
+ * Document-method: Fixnum#*
  * call-seq:
- *   fix * numeric  ->  numeric_result
+ *   int * numeric  ->  numeric_result
  *
  * Performs multiplication: the class of the resulting object depends on the
  * class of +numeric+ and on the magnitude of the result. It may return a
@@ -3007,32 +3436,7 @@ static VALUE
 fix_mul(VALUE x, VALUE y)
 {
     if (FIXNUM_P(y)) {
-#ifdef __HP_cc
-/* avoids an optimization bug of HP aC++/ANSI C B3910B A.06.05 [Jul 25 2005] */
-	volatile
-#endif
-	long a, b;
-#if SIZEOF_LONG * 2 <= SIZEOF_LONG_LONG
-	LONG_LONG d;
-#else
-	VALUE r;
-#endif
-
-	a = FIX2LONG(x);
-	b = FIX2LONG(y);
-
-#if SIZEOF_LONG * 2 <= SIZEOF_LONG_LONG
-	d = (LONG_LONG)a * b;
-	if (FIXABLE(d)) return LONG2FIX(d);
-	return rb_ll2inum(d);
-#else
-	if (a == 0) return x;
-        if (MUL_OVERFLOW_FIXNUM_P(a, b))
-	    r = rb_big_mul(rb_int2big(a), rb_int2big(b));
-        else
-            r = LONG2FIX(a * b);
-	return r;
-#endif
+	return rb_fix_mul_fix(x, y);
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
 	return rb_big_mul(y, x);
@@ -3041,49 +3445,37 @@ fix_mul(VALUE x, VALUE y)
 	return DBL2NUM((double)FIX2LONG(x) * RFLOAT_VALUE(y));
     }
     else if (RB_TYPE_P(y, T_COMPLEX)) {
-	VALUE rb_nucomp_mul(VALUE, VALUE);
-	return rb_nucomp_mul(y, x);
+	return rb_complex_mul(y, x);
     }
     else {
 	return rb_num_coerce_bin(x, y, '*');
     }
 }
 
-static void
-fixdivmod(long x, long y, long *divp, long *modp)
+VALUE
+rb_int_mul(VALUE x, VALUE y)
 {
-    long div, mod;
-
-    if (y == 0) rb_num_zerodiv();
-    if (y < 0) {
-	if (x < 0)
-	    div = -x / -y;
-	else
-	    div = - (x / -y);
+    if (FIXNUM_P(x)) {
+	return fix_mul(x, y);
     }
-    else {
-	if (x < 0)
-	    div = - (-x / y);
-	else
-	    div = x / y;
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_mul(x, y);
     }
-    mod = x - div*y;
-    if ((mod < 0 && y > 0) || (mod > 0 && y < 0)) {
-	mod += y;
-	div -= 1;
-    }
-    if (divp) *divp = div;
-    if (modp) *modp = mod;
+    return rb_num_coerce_bin(x, y, '*');
 }
 
 /*
+ *  Document-method: Integer#fdiv
  *  call-seq:
- *     fix.fdiv(numeric)  ->  float
+ *     integer.fdiv(numeric)  ->  float
  *
  *  Returns the floating point result of dividing +fix+ by +numeric+.
  *
  *     654321.fdiv(13731)      #=> 47.6528293642124
  *     654321.fdiv(13731.24)   #=> 47.6519964693647
+ *
+ *     -1234567890987654321.fdiv(13731)      #=> -89910996357705.5
+ *     -1234567890987654321.fdiv(13731.24)   #=> -89909424858035.7
  *
  */
 
@@ -3105,13 +3497,33 @@ fix_fdiv(VALUE x, VALUE y)
 }
 
 static VALUE
+int_fdiv(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_fdiv(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_fdiv(x, y);
+    }
+    return Qnil;
+}
+
+/*
+ * Document-method: Integer#/
+ * Document-method: Fixnum#/
+ * call-seq:
+ *   int / numeric  ->  numeric_result
+ *
+ * Performs division: the class of the resulting object depends on the class of
+ * +numeric+ and on the magnitude of the result. It may return a Bignum.
+ */
+
+static VALUE
 fix_divide(VALUE x, VALUE y, ID op)
 {
     if (FIXNUM_P(y)) {
-	long div;
-
-	fixdivmod(FIX2LONG(x), FIX2LONG(y), &div, 0);
-	return LONG2NUM(div);
+	if (FIX2LONG(y) == 0) rb_num_zerodiv();
+	return rb_fix_div_fix(x, y);
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
 	x = rb_int2big(FIX2LONG(x));
@@ -3140,25 +3552,30 @@ fix_divide(VALUE x, VALUE y, ID op)
     }
 }
 
-/*
- * call-seq:
- *   fix / numeric  ->  numeric_result
- *
- * Performs division: the class of the resulting object depends on the class of
- * +numeric+ and on the magnitude of the result. It may return a Bignum.
- */
-
 static VALUE
 fix_div(VALUE x, VALUE y)
 {
     return fix_divide(x, y, '/');
 }
 
+VALUE
+rb_int_div(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_div(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_div(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ * Document-method: Integer#div
  * call-seq:
- *   fix.div(numeric)  ->  integer
+ *   int.div(numeric)  ->  integer
  *
- * Performs integer division: returns integer result of dividing +fix+ by
+ * Performs integer division: returns integer result of dividing +int+ by
  * +numeric+.
  */
 
@@ -3168,12 +3585,27 @@ fix_idiv(VALUE x, VALUE y)
     return fix_divide(x, y, id_div);
 }
 
+VALUE
+rb_int_idiv(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_idiv(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_idiv(x, y);
+    }
+    return num_div(x, y);
+}
+
 /*
+ *  Document-method: Fixnum#%
+ *  Document-method: Integer#%
+ *  Document-method: Integer#modulo
  *  call-seq:
- *    fix % other        ->  real
- *    fix.modulo(other)  ->  real
+ *    int % other        ->  real
+ *    int.modulo(other)  ->  real
  *
- *  Returns +fix+ modulo +other+.
+ *  Returns +int+ modulo +other+.
  *
  *  See Numeric#divmod for more information.
  */
@@ -3182,10 +3614,8 @@ static VALUE
 fix_mod(VALUE x, VALUE y)
 {
     if (FIXNUM_P(y)) {
-	long mod;
-
-	fixdivmod(FIX2LONG(x), FIX2LONG(y), 0, &mod);
-	return LONG2NUM(mod);
+	if (FIX2LONG(y) == 0) rb_num_zerodiv();
+	return rb_fix_mod_fix(x, y);
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
 	x = rb_int2big(FIX2LONG(x));
@@ -3199,21 +3629,67 @@ fix_mod(VALUE x, VALUE y)
     }
 }
 
+VALUE
+rb_int_modulo(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_mod(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_modulo(x, y);
+    }
+    return num_modulo(x, y);
+}
+
 /*
  *  call-seq:
- *     fix.divmod(numeric)  ->  array
+ *     int.remainder(numeric)  ->  real
+ *
+ *
+ *  Returns the remainder after dividing <i>big</i> by <i>numeric</i> as:
+ *
+ *    x.remainder(y) means x-y*(x/y).truncate
+ *
+ *  Examples
+ *
+ *    5.remainder(3)    #=> 2
+ *    -5.remainder(3)   #=> -2
+ *    5.remainder(-3)   #=> 2
+ *    -5.remainder(-3)  #=> -2
+ *
+ *    -1234567890987654321.remainder(13731)      #=> -6966
+ *    -1234567890987654321.remainder(13731.24)   #=> -9906.22531493148
  *
  *  See Numeric#divmod.
+ */
+
+VALUE
+int_remainder(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return num_remainder(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_remainder(x, y);
+    }
+    return Qnil;
+}
+
+/*
+ *  Document-method: Integer#divmod
+ *  call-seq:
+ *     integer.divmod(numeric)  ->  array
+ *
+ *  See <code>Numeric#divmod</code>.
  */
 static VALUE
 fix_divmod(VALUE x, VALUE y)
 {
     if (FIXNUM_P(y)) {
-	long div, mod;
-
-	fixdivmod(FIX2LONG(x), FIX2LONG(y), &div, &mod);
-
-	return rb_assoc_new(LONG2NUM(div), LONG2NUM(mod));
+	VALUE div, mod;
+	if (FIX2LONG(y) == 0) rb_num_zerodiv();
+	rb_fix_divmod_fix(x, y, &div, &mod);
+	return rb_assoc_new(div, mod);
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
 	x = rb_int2big(FIX2LONG(x));
@@ -3234,6 +3710,37 @@ fix_divmod(VALUE x, VALUE y)
 	return rb_num_coerce_bin(x, y, id_divmod);
     }
 }
+
+static VALUE
+int_divmod(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_divmod(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_divmod(x, y);
+    }
+    return Qnil;
+}
+
+/*
+ *  Document-method: Integer#**
+ *  call-seq:
+ *    integer ** numeric  ->  numeric_result
+ *
+ *  Raises +integer+ to the power of +numeric+, which may be negative or
+ *  fractional.
+ *  The result may be a Fixnum, Bignum, or Float
+ *
+ *    2 ** 3      #=> 8
+ *    2 ** -1     #=> (1/2)
+ *    2 ** 0.5    #=> 1.4142135623731
+ *
+ *    123456789 ** 2      #=> 15241578750190521
+ *    123456789 ** 1.2    #=> 5126464716.09932
+ *    123456789 ** -2     #=> (1/15241578750190521)
+ *
+ */
 
 static VALUE
 int_pow(long x, unsigned long y)
@@ -3276,18 +3783,6 @@ rb_int_positive_pow(long x, unsigned long y)
     return int_pow(x, y);
 }
 
-/*
- *  call-seq:
- *    fix ** numeric  ->  numeric_result
- *
- *  Raises +fix+ to the power of +numeric+, which may be negative or
- *  fractional.
- *
- *    2 ** 3      #=> 8
- *    2 ** -1     #=> (1/2)
- *    2 ** 0.5    #=> 1.4142135623731
- */
-
 static VALUE
 fix_pow(VALUE x, VALUE y)
 {
@@ -3304,7 +3799,7 @@ fix_pow(VALUE x, VALUE y)
 		return INT2FIX(-1);
 	}
 	if (b < 0)
-	    return rb_funcall(rb_rational_raw1(x), idPow, 1, y);
+	    return num_funcall1(rb_rational_raw1(x), idPow, y);
 
 	if (b == 0) return INT2FIX(1);
 	if (b == 1) return x;
@@ -3321,7 +3816,7 @@ fix_pow(VALUE x, VALUE y)
 	    else return INT2FIX(-1);
 	}
 	if (negative_int_p(y))
-	    return rb_funcall(rb_rational_raw1(x), idPow, 1, y);
+	    return num_funcall1(rb_rational_raw1(x), idPow, y);
 	if (a == 0) return INT2FIX(0);
 	x = rb_int2big(FIX2LONG(x));
 	return rb_big_pow(x, y);
@@ -3335,7 +3830,7 @@ fix_pow(VALUE x, VALUE y)
 	{
 	    double dy = RFLOAT_VALUE(y);
 	    if (a < 0 && dy != round(dy))
-		return rb_funcall(rb_complex_raw1(x), idPow, 1, y);
+		return num_funcall1(rb_complex_raw1(x), idPow, y);
 	    return DBL2NUM(pow((double)a, dy));
 	}
     }
@@ -3344,11 +3839,27 @@ fix_pow(VALUE x, VALUE y)
     }
 }
 
+static VALUE
+rb_int_pow(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_pow(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_pow(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ * Document-method: Integer#==
+ * Document-method: Fixnum#==
  * call-seq:
- *   fix == other  ->  true or false
+ *   int == other  ->  true or false
  *
- * Return +true+ if +fix+ equals +other+ numerically.
+ * Return +true+ if +int+ equals +other+ numerically.
+ * Contrast this with <code>Integer#eql?</code>, which
+ * requires <i>other</i> to be a <code>Integer</code>.
  *
  *   1 == 2      #=> false
  *   1 == 1.0    #=> true
@@ -3370,11 +3881,24 @@ fix_equal(VALUE x, VALUE y)
     }
 }
 
+static VALUE
+int_equal(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_equal(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_eq(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ *  Document-method: Integer#<=>
  *  call-seq:
- *     fix <=> numeric  ->  -1, 0, +1 or nil
+ *     int <=> numeric  ->  -1, 0, +1 or nil
  *
- *  Comparison---Returns +-1+, +0+, ++1+ or +nil+ depending on whether +fix+ is
+ *  Comparison---Returns +-1+, +0+, ++1+ or +nil+ depending on whether +int+ is
  *  less than, equal to, or greater than +numeric+.
  *
  *  This is the basis for the tests in the Comparable module.
@@ -3391,21 +3915,43 @@ fix_cmp(VALUE x, VALUE y)
 	return INT2FIX(-1);
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
-	return rb_big_cmp(rb_int2big(FIX2LONG(x)), y);
+	VALUE cmp = rb_big_cmp(y, x);
+	switch (cmp) {
+	  case INT2FIX(+1): return INT2FIX(-1);
+	  case INT2FIX(-1): return INT2FIX(+1);
+	}
+	return cmp;
     }
     else if (RB_TYPE_P(y, T_FLOAT)) {
-        return rb_integer_float_cmp(x, y);
+	return rb_integer_float_cmp(x, y);
     }
     else {
 	return rb_num_coerce_cmp(x, y, id_cmp);
     }
+    return rb_num_coerce_cmp(x, y, id_cmp);
+}
+
+static VALUE
+int_cmp(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_cmp(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_cmp(x, y);
+    }
+    else {
+	rb_raise(rb_eNotImpError, "need to define `<=>' in %s", rb_obj_classname(x));
+    }
 }
 
 /*
+ * Document-method: Integer#>
+ * Document-method: Fixnum#>
  * call-seq:
- *   fix > real  ->  true or false
+ *   int > real  ->  true or false
  *
- * Returns +true+ if the value of +fix+ is greater than that of +real+.
+ * Returns +true+ if the value of +int+ is greater than that of +real+.
  */
 
 static VALUE
@@ -3416,7 +3962,7 @@ fix_gt(VALUE x, VALUE y)
 	return Qfalse;
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
-	return FIX2INT(rb_big_cmp(rb_int2big(FIX2LONG(x)), y)) > 0 ? Qtrue : Qfalse;
+	return rb_big_cmp(y, x) == INT2FIX(-1) ? Qtrue : Qfalse;
     }
     else if (RB_TYPE_P(y, T_FLOAT)) {
         return rb_integer_float_cmp(x, y) == INT2FIX(1) ? Qtrue : Qfalse;
@@ -3426,11 +3972,25 @@ fix_gt(VALUE x, VALUE y)
     }
 }
 
+static VALUE
+int_gt(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_gt(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_gt(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ * Document-method: Integer#>=
+ * Document-method: Fixnum#>=
  * call-seq:
- *   fix >= real  ->  true or false
+ *   int >= real  ->  true or false
  *
- * Returns +true+ if the value of +fix+ is greater than or equal to that of
+ * Returns +true+ if the value of +int+ is greater than or equal to that of
  * +real+.
  */
 
@@ -3442,7 +4002,7 @@ fix_ge(VALUE x, VALUE y)
 	return Qfalse;
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
-	return FIX2INT(rb_big_cmp(rb_int2big(FIX2LONG(x)), y)) >= 0 ? Qtrue : Qfalse;
+	return rb_big_cmp(y, x) != INT2FIX(+1) ? Qtrue : Qfalse;
     }
     else if (RB_TYPE_P(y, T_FLOAT)) {
 	VALUE rel = rb_integer_float_cmp(x, y);
@@ -3453,11 +4013,25 @@ fix_ge(VALUE x, VALUE y)
     }
 }
 
+VALUE
+rb_int_ge(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_ge(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_ge(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ * Document-method: Integer#<
+ * Document-method: Fixnum#<
  * call-seq:
- *   fix < real  ->  true or false
+ *   int < real  ->  true or false
  *
- * Returns +true+ if the value of +fix+ is less than that of +real+.
+ * Returns +true+ if the value of +int+ is less than that of +real+.
  */
 
 static VALUE
@@ -3468,7 +4042,7 @@ fix_lt(VALUE x, VALUE y)
 	return Qfalse;
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
-	return FIX2INT(rb_big_cmp(rb_int2big(FIX2LONG(x)), y)) < 0 ? Qtrue : Qfalse;
+	return rb_big_cmp(y, x) == INT2FIX(+1) ? Qtrue : Qfalse;
     }
     else if (RB_TYPE_P(y, T_FLOAT)) {
         return rb_integer_float_cmp(x, y) == INT2FIX(-1) ? Qtrue : Qfalse;
@@ -3478,11 +4052,25 @@ fix_lt(VALUE x, VALUE y)
     }
 }
 
+static VALUE
+int_lt(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_lt(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_lt(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ * Document-method: Integer#<=
+ * Document-method: Fixnum#<=
  * call-seq:
- *   fix <= real  ->  true or false
+ *   int <= real  ->  true or false
  *
- * Returns +true+ if the value of +fix+ is less than or equal to that of
+ * Returns +true+ if the value of +int+ is less than or equal to that of
  * +real+.
  */
 
@@ -3494,7 +4082,7 @@ fix_le(VALUE x, VALUE y)
 	return Qfalse;
     }
     else if (RB_TYPE_P(y, T_BIGNUM)) {
-	return FIX2INT(rb_big_cmp(rb_int2big(FIX2LONG(x)), y)) <= 0 ? Qtrue : Qfalse;
+	return rb_big_cmp(y, x) != INT2FIX(-1) ? Qtrue : Qfalse;
     }
     else if (RB_TYPE_P(y, T_FLOAT)) {
 	VALUE rel = rb_integer_float_cmp(x, y);
@@ -3505,27 +4093,59 @@ fix_le(VALUE x, VALUE y)
     }
 }
 
+static VALUE
+int_le(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_le(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_le(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ * Document-method: Integer#~
  * call-seq:
- *   ~fix  ->  integer
+ *   ~integer  ->  integer
  *
  * One's complement: returns a number where each bit is flipped.
+ *
+ * Inverts the bits in a integer. As Integers are conceptually infinite
+ * length, the result acts as if it had an infinite number of one
+ * bits to the left. In hex representations, this is displayed
+ * as two periods to the left of the digits.
+ *
+ *   sprintf("%X", ~0x1122334455)    #=> "..FEEDDCCBBAA"
+ *
  */
 
 static VALUE
-fix_rev(VALUE num)
+fix_comp(VALUE num)
 {
     return ~num | FIXNUM_FLAG;
+}
+
+static VALUE
+int_comp(VALUE num)
+{
+    if (FIXNUM_P(num)) {
+	return fix_comp(num);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_big_comp(num);
+    }
+    return Qnil;
 }
 
 static int
 bit_coerce(VALUE *x, VALUE *y)
 {
-    if (!FIXNUM_P(*y) && !RB_TYPE_P(*y, T_BIGNUM)) {
+    if (!RB_INTEGER_TYPE_P(*y)) {
 	VALUE orig = *x;
 	do_coerce(x, y, TRUE);
-	if (!FIXNUM_P(*x) && !RB_TYPE_P(*x, T_BIGNUM)
-	    && !FIXNUM_P(*y) && !RB_TYPE_P(*y, T_BIGNUM)) {
+	if (!RB_INTEGER_TYPE_P(*x) && !RB_INTEGER_TYPE_P(*y)) {
 	    coerce_failed(orig, *y);
 	}
     }
@@ -3536,12 +4156,13 @@ VALUE
 rb_num_coerce_bit(VALUE x, VALUE y, ID func)
 {
     bit_coerce(&x, &y);
-    return rb_funcall(x, func, 1, y);
+    return num_funcall1(x, func, y);
 }
 
 /*
+ * Document-method: Integer#&
  * call-seq:
- *   fix & integer  ->  integer_result
+ *   integer & integer  ->  integer_result
  *
  * Bitwise AND.
  */
@@ -3559,12 +4180,25 @@ fix_and(VALUE x, VALUE y)
     }
 
     bit_coerce(&x, &y);
-    return rb_funcall(x, '&', 1, y);
+    return num_funcall1(x, '&', y);
+}
+
+static VALUE
+int_and(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_and(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_and(x, y);
+    }
+    return Qnil;
 }
 
 /*
+ * Document-method: Integer#|
  * call-seq:
- *   fix | integer  ->  integer_result
+ *   integer | integer  ->  integer_result
  *
  * Bitwise OR.
  */
@@ -3582,12 +4216,25 @@ fix_or(VALUE x, VALUE y)
     }
 
     bit_coerce(&x, &y);
-    return rb_funcall(x, '|', 1, y);
+    return num_funcall1(x, '|', y);
+}
+
+static VALUE
+int_or(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_or(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_or(x, y);
+    }
+    return Qnil;
 }
 
 /*
+ * Document-method: Integer#^
  * call-seq:
- *   fix ^ integer  ->  integer_result
+ *   integer ^ integer  ->  integer_result
  *
  * Bitwise EXCLUSIVE OR.
  */
@@ -3605,17 +4252,27 @@ fix_xor(VALUE x, VALUE y)
     }
 
     bit_coerce(&x, &y);
-    return rb_funcall(x, '^', 1, y);
+    return num_funcall1(x, '^', y);
 }
 
-static VALUE fix_lshift(long, unsigned long);
-static VALUE fix_rshift(long, unsigned long);
+static VALUE
+int_xor(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return fix_xor(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_xor(x, y);
+    }
+    return Qnil;
+}
 
 /*
+ * Document-method: Integer#<<
  * call-seq:
- *   fix << count  ->  integer
+ *   int << count  ->  integer
  *
- * Shifts +fix+ left +count+ positions, or right if +count+ is negative.
+ * Shifts +int+ left +count+ positions, or right if +count+ is negative.
  */
 
 static VALUE
@@ -3643,11 +4300,24 @@ fix_lshift(long val, unsigned long width)
     return LONG2NUM(val);
 }
 
+static VALUE
+rb_int_lshift(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return rb_fix_lshift(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_lshift(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ * Document-method: Integer#>>
  * call-seq:
- *   fix >> count  ->  integer
+ *   int >> count  ->  integer
  *
- * Shifts +fix+ right +count+ positions, or left if +count+ is negative.
+ * Shifts +int+ right +count+ positions, or left if +count+ is negative.
  */
 
 static VALUE
@@ -3676,18 +4346,37 @@ fix_rshift(long val, unsigned long i)
     return LONG2FIX(val);
 }
 
+static VALUE
+rb_int_rshift(VALUE x, VALUE y)
+{
+    if (FIXNUM_P(x)) {
+	return rb_fix_rshift(x, y);
+    }
+    else if (RB_TYPE_P(x, T_BIGNUM)) {
+	return rb_big_rshift(x, y);
+    }
+    return Qnil;
+}
+
 /*
+ *  Document-method: Integer#[]
  *  call-seq:
- *     fix[n]  ->  0, 1
+ *     int[n]  ->  0, 1
  *
  *  Bit Reference---Returns the +n+th bit in the binary representation of
- *  +fix+, where <code>fix[0]</code> is the least significant bit.
+ *  +int+, where <code>int[0]</code> is the least significant bit.
  *
  *  For example:
  *
  *     a = 0b11001100101010
  *     30.downto(0) do |n| print a[n] end
  *     #=> 0000000000000000011001100101010
+ *
+ *     a = 9**15
+ *     50.downto(0) do |n|
+ *       print a[n]
+ *     end
+ *     #=> 000101110110100000111000011110010100111100010111001
  */
 
 static VALUE
@@ -3717,33 +4406,58 @@ fix_aref(VALUE fix, VALUE idx)
     return INT2FIX(0);
 }
 
+static VALUE
+int_aref(VALUE num, VALUE idx)
+{
+    if (FIXNUM_P(num)) {
+	return fix_aref(num, idx);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_big_aref(num, idx);
+    }
+    return Qnil;
+}
+
 /*
+ *  Document-method: Integer#to_f
  *  call-seq:
- *     fix.to_f  ->  float
+ *     int.to_f  ->  float
  *
- *  Converts +fix+ to a Float.
+ *  Converts +int+ to a +Float+.  If +int+ doesn't fit in a +Float+,
+ *  the result is infinity.
  *
  */
 
 static VALUE
-fix_to_f(VALUE num)
+int_to_f(VALUE num)
 {
     double val;
 
-    val = (double)FIX2LONG(num);
+    if (FIXNUM_P(num)) {
+	val = (double)FIX2LONG(num);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	val = rb_big2dbl(num);
+    }
+    else {
+	rb_raise(rb_eNotImpError, "Unknown subclass for to_f: %s", rb_obj_classname(num));
+    }
 
     return DBL2NUM(val);
 }
 
 /*
+ *  Document-method: Integer#abs
+ *  Document-method: Integer#magnitude
  *  call-seq:
- *     fix.abs        ->  integer
- *     fix.magnitude  ->  integer
+ *     int.abs        ->  integer
+ *     int.magnitude  ->  integer
  *
- *  Returns the absolute value of +fix+.
+ *  Returns the absolute value of +int+.
  *
  *     -12345.abs   #=> 12345
  *     12345.abs    #=> 12345
+ *     -1234567890987654321.abs   #=> 1234567890987654321
  *
  */
 
@@ -3757,17 +4471,31 @@ fix_abs(VALUE fix)
     return LONG2NUM(i);
 }
 
-
+static VALUE
+int_abs(VALUE num)
+{
+    if (FIXNUM_P(num)) {
+	return fix_abs(num);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_big_abs(num);
+    }
+    return Qnil;
+}
 
 /*
+ *  Document-method: Integer#size
  *  call-seq:
- *     fix.size  ->  fixnum
+ *     int.size  ->  int
  *
  *  Returns the number of bytes in the machine representation of +fix+.
  *
  *     1.size            #=> 4
  *     -1.size           #=> 4
  *     2147483647.size   #=> 4
+ *     (256**10 - 1).size   #=> 12
+ *     (256**20 - 1).size   #=> 20
+ *     (256**40 - 1).size   #=> 40
  */
 
 static VALUE
@@ -3776,7 +4504,20 @@ fix_size(VALUE fix)
     return INT2FIX(sizeof(long));
 }
 
+static VALUE
+int_size(VALUE num)
+{
+    if (FIXNUM_P(num)) {
+	return fix_size(num);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_big_size_m(num);
+    }
+    return Qnil;
+}
+
 /*
+ *  Document-method: Integer#bit_length
  *  call-seq:
  *     int.bit_length -> integer
  *
@@ -3789,6 +4530,12 @@ fix_size(VALUE fix)
  *
  *  I.e. This method returns ceil(log2(int < 0 ? -int : int+1)).
  *
+ *     (-2**10000-1).bit_length  #=> 10001
+ *     (-2**10000).bit_length    #=> 10000
+ *     (-2**10000+1).bit_length  #=> 10000
+ *     (-2**1000-1).bit_length   #=> 1001
+ *     (-2**1000).bit_length     #=> 1000
+ *     (-2**1000+1).bit_length   #=> 1000
  *     (-2**12-1).bit_length     #=> 13
  *     (-2**12).bit_length       #=> 12
  *     (-2**12+1).bit_length     #=> 12
@@ -3804,6 +4551,12 @@ fix_size(VALUE fix)
  *     (2**12-1).bit_length      #=> 12
  *     (2**12).bit_length        #=> 13
  *     (2**12+1).bit_length      #=> 13
+ *     (2**1000-1).bit_length    #=> 1000
+ *     (2**1000).bit_length      #=> 1001
+ *     (2**1000+1).bit_length    #=> 1001
+ *     (2**10000-1).bit_length   #=> 10000
+ *     (2**10000).bit_length     #=> 10001
+ *     (2**10000+1).bit_length   #=> 10001
  *
  *  This method can be used to detect overflow in Array#pack as follows.
  *
@@ -3824,12 +4577,124 @@ rb_fix_bit_length(VALUE fix)
 }
 
 static VALUE
-int_upto_size(VALUE from, VALUE args, VALUE eobj)
+rb_int_bit_length(VALUE num)
 {
-    return ruby_num_interval_step_size(from, RARRAY_AREF(args, 0), INT2FIX(1), FALSE);
+    if (FIXNUM_P(num)) {
+	return rb_fix_bit_length(num);
+    }
+    else if (RB_TYPE_P(num, T_BIGNUM)) {
+	return rb_big_bit_length(num);
+    }
+    return Qnil;
 }
 
 /*
+ *  Document-method: Integer#digits
+ *  call-seq:
+ *     int.digits       -> [int]
+ *     int.digits(base) -> [int]
+ *
+ *  Returns the array including the digits extracted by place-value notation
+ *  with radix +base+ of +int+.
+ *
+ *  +base+ should be greater than or equal to 2.
+ *
+ *     12345.digits      #=> [5, 4, 3, 2, 1]
+ *     12345.digits(7)   #=> [4, 6, 6, 0, 5]
+ *     12345.digits(100) #=> [45, 23, 1]
+ *
+ *     -12345.digits(7)  #=> Math::DomainError
+ */
+
+static VALUE
+rb_fix_digits(VALUE fix, long base)
+{
+    VALUE digits;
+    long x = FIX2LONG(fix);
+
+    assert(x >= 0);
+
+    if (base < 2)
+        rb_raise(rb_eArgError, "invalid radix %ld", base);
+
+    if (x == 0)
+        return rb_ary_new_from_args(1, INT2FIX(0));
+
+    digits = rb_ary_new();
+    while (x > 0) {
+        long q = x % base;
+        rb_ary_push(digits, LONG2NUM(q));
+        x /= base;
+    }
+
+    return digits;
+}
+
+static VALUE
+rb_int_digits_bigbase(VALUE num, VALUE base)
+{
+    VALUE digits;
+
+    assert(!rb_num_negative_p(num));
+
+    if (RB_TYPE_P(base, T_BIGNUM))
+        base = rb_big_norm(base);
+
+    if (FIXNUM_P(base) && FIX2LONG(base) < 2)
+        rb_raise(rb_eArgError, "invalid radix %ld", FIX2LONG(base));
+    else if (RB_TYPE_P(base, T_BIGNUM) && BIGNUM_NEGATIVE_P(base))
+        rb_raise(rb_eArgError, "negative radix");
+
+    if (FIXNUM_P(base) && FIXNUM_P(num))
+        return rb_fix_digits(num, FIX2LONG(base));
+
+    if (FIXNUM_P(num))
+        return rb_ary_new_from_args(1, num);
+
+    digits = rb_ary_new();
+    while (!FIXNUM_P(num) || FIX2LONG(num) > 0) {
+        VALUE qr = int_divmod(num, base);
+        rb_ary_push(digits, RARRAY_AREF(qr, 1));
+        num = RARRAY_AREF(qr, 0);
+    }
+
+    return digits;
+}
+
+static VALUE
+rb_int_digits(int argc, VALUE *argv, VALUE num)
+{
+    VALUE base_value;
+    long base;
+
+    if (rb_num_negative_p(num))
+        rb_raise(rb_eMathDomainError, "out of domain");
+
+    if (rb_check_arity(argc, 0, 1)) {
+        base_value = rb_to_int(argv[0]);
+        if (!RB_INTEGER_TYPE_P(base_value))
+            rb_raise(rb_eTypeError, "wrong argument type %s (expected Integer)",
+                     rb_obj_classname(argv[0]));
+        if (RB_TYPE_P(base_value, T_BIGNUM))
+            return rb_int_digits_bigbase(num, base_value);
+
+        base = FIX2LONG(base_value);
+        if (base < 2)
+            rb_raise(rb_eArgError, "invalid radix %ld", base);
+    }
+    else
+        base = 10;
+
+    if (FIXNUM_P(num))
+        return rb_fix_digits(num, base);
+    else if (RB_TYPE_P(num, T_BIGNUM))
+        return rb_int_digits_bigbase(num, LONG2FIX(base));
+
+    return Qnil;
+}
+
+/*
+ *  Document-method: Integer#upto
  *  call-seq:
  *     int.upto(limit) {|i| block }  ->  self
  *     int.upto(limit)               ->  an_enumerator
@@ -3844,6 +4709,12 @@ int_upto_size(VALUE from, VALUE args, VALUE eobj)
  *     5.upto(10) { |i| print i, " " }
  *     #=> 5 6 7 8 9 10
  */
+
+static VALUE
+int_upto_size(VALUE from, VALUE args, VALUE eobj)
+{
+    return ruby_num_interval_step_size(from, RARRAY_AREF(args, 0), INT2FIX(1), FALSE);
+}
 
 static VALUE
 int_upto(VALUE from, VALUE to)
@@ -3869,13 +4740,8 @@ int_upto(VALUE from, VALUE to)
     return from;
 }
 
-static VALUE
-int_downto_size(VALUE from, VALUE args, VALUE eobj)
-{
-    return ruby_num_interval_step_size(from, RARRAY_AREF(args, 0), INT2FIX(-1), FALSE);
-}
-
 /*
+ *  Document-method: Integer#downto
  *  call-seq:
  *     int.downto(limit) {|i| block }  ->  self
  *     int.downto(limit)               ->  an_enumerator
@@ -3889,6 +4755,12 @@ int_downto_size(VALUE from, VALUE args, VALUE eobj)
  *     print "  Liftoff!\n"
  *     #=> "5.. 4.. 3.. 2.. 1..   Liftoff!"
  */
+
+static VALUE
+int_downto_size(VALUE from, VALUE args, VALUE eobj)
+{
+    return ruby_num_interval_step_size(from, RARRAY_AREF(args, 0), INT2FIX(-1), FALSE);
+}
 
 static VALUE
 int_downto(VALUE from, VALUE to)
@@ -3914,19 +4786,8 @@ int_downto(VALUE from, VALUE to)
     return from;
 }
 
-static VALUE
-int_dotimes_size(VALUE num, VALUE args, VALUE eobj)
-{
-    if (FIXNUM_P(num)) {
-	if (NUM2LONG(num) <= 0) return INT2FIX(0);
-    }
-    else {
-	if (RTEST(rb_funcall(num, '<', 1, INT2FIX(0)))) return INT2FIX(0);
-    }
-    return num;
-}
-
 /*
+ *  Document-method: Integer#times
  *  call-seq:
  *     int.times {|i| block }  ->  self
  *     int.times               ->  an_enumerator
@@ -3941,6 +4802,18 @@ int_dotimes_size(VALUE num, VALUE args, VALUE eobj)
  *     end
  *     #=> 0 1 2 3 4
  */
+
+static VALUE
+int_dotimes_size(VALUE num, VALUE args, VALUE eobj)
+{
+    if (FIXNUM_P(num)) {
+	if (NUM2LONG(num) <= 0) return INT2FIX(0);
+    }
+    else {
+	if (RTEST(rb_funcall(num, '<', 1, INT2FIX(0)))) return INT2FIX(0);
+    }
+    return num;
+}
 
 static VALUE
 int_dotimes(VALUE num)
@@ -3968,6 +4841,7 @@ int_dotimes(VALUE num)
 }
 
 /*
+ *  Document-method: Integer#round
  *  call-seq:
  *     int.round([ndigits])  ->  integer or float
  *
@@ -3984,68 +4858,113 @@ int_dotimes(VALUE num)
 static VALUE
 int_round(int argc, VALUE* argv, VALUE num)
 {
-    VALUE n;
     int ndigits;
 
-    if (argc == 0) return num;
-    rb_scan_args(argc, argv, "1", &n);
-    ndigits = NUM2INT(n);
+    if (!rb_check_arity(argc, 0, 1)) return num;
+    ndigits = NUM2INT(argv[0]);
     if (ndigits > 0) {
 	return rb_Float(num);
     }
     if (ndigits == 0) {
 	return num;
     }
-    return int_round_0(num, ndigits);
+    return rb_int_round(num, ndigits);
 }
 
 /*
+ *  Document-method: Integer#floor
  *  call-seq:
- *     fix.zero?  ->  true or false
+ *     int.floor([ndigits])  ->  integer or float
  *
- *  Returns +true+ if +fix+ is zero.
+ *  Returns the largest number less than or equal to +int+ in decimal
+ *  digits (default 0 digits).
  *
+ *  Precision may be negative.  Returns a floating point number when +ndigits+
+ *  is positive, +self+ for zero, and floor down for negative.
+ *
+ *     1.floor        #=> 1
+ *     1.floor(2)     #=> 1.0
+ *     15.floor(-1)   #=> 10
  */
 
 static VALUE
-fix_zero_p(VALUE num)
+int_floor(int argc, VALUE* argv, VALUE num)
 {
-    if (FIX2LONG(num) == 0) {
-	return Qtrue;
+    int ndigits;
+
+    if (!rb_check_arity(argc, 0, 1)) return num;
+    ndigits = NUM2INT(argv[0]);
+    if (ndigits > 0) {
+	return rb_Float(num);
     }
-    return Qfalse;
+    if (ndigits == 0) {
+	return num;
+    }
+    return rb_int_floor(num, ndigits);
 }
 
 /*
+ *  Document-method: Integer#ceil
  *  call-seq:
- *     fix.odd?  ->  true or false
+ *     int.ceil([ndigits])  ->  integer or float
  *
- *  Returns +true+ if +fix+ is an odd number.
+ *  Returns the smallest number than or equal to +int+ in decimal
+ *  digits (default 0 digits).
+ *
+ *  Precision may be negative.  Returns a floating point number when +ndigits+
+ *  is positive, +self+ for zero, and ceil up for negative.
+ *
+ *     1.ceil        #=> 1
+ *     1.ceil(2)     #=> 1.0
+ *     15.ceil(-1)   #=> 20
  */
 
 static VALUE
-fix_odd_p(VALUE num)
+int_ceil(int argc, VALUE* argv, VALUE num)
 {
-    if (num & 2) {
-	return Qtrue;
+    int ndigits;
+
+    if (!rb_check_arity(argc, 0, 1)) return num;
+    ndigits = NUM2INT(argv[0]);
+    if (ndigits > 0) {
+	return rb_Float(num);
     }
-    return Qfalse;
+    if (ndigits == 0) {
+	return num;
+    }
+    return rb_int_ceil(num, ndigits);
 }
 
 /*
+ *  Document-method: Integer#truncate
  *  call-seq:
- *     fix.even?  ->  true or false
+ *     int.truncate([ndigits])  ->  integer or float
  *
- *  Returns +true+ if +fix+ is an even number.
+ *  Returns the smallest number than or equal to +int+ in decimal
+ *  digits (default 0 digits).
+ *
+ *  Precision may be negative.  Returns a floating point number when +ndigits+
+ *  is positive, +self+ for zero, and truncate up for negative.
+ *
+ *     1.truncate        #=> 1
+ *     1.truncate(2)     #=> 1.0
+ *     15.truncate(-1)   #=> 10
  */
 
 static VALUE
-fix_even_p(VALUE num)
+int_truncate(int argc, VALUE* argv, VALUE num)
 {
-    if (num & 2) {
-	return Qfalse;
+    int ndigits;
+
+    if (!rb_check_arity(argc, 0, 1)) return num;
+    ndigits = NUM2INT(argv[0]);
+    if (ndigits > 0) {
+	return rb_Float(num);
     }
-    return Qtrue;
+    if (ndigits == 0) {
+	return num;
+    }
+    return rb_int_truncate(num, ndigits);
 }
 
 /*
@@ -4150,10 +5069,7 @@ Init_Numeric(void)
 #undef rb_intern
 #define rb_intern(str) rb_intern_const(str)
 
-#if defined(__FreeBSD__) && __FreeBSD__ < 4
-    /* allow divide by zero -- Inf */
-    fpsetmask(fpgetmask() & ~(FP_X_DZ|FP_X_INV|FP_X_OFL));
-#elif defined(_UNICOSMP)
+#ifdef _UNICOSMP
     /* Turn off floating point exceptions for divide by zero, etc. */
     _set_Creg(0, 0);
 #endif
@@ -4189,11 +5105,13 @@ Init_Numeric(void)
     rb_define_method(rb_cNumeric, "integer?", num_int_p, 0);
     rb_define_method(rb_cNumeric, "zero?", num_zero_p, 0);
     rb_define_method(rb_cNumeric, "nonzero?", num_nonzero_p, 0);
+    rb_define_method(rb_cNumeric, "finite?", num_finite_p, 0);
+    rb_define_method(rb_cNumeric, "infinite?", num_infinite_p, 0);
 
-    rb_define_method(rb_cNumeric, "floor", num_floor, 0);
-    rb_define_method(rb_cNumeric, "ceil", num_ceil, 0);
+    rb_define_method(rb_cNumeric, "floor", num_floor, -1);
+    rb_define_method(rb_cNumeric, "ceil", num_ceil, -1);
     rb_define_method(rb_cNumeric, "round", num_round, -1);
-    rb_define_method(rb_cNumeric, "truncate", num_truncate, 0);
+    rb_define_method(rb_cNumeric, "truncate", num_truncate, -1);
     rb_define_method(rb_cNumeric, "step", num_step, -1);
     rb_define_method(rb_cNumeric, "positive?", num_positive_p, 0);
     rb_define_method(rb_cNumeric, "negative?", num_negative_p, 0);
@@ -4202,6 +5120,8 @@ Init_Numeric(void)
     rb_undef_alloc_func(rb_cInteger);
     rb_undef_method(CLASS_OF(rb_cInteger), "new");
 
+    rb_define_method(rb_cInteger, "to_s", int_to_s, -1);
+    rb_define_alias(rb_cInteger, "inspect", "to_s");
     rb_define_method(rb_cInteger, "integer?", int_int_p, 0);
     rb_define_method(rb_cInteger, "odd?", int_odd_p, 0);
     rb_define_method(rb_cInteger, "even?", int_even_p, 0);
@@ -4215,55 +5135,53 @@ Init_Numeric(void)
     rb_define_method(rb_cInteger, "ord", int_ord, 0);
     rb_define_method(rb_cInteger, "to_i", int_to_i, 0);
     rb_define_method(rb_cInteger, "to_int", int_to_i, 0);
-    rb_define_method(rb_cInteger, "floor", int_to_i, 0);
-    rb_define_method(rb_cInteger, "ceil", int_to_i, 0);
-    rb_define_method(rb_cInteger, "truncate", int_to_i, 0);
+    rb_define_method(rb_cInteger, "to_f", int_to_f, 0);
+    rb_define_method(rb_cInteger, "floor", int_floor, -1);
+    rb_define_method(rb_cInteger, "ceil", int_ceil, -1);
+    rb_define_method(rb_cInteger, "truncate", int_truncate, -1);
     rb_define_method(rb_cInteger, "round", int_round, -1);
+    rb_define_method(rb_cInteger, "<=>", int_cmp, 1);
 
-    rb_cFixnum = rb_define_class("Fixnum", rb_cInteger);
+    rb_define_method(rb_cInteger, "-@", rb_int_uminus, 0);
+    rb_define_method(rb_cInteger, "+", rb_int_plus, 1);
+    rb_define_method(rb_cInteger, "-", rb_int_minus, 1);
+    rb_define_method(rb_cInteger, "*", rb_int_mul, 1);
+    rb_define_method(rb_cInteger, "/", rb_int_div, 1);
+    rb_define_method(rb_cInteger, "div", rb_int_idiv, 1);
+    rb_define_method(rb_cInteger, "%", rb_int_modulo, 1);
+    rb_define_method(rb_cInteger, "modulo", rb_int_modulo, 1);
+    rb_define_method(rb_cInteger, "remainder", int_remainder, 1);
+    rb_define_method(rb_cInteger, "divmod", int_divmod, 1);
+    rb_define_method(rb_cInteger, "fdiv", int_fdiv, 1);
+    rb_define_method(rb_cInteger, "**", rb_int_pow, 1);
 
-    rb_define_method(rb_cFixnum, "to_s", fix_to_s, -1);
-    rb_define_alias(rb_cFixnum, "inspect", "to_s");
+    rb_define_method(rb_cInteger, "abs", int_abs, 0);
+    rb_define_method(rb_cInteger, "magnitude", int_abs, 0);
 
-    rb_define_method(rb_cFixnum, "-@", fix_uminus, 0);
-    rb_define_method(rb_cFixnum, "+", fix_plus, 1);
-    rb_define_method(rb_cFixnum, "-", fix_minus, 1);
-    rb_define_method(rb_cFixnum, "*", fix_mul, 1);
-    rb_define_method(rb_cFixnum, "/", fix_div, 1);
-    rb_define_method(rb_cFixnum, "div", fix_idiv, 1);
-    rb_define_method(rb_cFixnum, "%", fix_mod, 1);
-    rb_define_method(rb_cFixnum, "modulo", fix_mod, 1);
-    rb_define_method(rb_cFixnum, "divmod", fix_divmod, 1);
-    rb_define_method(rb_cFixnum, "fdiv", fix_fdiv, 1);
-    rb_define_method(rb_cFixnum, "**", fix_pow, 1);
+    rb_define_method(rb_cInteger, "===", int_equal, 1);
+    rb_define_method(rb_cInteger, "==", int_equal, 1);
+    rb_define_method(rb_cInteger, ">", int_gt, 1);
+    rb_define_method(rb_cInteger, ">=", rb_int_ge, 1);
+    rb_define_method(rb_cInteger, "<", int_lt, 1);
+    rb_define_method(rb_cInteger, "<=", int_le, 1);
 
-    rb_define_method(rb_cFixnum, "abs", fix_abs, 0);
-    rb_define_method(rb_cFixnum, "magnitude", fix_abs, 0);
+    rb_define_method(rb_cInteger, "~", int_comp, 0);
+    rb_define_method(rb_cInteger, "&", int_and, 1);
+    rb_define_method(rb_cInteger, "|", int_or,  1);
+    rb_define_method(rb_cInteger, "^", int_xor, 1);
+    rb_define_method(rb_cInteger, "[]", int_aref, 1);
 
-    rb_define_method(rb_cFixnum, "==", fix_equal, 1);
-    rb_define_method(rb_cFixnum, "===", fix_equal, 1);
-    rb_define_method(rb_cFixnum, "<=>", fix_cmp, 1);
-    rb_define_method(rb_cFixnum, ">",  fix_gt, 1);
-    rb_define_method(rb_cFixnum, ">=", fix_ge, 1);
-    rb_define_method(rb_cFixnum, "<",  fix_lt, 1);
-    rb_define_method(rb_cFixnum, "<=", fix_le, 1);
+    rb_define_method(rb_cInteger, "<<", rb_int_lshift, 1);
+    rb_define_method(rb_cInteger, ">>", rb_int_rshift, 1);
 
-    rb_define_method(rb_cFixnum, "~", fix_rev, 0);
-    rb_define_method(rb_cFixnum, "&", fix_and, 1);
-    rb_define_method(rb_cFixnum, "|", fix_or,  1);
-    rb_define_method(rb_cFixnum, "^", fix_xor, 1);
-    rb_define_method(rb_cFixnum, "[]", fix_aref, 1);
+    rb_define_method(rb_cInteger, "size", int_size, 0);
+    rb_define_method(rb_cInteger, "bit_length", rb_int_bit_length, 0);
+    rb_define_method(rb_cInteger, "digits", rb_int_digits, -1);
 
-    rb_define_method(rb_cFixnum, "<<", rb_fix_lshift, 1);
-    rb_define_method(rb_cFixnum, ">>", rb_fix_rshift, 1);
-
-    rb_define_method(rb_cFixnum, "to_f", fix_to_f, 0);
-    rb_define_method(rb_cFixnum, "size", fix_size, 0);
-    rb_define_method(rb_cFixnum, "bit_length", rb_fix_bit_length, 0);
-    rb_define_method(rb_cFixnum, "zero?", fix_zero_p, 0);
-    rb_define_method(rb_cFixnum, "odd?", fix_odd_p, 0);
-    rb_define_method(rb_cFixnum, "even?", fix_even_p, 0);
-    rb_define_method(rb_cFixnum, "succ", fix_succ, 0);
+#ifndef RUBY_INTEGER_UNIFICATION
+    rb_cFixnum = rb_cInteger;
+#endif
+    rb_define_const(rb_cObject, "Fixnum", rb_cInteger);
 
     rb_cFloat  = rb_define_class("Float", rb_cNumeric);
 
@@ -4393,12 +5311,12 @@ Init_Numeric(void)
     rb_define_method(rb_cFloat, "magnitude", flo_abs, 0);
     rb_define_method(rb_cFloat, "zero?", flo_zero_p, 0);
 
-    rb_define_method(rb_cFloat, "to_i", flo_truncate, 0);
-    rb_define_method(rb_cFloat, "to_int", flo_truncate, 0);
-    rb_define_method(rb_cFloat, "floor", flo_floor, 0);
-    rb_define_method(rb_cFloat, "ceil", flo_ceil, 0);
+    rb_define_method(rb_cFloat, "to_i", flo_to_i, 0);
+    rb_define_method(rb_cFloat, "to_int", flo_to_i, 0);
+    rb_define_method(rb_cFloat, "floor", flo_floor, -1);
+    rb_define_method(rb_cFloat, "ceil", flo_ceil, -1);
     rb_define_method(rb_cFloat, "round", flo_round, -1);
-    rb_define_method(rb_cFloat, "truncate", flo_truncate, 0);
+    rb_define_method(rb_cFloat, "truncate", flo_truncate, -1);
 
     rb_define_method(rb_cFloat, "nan?",      flo_is_nan_p, 0);
     rb_define_method(rb_cFloat, "infinite?", flo_is_infinite_p, 0);

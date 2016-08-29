@@ -248,7 +248,7 @@ module TestStruct
   def test_hash
     klass = @Struct.new(:a)
     o = klass.new(1)
-    assert_kind_of(Fixnum, o.hash)
+    assert_kind_of(Integer, o.hash)
   end
 
   def test_eql
@@ -365,6 +365,13 @@ module TestStruct
     o = klass.new(klass.new({b: [1, 2, 3]}))
     assert_equal(1, o.dig(:a, :a, :b, 0))
     assert_nil(o.dig(:b, 0))
+  end
+
+  def test_new_dupilicate
+    bug12291 = '[ruby-core:74971] [Bug #12291]'
+    assert_raise_with_message(ArgumentError, /duplicate member/, bug12291) {
+      @Struct.new(:a, :a)
+    }
   end
 
   class TopStruct < Test::Unit::TestCase

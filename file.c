@@ -100,6 +100,8 @@ int flock(int, int);
 #define lstat(p, s)	rb_w32_ulstati64((p), (s))
 #undef access
 #define access(p, m)	rb_w32_uaccess((p), (m))
+#undef truncate
+#define truncate(p, n)	rb_w32_utruncate((p), (n))
 #undef chmod
 #define chmod(p, m)	rb_w32_uchmod((p), (m))
 #undef chown
@@ -124,7 +126,7 @@ VALUE rb_cFile;
 VALUE rb_mFileTest;
 VALUE rb_cStat;
 
-#define insecure_obj_p(obj, level) ((level) >= 4 || ((level) > 0 && OBJ_TAINTED(obj)))
+#define insecure_obj_p(obj, level) ((level) > 0 && OBJ_TAINTED(obj))
 
 static VALUE
 file_path_convert(VALUE name)
@@ -233,6 +235,7 @@ rb_str_encode_ospath(VALUE path)
 }
 
 #ifdef __APPLE__
+# define NORMALIZE_UTF8PATH 1
 static VALUE
 rb_str_append_normalized_ospath(VALUE str, const char *ptr, long len)
 {
@@ -332,23 +335,27 @@ ignored_char_p(const char *p, const char *e, rb_encoding *enc)
     }
     return 0;
 }
+#else
+# define NORMALIZE_UTF8PATH 0
 #endif
 
-static long
-apply2files(void (*func)(const char *, VALUE, void *), VALUE vargs, void *arg)
+#define apply2args(n) (rb_check_arity(argc, n, UNLIMITED_ARGUMENTS), argc-=n)
+
+static VALUE
+apply2files(void (*func)(const char *, VALUE, void *), int argc, VALUE *argv, void *arg)
 {
     long i;
     volatile VALUE path;
 
-    for (i=0; i<RARRAY_LEN(vargs); i++) {
+    for (i=0; i<argc; i++) {
 	const char *s;
-	path = rb_get_path(RARRAY_AREF(vargs, i));
+	path = rb_get_path(argv[i]);
 	path = rb_str_encode_ospath(path);
 	s = RSTRING_PTR(path);
 	(*func)(s, path, arg);
     }
 
-    return RARRAY_LEN(vargs);
+    return LONG2FIX(argc);
 }
 
 /*
@@ -2292,16 +2299,12 @@ chmod_internal(const char *path, VALUE pathv, void *mode)
 static VALUE
 rb_file_s_chmod(int argc, VALUE *argv)
 {
-    VALUE vmode;
-    VALUE rest;
     int mode;
-    long n;
 
-    rb_scan_args(argc, argv, "1*", &vmode, &rest);
-    mode = NUM2INT(vmode);
+    apply2args(1);
+    mode = NUM2INT(*argv++);
 
-    n = apply2files(chmod_internal, rest, &mode);
-    return LONG2FIX(n);
+    return apply2files(chmod_internal, argc, argv, &mode);
 }
 
 /*
@@ -2369,15 +2372,12 @@ lchmod_internal(const char *path, VALUE pathv, void *mode)
 static VALUE
 rb_file_s_lchmod(int argc, VALUE *argv)
 {
-    VALUE vmode;
-    VALUE rest;
-    long mode, n;
+    long mode;
 
-    rb_scan_args(argc, argv, "1*", &vmode, &rest);
-    mode = NUM2INT(vmode);
+    apply2args(1);
+    mode = NUM2INT(*argv++);
 
-    n = apply2files(lchmod_internal, rest, (void *)(long)mode);
-    return LONG2FIX(n);
+    return apply2files(lchmod_internal, argc, argv, (void *)(long)mode);
 }
 #else
 #define rb_file_s_lchmod rb_f_notimplement
@@ -2432,16 +2432,13 @@ chown_internal(const char *path, VALUE pathv, void *arg)
 static VALUE
 rb_file_s_chown(int argc, VALUE *argv)
 {
-    VALUE o, g, rest;
     struct chown_args arg;
-    long n;
 
-    rb_scan_args(argc, argv, "2*", &o, &g, &rest);
-    arg.owner = to_uid(o);
-    arg.group = to_gid(g);
+    apply2args(2);
+    arg.owner = to_uid(*argv++);
+    arg.group = to_gid(*argv++);
 
-    n = apply2files(chown_internal, rest, &arg);
-    return LONG2FIX(n);
+    return apply2files(chown_internal, argc, argv, &arg);
 }
 
 /*
@@ -2508,16 +2505,13 @@ lchown_internal(const char *path, VALUE pathv, void *arg)
 static VALUE
 rb_file_s_lchown(int argc, VALUE *argv)
 {
-    VALUE o, g, rest;
     struct chown_args arg;
-    long n;
 
-    rb_scan_args(argc, argv, "2*", &o, &g, &rest);
-    arg.owner = to_uid(o);
-    arg.group = to_gid(g);
+    apply2args(2);
+    arg.owner = to_uid(*argv++);
+    arg.group = to_gid(*argv++);
 
-    n = apply2files(lchown_internal, rest, &arg);
-    return LONG2FIX(n);
+    return apply2files(lchown_internal, argc, argv, &arg);
 }
 #else
 #define rb_file_s_lchown rb_f_notimplement
@@ -2640,12 +2634,12 @@ utime_internal(const char *path, VALUE pathv, void *arg)
 static VALUE
 rb_file_s_utime(int argc, VALUE *argv)
 {
-    VALUE rest;
     struct utime_args args;
     struct timespec tss[2], *tsp = NULL;
-    long n;
 
-    rb_scan_args(argc, argv, "2*", &args.atime, &args.mtime, &rest);
+    apply2args(2);
+    args.atime = *argv++;
+    args.mtime = *argv++;
 
     if (!NIL_P(args.atime) || !NIL_P(args.mtime)) {
 	tsp = tss;
@@ -2657,8 +2651,7 @@ rb_file_s_utime(int argc, VALUE *argv)
     }
     args.tsp = tsp;
 
-    n = apply2files(utime_internal, rest, &args);
-    return LONG2FIX(n);
+    return apply2files(utime_internal, argc, argv, &args);
 }
 
 #ifdef RUBY_FUNCTION_NAME_STRING
@@ -2823,12 +2816,9 @@ unlink_internal(const char *path, VALUE pathv, void *arg)
  */
 
 static VALUE
-rb_file_s_unlink(VALUE klass, VALUE args)
+rb_file_s_unlink(int argc, VALUE *argv, VALUE klass)
 {
-    long n;
-
-    n = apply2files(unlink_internal, args, 0);
-    return LONG2FIX(n);
+    return apply2files(unlink_internal, argc, argv, 0);
 }
 
 /*
@@ -3191,17 +3181,25 @@ copy_home_path(VALUE result, const char *dir)
 VALUE
 rb_home_dir_of(VALUE user, VALUE result)
 {
+    const char *dir, *username = RSTRING_PTR(user);
 #ifdef HAVE_PWD_H
-    struct passwd *pwPtr = getpwnam(RSTRING_PTR(user));
+    struct passwd *pwPtr = getpwnam(username);
+#else
+    extern char *getlogin(void);
+    const char *pwPtr = 0;
+    # define endpwent() ((void)0)
+    if (strcasecmp(username, getlogin()) == 0)
+	dir = pwPtr = getenv("HOME");
+#endif
     if (!pwPtr) {
 	endpwent();
-#endif
 	rb_raise(rb_eArgError, "user %"PRIsVALUE" doesn't exist", user);
-#ifdef HAVE_PWD_H
     }
-    copy_home_path(result, pwPtr->pw_dir);
-    endpwent();
+#ifdef HAVE_PWD_H
+    dir = pwPtr->pw_dir;
 #endif
+    copy_home_path(result, dir);
+    endpwent();
     return result;
 }
 
@@ -3216,6 +3214,18 @@ rb_default_home_dir(VALUE result)
 }
 
 #ifndef _WIN32
+static VALUE
+ospath_new(const char *ptr, long len, rb_encoding *fsenc)
+{
+#if NORMALIZE_UTF8PATH
+    VALUE path = rb_str_normalize_ospath(ptr, len);
+    rb_enc_associate(path, fsenc);
+    return path;
+#else
+    return rb_enc_str_new(ptr, len, fsenc);
+#endif
+}
+
 static char *
 append_fspath(VALUE result, VALUE fname, char *dir, rb_encoding **enc, rb_encoding *fsenc)
 {
@@ -3223,10 +3233,13 @@ append_fspath(VALUE result, VALUE fname, char *dir, rb_encoding **enc, rb_encodi
     VALUE dirname = Qnil;
     size_t dirlen = strlen(dir), buflen = rb_str_capacity(result);
 
-    if (*enc != fsenc) {
-	rb_encoding *direnc = rb_enc_check(fname, dirname = rb_enc_str_new(dir, dirlen, fsenc));
+    if (NORMALIZE_UTF8PATH || *enc != fsenc) {
+	rb_encoding *direnc = rb_enc_check(fname, dirname = ospath_new(dir, dirlen, fsenc));
 	if (direnc != fsenc) {
 	    dirname = rb_str_conv_enc(dirname, fsenc, direnc);
+	    RSTRING_GETMEM(dirname, cwdp, dirlen);
+	}
+	else if (NORMALIZE_UTF8PATH) {
 	    RSTRING_GETMEM(dirname, cwdp, dirlen);
 	}
 	*enc = direnc;
@@ -3659,14 +3672,8 @@ rb_file_expand_path_fast(VALUE fname, VALUE dname)
 VALUE
 rb_file_s_expand_path(int argc, const VALUE *argv)
 {
-    VALUE fname, dname;
-
-    if (argc == 1) {
-	return rb_file_expand_path(argv[0], Qnil);
-    }
-    rb_scan_args(argc, argv, "11", &fname, &dname);
-
-    return rb_file_expand_path(fname, dname);
+    rb_check_arity(argc, 1, 2);
+    return rb_file_expand_path(argv[0], argc > 1 ? argv[1] : Qnil);
 }
 
 VALUE
@@ -3692,14 +3699,8 @@ rb_file_absolute_path(VALUE fname, VALUE dname)
 VALUE
 rb_file_s_absolute_path(int argc, const VALUE *argv)
 {
-    VALUE fname, dname;
-
-    if (argc == 1) {
-	return rb_file_absolute_path(argv[0], Qnil);
-    }
-    rb_scan_args(argc, argv, "11", &fname, &dname);
-
-    return rb_file_absolute_path(fname, dname);
+    rb_check_arity(argc, 1, 2);
+    return rb_file_absolute_path(argv[0], argc > 1 ? argv[1] : Qnil);
 }
 
 static void
@@ -3828,7 +3829,6 @@ rb_realpath_internal(VALUE basedir, VALUE path, int strict)
     char *ptr, *prefixptr = NULL, *pend;
     long len;
 
-    FilePathValue(path);
     unresolved_path = rb_str_dup_frozen(path);
 
     if (!NIL_P(basedir)) {
@@ -3913,8 +3913,9 @@ rb_realpath_internal(VALUE basedir, VALUE path, int strict)
 static VALUE
 rb_file_s_realpath(int argc, VALUE *argv, VALUE klass)
 {
-    VALUE path, basedir;
-    rb_scan_args(argc, argv, "11", &path, &basedir);
+    VALUE basedir = (rb_check_arity(argc, 1, 2) > 1) ? argv[1] : Qnil;
+    VALUE path = argv[0];
+    FilePathValue(path);
     return rb_realpath_internal(basedir, path, 1);
 }
 
@@ -3933,8 +3934,9 @@ rb_file_s_realpath(int argc, VALUE *argv, VALUE klass)
 static VALUE
 rb_file_s_realdirpath(int argc, VALUE *argv, VALUE klass)
 {
-    VALUE path, basedir;
-    rb_scan_args(argc, argv, "11", &path, &basedir);
+    VALUE basedir = (rb_check_arity(argc, 1, 2) > 1) ? argv[1] : Qnil;
+    VALUE path = argv[0];
+    FilePathValue(path);
     return rb_realpath_internal(basedir, path, 0);
 }
 
@@ -4062,10 +4064,13 @@ rb_file_s_basename(int argc, VALUE *argv)
     long f, n;
     rb_encoding *enc;
 
-    if (rb_scan_args(argc, argv, "11", &fname, &fext) == 2) {
+    fext = Qnil;
+    if (rb_check_arity(argc, 1, 2) == 2) {
+	fext = argv[1];
 	StringValue(fext);
 	enc = check_path_encoding(fext);
     }
+    fname = argv[0];
     FilePathStringValue(fname);
     if (NIL_P(fext) || !(enc = rb_enc_compatible(fname, fext))) {
 	enc = rb_enc_get(fname);
@@ -4295,7 +4300,7 @@ static VALUE
 rb_file_s_split(VALUE klass, VALUE path)
 {
     FilePathStringValue(path);		/* get rid of converting twice */
-    return rb_assoc_new(rb_file_s_dirname(Qnil, path), rb_file_s_basename(1,&path));
+    return rb_assoc_new(rb_file_dirname(path), rb_file_s_basename(1,&path));
 }
 
 static VALUE separator;
@@ -5644,11 +5649,12 @@ ruby_is_fd_loadable(int fd)
 
     if (fstat(fd, &st) < 0)
 	return 0;
+
     if (S_ISREG(st.st_mode))
 	return 1;
 
     if (S_ISFIFO(st.st_mode))
-	return 1;
+	return -1;
 
     if (S_ISDIR(st.st_mode))
 	errno = EISDIR;
@@ -5908,6 +5914,7 @@ Init_File(void)
     define_filetest_function("executable_real?", rb_file_executable_real_p, 1);
     define_filetest_function("file?", rb_file_file_p, 1);
     define_filetest_function("zero?", rb_file_zero_p, 1);
+    define_filetest_function("empty?", rb_file_zero_p, 1);
     define_filetest_function("size?", rb_file_size_p, 1);
     define_filetest_function("size", rb_file_s_size, 1);
     define_filetest_function("owned?", rb_file_owned_p, 1);
@@ -5945,8 +5952,8 @@ Init_File(void)
     rb_define_singleton_method(rb_cFile, "symlink", rb_file_s_symlink, 2);
     rb_define_singleton_method(rb_cFile, "readlink", rb_file_s_readlink, 1);
 
-    rb_define_singleton_method(rb_cFile, "unlink", rb_file_s_unlink, -2);
-    rb_define_singleton_method(rb_cFile, "delete", rb_file_s_unlink, -2);
+    rb_define_singleton_method(rb_cFile, "unlink", rb_file_s_unlink, -1);
+    rb_define_singleton_method(rb_cFile, "delete", rb_file_s_unlink, -1);
     rb_define_singleton_method(rb_cFile, "rename", rb_file_s_rename, 2);
     rb_define_singleton_method(rb_cFile, "umask", rb_file_s_umask, -1);
     rb_define_singleton_method(rb_cFile, "truncate", rb_file_s_truncate, 2);

@@ -131,14 +131,20 @@ module Test
           raise TypeError, "Expected #{expected.inspect} to be a kind of String or Regexp, not #{expected.class}"
         end
 
-        ex = assert_raise(exception, msg || proc {"Exception(#{exception}) with message matches to #{expected.inspect}"}) {yield}
+        ex = m = nil
+        EnvUtil.with_default_internal(expected.encoding) do
+          ex = assert_raise(exception, msg || proc {"Exception(#{exception}) with message matches to #{expected.inspect}"}) do
+            yield
+          end
+          m = ex.message
+        end
         msg = message(msg, "") {"Expected Exception(#{exception}) was raised, but the message doesn't match"}
 
         if assert == :assert_equal
-          assert_equal(expected, ex.message, msg)
+          assert_equal(expected, m, msg)
         else
-          msg = message(msg) { "Expected #{mu_pp expected} to match #{mu_pp ex.message}" }
-          assert expected =~ ex.message, msg
+          msg = message(msg) { "Expected #{mu_pp expected} to match #{mu_pp m}" }
+          assert expected =~ m, msg
           block.binding.eval("proc{|_|$~=_}").call($~)
         end
         ex
@@ -186,7 +192,6 @@ module Test
             raise
           end
         end
-        nil
       end
 
       # :call-seq:
@@ -447,6 +452,9 @@ EOT
         assert(failed.empty?, message(m) {failed.pretty_inspect})
       end
 
+      # compatiblity with test-unit
+      alias pend skip
+
       def assert_valid_syntax(code, fname = caller_locations(1, 1)[0], mesg = fname.to_s, verbose: nil)
         code = code.b
         code.sub!(/\A(?:\xef\xbb\xbf)?(\s*\#.*$)*(\n)?/n) {
@@ -490,6 +498,7 @@ EOT
           catch {|tag| eval(code, binding, fname, line)}
         end
         assert_match(error, e.message, mesg)
+        e
       ensure
         $VERBOSE = verbose
       end
@@ -596,7 +605,7 @@ EOT
 eom
         args = args.dup
         args.insert((Hash === args.first ? 1 : 0), "-w", "--disable=gems", *$:.map {|l| "-I#{l}"})
-        stdout, stderr, status = EnvUtil.invoke_ruby(args, src, true, true, timeout_error: nil, **opt)
+        stdout, stderr, status = EnvUtil.invoke_ruby(args, src, true, true, **opt)
         abort = status.coredump? || (status.signaled? && ABORT_SIGNALS.include?(status.termsig))
         assert(!abort, FailDesc[status, nil, stderr])
         self._assertions += stdout[/^assertions=(\d+)/, 1].to_i
@@ -627,7 +636,11 @@ eom
       end
 
       def assert_warning(pat, msg = nil)
-        stderr = EnvUtil.verbose_warning { yield }
+        stderr = EnvUtil.verbose_warning {
+          EnvUtil.with_default_internal(pat.encoding) {
+            yield
+          }
+        }
         msg = message(msg) {diff pat, stderr}
         assert(pat === stderr, msg)
       end
@@ -638,6 +651,8 @@ eom
 
       def assert_no_memory_leak(args, prepare, code, message=nil, limit: 2.0, rss: false, **opt)
         require_relative '../../memory_status'
+        raise MiniTest::Skip, "unsupported platform" unless defined?(Memory::Status)
+
         token = "\e[7;1m#{$$.to_s}:#{Time.now.strftime('%s.%L')}:#{rand(0x10000).to_s(16)}:\e[m"
         token_dump = token.dump
         token_re = Regexp.quote(token)

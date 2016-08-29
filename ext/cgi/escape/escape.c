@@ -9,6 +9,7 @@ RUBY_EXTERN const signed char ruby_digit36_to_number_table[];
 #define char_to_number(c) ruby_digit36_to_number_table[(unsigned char)(c)]
 
 static VALUE rb_cCGI, rb_mUtil, rb_mEscape;
+static ID id_accept_charset;
 
 static void
 html_escaped_cat(VALUE str, char c)
@@ -104,40 +105,38 @@ optimized_unescape_html(VALUE str)
 	plen = i - beg;
 	if (++i >= len) break;
 	c = (unsigned char)cstr[i];
+#define MATCH(s) (len - i >= (int)rb_strlen_lit(s) && \
+		  memcmp(&cstr[i], s, rb_strlen_lit(s)) == 0 && \
+		  (i += rb_strlen_lit(s) - 1, 1))
 	switch (c) {
 	  case 'a':
 	    ++i;
-	    if (len - i >= 4 && memcmp(&cstr[i], "pos;", 4) == 0) {
+	    if (MATCH("pos;")) {
 		c = '\'';
-		i += 3;
 	    }
-	    else if (len - i >= 3 && memcmp(&cstr[i], "mp;", 3) == 0) {
+	    else if (MATCH("mp;")) {
 		c = '&';
-		i += 2;
 	    }
 	    else continue;
 	    break;
 	  case 'q':
 	    ++i;
-	    if (len - i >= 4 && memcmp(&cstr[i], "uot;", 4) == 0) {
+	    if (MATCH("uot;")) {
 		c = '"';
-		i += 3;
 	    }
 	    else continue;
 	    break;
 	  case 'g':
 	    ++i;
-	    if (len - i >= 2 && memcmp(&cstr[i], "t;", 2) == 0) {
+	    if (MATCH("t;")) {
 		c = '>';
-		i += 1;
 	    }
 	    else continue;
 	    break;
 	  case 'l':
 	    ++i;
-	    if (len - i >= 2 && memcmp(&cstr[i], "t;", 2) == 0) {
+	    if (MATCH("t;")) {
 		c = '<';
-		i += 1;
 	    }
 	    else continue;
 	    break;
@@ -186,7 +185,7 @@ optimized_unescape_html(VALUE str)
     }
 }
 
-static int
+static unsigned char
 url_unreserved_char(unsigned char c)
 {
     switch (c) {
@@ -369,22 +368,46 @@ cgiesc_escape(VALUE self, VALUE str)
     }
 }
 
-/* :nodoc: */
 static VALUE
-cgiesc_unescape(VALUE self, VALUE str, VALUE enc)
+accept_charset(int argc, VALUE *argv, VALUE self)
 {
+    if (argc > 0)
+	return argv[0];
+    return rb_cvar_get(CLASS_OF(self), id_accept_charset);
+}
+
+/*
+ *  call-seq:
+ *     CGI.unescape(string, encoding=@@accept_charset) -> string
+ *
+ *  Returns URL-unescaped string.
+ *
+ */
+static VALUE
+cgiesc_unescape(int argc, VALUE *argv, VALUE self)
+{
+    VALUE str = (rb_check_arity(argc, 1, 2), argv[0]);
+
     StringValue(str);
 
     if (rb_enc_str_asciicompat_p(str)) {
+	VALUE enc = accept_charset(argc-1, argv+1, self);
 	return optimized_unescape(str, enc);
     }
     else {
-	return rb_call_super(1, &str);
+	return rb_call_super(argc, argv);
     }
 }
 
 void
 Init_escape(void)
+{
+    id_accept_charset = rb_intern_const("@@accept_charset");
+    InitVM(escape);
+}
+
+void
+InitVM_escape(void)
 {
     rb_cCGI    = rb_define_class("CGI", rb_cObject);
     rb_mEscape = rb_define_module_under(rb_cCGI, "Escape");
@@ -392,7 +415,7 @@ Init_escape(void)
     rb_define_method(rb_mEscape, "escapeHTML", cgiesc_escape_html, 1);
     rb_define_method(rb_mEscape, "unescapeHTML", cgiesc_unescape_html, 1);
     rb_define_method(rb_mEscape, "escape", cgiesc_escape, 1);
-    rb_define_private_method(rb_mEscape, "_unescape", cgiesc_unescape, 2);
+    rb_define_method(rb_mEscape, "unescape", cgiesc_unescape, -1);
     rb_prepend_module(rb_mUtil, rb_mEscape);
     rb_extend_object(rb_cCGI, rb_mEscape);
 }

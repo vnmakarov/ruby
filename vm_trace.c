@@ -81,7 +81,7 @@ recalc_remove_ruby_vm_event_flags(rb_event_flag_t events)
     ruby_vm_event_flags = 0;
 
     for (i=0; i<MAX_EVENT_NUM; i++) {
-	if (events & (1 << i)) {
+	if (events & ((rb_event_flag_t)1 << i)) {
 	    ruby_event_flag_count[i]--;
 	}
 	ruby_vm_event_flags |= ruby_event_flag_count[i] ? (1<<i) : 0;
@@ -359,10 +359,10 @@ rb_threadptr_exec_event_hooks_orig(rb_trace_arg_t *trace_arg, int pop_p)
 
 	    if (state) {
 		if (pop_p) {
-		    if (VM_FRAME_TYPE_FINISH_P(th->cfp)) {
+		    if (VM_FRAME_FINISHED_P(th->cfp)) {
 			th->tag = th->tag->prev;
 		    }
-		    th->cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(th->cfp);
+		    rb_vm_pop_frame(th);
 		}
 		TH_JUMP_TAG(th, state);
 	    }
@@ -416,7 +416,7 @@ rb_suppress_tracing(VALUE (*func)(VALUE), VALUE arg)
     if (!tracing) th->vm->trace_running--;
 
     if (state) {
-	JUMP_TAG(state);
+	TH_JUMP_TAG(th, state);
     }
 
     th->state = outer_state;
@@ -453,8 +453,8 @@ static void call_trace_func(rb_event_flag_t, VALUE data, VALUE self, ID id, VALU
  *  +c-call+:: call a C-language routine
  *  +c-return+:: return from a C-language routine
  *  +call+:: call a Ruby method
- *  +class+:: start a class or module definition),
- *  +end+:: finish a class or module definition),
+ *  +class+:: start a class or module definition
+ *  +end+:: finish a class or module definition
  *  +line+:: execute code on a new line
  *  +raise+:: raise an exception
  *  +return+:: return from a Ruby method
