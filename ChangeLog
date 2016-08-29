@@ -1,3 +1,98 @@
+Sat Apr 30 06:25:16 2016  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* include/ruby/st.h (MAX_ST_INDEX_VAL, st_table_entry): New.
+	(ST_INDEX_BITS): Remove.
+	(struct st_table): Add fields entry_power, bin_power, size_ind,
+	rebuilds_num, bins, entries_start, entries_bound, and entries.
+	Remove fields num_bins, entries_packed, as.  Remove bit field
+	length from num_entries.
+	(st_reverse_foreach): Remove.
+	* st.c: Rewrite top comment.  Don't include ccan/list/list.h.
+	Include <assert.h>.
+	(PREFETCH, EXPECT, ATTRIBUTE_UNUSED, st_assert, st_hash_t): New.
+	(struct st_table_entry): Use st_hash_t for hash.  Remove next and
+	olist.
+	(struct st_packed_entry, ST_DEFAULT_MAX_DENSITY): Remove.
+	(ST_DEFAULT_INIT_TABLE_SIZE, ST_DEFAULT_PACKED_TABLE_SIZE): Remove.
+	(PACKED_UNIT): Remove.
+	(STATIC_ASSERT): Remove definition and usages.
+	(ST_INIT_VAL, ST_INIT_VAL_BYTE): New.
+	(malloc, calloc, realloc, free): Redefine as ruby_xmalloc,
+	ruby_xcalloc, ruby_xrealloc, and ruby_xfree.
+	(EQUAL): Redefine.
+	(do_hash): Redefine.
+	(st_alloc_entry, st_free_entry, st_alloc_table, st_dealloc_table): Remove.
+	(st_alloc_bins, calloc, st_free_bins, st_realloc_bins): Remove.
+	(bins,real_entries, PACKED_BINS, PACKED_ENT, PACKED_BINS, PKEY):
+	Remove.
+	(PVAL, PHASH, PKEY_SET, PVAL_SET, PHASH_SET, remove_packed_entry):
+	Remove.
+	(remove_safe_packed_entry, next_pow2): Remove.
+	(PTR_EQUAL, struct st_features, MAX_POWER2, features)
+	(RESERVED_HASH_VAL, RESERVED_HASH_SUBSTITUTION_VAL): New.
+	(new_size): Remove.
+	(MINIMAL_POWER2, MAX_POWER2_FOR_TABLES_WITHOUT_BINS, get_power2): New.
+	(get_bin, set_bin, EMPTY_BIN, DELETED_BIN, ENTRY_BASE): New.
+	(MARK_BIN_EMPTY, UNDEFINED_ENTRY_IND, UNDEFINED_BIN_IND): New.
+	(MARK_BIN_DELETED, EMPTY_BIN_P, DELETED_BIN_P): New.
+	(EMPTY_OR_DELETED_BIN_P, IND_EMPTY_BIN_P, IND_DELETED_BIN_P): New.
+	(IND_EMPTY_OR_DELETED_BIN_P, MARK_ENTRY_DELETED, DELETED_ENTRY_P):
+	New.
+	(get_size_ind, get_bins_num, bins_mask, hash_bin): New.
+	(get_allocated_entries, bins_size, initialize_bins): New.
+	(make_tab_empty, st_check): New.
+	(st_head): Remove.
+	(st_init_table_with_size, st_clear, st_free_table, st_memsize):
+	Rewrite.
+	(PTR_NOT_EQUAL): Remove.
+	(FOUND_ENTRY): Rename to FOUND_BIN.
+	(FIND_ENTRY, find_entry, find_packed_index_from): Remove.
+	(find_packed_index): Remove.
+	(REBUILD_THRESHOLD): New.
+	(st_lookup, st_get_key): Rewrite.
+	(rebuild_table, secondary_hash, find_entry, find_table_entry_ind): New.
+	(find_table_bin_ind, find_table_bin_ind_direct): New.
+	(find_table_bin_ptr_and_reserve, rebuild_table_if_necessary): New.
+	(update_range_for_deleted, st_general_delete, st_general_foreach): New.
+	(st_general_keys, st_general_values): New.
+	(new_entry, add_direct, unpack_entries, add_packed_direct): Remove.
+	(rehash, remove_entry, st_reverse_foreach_check): Remove.
+	(st_reverse_foreach, get_keys, get_values): Remove.
+	(st_insert, st_insert2, st_add_direct, st_copy, st_delete): Rewrite.
+	(st_delete_safe, st_shift, st_cleanup_safe, st_update): Rewrite.
+	(st_foreach_check, st_foreach, st_keys, st_keys_check): Rewrite.
+	(st_values, st_values_check): Rewrite.
+	* ext/-test-/st/foreach/foreach.c (force_unpack_check, unp_fec):
+	Change tests on packed tables.
+	(unp_fe): Ditto.
+	* benchmark/bm_hash_aref_dsym.rb: Increase the number of
+	iterations.
+	* benchmark/bm_hash_aref_fix.rb: Ditto.
+	* benchmark/bm_hash_aref_flo.rb: Ditto.
+	* benchmark/bm_hash_aref_miss.rb: Ditto.
+	* benchmark/bm_hash_aref_str.rb: Ditto.
+	* benchmark/bm_hash_aref_sym.rb: Ditto.
+	* benchmark/bm_hash_aref_sym_long.rb: Ditto.
+	* benchmark/bm_hash_flatten.rb: Ditto.
+	* benchmark/bm_hash_ident_flo.rb: Ditto.
+	* benchmark/bm_hash_ident_num.rb: Ditto.
+	* benchmark/bm_hash_ident_obj.rb: Ditto.
+	* benchmark/bm_hash_ident_str.rb: Ditto.
+	* benchmark/bm_hash_ident_sym.rb: Ditto.
+	* benchmark/bm_hash_keys.rb: Ditto.
+	* benchmark/bm_hash_shift.rb: Ditto.
+	* benchmark/bm_hash_shift_u16.rb: Ditto.
+	* benchmark/bm_hash_shift_u24.rb: Ditto.
+	* benchmark/bm_hash_shift_u32.rb: Ditto.
+	* benchmark/bm_hash_to_proc.rb: Ditto.
+	* benchmark/bm_hash_values.rb: Ditto.
+	* benchmark/bm_hash_aref_dsym_long.rb: Decrease the number of
+	iterations.
+	* benchmark/bm_hash_small2.rb : New.
+	* benchmark/bm_hash_small4.rb: New.
+	* benchmark/bm_hash_small8.rb: New.
+	* benchmark/{bm_bighash.rb, bm_hash_long.rb}: New.
+
 Sat Aug 27 10:26:14 2016  Nobuyoshi Nakada  <nobu@ruby-lang.org>
 
 	* array.c (rb_ary_concat_multi): take multiple arguments.  based

@@ -16,6 +16,6 @@ end
 rng = Random.new(0)
 symbol_sample_array = values.sample(sample_size, random: rng).map(&:to_sym)
 
-3000.times do
+1000.times do
   symbol_sample_array.each { |x| symbol_hash[x] }
 end
