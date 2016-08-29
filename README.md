@@ -7,9 +7,9 @@
   The branch `trunk` is Ruby trunk dated Aug. 28 on which branch
   `hash_tables_with_open_addressing` is based.
 
-* Here is a perfromance comparison with for tables with chains for
-  conflict resolution.  The average speed results are obtained on
-  4.2GHz i7-4790K by running:
+* Here is a perfromance comparison with for latest *tables with
+  chains* for collision resolution.  The average speed results are
+  obtained on 4.2GHz i7-4790K by running:
   
 
 ```
@@ -26,9 +26,12 @@ ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura
  
 
 * The *tables with chains* are hash tables with chains used for
-  collisions where table elements are stored in array as in the
-  *tables with open addressing*.  *Trunk* tables use lists to store
-  all elements and traverse them.
+  collisions where table elements are stored in an array as in the
+  *tables with open addressing* origionally.  *Trunk* tables use lists
+  to store all elements and traverse them.
+
+  * The patch for *tables with chains* can be found on
+    https://github.com/funny-falcon/ruby/compare/trunk...funny-falcon:st_table_with_array2.patch
 
 * *Open addressing tables* potentially permit to have tables upto 2^64
   elements on 64-bit targets
@@ -36,15 +39,15 @@ ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura
 * By default, the *tables with chains* permit to use tables with less
   < 2^32 elements.
 
-  * If you need bigger tables you should compile MRI with macro
-    non-zero `ENABLE_HUGEHASH` or use a special options during MRI
-    configuration.  The third column gives the results when MRI is
-    compiled with this macro.
+  * If you need bigger tables you should compile MRI with non-zero
+    macro `ENABLE_HUGEHASH` or use a special option during MRI
+    configuration.  The third column gives the results when the tables
+    is compiled with this macro.
 
   * The code with non-zero `ENABLE_HUGEHASH` results in 33% bigger
     elements in comparison with open-addressing table elements and the
     tables with chains with elements number < 2^32.  It means that
-    traversing hash table elements (a pretty frequent operation of
+    traversing hash table elements (a pretty frequent operation in
     Ruby code) will be never faster for hash table with chains.
 
   * A Ruby developer meetings decided to have tables with > 2*32
@@ -52,8 +55,8 @@ ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura
   
 * The *tables with chains* use siphash13 (1-iteration per element and
   3-final iterations).  Trunk and *open addressing tables* use slower
-  siphash24 (1-iteration per element and 3-final iteration).  To
-  compare apples to apples, the third column presents results for
+  siphash24 (2-iterations per element and 4-final iterations).  To
+  compare apples to apples, the third column presents results for the
   *tables with chains* with siphash24.
   
 
@@ -62,7 +65,7 @@ ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura
 * Trunk vs *tables with chains* and *open addressing tables*
 
 ```
-bighash	2.002	1.629
+bighash	        2.002	1.629
 hash_aref_dsym	1.001	0.976
 hash_aref_dsym_long	1.467	1.438
 hash_aref_fix	1.001	1.056
@@ -95,6 +98,7 @@ vm2_bighash*	3.134	3.233
 * Above but tables with chains compiled to have > 2^32 elements
 
 ```
+bighash	        1.815	1.585
 hash_aref_dsym	0.974	0.948
 hash_aref_dsym_long	1.483	1.445
 hash_aref_fix	1.019	1.055
