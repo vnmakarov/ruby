@@ -16,13 +16,13 @@
 ruby ../ruby/benchmark/driver.rb -p hash -r 3 -e trunk::<trunk-miniruby> -e yura::<yura-miniruby> -e mine::<mine-miniruby>|awk 'NF==3 && /hash/ {s+=$2;s2+=$3;n++;print} END{print s/n, s2/n}'
 ```
 
-|Table                         |Average speed up            |
-:-----------------------------:|---------------------------:|
- Trunk                         | 1.0                        |
- Default tables with chains    | 1.42                       |
- Above compiled for huge tables| 1.37                       |
- Above + siphash24             | 1.36                       |
- Open addressing tables        | 1.45                       |
+|Table                                           |Average speed up            |
+:-----------------------------------------------:|---------------------------:|
+ Trunk (max. 2^64 elems)                         | 1.0                        |
+ Default tables with chains (max. 2^32 elems)    | 1.42                       |
+ Above compiled for huge tables (max. 2^64 elems)| 1.37                       |
+ Above + siphash24                               | 1.36                       |
+ Open addressing tables (max. 2^64 elems)        | 1.45                       |
  
 
 * The *tables with chains* are hash tables with chains used for
