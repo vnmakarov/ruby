@@ -347,7 +347,7 @@ get_power2(st_index_t size) {
 /* Return value of N-th bin in array BINS of table with bins size
    index S.  */
 static inline st_index_t
-get_bin(st_index_t *bins, int s, st_index_t n) {
+get_bin(st_index_t *bins, st_index_t s, st_index_t n) {
   return (s == 0 ? ((unsigned char *) bins)[n]
 	  : s == 1 ? ((unsigned short *) bins)[n]
 	  : s == 2 ? ((unsigned int *) bins)[n]
@@ -357,10 +357,10 @@ get_bin(st_index_t *bins, int s, st_index_t n) {
 /* Set up N-th bin in array BINS of table with bins size index S to
    value V.  */
 static inline void
-set_bin(st_index_t *bins, int s, st_index_t n, st_index_t v) {
+set_bin(st_index_t *bins, st_index_t s, st_index_t n, st_index_t v) {
     if (s == 0) ((unsigned char *) bins)[n] = v;
     else if (s == 1) ((unsigned short *) bins)[n] = v;
-    else if (s == 2) ((unsigned int *) bins)[n] = v;
+    else if (s == 2) ((unsigned int *) bins)[n] = (unsigned int)v;
     else ((st_index_t *) bins)[n] = v;
 }
 
