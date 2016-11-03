@@ -26,24 +26,12 @@ extern "C" {
 #define LIKELY(x) RB_LIKELY(x)
 #define UNLIKELY(x) RB_UNLIKELY(x)
 
-#ifndef __has_attribute
-# define __has_attribute(x) 0
+#ifndef MAYBE_UNUSED
+# define MAYBE_UNUSED(x) x
 #endif
 
-#if __has_attribute(__unused__)
-#define UNINITIALIZED_VAR(x) x __attribute__((__unused__))
-#elif defined(__GNUC__) && __GNUC__ >= 3
-#define UNINITIALIZED_VAR(x) x = x
-#else
-#define UNINITIALIZED_VAR(x) x
-#endif
-
-#if __has_attribute(__warn_unused_result__)
-#define WARN_UNUSED_RESULT(x) x __attribute__((__warn_unused_result__))
-#elif GCC_VERSION_SINCE(3,4,0)
-#define WARN_UNUSED_RESULT(x) x __attribute__((__warn_unused_result__))
-#else
-#define WARN_UNUSED_RESULT(x) x
+#ifndef WARN_UNUSED_RESULT
+# define WARN_UNUSED_RESULT(x) x
 #endif
 
 #ifdef HAVE_VALGRIND_MEMCHECK_H
@@ -334,6 +322,9 @@ ntz_intptr(uintptr_t x) {
 # define DL2NUM(x) (RB_FIXABLE(x) ? LONG2FIX(x) : rb_int128t2big(x))
 VALUE rb_int128t2big(int128_t n);
 #endif
+
+#define ST2FIX(h) LONG2FIX((long)(h))
+
 
 /* arguments must be Fixnum */
 static inline VALUE
@@ -812,8 +803,8 @@ struct MEMO {
     } u3;
 };
 
-#define MEMO_V1_SET(m, v) RB_OBJ_WRITE((memo), &(memo)->v1, (v))
-#define MEMO_V2_SET(m, v) RB_OBJ_WRITE((memo), &(memo)->v2, (v))
+#define MEMO_V1_SET(m, v) RB_OBJ_WRITE((m), &(m)->v1, (v))
+#define MEMO_V2_SET(m, v) RB_OBJ_WRITE((m), &(m)->v2, (v))
 
 #define MEMO_CAST(m) ((struct MEMO *)m)
 
@@ -940,6 +931,7 @@ VALUE rb_singleton_class_get(VALUE obj);
 void Init_class_hierarchy(void);
 
 int rb_class_has_methods(VALUE c);
+void rb_undef_methods_from(VALUE klass, VALUE super);
 
 /* compar.c */
 VALUE rb_invcmp(VALUE, VALUE);
@@ -1498,6 +1490,7 @@ VALUE rb_search_class_path(VALUE);
 VALUE rb_attr_delete(VALUE, ID);
 VALUE rb_ivar_lookup(VALUE obj, ID id, VALUE undef);
 void rb_autoload_str(VALUE mod, ID id, VALUE file);
+void rb_deprecate_constant(VALUE mod, const char *name);
 
 /* version.c */
 extern const char ruby_engine[];
@@ -1688,6 +1681,24 @@ do { \
 	RUBY_DTRACE_##name(arg, dtrace_file, dtrace_line); \
     } \
 } while (0)
+
+#define RB_OBJ_BUILTIN_TYPE(obj) rb_obj_builtin_type(obj)
+#define OBJ_BUILTIN_TYPE(obj) RB_OBJ_BUILTIN_TYPE(obj)
+#ifdef __GNUC__
+#define rb_obj_builtin_type(obj) \
+__extension__({ \
+    VALUE arg_obj = (obj); \
+    RB_SPECIAL_CONST_P(arg_obj) ? -1 : \
+	RB_BUILTIN_TYPE(arg_obj); \
+    })
+#else
+static inline int
+rb_obj_builtin_type(VALUE obj)
+{
+    return RB_SPECIAL_CONST_P(obj) ? -1 :
+	RB_BUILTIN_TYPE(obj);
+}
+#endif
 
 #if defined(__cplusplus)
 #if 0

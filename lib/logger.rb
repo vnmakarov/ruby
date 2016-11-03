@@ -340,7 +340,7 @@ class Logger
 
   #
   # :call-seq:
-  #   Logger.new(logdev, shift_age = 7, shift_size = 1048576)
+  #   Logger.new(logdev, shift_age = 0, shift_size = 1048576)
   #   Logger.new(logdev, shift_age = 'weekly')
   #   Logger.new(logdev, level: :info)
   #   Logger.new(logdev, progname: 'progname')
@@ -356,8 +356,8 @@ class Logger
   #   Number of old log files to keep, *or* frequency of rotation (+daily+,
   #   +weekly+ or +monthly+). Default value is 0.
   # +shift_size+::
-  #   Maximum logfile size (only applies when +shift_age+ is a number). Default
-  #   value is 1MiB.
+  #   Maximum logfile size in bytes (only applies when +shift_age+ is a number).
+  #   Defaults to +1048576+ (1MB).
   # +level+::
   #   Logging severity threshold. Default values is Logger::DEBUG.
   # +progname+::
@@ -629,8 +629,8 @@ private
       when 'weekly'
         t = Time.mktime(now.year, now.month, now.mday) + SiD * (7 - now.wday)
       when 'monthly'
-        t = Time.mktime(now.year, now.month, 1) + SiD * 31
-        return Time.mktime(t.year, t.month, 1) if t.mday > 1
+        t = Time.mktime(now.year, now.month, 1) + SiD * 32
+        return Time.mktime(t.year, t.month, 1)
       else
         return now
       end

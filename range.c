@@ -226,7 +226,7 @@ range_eql(VALUE range, VALUE obj)
 
 /*
  * call-seq:
- *   rng.hash    -> fixnum
+ *   rng.hash    -> integer
  *
  * Compute a hash-code for this range. Two ranges with equal
  * begin and end points (using <code>eql?</code>), and the same
@@ -911,7 +911,8 @@ range_last(int argc, VALUE *argv, VALUE range)
  *     rng.min(n) {| a,b | block }   -> array
  *
  *  Returns the minimum value in the range. Returns +nil+ if the begin
- *  value of the range is larger than the end value.
+ *  value of the range is larger than the end value. Returns +nil+ if
+ *  the begin value of an exclusive range is equal to the end value.
  *
  *  Can be given an optional block to override the default comparison
  *  method <code>a <=> b</code>.
@@ -948,7 +949,8 @@ range_min(int argc, VALUE *argv, VALUE range)
  *     rng.max(n) {| a,b | block }   -> obj
  *
  *  Returns the maximum value in the range. Returns +nil+ if the begin
- *  value of the range larger than the end value.
+ *  value of the range larger than the end value. Returns +nil+ if
+ *  the begin value of an exclusive range is equal to the end value.
  *
  *  Can be given an optional block to override the default comparison
  *  method <code>a <=> b</code>.

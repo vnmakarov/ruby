@@ -42,6 +42,9 @@ VALUE rb_iseqw_new(const rb_iseq_t *);
 VALUE rb_eEAGAIN;
 VALUE rb_eEWOULDBLOCK;
 VALUE rb_eEINPROGRESS;
+VALUE rb_mWarning;
+
+static ID id_warn;
 
 extern const char ruby_description[];
 
@@ -147,6 +150,21 @@ ruby_only_for_internal_use(const char *func)
 }
 
 static VALUE
+rb_warning_s_warn(VALUE mod, VALUE str)
+{
+    Check_Type(str, T_STRING);
+    rb_must_asciicompat(str);
+    rb_write_error_str(str);
+    return Qnil;
+}
+
+static void
+rb_write_warning_str(VALUE str)
+{
+    rb_funcall(rb_mWarning, id_warn, 1, str);
+}
+
+static VALUE
 warn_vsprintf(rb_encoding *enc, const char *file, int line, const char *fmt, va_list args)
 {
     VALUE str = rb_enc_str_new(0, 0, enc);
@@ -166,7 +184,7 @@ rb_compile_warn(const char *file, int line, const char *fmt, ...)
     va_start(args, fmt);
     str = warn_vsprintf(NULL, file, line, fmt, args);
     va_end(args);
-    rb_write_error_str(str);
+    rb_write_warning_str(str);
 }
 
 /* rb_compile_warning() reports only in verbose mode */
@@ -181,7 +199,7 @@ rb_compile_warning(const char *file, int line, const char *fmt, ...)
     va_start(args, fmt);
     str = warn_vsprintf(NULL, file, line, fmt, args);
     va_end(args);
-    rb_write_error_str(str);
+    rb_write_warning_str(str);
 }
 
 static VALUE
@@ -206,7 +224,7 @@ rb_warn(const char *fmt, ...)
     va_start(args, fmt);
     mesg = warning_string(0, fmt, args);
     va_end(args);
-    rb_write_error_str(mesg);
+    rb_write_warning_str(mesg);
 }
 
 void
@@ -220,7 +238,7 @@ rb_enc_warn(rb_encoding *enc, const char *fmt, ...)
     va_start(args, fmt);
     mesg = warning_string(enc, fmt, args);
     va_end(args);
-    rb_write_error_str(mesg);
+    rb_write_warning_str(mesg);
 }
 
 /* rb_warning() reports only in verbose mode */
@@ -235,7 +253,7 @@ rb_warning(const char *fmt, ...)
     va_start(args, fmt);
     mesg = warning_string(0, fmt, args);
     va_end(args);
-    rb_write_error_str(mesg);
+    rb_write_warning_str(mesg);
 }
 
 #if 0
@@ -250,7 +268,7 @@ rb_enc_warning(rb_encoding *enc, const char *fmt, ...)
     va_start(args, fmt);
     mesg = warning_string(enc, fmt, args);
     va_end(args);
-    rb_write_error_str(mesg);
+    rb_write_warning_str(mesg);
 }
 #endif
 
@@ -1050,7 +1068,7 @@ exit_initialize(int argc, VALUE *argv, VALUE exc)
 
 /*
  * call-seq:
- *   system_exit.status   -> fixnum
+ *   system_exit.status   -> integer
  *
  * Return the status value associated with this system exit.
  */
@@ -1557,7 +1575,7 @@ syserr_initialize(int argc, VALUE *argv, VALUE self)
 
 /*
  * call-seq:
- *   system_call_error.errno   -> fixnum
+ *   system_call_error.errno   -> integer
  *
  * Return this SystemCallError's error number.
  */
@@ -1798,7 +1816,7 @@ syserr_eqq(VALUE self, VALUE exc)
  *
  *  Since constant names must start with a capital:
  *
- *     Fixnum.const_set :answer, 42
+ *     Integer.const_set :answer, 42
  *
  *  <em>raises the exception:</em>
  *
@@ -2052,6 +2070,10 @@ Init_Exception(void)
 
     rb_mErrno = rb_define_module("Errno");
 
+    rb_mWarning = rb_define_module("Warning");
+    rb_define_method(rb_mWarning, "warn", rb_warning_s_warn, 1);
+    rb_extend_object(rb_mWarning, rb_mWarning);
+
     rb_define_global_function("warn", rb_warn_m, -1);
 
     id_new = rb_intern_const("new");
@@ -2066,6 +2088,7 @@ Init_Exception(void)
     id_Errno = rb_intern_const("Errno");
     id_errno = rb_intern_const("errno");
     id_i_path = rb_intern_const("@path");
+    id_warn = rb_intern_const("warn");
     id_iseq = rb_make_internal_id();
 }
 
@@ -2289,7 +2312,7 @@ rb_sys_warning(const char *fmt, ...)
     va_end(args);
     rb_str_set_len(mesg, RSTRING_LEN(mesg)-1);
     rb_str_catf(mesg, ": %s\n", strerror(errno_save));
-    rb_write_error_str(mesg);
+    rb_write_warning_str(mesg);
     errno = errno_save;
 }
 
@@ -2309,7 +2332,7 @@ rb_sys_enc_warning(rb_encoding *enc, const char *fmt, ...)
     va_end(args);
     rb_str_set_len(mesg, RSTRING_LEN(mesg)-1);
     rb_str_catf(mesg, ": %s\n", strerror(errno_save));
-    rb_write_error_str(mesg);
+    rb_write_warning_str(mesg);
     errno = errno_save;
 }
 

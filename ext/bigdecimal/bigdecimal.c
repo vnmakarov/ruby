@@ -680,7 +680,7 @@ BigDecimal_check_num(Real *p)
 
 static VALUE BigDecimal_split(VALUE self);
 
-/* Returns the value as an integer (Fixnum or Bignum).
+/* Returns the value as an Integer.
  *
  * If the BigNumber is infinity or NaN, raises FloatDomainError.
  */
@@ -1533,7 +1533,7 @@ BigDecimal_div2(VALUE self, VALUE b, VALUE n)
         size_t mx = ix + VpBaseFig()*2;
         size_t pl = VpSetPrecLimit(0);
 
-        GUARD_OBJ(cv, VpCreateRbObject(mx, "0"));
+        GUARD_OBJ(cv, VpCreateRbObject(mx + VpBaseFig(), "0"));
         GUARD_OBJ(av, GetVpValue(self, 1));
         GUARD_OBJ(bv, GetVpValue(b, 1));
         mx = av->Prec + bv->Prec + 2;
@@ -2483,7 +2483,7 @@ static Real *BigDecimal_new(int argc, VALUE *argv);
  *           If it is a String, spaces are ignored and unrecognized characters
  *           terminate the value.
  *
- * digits:: The number of significant digits, as a Fixnum. If omitted or 0,
+ * digits:: The number of significant digits, as an Integer. If omitted or 0,
  *          the number of significant digits is determined from the initial
  *          value.
  *
@@ -2492,10 +2492,10 @@ static Real *BigDecimal_new(int argc, VALUE *argv);
  *
  * ==== Exceptions
  *
- * TypeError:: If the +initial+ type is neither Fixnum, Bignum, Float,
+ * TypeError:: If the +initial+ type is neither Integer, Float,
  *             Rational, nor BigDecimal, this exception is raised.
  *
- * TypeError:: If the +digits+ is not a Fixnum, this exception is raised.
+ * TypeError:: If the +digits+ is not an Integer, this exception is raised.
  *
  * ArgumentError:: If +initial+ is a Float, and the +digits+ is larger than
  *                 Float::DIG + 1, this exception is raised.
@@ -2525,7 +2525,7 @@ BigDecimal_initialize(int argc, VALUE *argv, VALUE self)
 
 /* :nodoc:
  *
- * private method to dup and clone the provided BigDecimal +other+
+ * private method for dup and clone the provided BigDecimal +other+
  */
 static VALUE
 BigDecimal_initialize_copy(VALUE self, VALUE other)
@@ -2760,7 +2760,7 @@ BigMath_s_exp(VALUE klass, VALUE x, VALUE vprec)
 	rb_raise(rb_eArgError, "Zero or negative precision for exp");
     }
 
-    /* TODO: the following switch statement is almostly the same as one in the
+    /* TODO: the following switch statement is almost same as one in the
      *       BigDecimalCmp function. */
     switch (TYPE(x)) {
       case T_DATA:
@@ -2898,7 +2898,7 @@ BigMath_s_log(VALUE klass, VALUE x, VALUE vprec)
 	rb_raise(rb_eArgError, "Zero or negative precision for exp");
     }
 
-    /* TODO: the following switch statement is almostly the same as one in the
+    /* TODO: the following switch statement is almost same as one in the
      *       BigDecimalCmp function. */
     switch (TYPE(x)) {
       case T_DATA:
@@ -3126,9 +3126,8 @@ get_vp_value:
  *
  * Copyright (C) 2002 by Shigeo Kobayashi <shigeo@tinyforest.gr.jp>.
  *
- * You may distribute under the terms of either the GNU General Public
- * License or the Artistic License, as specified in the README file
- * of the BigDecimal distribution.
+ * BigDecimal is released under the Ruby and 2-clause BSD licenses.
+ * See LICENSE.txt for details.
  *
  * Maintained by mrkn <mrkn@mrkn.jp> and ruby-core members.
  *
@@ -3423,12 +3422,12 @@ VpFree(Real *pv)
 #ifdef BIGDECIMAL_DEBUG
 	gnAlloc--; /* Decrement allocation count */
 	if (gnAlloc == 0) {
-	    printf(" *************** All memories allocated freed ****************");
-	    getchar();
+	    printf(" *************** All memories allocated freed ****************\n");
+	    /*getchar();*/
 	}
 	if (gnAlloc <  0) {
 	    printf(" ??????????? Too many memory free calls(%d) ?????????????\n", gnAlloc);
-	    getchar();
+	    /*getchar();*/
 	}
 #endif /* BIGDECIMAL_DEBUG */
     }
@@ -3824,11 +3823,11 @@ VpInit(BDIGIT BaseVal)
 #ifdef BIGDECIMAL_DEBUG
     if (gfDebug) {
 	printf("VpInit: BaseVal   = %"PRIuBDIGIT"\n", BaseVal);
-	printf("  BASE   = %"PRIuBDIGIT"\n", BASE);
-	printf("  HALF_BASE = %"PRIuBDIGIT"\n", HALF_BASE);
-	printf("  BASE1  = %"PRIuBDIGIT"\n", BASE1);
-	printf("  BASE_FIG  = %u\n", BASE_FIG);
-	printf("  DBLE_FIG  = %d\n", DBLE_FIG);
+	printf("\tBASE      = %"PRIuBDIGIT"\n", BASE);
+	printf("\tHALF_BASE = %"PRIuBDIGIT"\n", HALF_BASE);
+	printf("\tBASE1     = %"PRIuBDIGIT"\n", BASE1);
+	printf("\tBASE_FIG  = %u\n", BASE_FIG);
+	printf("\tDBLE_FIG  = %d\n", DBLE_FIG);
     }
 #endif /* BIGDECIMAL_DEBUG */
 
@@ -3906,28 +3905,28 @@ VpAlloc(size_t mx, const char *szVal)
     if (mx == 0) ++mx;
 
     if (szVal) {
-	while (ISSPACE(*szVal)) szVal++;
-	if (*szVal != '#') {
-	    if (mf) {
-		mf = (mf + BASE_FIG - 1) / BASE_FIG + 2; /* Needs 1 more for div */
-		if (mx > mf) {
-		    mx = mf;
-		}
-	    }
-	}
-	else {
-	    ++szVal;
-	}
+        while (ISSPACE(*szVal)) szVal++;
+        if (*szVal != '#') {
+            if (mf) {
+                mf = (mf + BASE_FIG - 1) / BASE_FIG + 2; /* Needs 1 more for div */
+                if (mx > mf) {
+                    mx = mf;
+                }
+            }
+        }
+        else {
+            ++szVal;
+        }
     }
     else {
-	/* necessary to be able to store */
-	/* at least mx digits. */
-	/* szVal==NULL ==> allocate zero value. */
-	vp = VpAllocReal(mx);
-	/* xmalloc() alway returns(or throw interruption) */
-	vp->MaxPrec = mx;    /* set max precision */
-	VpSetZero(vp, 1);    /* initialize vp to zero. */
-	return vp;
+        /* necessary to be able to store */
+        /* at least mx digits. */
+        /* szVal==NULL ==> allocate zero value. */
+        vp = VpAllocReal(mx);
+        /* xmalloc() alway returns(or throw interruption) */
+        vp->MaxPrec = mx;    /* set max precision */
+        VpSetZero(vp, 1);    /* initialize vp to zero. */
+        return vp;
     }
 
     /* Skip all '_' after digit: 2006-6-30 */
@@ -3937,43 +3936,42 @@ VpAlloc(size_t mx, const char *szVal)
     i   = 0;
     ipn = 0;
     while ((psz[i] = szVal[ipn]) != 0) {
-	if (ISDIGIT(psz[i])) ++ni;
-	if (psz[i] == '_') {
-	    if (ni > 0) {
-		ipn++;
-		continue;
-	    }
-	    psz[i] = 0;
-	    break;
-	}
-	++i;
-	++ipn;
-    }
-    /* Skip trailing spaces */
-    while (--i > 0) {
-	if (ISSPACE(psz[i])) psz[i] = 0;
-	else break;
+        if (ISSPACE(psz[i])) {
+            psz[i] = 0;
+            break;
+        }
+        if (ISDIGIT(psz[i])) ++ni;
+        if (psz[i] == '_') {
+            if (ni > 0) {
+                ipn++;
+                continue;
+            }
+            psz[i] = 0;
+            break;
+        }
+        ++i;
+        ++ipn;
     }
     szVal = psz;
 
     /* Check on Inf & NaN */
     if (StrCmp(szVal, SZ_PINF) == 0 || StrCmp(szVal, SZ_INF) == 0 ) {
-	vp = VpAllocReal(1);
-	vp->MaxPrec = 1;    /* set max precision */
-	VpSetPosInf(vp);
-	return vp;
+        vp = VpAllocReal(1);
+        vp->MaxPrec = 1;    /* set max precision */
+        VpSetPosInf(vp);
+        return vp;
     }
     if (StrCmp(szVal, SZ_NINF) == 0) {
-	vp = VpAllocReal(1);
-	vp->MaxPrec = 1;    /* set max precision */
-	VpSetNegInf(vp);
-	return vp;
+        vp = VpAllocReal(1);
+        vp->MaxPrec = 1;    /* set max precision */
+        VpSetNegInf(vp);
+        return vp;
     }
     if (StrCmp(szVal, SZ_NaN) == 0) {
-	vp = VpAllocReal(1);
-	vp->MaxPrec = 1;    /* set max precision */
-	VpSetNaN(vp);
-	return vp;
+        vp = VpAllocReal(1);
+        vp->MaxPrec = 1;    /* set max precision */
+        VpSetNaN(vp);
+        return vp;
     }
 
     /* check on number szVal[] */
@@ -3983,45 +3981,45 @@ VpAlloc(size_t mx, const char *szVal)
     /* Skip digits */
     ni = 0;            /* digits in mantissa */
     while ((v = szVal[i]) != 0) {
-	if (!ISDIGIT(v)) break;
-	++i;
-	++ni;
+        if (!ISDIGIT(v)) break;
+        ++i;
+        ++ni;
     }
     nf  = 0;
     ipf = 0;
     ipe = 0;
     ne  = 0;
     if (v) {
-	/* other than digit nor \0 */
-	if (szVal[i] == '.') {    /* xxx. */
-	    ++i;
-	    ipf = i;
-	    while ((v = szVal[i]) != 0) {    /* get fraction part. */
-		if (!ISDIGIT(v)) break;
-		++i;
-		++nf;
-	    }
-	}
-	ipe = 0;        /* Exponent */
+        /* other than digit nor \0 */
+        if (szVal[i] == '.') {    /* xxx. */
+            ++i;
+            ipf = i;
+            while ((v = szVal[i]) != 0) {    /* get fraction part. */
+                if (!ISDIGIT(v)) break;
+                ++i;
+                ++nf;
+            }
+        }
+        ipe = 0;        /* Exponent */
 
-	switch (szVal[i]) {
-	  case '\0':
-	    break;
-	  case 'e': case 'E':
-	  case 'd': case 'D':
-	    ++i;
-	    ipe = i;
-	    v = szVal[i];
-	    if ((v == '-') || (v == '+')) ++i;
-	    while ((v=szVal[i]) != 0) {
-		if (!ISDIGIT(v)) break;
-		++i;
-		++ne;
-	    }
-	    break;
-	  default:
-	    break;
-	}
+        switch (szVal[i]) {
+            case '\0':
+                break;
+            case 'e': case 'E':
+            case 'd': case 'D':
+                ++i;
+                ipe = i;
+                v = szVal[i];
+                if ((v == '-') || (v == '+')) ++i;
+                while ((v=szVal[i]) != 0) {
+                    if (!ISDIGIT(v)) break;
+                    ++i;
+                    ++ne;
+                }
+                break;
+            default:
+                break;
+        }
     }
     nalloc = (ni + nf + BASE_FIG - 1) / BASE_FIG + 1;    /* set effective allocation  */
     /* units for szVal[]  */
@@ -4090,7 +4088,7 @@ VpAsgn(Real *c, Real *a, int isw)
 
 /*
  *   c = a + b  when operation =  1 or 2
- *  = a - b  when operation = -1 or -2.
+ *   c = a - b  when operation = -1 or -2.
  *   Returns number of significant digits of c
  */
 VP_EXPORT size_t
@@ -4223,7 +4221,7 @@ end_if:
 }
 
 /*
- * Addition of two variable precisional variables
+ * Addition of two values with variable precision
  * a and b assuming abs(a)>abs(b).
  *   c = abs(a) + abs(b) ; where |a|>=|b|
  */
@@ -4982,7 +4980,7 @@ VpComp(Real *a, Real *b)
 	goto Exit;
     }
 
-    /* a and b have same exponent, then compare significand. */
+    /* a and b have same exponent, then compare their significand. */
     mx = (a->Prec < b->Prec) ? a->Prec : b->Prec;
     ind = 0;
     while (ind < mx) {
@@ -5023,7 +5021,7 @@ Exit:
  *      %  ... VP variable. To print '%', use '%%'.
  *      \n ... new line
  *      \b ... backspace
- *           ... tab
+ *      \t ... tab
  *     Note: % must not appear more than once
  *    a  ... VP variable to be printed
  */
@@ -5034,24 +5032,6 @@ VPrint(FILE *fp, const char *cntl_chr, Real *a)
     size_t i, j, nc, nd, ZeroSup, sep = 10;
     BDIGIT m, e, nn;
 
-    /* Check if NaN & Inf. */
-    if (VpIsNaN(a)) {
-	fprintf(fp, SZ_NaN);
-	return 8;
-    }
-    if (VpIsPosInf(a)) {
-	fprintf(fp, SZ_INF);
-	return 8;
-    }
-    if (VpIsNegInf(a)) {
-	fprintf(fp, SZ_NINF);
-	return 9;
-    }
-    if (VpIsZero(a)) {
-	fprintf(fp, "0.0");
-	return 3;
-    }
-
     j = 0;
     nd = nc = 0;        /*  nd : number of digits in fraction part(every 10 digits, */
     /*    nd<=10). */
@@ -5060,7 +5040,19 @@ VPrint(FILE *fp, const char *cntl_chr, Real *a)
     while (*(cntl_chr + j)) {
 	if (*(cntl_chr + j) == '%' && *(cntl_chr + j + 1) != '%') {
 	    nc = 0;
-	    if (!VpIsZero(a)) {
+	    if (VpIsNaN(a)) {
+		fprintf(fp, SZ_NaN);
+		nc += 8;
+	    }
+	    else if (VpIsPosInf(a)) {
+		fprintf(fp, SZ_INF);
+		nc += 8;
+	    }
+	    else if (VpIsNegInf(a)) {
+		fprintf(fp, SZ_NINF);
+		nc += 9;
+	    }
+	    else if (!VpIsZero(a)) {
 		if (VpGetSign(a) < 0) {
 		    fprintf(fp, "-");
 		    ++nc;

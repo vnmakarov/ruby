@@ -889,11 +889,12 @@ ruby_dup(int orig)
 
     fd = rb_cloexec_dup(orig);
     if (fd < 0) {
-	if (rb_gc_for_fd(errno)) {
+	int e = errno;
+	if (rb_gc_for_fd(e)) {
 	    fd = rb_cloexec_dup(orig);
 	}
 	if (fd < 0) {
-	    rb_sys_fail(0);
+	    rb_syserr_fail(e, 0);
 	}
     }
     rb_update_max_fd(fd);
@@ -1533,6 +1534,10 @@ nogvl_fsync(void *ptr)
 {
     rb_io_t *fptr = ptr;
 
+#ifdef _WIN32
+    if (GetFileType((HANDLE)rb_w32_get_osfhandle(fptr->fd)) != FILE_TYPE_DISK)
+	return 0;
+#endif
     return (VALUE)fsync(fptr->fd);
 }
 #endif
@@ -1935,6 +1940,10 @@ nogvl_fdatasync(void *ptr)
 {
     rb_io_t *fptr = ptr;
 
+#ifdef _WIN32
+    if (GetFileType((HANDLE)rb_w32_get_osfhandle(fptr->fd)) != FILE_TYPE_DISK)
+	return 0;
+#endif
     return (VALUE)fdatasync(fptr->fd);
 }
 
@@ -1972,8 +1981,8 @@ rb_io_fdatasync(VALUE io)
 
 /*
  *  call-seq:
- *     ios.fileno    -> fixnum
- *     ios.to_i      -> fixnum
+ *     ios.fileno    -> integer
+ *     ios.to_i      -> integer
  *
  *  Returns an integer representing the numeric file descriptor for
  *  <em>ios</em>.
@@ -1996,7 +2005,7 @@ rb_io_fileno(VALUE io)
 
 /*
  *  call-seq:
- *     ios.pid    -> fixnum
+ *     ios.pid    -> integer
  *
  *  Returns the process ID of a child process associated with
  *  <em>ios</em>. This will be set by <code>IO.popen</code>.
@@ -3834,7 +3843,7 @@ rb_io_readchar(VALUE io)
 
 /*
  *  call-seq:
- *     ios.getbyte   -> fixnum or nil
+ *     ios.getbyte   -> integer or nil
  *
  *  Gets the next 8-bit byte (0..255) from <em>ios</em>. Returns
  *  <code>nil</code> if called at end of file.
@@ -3871,7 +3880,7 @@ rb_io_getbyte(VALUE io)
 
 /*
  *  call-seq:
- *     ios.readbyte   -> fixnum
+ *     ios.readbyte   -> integer
  *
  *  Reads a byte as with <code>IO#getbyte</code>, but raises an
  *  <code>EOFError</code> on end of file.
@@ -4284,14 +4293,10 @@ fptr_finalize(rb_io_t *fptr, int noraise)
     }
 
     if (!NIL_P(err) && !noraise) {
-        switch (TYPE(err)) {
-          case T_FIXNUM:
-          case T_BIGNUM:
+	if (RB_INTEGER_TYPE_P(err))
 	    rb_syserr_fail_path(NUM2INT(err), fptr->pathv);
-
-          default:
-            rb_exc_raise(err);
-        }
+	else
+	    rb_exc_raise(err);
     }
     free_io_buffer(&fptr->rbuf);
     free_io_buffer(&fptr->wbuf);
@@ -5464,11 +5469,12 @@ rb_sysopen(VALUE fname, int oflags, mode_t perm)
 
     fd = rb_sysopen_internal(&data);
     if (fd < 0) {
-	if (rb_gc_for_fd(errno)) {
+	int e = errno;
+	if (rb_gc_for_fd(e)) {
 	    fd = rb_sysopen_internal(&data);
 	}
 	if (fd < 0) {
-	    rb_sys_fail_path(fname);
+	    rb_syserr_fail_path(e, fname);
 	}
     }
     return fd;
@@ -5484,19 +5490,19 @@ rb_fdopen(int fd, const char *modestr)
 #endif
     file = fdopen(fd, modestr);
     if (!file) {
+	int e = errno;
 #if defined(__sun)
-	if (errno == 0) {
+	if (e == 0) {
 	    rb_gc();
 	    errno = 0;
 	    file = fdopen(fd, modestr);
 	}
 	else
 #endif
-	if (rb_gc_for_fd(errno)) {
+	if (rb_gc_for_fd(e)) {
 	    file = fdopen(fd, modestr);
 	}
 	if (!file) {
-	    int e = errno;
 #ifdef _WIN32
 	    if (e == 0) e = EINVAL;
 #elif defined(__sun)
@@ -5514,11 +5520,13 @@ rb_fdopen(int fd, const char *modestr)
     return file;
 }
 
-static void
+static int
 io_check_tty(rb_io_t *fptr)
 {
-    if (isatty(fptr->fd))
+    int t = isatty(fptr->fd);
+    if (t)
         fptr->mode |= FMODE_TTY|FMODE_DUPLEX;
+    return t;
 }
 
 static VALUE rb_io_internal_encoding(VALUE);
@@ -6430,10 +6438,10 @@ rb_io_s_open(int argc, VALUE *argv, VALUE klass)
 
 /*
  *  call-seq:
- *     IO.sysopen(path, [mode, [perm]])  -> fixnum
+ *     IO.sysopen(path, [mode, [perm]])  -> integer
  *
  *  Opens the given path, returning the underlying file descriptor as a
- *  <code>Fixnum</code>.
+ *  <code>Integer</code>.
  *
  *     IO.sysopen("testfile")   #=> 3
  */
@@ -7268,6 +7276,7 @@ rb_f_p(int argc, VALUE *argv, VALUE self)
  *
  *     def display(port=$>)
  *       port.write self
+ *       nil
  *     end
  *
  *  For example:
@@ -7365,14 +7374,13 @@ prep_io(int fd, int fmode, VALUE klass, const char *path)
 
     MakeOpenFile(io, fp);
     fp->fd = fd;
-#ifdef __CYGWIN__
-    if (!isatty(fd)) {
-        fmode |= FMODE_BINMODE;
-	setmode(fd, O_BINARY);
-    }
-#endif
     fp->mode = fmode;
-    io_check_tty(fp);
+    if (!io_check_tty(fp)) {
+#ifdef __CYGWIN__
+	fp->mode |= FMODE_BINMODE;
+	setmode(fd, O_BINARY);
+#endif
+    }
     if (path) fp->pathv = rb_obj_freeze(rb_str_new_cstr(path));
     rb_update_max_fd(fd);
 
@@ -7708,7 +7716,7 @@ rb_file_initialize(int argc, VALUE *argv, VALUE io)
 	rb_raise(rb_eRuntimeError, "reinitializing File");
     }
     if (0 < argc && argc < 3) {
-	VALUE fd = rb_check_convert_type(argv[0], T_FIXNUM, "Fixnum", "to_int");
+	VALUE fd = rb_check_to_int(argv[0]);
 
 	if (!NIL_P(fd)) {
 	    argv[0] = fd;
@@ -10013,8 +10021,8 @@ io_s_write(int argc, VALUE *argv, int binary)
 
 /*
  *  call-seq:
- *     IO.write(name, string, [offset] )   => fixnum
- *     IO.write(name, string, [offset], open_args )   => fixnum
+ *     IO.write(name, string, [offset] )   => integer
+ *     IO.write(name, string, [offset], open_args )   => integer
  *
  *  Opens the file, optionally seeks to the given <i>offset</i>, writes
  *  <i>string</i>, then returns the length written.
@@ -10036,7 +10044,7 @@ io_s_write(int argc, VALUE *argv, int binary)
  *    specifies mode argument for open().  it should start with "w" or "a" or "r+"
  *    otherwise it would cause error.
  *
- *   perm: fixnum
+ *   perm: integer
  *
  *    specifies perm argument for open().
  *
@@ -10058,8 +10066,8 @@ rb_io_s_write(int argc, VALUE *argv, VALUE io)
 
 /*
  *  call-seq:
- *     IO.binwrite(name, string, [offset] )   => fixnum
- *     IO.binwrite(name, string, [offset], open_args )   => fixnum
+ *     IO.binwrite(name, string, [offset] )   => integer
+ *     IO.binwrite(name, string, [offset], open_args )   => integer
  *
  *  Same as <code>IO.write</code> except opening the file in binary mode
  *  and ASCII-8BIT encoding ("wb:ASCII-8BIT").
@@ -10651,7 +10659,7 @@ copy_stream_body(VALUE arg)
     else {
 	VALUE tmp_io = rb_io_check_io(dst_io);
 	if (!NIL_P(tmp_io)) {
-	    dst_io = tmp_io;
+	    dst_io = GetWriteIO(tmp_io);
 	}
 	else if (!RB_TYPE_P(dst_io, T_FILE)) {
 	    VALUE args[3];
@@ -11059,8 +11067,8 @@ argf_rewind(VALUE argf)
 
 /*
  *  call-seq:
- *     ARGF.fileno    -> fixnum
- *     ARGF.to_i      -> fixnum
+ *     ARGF.fileno    -> integer
+ *     ARGF.to_i      -> integer
  *
  *  Returns an integer representing the numeric file descriptor for
  *  the current file. Raises an +ArgumentError+ if there isn't a current file.
@@ -11370,7 +11378,7 @@ argf_getc(VALUE argf)
 
 /*
  *  call-seq:
- *     ARGF.getbyte  -> Fixnum or nil
+ *     ARGF.getbyte  -> Integer or nil
  *
  *  Gets the next 8-bit byte (0..255) from +ARGF+. Returns +nil+ if called at
  *  the end of the stream.
@@ -11450,9 +11458,9 @@ argf_readchar(VALUE argf)
 
 /*
  *  call-seq:
- *     ARGF.readbyte  -> Fixnum
+ *     ARGF.readbyte  -> Integer
  *
- *  Reads the next 8-bit byte from ARGF and returns it as a +Fixnum+. Raises
+ *  Reads the next 8-bit byte from ARGF and returns it as an +Integer+. Raises
  *  an +EOFError+ after the last byte of the last file has been read.
  *
  *  For example:
@@ -11513,7 +11521,7 @@ argf_block_call(ID mid, int argc, VALUE *argv, VALUE argf)
  *  which defaults to your platform's newline character) of each file in
  *  +ARGV+. If a block is supplied, each line in turn will be yielded to the
  *  block, otherwise an enumerator is returned.
- *  The optional _limit_ argument is a +Fixnum+ specifying the maximum
+ *  The optional _limit_ argument is an +Integer+ specifying the maximum
  *  length of each line; longer lines will be split according to this limit.
  *
  *  This method allows you to treat the files supplied on the command line as
@@ -11563,7 +11571,7 @@ argf_lines(int argc, VALUE *argv, VALUE argf)
  *     ARGF.each_byte                  -> an_enumerator
  *
  *  Iterates over each byte of each file in +ARGV+.
- *  A byte is returned as a +Fixnum+ in the range 0..255.
+ *  A byte is returned as an +Integer+ in the range 0..255.
  *
  *  This method allows you to treat the files supplied on the command line as
  *  a single file consisting of the concatenation of each named file. After

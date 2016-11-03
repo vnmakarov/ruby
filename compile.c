@@ -2281,6 +2281,13 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
 		  /*case BIN(trace):*/
 		    next = next->next;
 		    break;
+		  case BIN(jump):
+		    /* if cond
+		     *   return tailcall
+		     * end
+		     */
+		    next = get_destination_insn((INSN *)next);
+		    break;
 		  case BIN(leave):
 		    piobj = iobj;
 		  default:
@@ -2780,6 +2787,39 @@ compile_dregx(rb_iseq_t *iseq, LINK_ANCHOR *ret, NODE * node)
 }
 
 static int
+compile_flip_flop(rb_iseq_t *iseq, LINK_ANCHOR *ret, NODE *node, int again,
+		  LABEL *then_label, LABEL *else_label)
+{
+    const int line = nd_line(node);
+    LABEL *lend = NEW_LABEL(line);
+    rb_num_t cnt = ISEQ_FLIP_CNT_INCREMENT(iseq->body->local_iseq)
+	+ VM_SVAR_FLIPFLOP_START;
+    VALUE key = INT2FIX(cnt);
+
+    ADD_INSN2(ret, line, getspecial, key, INT2FIX(0));
+    ADD_INSNL(ret, line, branchif, lend);
+
+    /* *flip == 0 */
+    COMPILE(ret, "flip2 beg", node->nd_beg);
+    ADD_INSNL(ret, line, branchunless, else_label);
+    ADD_INSN1(ret, line, putobject, Qtrue);
+    ADD_INSN1(ret, line, setspecial, key);
+    if (!again) {
+	ADD_INSNL(ret, line, jump, then_label);
+    }
+
+    /* *flip == 1 */
+    ADD_LABEL(ret, lend);
+    COMPILE(ret, "flip2 end", node->nd_end);
+    ADD_INSNL(ret, line, branchunless, then_label);
+    ADD_INSN1(ret, line, putobject, Qfalse);
+    ADD_INSN1(ret, line, setspecial, key);
+    ADD_INSNL(ret, line, jump, then_label);
+
+    return COMPILE_OK;
+}
+
+static int
 compile_branch_condition(rb_iseq_t *iseq, LINK_ANCHOR *ret, NODE * cond,
 			 LABEL *then_label, LABEL *else_label)
 {
@@ -2826,6 +2866,12 @@ compile_branch_condition(rb_iseq_t *iseq, LINK_ANCHOR *ret, NODE * cond,
       case NODE_NIL:
 	/* printf("useless condition eliminate (%s)\n", ruby_node_name(nd_type(cond))); */
 	ADD_INSNL(ret, nd_line(cond), jump, else_label);
+	break;
+      case NODE_FLIP2:
+	compile_flip_flop(iseq, ret, cond, TRUE, then_label, else_label);
+	break;
+      case NODE_FLIP3:
+	compile_flip_flop(iseq, ret, cond, FALSE, then_label, else_label);
 	break;
       default:
 	COMPILE(ret, "branch condition", cond);
@@ -3695,7 +3741,7 @@ setup_args(rb_iseq_t *iseq, LINK_ANCHOR *args, NODE *argn, unsigned int *flag, s
 	switch (nd_type(argn)) {
 	  case NODE_SPLAT: {
 	    COMPILE(args, "args (splat)", argn->nd_head);
-	    ADD_INSN1(args, nd_line(argn), splatarray, Qfalse);
+	    ADD_INSN1(args, nd_line(argn), splatarray, nsplat ? Qtrue : Qfalse);
 	    argc = INT2FIX(1);
 	    nsplat++;
 	    *flag |= VM_CALL_ARGS_SPLAT;
@@ -3709,7 +3755,7 @@ setup_args(rb_iseq_t *iseq, LINK_ANCHOR *args, NODE *argn, unsigned int *flag, s
 	    INIT_ANCHOR(tmp);
 	    COMPILE(tmp, "args (cat: splat)", argn->nd_body);
 	    if (nd_type(argn) == NODE_ARGSCAT) {
-		ADD_INSN1(tmp, nd_line(argn), splatarray, Qfalse);
+		ADD_INSN1(tmp, nd_line(argn), splatarray, nsplat ? Qtrue : Qfalse);
 	    }
 	    else {
 		ADD_INSN1(tmp, nd_line(argn), newarray, INT2FIX(1));
@@ -3825,6 +3871,12 @@ compile_named_capture_assign(rb_iseq_t *iseq, LINK_ANCHOR *ret, NODE *node)
 	((INSN*)last)->operand_size = 0;
     }
     ADD_LABEL(ret, end_label);
+}
+
+static int
+number_literal_p(NODE *n)
+{
+    return (n && nd_type(n) == NODE_LIT && RB_INTEGER_TYPE_P(n->nd_lit));
 }
 
 /**
@@ -5877,7 +5929,16 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *ret, NODE * node, int poped)
       }
       case NODE_DOT2:
       case NODE_DOT3:{
-	VALUE flag = type == NODE_DOT2 ? INT2FIX(0) : INT2FIX(1);
+	int excl = type == NODE_DOT3;
+	VALUE flag = INT2FIX(excl);
+	NODE *b = node->nd_beg;
+	NODE *e = node->nd_end;
+	if (number_literal_p(b) && number_literal_p(e)) {
+	    VALUE val = rb_range_new(b->nd_lit, e->nd_lit, excl);
+	    iseq_add_mark_object_compile_time(iseq, val);
+	    ADD_INSN1(ret, line, putobject, val);
+	    break;
+	}
 	COMPILE(ret, "min", (NODE *) node->nd_beg);
 	COMPILE(ret, "max", (NODE *) node->nd_end);
 	if (poped) {
@@ -5892,42 +5953,16 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *ret, NODE * node, int poped)
       case NODE_FLIP2:
       case NODE_FLIP3:{
 	LABEL *lend = NEW_LABEL(line);
-	LABEL *lfin = NEW_LABEL(line);
 	LABEL *ltrue = NEW_LABEL(line);
-	rb_iseq_t *local_iseq = iseq->body->local_iseq;
-	rb_num_t cnt;
-	VALUE key;
-
-	cnt = ISEQ_FLIP_CNT_INCREMENT(local_iseq) + VM_SVAR_FLIPFLOP_START;
-	key = INT2FIX(cnt);
-
-	ADD_INSN2(ret, line, getspecial, key, INT2FIX(0));
-	ADD_INSNL(ret, line, branchif, lend);
-
-	/* *flip == 0 */
-	COMPILE(ret, "flip2 beg", node->nd_beg);
-	ADD_INSN(ret, line, dup);
-	ADD_INSNL(ret, line, branchunless, lfin);
-	if (nd_type(node) == NODE_FLIP3) {
-	    ADD_INSN(ret, line, dup);
-	    ADD_INSN1(ret, line, setspecial, key);
-	    ADD_INSNL(ret, line, jump, lfin);
-	}
-	else {
-	    ADD_INSN1(ret, line, setspecial, key);
-	}
-
-	/* *flip == 1 */
-	ADD_LABEL(ret, lend);
-	COMPILE(ret, "flip2 end", node->nd_end);
-	ADD_INSNL(ret, line, branchunless, ltrue);
-	ADD_INSN1(ret, line, putobject, Qfalse);
-	ADD_INSN1(ret, line, setspecial, key);
-
+	LABEL *lfalse = NEW_LABEL(line);
+	compile_branch_condition(iseq, ret, node, ltrue, lfalse);
+	ADD_INSNL(ret, line, jump, lend);
 	ADD_LABEL(ret, ltrue);
 	ADD_INSN1(ret, line, putobject, Qtrue);
-
-	ADD_LABEL(ret, lfin);
+	ADD_INSNL(ret, line, jump, lend);
+	ADD_LABEL(ret, lfalse);
+	ADD_INSN1(ret, line, putobject, Qfalse);
+	ADD_LABEL(ret, lend);
 	break;
       }
       case NODE_SELF:{

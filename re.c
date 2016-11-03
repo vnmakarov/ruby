@@ -724,7 +724,7 @@ rb_reg_casefold_p(VALUE re)
 
 /*
  *  call-seq:
- *     rxp.options   -> fixnum
+ *     rxp.options   -> integer
  *
  *  Returns the set of bits corresponding to the options used when creating this
  *  Regexp (see <code>Regexp::new</code> for details. Note that additional bits
@@ -2877,7 +2877,7 @@ rb_reg_regcomp(VALUE str)
 static st_index_t reg_hash(VALUE re);
 /*
  * call-seq:
- *   rxp.hash   -> fixnum
+ *   rxp.hash   -> integer
  *
  * Produce a hash based on the text and options of this regular expression.
  *
@@ -2888,7 +2888,7 @@ static VALUE
 rb_reg_hash(VALUE re)
 {
     st_index_t hashval = reg_hash(re);
-    return LONG2FIX(hashval);
+    return ST2FIX(hashval);
 }
 
 static st_index_t
@@ -2956,7 +2956,7 @@ match_hash(VALUE match)
     hashval = rb_hash_uint(hashval, rb_memhash(regs->beg, regs->num_regs * sizeof(*regs->beg)));
     hashval = rb_hash_uint(hashval, rb_memhash(regs->end, regs->num_regs * sizeof(*regs->end)));
     hashval = rb_hash_end(hashval);
-    return LONG2FIX(hashval);
+    return ST2FIX(hashval);
 }
 
 /*
@@ -3292,7 +3292,7 @@ rb_reg_match_m_p(int argc, VALUE *argv, VALUE re)
  *  String or a Regexp (in which case that regexp's options are propagated),
  *  and new options may not be specified (a change as of Ruby 1.8).
  *
- *  If +options+ is a Fixnum, it should be one or more of the constants
+ *  If +options+ is an Integer, it should be one or more of the constants
  *  Regexp::EXTENDED, Regexp::IGNORECASE, and Regexp::MULTILINE,
  *  <em>or</em>-ed together.  Otherwise, if +options+ is not
  *  +nil+ or +false+, the regexp will be case insensitive.

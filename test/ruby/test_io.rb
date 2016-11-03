@@ -146,7 +146,19 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_gets_rs
-    # default_rs
+    rs = ":"
+    pipe(proc do |w|
+      w.print "aaa:bbb"
+      w.close
+    end, proc do |r|
+      assert_equal "aaa:", r.gets(rs)
+      assert_equal "bbb", r.gets(rs)
+      assert_nil r.gets(rs)
+      r.close
+    end)
+  end
+
+  def test_gets_default_rs
     pipe(proc do |w|
       w.print "aaa\nbbb\n"
       w.close
@@ -156,8 +168,9 @@ class TestIO < Test::Unit::TestCase
       assert_nil r.gets
       r.close
     end)
+  end
 
-    # nil
+  def test_gets_rs_nil
     pipe(proc do |w|
       w.print "a\n\nb\n\n"
       w.close
@@ -166,8 +179,9 @@ class TestIO < Test::Unit::TestCase
       assert_nil r.gets("")
       r.close
     end)
+  end
 
-    # "\377"
+  def test_gets_rs_377
     pipe(proc do |w|
       w.print "\377xyz"
       w.close
@@ -176,8 +190,9 @@ class TestIO < Test::Unit::TestCase
       assert_equal("\377", r.gets("\377"), "[ruby-dev:24460]")
       r.close
     end)
+  end
 
-    # ""
+  def test_gets_paragraph
     pipe(proc do |w|
       w.print "a\n\nb\n\n"
       w.close
@@ -1088,6 +1103,18 @@ class TestIO < Test::Unit::TestCase
         assert_equal("abxyz", File.read("fom"))
       end)
     }
+  end
+
+  def test_copy_stream_to_duplex_io
+    result = IO.pipe {|a,w|
+      Thread.start {w.puts "yes"; w.close}
+      IO.popen([EnvUtil.rubybin, '-pe$_="#$.:#$_"'], "r+") {|b|
+        IO.copy_stream(a, b)
+        b.close_write
+        b.read
+      }
+    }
+    assert_equal("1:yes\n", result)
   end
 
   def ruby(*args)
@@ -2442,6 +2469,13 @@ End
     }
   end
 
+  def test_DATA_binmode
+    assert_separately([], <<-SRC)
+assert_not_predicate(DATA, :binmode?)
+__END__
+    SRC
+  end
+
   def test_threaded_flush
     bug3585 = '[ruby-core:31348]'
     src = %q{\
@@ -2891,13 +2925,19 @@ End
 
   def test_ioctl_linux2
     return unless STDIN.tty? # stdin is not a terminal
-    File.open('/dev/tty') { |f|
+    begin
+      f = File.open('/dev/tty')
+    rescue Errno::ENOENT, Errno::ENXIO => e
+      skip e.message
+    else
       tiocgwinsz=0x5413
       winsize=""
       assert_nothing_raised {
         f.ioctl(tiocgwinsz, winsize)
       }
-    }
+    ensure
+      f.close if f
+    end
   end if /^(?:i.?86|x86_64)-linux/ =~ RUBY_PLATFORM
 
   def test_setpos

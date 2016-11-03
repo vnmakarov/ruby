@@ -354,6 +354,15 @@ class TestHash < Test::Unit::TestCase
     assert_equal({1=>2,3=>4,5=>6}, h.keep_if{true})
   end
 
+  def test_compact
+    h = @cls[a: 1, b: nil, c: false, d: true, e: nil]
+    assert_equal({a: 1, c: false, d: true}, h.compact)
+    assert_equal({a: 1, b: nil, c: false, d: true, e: nil}, h)
+    assert_same(h, h.compact!)
+    assert_equal({a: 1, c: false, d: true}, h)
+    assert_nil(h.compact!)
+  end
+
   def test_dup
     for taint in [ false, true ]
       for frozen in [ false, true ]
@@ -817,7 +826,7 @@ class TestHash < Test::Unit::TestCase
     assert_equal([], expected - vals)
   end
 
-  def test_intialize_wrong_arguments
+  def test_initialize_wrong_arguments
     assert_raise(ArgumentError) do
       Hash.new(0) { }
     end
@@ -1415,24 +1424,24 @@ class TestHash < Test::Unit::TestCase
     assert_equal([10, 20, 30], [1, 2, 3].map(&h))
   end
 
-  def test_map_v
+  def test_transform_values
     x = @cls[a: 1, b: 2, c: 3]
-    y = x.map_v {|v| v ** 2 }
+    y = x.transform_values {|v| v ** 2 }
     assert_equal([1, 4, 9], y.values_at(:a, :b, :c))
     assert_not_same(x, y)
 
-    y = x.map_v.with_index {|v, i| "#{v}.#{i}" }
+    y = x.transform_values.with_index {|v, i| "#{v}.#{i}" }
     assert_equal(%w(1.0  2.1  3.2), y.values_at(:a, :b, :c))
   end
 
-  def test_map_v_bang
+  def test_transform_values_bang
     x = @cls[a: 1, b: 2, c: 3]
-    y = x.map_v! {|v| v ** 2 }
+    y = x.transform_values! {|v| v ** 2 }
     assert_equal([1, 4, 9], y.values_at(:a, :b, :c))
     assert_same(x, y)
 
     x = @cls[a: 1, b: 2, c: 3]
-    y = x.map_v!.with_index {|v, i| "#{v}.#{i}" }
+    y = x.transform_values!.with_index {|v, i| "#{v}.#{i}" }
     assert_equal(%w(1.0  2.1  3.2), y.values_at(:a, :b, :c))
   end
 

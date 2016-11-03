@@ -873,7 +873,7 @@ rb_proc_call_with_block(VALUE self, int argc, const VALUE *argv, VALUE passed_pr
 
 /*
  *  call-seq:
- *     prc.arity -> fixnum
+ *     prc.arity -> integer
  *
  *  Returns the number of mandatory arguments. If the block
  *  is declared to take no arguments, returns 0. If the block is known
@@ -963,18 +963,17 @@ static int
 rb_proc_min_max_arity(VALUE self, int *max)
 {
     rb_proc_t *proc;
-    const struct rb_block *block;
     GetProcPtr(self, proc);
-    block = &proc->block;
-    return rb_block_min_max_arity(block, max);
+    return rb_block_min_max_arity(&proc->block, max);
 }
 
 int
 rb_proc_arity(VALUE self)
 {
     rb_proc_t *proc;
-    int max, min = rb_proc_min_max_arity(self, &max);
+    int max, min;
     GetProcPtr(self, proc);
+    min = rb_block_min_max_arity(&proc->block, &max);
     return (proc->is_lambda ? min == max : max != UNLIMITED_ARGUMENTS) ? min : -min-1;
 }
 
@@ -1088,7 +1087,7 @@ iseq_location(const rb_iseq_t *iseq)
 
 /*
  * call-seq:
- *    prc.source_location  -> [String, Fixnum]
+ *    prc.source_location  -> [String, Integer]
  *
  * Returns the Ruby source filename and line number containing this proc
  * or +nil+ if this proc was not defined in Ruby (i.e. native)
@@ -1197,7 +1196,7 @@ proc_hash(VALUE self)
     hash = rb_hash_start(0);
     hash = rb_hash_proc(hash, self);
     hash = rb_hash_end(hash);
-    return LONG2FIX(hash);
+    return ST2FIX(hash);
 }
 
 /*
@@ -1371,7 +1370,7 @@ mnew_internal(const rb_method_entry_t *me, VALUE klass,
     }
     if (me->def->type == VM_METHOD_TYPE_ZSUPER) {
 	if (me->defined_class) {
-	    VALUE klass = RCLASS_SUPER(me->defined_class);
+	    VALUE klass = RCLASS_SUPER(RCLASS_ORIGIN(me->defined_class));
 	    id = me->def->original_id;
 	    me = (rb_method_entry_t *)rb_callable_method_entry_without_refinements(klass, id);
 	}
@@ -1932,8 +1931,8 @@ rb_mod_define_method(int argc, VALUE *argv, VALUE mod)
 
 /*
  *  call-seq:
- *     define_singleton_method(symbol, method) -> new_method
- *     define_singleton_method(symbol) { block } -> proc
+ *     define_singleton_method(symbol, method) -> symbol
+ *     define_singleton_method(symbol) { block } -> symbol
  *
  *  Defines a singleton method in the receiver. The _method_
  *  parameter can be a +Proc+, a +Method+ or an +UnboundMethod+ object.
@@ -1965,8 +1964,8 @@ rb_obj_define_method(int argc, VALUE *argv, VALUE obj)
 }
 
 /*
- *     define_method(symbol, method)     -> new_method
- *     define_method(symbol) { block }   -> proc
+ *     define_method(symbol, method)     -> symbol
+ *     define_method(symbol) { block }   -> symbol
  *
  *  Defines a global function by _method_ or the block.
  */
@@ -2300,7 +2299,7 @@ rb_method_entry_arity(const rb_method_entry_t *me)
 
 /*
  *  call-seq:
- *     meth.arity    -> fixnum
+ *     meth.arity    -> integer
  *
  *  Returns an indication of the number of arguments accepted by a
  *  method. Returns a nonnegative integer for methods that take a fixed
@@ -2473,7 +2472,7 @@ rb_obj_method_location(VALUE obj, ID id)
 
 /*
  * call-seq:
- *    meth.source_location  -> [String, Fixnum]
+ *    meth.source_location  -> [String, Integer]
  *
  * Returns the Ruby source filename and line number containing this method
  * or nil if this method was not defined in Ruby (i.e. native)
