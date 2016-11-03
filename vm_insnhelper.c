@@ -40,6 +40,13 @@ static int
 callable_class_p(VALUE klass)
 {
 #if VM_CHECK_MODE >= 2
+    if (!klass) return FALSE;
+    switch (RB_BUILTIN_TYPE(klass)) {
+      case T_ICLASS:
+	if (!RB_TYPE_P(RCLASS_SUPER(klass), T_MODULE)) break;
+      case T_MODULE:
+	return TRUE;
+    }
     while (klass) {
 	if (klass == rb_cBasicObject) {
 	    return TRUE;
@@ -733,6 +740,14 @@ vm_check_if_namespace(VALUE klass)
     }
 }
 
+static inline void
+vm_ensure_not_refinement_module(VALUE self)
+{
+    if (RB_TYPE_P(self, T_MODULE) && FL_TEST(self, RMODULE_IS_REFINEMENT)) {
+	rb_warn("not defined at the refinement, but at the outer class/module");
+    }
+}
+
 static inline VALUE
 vm_get_iclass(rb_control_frame_t *cfp, VALUE klass)
 {
@@ -1031,7 +1046,7 @@ vm_throw_start(rb_thread_t *const th, rb_control_frame_t *const reg_cfp, enum ru
 		    int i;
 
 		    for (i=0; i<ct_size; i++) {
-			const struct iseq_catch_table_entry * const entry = &ct->entries[i];;
+			const struct iseq_catch_table_entry * const entry = &ct->entries[i];
 
 			if (entry->type == CATCH_TYPE_BREAK && entry->start < epc && entry->end >= epc) {
 			    if (entry->cont == epc) { /* found! */
@@ -1941,7 +1956,7 @@ vm_call_opt_send(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling
 	DEC_SP(1);
     }
 
-    cc->me = rb_callable_method_entry_without_refinements(CLASS_OF(calling->recv), ci->mid);
+    cc->me = rb_callable_method_entry_with_refinements(CLASS_OF(calling->recv), ci->mid);
     ci->flag = VM_CALL_FCALL | VM_CALL_OPT_SEND;
     return vm_call_method(th, reg_cfp, calling, ci, cc);
 }

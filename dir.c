@@ -526,11 +526,12 @@ dir_initialize(int argc, VALUE *argv, VALUE dir)
     path = RSTRING_PTR(dirname);
     dp->dir = opendir(path);
     if (dp->dir == NULL) {
-	if (rb_gc_for_fd(errno)) {
+	int e = errno;
+	if (rb_gc_for_fd(e)) {
 	    dp->dir = opendir(path);
 	}
 #ifdef HAVE_GETATTRLIST
-	else if (errno == EIO) {
+	else if (e == EIO) {
 	    u_int32_t attrbuf[1];
 	    struct attrlist al = {ATTR_BIT_MAP_COUNT, 0};
 	    if (getattrlist(path, &al, attrbuf, sizeof(attrbuf), FSOPT_NOFOLLOW) == 0) {
@@ -540,7 +541,7 @@ dir_initialize(int argc, VALUE *argv, VALUE dir)
 #endif
 	if (dp->dir == NULL) {
 	    RB_GC_GUARD(dirname);
-	    rb_sys_fail_path(orig);
+	    rb_syserr_fail_path(e, orig);
 	}
     }
     dp->path = orig;
@@ -752,7 +753,8 @@ dir_read(VALUE dir)
 	return rb_external_str_new_with_enc(dp->d_name, NAMLEN(dp), dirp->enc);
     }
     else {
-	if (errno != 0) rb_sys_fail(0);
+	int e = errno;
+	if (e != 0) rb_syserr_fail(e, 0);
 	return Qnil;		/* end of stream */
     }
 }
@@ -1231,7 +1233,12 @@ sys_enc_warning_in(const char *func, const char *mesg, rb_encoding *enc)
  * ENOTDIR can be returned by stat(2) if a non-leaf element of the path
  * is not a directory.
  */
-#define to_be_ignored(e) ((e) == ENOENT || (e) == ENOTDIR)
+ALWAYS_INLINE(static int to_be_ignored(int e));
+static inline int
+to_be_ignored(int e)
+{
+    return e == ENOENT || e == ENOTDIR;
+}
 
 #ifdef _WIN32
 #define STAT(p, s)	rb_w32_ustati64((p), (s))
@@ -1279,8 +1286,19 @@ do_opendir(const char *path, int flags, rb_encoding *enc)
     }
 #endif
     dirp = opendir(path);
-    if (dirp == NULL && !to_be_ignored(errno))
-	sys_warning(path, enc);
+    if (!dirp) {
+	int e = errno;
+	switch (rb_gc_for_fd(e)) {
+	  default:
+	    dirp = opendir(path);
+	    if (dirp) break;
+	    e = errno;
+	    /* fallback */
+	  case 0:
+	    if (to_be_ignored(e)) break;
+	    sys_warning(path, enc);
+	}
+    }
 #ifdef _WIN32
     if (tmp) rb_str_resize(tmp, 0); /* GC guard */
 #endif
@@ -2682,14 +2700,13 @@ rb_dir_s_empty_p(VALUE obj, VALUE dirname)
     dir = opendir(path);
     if (!dir) {
 	int e = errno;
-	switch (e) {
-	  case EMFILE: case ENFILE:
-	    rb_gc();
+	switch (rb_gc_for_fd(e)) {
+	  default:
 	    dir = opendir(path);
 	    if (dir) break;
 	    e = errno;
 	    /* fall through */
-	  default:
+	  case 0:
 	    if (false_on_notdir && e == ENOTDIR) return Qfalse;
 	    rb_syserr_fail_path(e, orig);
 	}

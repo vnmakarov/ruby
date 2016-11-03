@@ -100,6 +100,20 @@ class TestInteger < Test::Unit::TestCase
     assert_raise(Encoding::CompatibilityError, bug6192) {Integer("0".encode("iso-2022-jp"))}
 
     assert_raise_with_message(ArgumentError, /\u{1f4a1}/) {Integer("\u{1f4a1}")}
+
+    obj = Struct.new(:s).new(%w[42 not-an-integer])
+    def obj.to_str; s.shift; end
+    assert_equal(42, Integer(obj, 10))
+
+    assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}")
+    begin;
+      class Float
+        undef to_int
+        def to_int; raise "conversion failed"; end
+      end
+      assert_equal (1 << 100), Integer((1 << 100).to_f)
+      assert_equal 1, Integer(1.0)
+    end;
   end
 
   def test_int_p
@@ -260,39 +274,67 @@ class TestInteger < Test::Unit::TestCase
     assert_int_equal(-1111_1111_1111_1111_1111_1111_1111_1110, (-1111_1111_1111_1111_1111_1111_1111_1111).truncate(-1))
   end
 
-  def test_bitwise_and_with_integer_mimic_object
-    def (obj = Object.new).to_int
-      10
+  MimicInteger = Struct.new(:to_int)
+  module CoercionToInt
+    def coerce(other)
+      [other, to_int]
     end
-    assert_raise(TypeError, '[ruby-core:39491]') { 3 & obj }
+  end
 
-    def obj.coerce(other)
-      [other, 10]
-    end
+  def test_bitwise_and_with_integer_mimic_object
+    obj = MimicInteger.new(10)
+    assert_raise(TypeError, '[ruby-core:39491]') { 3 & obj }
+    obj.extend(CoercionToInt)
     assert_equal(3 & 10, 3 & obj)
   end
 
   def test_bitwise_or_with_integer_mimic_object
-    def (obj = Object.new).to_int
-      10
-    end
+    obj = MimicInteger.new(10)
     assert_raise(TypeError, '[ruby-core:39491]') { 3 | obj }
-
-    def obj.coerce(other)
-      [other, 10]
-    end
+    obj.extend(CoercionToInt)
     assert_equal(3 | 10, 3 | obj)
   end
 
   def test_bitwise_xor_with_integer_mimic_object
-    def (obj = Object.new).to_int
-      10
-    end
+    obj = MimicInteger.new(10)
     assert_raise(TypeError, '[ruby-core:39491]') { 3 ^ obj }
+    obj.extend(CoercionToInt)
+    assert_equal(3 ^ 10, 3 ^ obj)
+  end
 
-    def obj.coerce(other)
-      [other, 10]
+  module CoercionToSelf
+    def coerce(other)
+     [self.class.new(other), self]
     end
+  end
+
+  def test_bitwise_and_with_integer_coercion
+    obj = Struct.new(:value) do
+      include(CoercionToSelf)
+      def &(other)
+        self.value & other.value
+      end
+    end.new(10)
+    assert_equal(3 & 10, 3 & obj)
+  end
+
+  def test_bitwise_or_with_integer_coercion
+    obj = Struct.new(:value) do
+      include(CoercionToSelf)
+      def |(other)
+        self.value | other.value
+      end
+    end.new(10)
+    assert_equal(3 | 10, 3 | obj)
+  end
+
+  def test_bitwise_xor_with_integer_coercion
+    obj = Struct.new(:value) do
+      include(CoercionToSelf)
+      def ^(other)
+        self.value ^ other.value
+      end
+    end.new(10)
     assert_equal(3 ^ 10, 3 ^ obj)
   end
 

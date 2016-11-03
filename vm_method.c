@@ -439,13 +439,18 @@ make_method_entry_refined(VALUE owner, rb_method_entry_t *me)
     }
     else {
 	struct {
-	    const struct rb_method_entry_struct *orig_me;
+	    struct rb_method_entry_struct *orig_me;
 	    VALUE owner;
 	} refined;
 
 	rb_vm_check_redefinition_opt_method(me, me->owner);
 
-	refined.orig_me = rb_method_entry_clone(me);
+	refined.orig_me =
+	    rb_method_entry_alloc(me->called_id, me->owner,
+				  me->defined_class ?
+				  me->defined_class : owner,
+				  method_definition_addref(me->def));
+	METHOD_ENTRY_FLAGS_COPY(refined.orig_me, me);
 	refined.owner = owner;
 
 	method_definition_set(me, method_definition_create(VM_METHOD_TYPE_REFINED, me->called_id), (void *)&refined);
@@ -799,7 +804,7 @@ prepare_callable_method_entry(VALUE defined_class, ID id, const rb_method_entry_
     const rb_callable_method_entry_t *cme;
 
     if (me && me->defined_class == 0) {
-	VM_ASSERT(RB_TYPE_P(defined_class, T_ICLASS));
+	VM_ASSERT(RB_TYPE_P(defined_class, T_ICLASS) || RB_TYPE_P(defined_class, T_MODULE));
 	VM_ASSERT(me->defined_class == 0);
 
 	if ((mtbl = RCLASS_CALLABLE_M_TBL(defined_class)) == NULL) {

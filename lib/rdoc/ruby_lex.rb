@@ -102,10 +102,10 @@ class RDoc::RubyLex
     @exp_line_no = @line_no = 1
     @here_readed = []
     @readed = []
+    @current_readed = @readed
     @rests = []
     @seek = 0
 
-    @here_header = false
     @indent = 0
     @indent_stack = []
     @lex_state = :EXPR_BEG
@@ -161,7 +161,7 @@ class RDoc::RubyLex
     end
 
     readed = @readed.join("")
-    @readed = []
+    @readed.clear
     readed
   end
 
@@ -171,13 +171,9 @@ class RDoc::RubyLex
       @rests.push nil unless buf_input
     end
     c = @rests.shift
-    if @here_header
-      @here_readed.push c
-    else
-      @readed.push c
-    end
+    @current_readed.push c
     @seek += 1
-    if c == "\n"
+    if c == "\n".freeze
       @line_no += 1
       @char_no = 0
     else
@@ -283,7 +279,7 @@ class RDoc::RubyLex
     @indent_stack = []
     @lex_state = :EXPR_BEG
     @space_seen = false
-    @here_header = false
+    @current_readed = @readed
 
     @continue = false
     prompt
@@ -462,8 +458,8 @@ class RDoc::RubyLex
           @indent_stack.pop
         end
       end
-      @here_header = false
-      @here_readed = []
+      @current_readed = @readed
+      @here_readed.clear
       Token(TkNL)
     end
 
@@ -1021,7 +1017,7 @@ class RDoc::RubyLex
       doc = '"'
     end
 
-    @here_header = false
+    @current_readed = @readed
     while l = gets
       l = l.sub(/(:?\r)?\n\z/, "\n")
       if (indent ? l.strip : l.chomp) == quoted
@@ -1038,7 +1034,7 @@ class RDoc::RubyLex
       doc << '"'
     end
 
-    @here_header = true
+    @current_readed = @here_readed
     @here_readed.concat reserve
     while ch = reserve.pop
       ungetc ch
@@ -1184,10 +1180,8 @@ class RDoc::RubyLex
 
     str = if ltype == quoted and %w[" ' /].include? ltype then
             ltype.dup
-          elsif RUBY_VERSION > '1.9' then
-            "%#{type or PERCENT_LTYPE.key ltype}#{PERCENT_PAREN_REV[quoted]||quoted}"
           else
-            "%#{type or PERCENT_LTYPE.index ltype}#{PERCENT_PAREN_REV[quoted]||quoted}"
+            "%#{type or PERCENT_LTYPE.key ltype}#{PERCENT_PAREN_REV[quoted]||quoted}"
           end
 
     subtype = nil
@@ -1375,4 +1369,3 @@ class RDoc::RubyLex
 end
 
 #RDoc::RubyLex.debug_level = 1
-

@@ -1,4 +1,4 @@
-# README.EXT.ja -  -*- RDoc -*- created at: Mon Aug  7 16:45:54 JST 1995
+# extension.ja.rdoc -  -*- RDoc -*- created at: Mon Aug  7 16:45:54 JST 1995
 
 Rubyの拡張ライブラリの作り方を説明します．
 
@@ -935,8 +935,11 @@ fdbm_delete()はこのようになっています．
 
 この配列で与えられた引数を解析するための関数がopen()でも使わ
 れているrb_scan_args()です．第3引数に指定したフォーマットに従
-い，第4変数以降に指定したVALUEへの参照に値を代入してくれま
+い，第4引数以降に指定したVALUEへの参照に値を代入してくれま
 す．
+
+引数の数をチェックするだけならrb_check_arity()が使えます．
+これは引数をリストとして扱いたいときに便利です．
 
 引数をRubyの配列として受け取るメソッドの例には
 Thread#initializeがあります．実装はこうです．
@@ -1347,6 +1350,12 @@ rb_define_singleton_method(VALUE klass, const char *name, VALUE (*func)(), int a
 
   特異メソッドを定義する．引数はrb_define_method()と同じ．
 
+rb_check_arity(int argc, int min, int max) ::
+
+  引数の数であるargcがmin..maxの範囲に入っているかをチェックします．
+  もしmaxがUNLIMITED_ARGUMENTSなら，上限はチェックしません．
+  もしargcが範囲外ならArgumentErrorが発生します．
+
 rb_scan_args(int argc, VALUE *argv, const char *fmt, ...) ::
 
   argc, argv形式で与えられた指定されたフォーマットに従って引
@@ -1490,14 +1499,14 @@ VALUE rb_yield(VALUE val) ::
 
   valを値としてイテレータブロックを呼び出す．
 
-VALUE rb_rescue(VALUE (*func1)(), VALUE arg1, VALUE (*func2)(), VALUE arg2) ::
+VALUE rb_rescue(VALUE (*func1)(ANYARGS), VALUE arg1, VALUE (*func2)(ANYARGS), VALUE arg2) ::
 
   関数func1をarg1を引数に呼び出す．func1の実行中に例外が発生
-  した時には func2をarg2を引数として呼ぶ．戻り値は例外が発生
-  しなかった時はfunc1の戻り値, 例外が発生した時にはfunc2の戻
-  り値である．
+  した時には func2をarg2を第一引数, 発生した例外オブジェクト
+  を第二引数として呼ぶ．戻り値は例外が発生しなかった時はfunc1
+  の戻り値, 例外が発生した時にはfunc2の戻り値である．
 
-VALUE rb_ensure(VALUE (*func1)(), VALUE arg1, VALUE (*func2)(), VALUE arg2) ::
+VALUE rb_ensure(VALUE (*func1)(ANYARGS), VALUE arg1, VALUE (*func2)(ANYARGS), VALUE arg2) ::
 
   関数func1をarg1を引数として実行し, 実行終了後(たとえ例外が
   発生しても) func2をarg2を引数として実行する．戻り値はfunc1
@@ -1612,6 +1621,18 @@ void rb_add_event_hook(rb_event_hook_func_t func, rb_event_flag_t events, VALUE 
 int rb_remove_event_hook(rb_event_hook_func_t func) ::
 
   指定されたフック関数を削除します．
+
+== メモリ使用量
+
+void rb_gc_adjust_memory_usage(ssize_t diff) ::
+
+  登録された外部のメモリ使用量を調整します．この関数で外部のライブラリが
+  どのくらいメモリを使っているのかをGCに伝えることができます．正のdiffで
+  この関数を呼び出すとメモリ使用量の増加を意味します．新しいメモリブロッ
+  クが確保されたり，ブロックがより大きなサイズで再割り当てされたりした場
+  合などです．負のdiffでこの関数を呼び出すとメモリ使用量の減少を意味しま
+  す．メモリブロックが解放されたり，メモリブロックがより小さいサイズで再
+  確保されたりした場合などです．この関数はGCを引き起こすかもしれません．
 
 == 互換性のためのマクロ
 
@@ -1794,7 +1815,7 @@ RGenGCは，過去の拡張ライブラリに（ほぼ）互換性を保つよ�
 スするようなコードは書かないようにして下さい．代わりに，rb_ary_aref(),
 rb_ary_store() などの，適切な API 関数を利用するようにして下さい．
 
-そのほか，対応についての詳細は README.EXT の「Appendix D. Generational
+そのほか，対応についての詳細は extension.rdoc の「Appendix D. Generational
 GC」を参照して下さい．
 
 :enddoc: Local variables:

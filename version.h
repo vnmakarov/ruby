@@ -3,8 +3,8 @@
 #define RUBY_PATCHLEVEL -1
 
 #define RUBY_RELEASE_YEAR 2016
-#define RUBY_RELEASE_MONTH 8
-#define RUBY_RELEASE_DAY 29
+#define RUBY_RELEASE_MONTH 11
+#define RUBY_RELEASE_DAY 3
 
 #include "ruby/version.h"
 

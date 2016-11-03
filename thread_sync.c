@@ -824,8 +824,8 @@ queue_pop_should_block(int argc, const VALUE *argv)
  * Retrieves data from the queue.
  *
  * If the queue is empty, the calling thread is suspended until data is pushed
- * onto the queue. If +non_block+ is true, the thread isn't suspended, and an
- * exception is raised.
+ * onto the queue. If +non_block+ is true, the thread isn't suspended, and
+ * +ThreadError+ is raised.
  */
 
 static VALUE
@@ -1002,7 +1002,7 @@ szqueue_push_should_block(int argc, const VALUE *argv)
  *
  * If there is no space left in the queue, waits until space becomes
  * available, unless +non_block+ is true.  If +non_block+ is true, the
- * thread isn't suspended, and an exception is raised.
+ * thread isn't suspended, and +ThreadError+ is raised.
  */
 
 static VALUE
@@ -1056,8 +1056,8 @@ szqueue_do_pop(VALUE self, int should_block)
  * Retrieves data from the queue.
  *
  * If the queue is empty, the calling thread is suspended until data is pushed
- * onto the queue. If +non_block+ is true, the thread isn't suspended, and an
- * exception is raised.
+ * onto the queue. If +non_block+ is true, the thread isn't suspended, and
+ * +ThreadError+ is raised.
  */
 
 static VALUE
@@ -1274,11 +1274,11 @@ Init_thread_sync(void)
     rb_define_method(rb_cQueue, "length", rb_queue_length, 0);
     rb_define_method(rb_cQueue, "num_waiting", rb_queue_num_waiting, 0);
 
-    rb_define_alias(rb_cQueue, "enq", "push");    /* Alias for #push. */
-    rb_define_alias(rb_cQueue, "<<", "push");     /* Alias for #push. */
-    rb_define_alias(rb_cQueue, "deq", "pop");     /* Alias for #pop. */
-    rb_define_alias(rb_cQueue, "shift", "pop");   /* Alias for #pop. */
-    rb_define_alias(rb_cQueue, "size", "length"); /* Alias for #length. */
+    rb_define_alias(rb_cQueue, "enq", "push");
+    rb_define_alias(rb_cQueue, "<<", "push");
+    rb_define_alias(rb_cQueue, "deq", "pop");
+    rb_define_alias(rb_cQueue, "shift", "pop");
+    rb_define_alias(rb_cQueue, "size", "length");
 
     rb_cSizedQueue = rb_struct_define_without_accessor_under(
 	rb_cThread,
@@ -1294,10 +1294,10 @@ Init_thread_sync(void)
     rb_define_method(rb_cSizedQueue, "clear", rb_szqueue_clear, 0);
     rb_define_method(rb_cSizedQueue, "num_waiting", rb_szqueue_num_waiting, 0);
 
-    rb_define_alias(rb_cSizedQueue, "enq", "push");  /* Alias for #push. */
-    rb_define_alias(rb_cSizedQueue, "<<", "push");   /* Alias for #push. */
-    rb_define_alias(rb_cSizedQueue, "deq", "pop");   /* Alias for #pop. */
-    rb_define_alias(rb_cSizedQueue, "shift", "pop"); /* Alias for #pop. */
+    rb_define_alias(rb_cSizedQueue, "enq", "push");
+    rb_define_alias(rb_cSizedQueue, "<<", "push");
+    rb_define_alias(rb_cSizedQueue, "deq", "pop");
+    rb_define_alias(rb_cSizedQueue, "shift", "pop");
 
     /* CVar */
     rb_cConditionVariable = rb_struct_define_without_accessor_under(

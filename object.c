@@ -145,14 +145,14 @@ rb_obj_equal(VALUE obj1, VALUE obj2)
 #if 0
 /*
  * call-seq:
- *    obj.hash    -> fixnum
+ *    obj.hash    -> integer
  *
- * Generates a Fixnum hash value for this object.  This function must have the
+ * Generates an Integer hash value for this object.  This function must have the
  * property that <code>a.eql?(b)</code> implies <code>a.hash == b.hash</code>.
  *
  * The hash value is used along with #eql? by the Hash class to determine if
  * two objects reference the same hash key.  Any hash value that exceeds the
- * capacity of a Fixnum will be truncated before being used.
+ * capacity of an Integer will be truncated before being used.
  *
  * The hash value for an object may not be identical across invocations or
  * implementations of Ruby.  If you need a stable identifier across Ruby
@@ -221,7 +221,7 @@ rb_class_real(VALUE cl)
  *  called with an explicit receiver, as <code>class</code> is also a
  *  reserved word in Ruby.
  *
- *     1.class      #=> Fixnum
+ *     1.class      #=> Integer
  *     self.class   #=> Object
  */
 
@@ -241,7 +241,7 @@ rb_obj_class(VALUE obj)
  *  If <i>obj</i> is <code>nil</code>, <code>true</code>, or
  *  <code>false</code>, it returns NilClass, TrueClass, or FalseClass,
  *  respectively.
- *  If <i>obj</i> is a Fixnum or a Symbol, it raises a TypeError.
+ *  If <i>obj</i> is an Integer, a Float or a Symbol, it raises a TypeError.
  *
  *     Object.new.singleton_class  #=> #<Class:#<Object:0xb7ce1e24>>
  *     String.singleton_class      #=> #<Class:String>
@@ -1087,8 +1087,8 @@ rb_obj_infect(VALUE obj1, VALUE obj2)
  *     prog.rb:3:in `<<': can't modify frozen Array (RuntimeError)
  *     	from prog.rb:3
  *
- *  Objects of the following classes are always frozen: Fixnum,
- *  Bignum, Float, Symbol.
+ *  Objects of the following classes are always frozen: Integer,
+ *  Float, Symbol.
  */
 
 VALUE
@@ -1569,7 +1569,7 @@ rb_mod_eqq(VALUE mod, VALUE arg)
  * is the same as <i>other</i>. Returns
  * <code>nil</code> if there's no relationship between the two.
  * (Think of the relationship in terms of the class definition:
- * "class A<B" implies "A<B".)
+ * "class A < B" implies "A < B".)
  *
  */
 
@@ -1597,7 +1597,7 @@ rb_class_inherited_p(VALUE mod, VALUE arg)
  * Returns true if <i>mod</i> is a subclass of <i>other</i>. Returns
  * <code>nil</code> if there's no relationship between the two.
  * (Think of the relationship in terms of the class definition:
- * "class A<B" implies "A<B".)
+ * "class A < B" implies "A < B".)
  *
  */
 
@@ -1617,7 +1617,7 @@ rb_mod_lt(VALUE mod, VALUE arg)
  * two modules are the same. Returns
  * <code>nil</code> if there's no relationship between the two.
  * (Think of the relationship in terms of the class definition:
- * "class A<B" implies "B>A".)
+ * "class A < B" implies "B > A".)
  *
  */
 
@@ -1638,7 +1638,7 @@ rb_mod_ge(VALUE mod, VALUE arg)
  * Returns true if <i>mod</i> is an ancestor of <i>other</i>. Returns
  * <code>nil</code> if there's no relationship between the two.
  * (Think of the relationship in terms of the class definition:
- * "class A<B" implies "B>A".)
+ * "class A < B" implies "B > A".)
  *
  */
 
@@ -2684,35 +2684,27 @@ rb_convert_to_integer(VALUE val, int base)
 {
     VALUE tmp;
 
-    switch (TYPE(val)) {
-      case T_FLOAT:
+    if (RB_FLOAT_TYPE_P(val)) {
+	double f;
 	if (base != 0) goto arg_error;
-	if (RFLOAT_VALUE(val) <= (double)FIXNUM_MAX
-	    && RFLOAT_VALUE(val) >= (double)FIXNUM_MIN) {
-	    break;
-	}
-	return rb_dbl2big(RFLOAT_VALUE(val));
-
-      case T_FIXNUM:
-      case T_BIGNUM:
+	f = RFLOAT_VALUE(val);
+	if (FIXABLE(f)) return LONG2FIX((long)f);
+	return rb_dbl2big(f);
+    }
+    else if (RB_INTEGER_TYPE_P(val)) {
 	if (base != 0) goto arg_error;
 	return val;
-
-      case T_STRING:
-      string_conv:
+    }
+    else if (RB_TYPE_P(val, T_STRING)) {
 	return rb_str_to_inum(val, base, TRUE);
-
-      case T_NIL:
+    }
+    else if (NIL_P(val)) {
 	if (base != 0) goto arg_error;
 	rb_raise(rb_eTypeError, "can't convert nil into Integer");
-	break;
-
-      default:
-	break;
     }
     if (base != 0) {
 	tmp = rb_check_string_type(val);
-	if (!NIL_P(tmp)) goto string_conv;
+	if (!NIL_P(tmp)) return rb_str_to_inum(tmp, base, TRUE);
       arg_error:
 	rb_raise(rb_eArgError, "base specified for non string value");
     }
@@ -2734,7 +2726,7 @@ rb_Integer(VALUE val)
  *  call-seq:
  *     Integer(arg, base=0)    -> integer
  *
- *  Converts <i>arg</i> to a <code>Fixnum</code> or <code>Bignum</code>.
+ *  Converts <i>arg</i> to an <code>Integer</code>.
  *  Numeric types are converted directly (with floating point numbers
  *  being truncated).  <i>base</i> (0, or between 2 and 36) is a base for
  *  integer string representation.  If <i>arg</i> is a <code>String</code>,
@@ -2968,11 +2960,14 @@ FUNC_MINIMIZED(static VALUE rb_f_float(VALUE obj, VALUE arg));
  *     Float(arg)    -> float
  *
  *  Returns <i>arg</i> converted to a float. Numeric types are converted
- *  directly, the rest are converted using <i>arg</i>.to_f.
+ *  directly, and with exception to string and nil the rest are converted using <i>arg</i>.to_f.
+ *  Converting a <code>string</code> with invalid characters will result in a <code>ArgumentError</code>.
  *  Converting <code>nil</code> generates a <code>TypeError</code>.
  *
- *     Float(1)           #=> 1.0
- *     Float("123.456")   #=> 123.456
+ *     Float(1)                 #=> 1.0
+ *     Float("123.456")         #=> 123.456
+ *     Float("123.0_badstring") #=> ArgumentError: invalid value for Float(): "123.0_badstring"
+ *     Float(nil)               #=> TypeError: can't convert nil into Float
  */
 
 static VALUE
@@ -3512,9 +3507,10 @@ InitVM_Object(void)
     rb_undef_alloc_func(rb_cNilClass);
     rb_undef_method(CLASS_OF(rb_cNilClass), "new");
     /*
-     * An alias of +nil+
+     * An obsolete alias of +nil+
      */
     rb_define_global_const("NIL", Qnil);
+    rb_deprecate_constant(rb_cObject, "NIL");
 
     rb_define_method(rb_cModule, "freeze", rb_mod_freeze, 0);
     rb_define_method(rb_cModule, "===", rb_mod_eqq, 1);
@@ -3596,9 +3592,10 @@ InitVM_Object(void)
     rb_undef_alloc_func(rb_cTrueClass);
     rb_undef_method(CLASS_OF(rb_cTrueClass), "new");
     /*
-     * An alias of +true+
+     * An obsolete alias of +true+
      */
     rb_define_global_const("TRUE", Qtrue);
+    rb_deprecate_constant(rb_cObject, "TRUE");
 
     rb_cFalseClass = rb_define_class("FalseClass", rb_cObject);
     rb_define_method(rb_cFalseClass, "to_s", false_to_s, 0);
@@ -3610,17 +3607,10 @@ InitVM_Object(void)
     rb_undef_alloc_func(rb_cFalseClass);
     rb_undef_method(CLASS_OF(rb_cFalseClass), "new");
     /*
-     * An alias of +false+
+     * An obsolete alias of +false+
      */
     rb_define_global_const("FALSE", Qfalse);
-
-    {
-	VALUE names[3];
-	names[0] = ID2SYM(rb_intern_const("TRUE"));
-	names[1] = ID2SYM(rb_intern_const("FALSE"));
-	names[2] = ID2SYM(rb_intern_const("NIL"));
-	rb_mod_deprecate_constant(3, names, rb_cObject);
-    }
+    rb_deprecate_constant(rb_cObject, "FALSE");
 }
 
 void

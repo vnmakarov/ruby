@@ -1865,10 +1865,11 @@ static VALUE
 open_load_file(VALUE fname_v, int *xflag)
 {
     const char *fname = StringValueCStr(fname_v);
+    long flen = RSTRING_LEN(fname_v);
     VALUE f;
     int e;
 
-    if (RSTRING_LEN(fname_v) == 1 && fname[0] == '-') {
+    if (flen == 1 && fname[0] == '-') {
 	f = rb_stdin;
     }
     else {
@@ -1885,9 +1886,12 @@ open_load_file(VALUE fname_v, int *xflag)
 #endif
 	int mode = MODE_TO_LOAD;
 #if defined DOSISH || defined __CYGWIN__
+# define isdirsep(x) ((x) == '/' || (x) == '\\')
 	{
-	    const char *ext = strrchr(fname, '.');
-	    if (ext && STRCASECMP(ext, ".exe") == 0) {
+	    static const char exeext[] = ".exe";
+	    enum {extlen = sizeof(exeext)-1};
+	    if (flen > extlen && !isdirsep(fname[flen-extlen-1]) &&
+		STRNCASECMP(fname+flen-extlen, exeext, extlen) == 0) {
 		mode |= O_BINARY;
 		*xflag = 1;
 	    }
@@ -1895,7 +1899,13 @@ open_load_file(VALUE fname_v, int *xflag)
 #endif
 
 	if ((fd = rb_cloexec_open(fname, mode, 0)) < 0) {
-	    rb_load_fail(fname_v, strerror(errno));
+	    int e = errno;
+	    if (!rb_gc_for_fd(e)) {
+		rb_load_fail(fname_v, strerror(e));
+	    }
+	    if ((fd = rb_cloexec_open(fname, mode, 0)) < 0) {
+		rb_load_fail(fname_v, strerror(errno));
+	    }
 	}
 	rb_update_max_fd(fd);
 
@@ -1909,22 +1919,20 @@ open_load_file(VALUE fname_v, int *xflag)
 #endif
 
 	e = ruby_is_fd_loadable(fd);
-	if (e <= 0) {
-	    if (!e) {
-		e = errno;
-		(void)close(fd);
-		rb_load_fail(fname_v, strerror(e));
-	    }
-	    else {
-		/*
-		  We need to wait if FIFO is empty. It's FIFO's semantics.
-		  rb_thread_wait_fd() release GVL. So, it's safe.
-		*/
-		rb_thread_wait_fd(fd);
-	    }
+	if (!e) {
+	    e = errno;
+	    (void)close(fd);
+	    rb_load_fail(fname_v, strerror(e));
 	}
 
 	f = rb_io_fdopen(fd, mode, fname);
+	if (e < 0) {
+	    /*
+	      We need to wait if FIFO is empty. It's FIFO's semantics.
+	      rb_thread_wait_fd() release GVL. So, it's safe.
+	    */
+	    rb_thread_wait_fd(fd);
+	}
     }
     return f;
 }

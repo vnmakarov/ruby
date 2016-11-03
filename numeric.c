@@ -293,21 +293,27 @@ num_funcall0(VALUE x, ID func)
     return rb_exec_recursive(num_funcall_op_0, x, (VALUE)func);
 }
 
+static void
+num_funcall_op_1_recursion(VALUE x, ID func, VALUE y)
+{
+    const char *name = rb_id2name(func);
+    if (ISALNUM(name[0])) {
+	rb_name_error(func, "%"PRIsVALUE".%"PRIsVALUE"(%"PRIsVALUE")",
+		      x, ID2SYM(func), y);
+    }
+    else {
+	rb_name_error(func, "%"PRIsVALUE"%"PRIsVALUE"%"PRIsVALUE,
+		      x, ID2SYM(func), y);
+    }
+}
+
 static VALUE
-num_funcall_op_1(VALUE x, VALUE arg, int recursive)
+num_funcall_op_1(VALUE y, VALUE arg, int recursive)
 {
     ID func = (ID)((VALUE *)arg)[0];
-    VALUE y = ((VALUE *)arg)[1];
+    VALUE x = ((VALUE *)arg)[1];
     if (recursive) {
-	const char *name = rb_id2name(func);
-	if (ISALNUM(name[0])) {
-	    rb_name_error(func, "%"PRIsVALUE".%"PRIsVALUE"(%"PRIsVALUE")",
-			  x, ID2SYM(func), y);
-	}
-	else {
-	    rb_name_error(func, "%"PRIsVALUE"%"PRIsVALUE"%"PRIsVALUE,
-			  x, ID2SYM(func), y);
-	}
+	num_funcall_op_1_recursion(x, func, y);
     }
     return rb_funcall(x, func, 1, y);
 }
@@ -317,8 +323,8 @@ num_funcall1(VALUE x, ID func, VALUE y)
 {
     VALUE args[2];
     args[0] = (VALUE)func;
-    args[1] = y;
-    return rb_exec_recursive_paired(num_funcall_op_1, x, y, (VALUE)args);
+    args[1] = x;
+    return rb_exec_recursive_paired(num_funcall_op_1, y, x, (VALUE)args);
 }
 
 /*
@@ -669,7 +675,7 @@ num_real_p(VALUE num)
  *  call-seq:
  *     num.integer?  ->  true or false
  *
- *  Returns +true+ if +num+ is an Integer (including Fixnum and Bignum).
+ *  Returns +true+ if +num+ is an Integer.
  *
  *      (1.0).integer? #=> false
  *      (1).integer?   #=> true
@@ -721,7 +727,10 @@ num_zero_p(VALUE num)
 	}
     }
     else if (RB_TYPE_P(num, T_BIGNUM)) {
-	return rb_bigzero_p(num);
+	if (rb_bigzero_p(num)) {
+	    /* this should not happen usually */
+	    return Qtrue;
+	}
     }
     else if (rb_equal(num, INT2FIX(0))) {
 	return Qtrue;
@@ -787,8 +796,8 @@ num_infinite_p(VALUE num)
  *  Invokes the child class's +to_i+ method to convert +num+ to an integer.
  *
  *      1.0.class => Float
- *      1.0.to_int.class => Fixnum
- *      1.0.to_i.class => Fixnum
+ *      1.0.to_int.class => Integer
+ *      1.0.to_i.class => Integer
  */
 
 static VALUE
@@ -2655,24 +2664,23 @@ rb_num2ulong_internal(VALUE val, int *wrap_p)
     }
 
     if (FIXNUM_P(val)) {
-        long l = FIX2LONG(val); /* this is FIX2LONG, inteneded */
+        long l = FIX2LONG(val); /* this is FIX2LONG, intended */
         if (wrap_p)
             *wrap_p = l < 0;
         return (unsigned long)l;
     }
     else if (RB_TYPE_P(val, T_FLOAT)) {
-       if (RFLOAT_VALUE(val) < ULONG_MAX_PLUS_ONE
-           && LONG_MIN_MINUS_ONE_IS_LESS_THAN(RFLOAT_VALUE(val))) {
-           double d = RFLOAT_VALUE(val);
-           if (wrap_p)
-               *wrap_p = d <= -1.0; /* NUM2ULONG(v) uses v.to_int conceptually.  */
-           if (0 <= d)
-               return (unsigned long)d;
-           return (unsigned long)(long)d;
-       }
-       else {
-	   FLOAT_OUT_OF_RANGE(val, "integer");
-       }
+	double d = RFLOAT_VALUE(val);
+	if (d < ULONG_MAX_PLUS_ONE && LONG_MIN_MINUS_ONE_IS_LESS_THAN(d)) {
+	    if (wrap_p)
+		*wrap_p = d <= -1.0; /* NUM2ULONG(v) uses v.to_int conceptually.  */
+	    if (0 <= d)
+		return (unsigned long)d;
+	    return (unsigned long)(long)d;
+	}
+	else {
+	    FLOAT_OUT_OF_RANGE(val, "integer");
+	}
     }
     else if (RB_TYPE_P(val, T_BIGNUM)) {
         {
@@ -2918,7 +2926,7 @@ rb_num2ull(VALUE val)
 	rb_raise(rb_eTypeError, "no implicit conversion from nil");
     }
     else if (RB_TYPE_P(val, T_FIXNUM)) {
-	return (LONG_LONG)FIX2LONG(val); /* this is FIX2LONG, inteneded */
+	return (LONG_LONG)FIX2LONG(val); /* this is FIX2LONG, intended */
     }
     else if (RB_TYPE_P(val, T_FLOAT)) {
 	if (RFLOAT_VALUE(val) < ULLONG_MAX_PLUS_ONE
@@ -2947,11 +2955,13 @@ rb_num2ull(VALUE val)
 
 #endif  /* HAVE_LONG_LONG */
 
-/*
+/********************************************************************
+ *
  * Document-class: Integer
  *
- *  This class is the basis for the two concrete classes that hold whole
- *  numbers, Bignum and Fixnum.
+ *  Holds Integer values.  You cannot add a singleton method to an
+ *  Integer. Any attempt to add a singleton method to an Integer object
+ *  will raise a TypeError.
  *
  */
 
@@ -3034,8 +3044,6 @@ int_even_p(VALUE num)
 /*
  *  Document-method: Integer#succ
  *  Document-method: Integer#next
- *  Document-method: Fixnum#succ
- *  Document-method: Fixnum#next
  *  call-seq:
  *     int.next  ->  integer
  *     int.succ  ->  integer
@@ -3187,22 +3195,8 @@ int_ord(VALUE num)
     return num;
 }
 
-/********************************************************************
- *
- * Document-class: Fixnum
- *
- *  Holds Integer values that can be represented in a native machine word
- *  (minus 1 bit).  If any operation on a Fixnum exceeds this range, the value
- *  is automatically converted to a Bignum.
- *
- *  Fixnum objects have immediate value. This means that when they are assigned
- *  or passed as parameters, the actual object is passed, rather than a
- *  reference to that object.
- *
- *  Assignment does not alias Fixnum objects. There is effectively only one
- *  Fixnum object instance for any given integer value, so, for example, you
- *  cannot add a singleton method to a Fixnum. Any attempt to add a singleton
- *  method to a Fixnum object will raise a TypeError.
+/*
+ * Fixnum
  */
 
 
@@ -3262,6 +3256,17 @@ rb_fix2str(VALUE x, int base)
     if (base < 2 || 36 < base) {
 	rb_raise(rb_eArgError, "invalid radix %d", base);
     }
+#if SIZEOF_LONG < SIZEOF_VOIDP
+# if SIZEOF_VOIDP == SIZEOF_LONG_LONG
+    if ((val >= 0 && (x & 0xFFFFFFFF00000000ull)) ||
+	(val < 0 && (x & 0xFFFFFFFF00000000ull) != 0xFFFFFFFF00000000ull)) {
+	rb_bug("Unnormalized Fixnum value %p", (void *)x);
+    }
+# elif
+    /* should do something like above code, but currently ruby does not know */
+    /* such platforms */
+# endif
+#endif
     if (val == 0) {
 	return rb_usascii_str_new2("0");
     }
@@ -3309,7 +3314,6 @@ rb_int2str(VALUE x, int base)
 
 /*
  * Document-method: Integer#+
- * Document-method: Fixnum#+
  * call-seq:
  *   int + numeric  ->  numeric_result
  *
@@ -3365,7 +3369,6 @@ rb_int_plus(VALUE x, VALUE y)
 
 /*
  * Document-method: Integer#-
- * Document-method: Fixnum#-
  * call-seq:
  *   int - numeric  ->  numeric_result
  *
@@ -3418,7 +3421,6 @@ rb_int_minus(VALUE x, VALUE y)
 
 /*
  * Document-method: Integer#*
- * Document-method: Fixnum#*
  * call-seq:
  *   int * numeric  ->  numeric_result
  *
@@ -3505,7 +3507,6 @@ int_fdiv(VALUE x, VALUE y)
 
 /*
  * Document-method: Integer#/
- * Document-method: Fixnum#/
  * call-seq:
  *   int / numeric  ->  numeric_result
  *
@@ -3593,7 +3594,6 @@ rb_int_idiv(VALUE x, VALUE y)
 }
 
 /*
- *  Document-method: Fixnum#%
  *  Document-method: Integer#%
  *  Document-method: Integer#modulo
  *  call-seq:
@@ -3725,7 +3725,7 @@ int_divmod(VALUE x, VALUE y)
  *
  *  Raises +integer+ to the power of +numeric+, which may be negative or
  *  fractional.
- *  The result may be a Fixnum, Bignum, or Float
+ *  The result may be an Integer, or a Float
  *
  *    2 ** 3      #=> 8
  *    2 ** -1     #=> (1/2)
@@ -3848,7 +3848,6 @@ rb_int_pow(VALUE x, VALUE y)
 
 /*
  * Document-method: Integer#==
- * Document-method: Fixnum#==
  * call-seq:
  *   int == other  ->  true or false
  *
@@ -3942,7 +3941,6 @@ int_cmp(VALUE x, VALUE y)
 
 /*
  * Document-method: Integer#>
- * Document-method: Fixnum#>
  * call-seq:
  *   int > real  ->  true or false
  *
@@ -3981,7 +3979,6 @@ int_gt(VALUE x, VALUE y)
 
 /*
  * Document-method: Integer#>=
- * Document-method: Fixnum#>=
  * call-seq:
  *   int >= real  ->  true or false
  *
@@ -4022,7 +4019,6 @@ rb_int_ge(VALUE x, VALUE y)
 
 /*
  * Document-method: Integer#<
- * Document-method: Fixnum#<
  * call-seq:
  *   int < real  ->  true or false
  *
@@ -4061,7 +4057,6 @@ int_lt(VALUE x, VALUE y)
 
 /*
  * Document-method: Integer#<=
- * Document-method: Fixnum#<=
  * call-seq:
  *   int <= real  ->  true or false
  *
@@ -4107,7 +4102,7 @@ int_le(VALUE x, VALUE y)
  *
  * One's complement: returns a number where each bit is flipped.
  *
- * Inverts the bits in a integer. As Integers are conceptually infinite
+ * Inverts the bits in an integer. As Integers are conceptually infinite
  * length, the result acts as if it had an infinite number of one
  * bits to the left. In hex representations, this is displayed
  * as two periods to the left of the digits.
@@ -4134,24 +4129,33 @@ int_comp(VALUE num)
     return Qnil;
 }
 
-static int
-bit_coerce(VALUE *x, VALUE *y)
+static VALUE
+num_funcall_bit_1(VALUE y, VALUE arg, int recursive)
 {
-    if (!RB_INTEGER_TYPE_P(*y)) {
-	VALUE orig = *x;
-	do_coerce(x, y, TRUE);
-	if (!RB_INTEGER_TYPE_P(*x) && !RB_INTEGER_TYPE_P(*y)) {
-	    coerce_failed(orig, *y);
-	}
+    ID func = (ID)((VALUE *)arg)[0];
+    VALUE x = ((VALUE *)arg)[1];
+    if (recursive) {
+	num_funcall_op_1_recursion(x, func, y);
     }
-    return TRUE;
+    return rb_check_funcall(x, func, 1, &y);
 }
 
 VALUE
 rb_num_coerce_bit(VALUE x, VALUE y, ID func)
 {
-    bit_coerce(&x, &y);
-    return num_funcall1(x, func, y);
+    VALUE ret, args[3];
+
+    args[0] = (VALUE)func;
+    args[1] = x;
+    args[2] = y;
+    do_coerce(&args[1], &args[2], TRUE);
+    ret = rb_exec_recursive_paired(num_funcall_bit_1,
+				   args[2], args[1], (VALUE)args);
+    if (ret == Qundef) {
+	/* show the original object, not coerced object */
+	coerce_failed(x, y);
+    }
+    return ret;
 }
 
 /*
@@ -4174,8 +4178,7 @@ fix_and(VALUE x, VALUE y)
 	return rb_big_and(y, x);
     }
 
-    bit_coerce(&x, &y);
-    return num_funcall1(x, '&', y);
+    return rb_num_coerce_bit(x, y, '&');
 }
 
 static VALUE
@@ -4210,8 +4213,7 @@ fix_or(VALUE x, VALUE y)
 	return rb_big_or(y, x);
     }
 
-    bit_coerce(&x, &y);
-    return num_funcall1(x, '|', y);
+    return rb_num_coerce_bit(x, y, '|');
 }
 
 static VALUE
@@ -4246,8 +4248,7 @@ fix_xor(VALUE x, VALUE y)
 	return rb_big_xor(y, x);
     }
 
-    bit_coerce(&x, &y);
-    return num_funcall1(x, '^', y);
+    return rb_num_coerce_bit(x, y, '^');
 }
 
 static VALUE
@@ -5003,7 +5004,7 @@ int_truncate(int argc, VALUE* argv, VALUE num)
  * by preventing instantiation and duplication.
  *
  *   Integer.new(1)   #=> NoMethodError: undefined method `new' for Integer:Class
- *   1.dup            #=> TypeError: can't dup Fixnum
+ *   1.dup            #=> TypeError: can't dup Integer
  *
  * For this reason, Numeric should be used when defining other numeric classes.
  *
@@ -5177,6 +5178,7 @@ Init_Numeric(void)
     rb_cFixnum = rb_cInteger;
 #endif
     rb_define_const(rb_cObject, "Fixnum", rb_cInteger);
+    rb_deprecate_constant(rb_cObject, "Fixnum");
 
     rb_cFloat  = rb_define_class("Float", rb_cNumeric);
 

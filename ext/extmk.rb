@@ -81,6 +81,7 @@ def extract_makefile(makefile, keep = true)
   m = File.read(makefile)
   s = m[/^CLEANFILES[ \t]*=[ \t](.*)/, 1] and $cleanfiles = s.split
   s = m[/^DISTCLEANFILES[ \t]*=[ \t](.*)/, 1] and $distcleanfiles = s.split
+  s = m[/^EXTSO[ \t]*=[ \t](.*)/, 1] and $extso = s.split
   if !(target = m[/^TARGET[ \t]*=[ \t]*(\S*)/, 1])
     return keep
   end
@@ -131,7 +132,7 @@ def extract_makefile(makefile, keep = true)
   true
 end
 
-def extmake(target, basedir = (maybestatic = 'ext'), &block)
+def extmake(target, basedir = (maybestatic = 'ext'))
   unless $configure_only || verbose?
     print "#{$message} #{target}\n"
     $stdout.flush
@@ -165,6 +166,7 @@ def extmake(target, basedir = (maybestatic = 'ext'), &block)
     $preload = nil
     $objs = []
     $srcs = []
+    $extso = []
     $compiled[target] = false
     makefile = "./Makefile"
     static = $static
@@ -225,7 +227,7 @@ def extmake(target, basedir = (maybestatic = 'ext'), &block)
               load $0 = conf
             end
 	  else
-	    create_makefile(target, &block)
+	    create_makefile(target)
 	  end
 	  $defs << "-DRUBY_EXPORT" if $static
 	  ok = File.exist?(makefile)
@@ -243,7 +245,6 @@ def extmake(target, basedir = (maybestatic = 'ext'), &block)
     ok &&= File.open(makefile){|f| s = f.gets and !s[DUMMY_SIGNATURE]}
     unless ok
       mf = ["# #{DUMMY_SIGNATURE}\n", *dummy_makefile(CONFIG["srcdir"])].join("")
-      mf = yield mf if block
       atomic_write_open(makefile) do |f|
         f.print(mf)
       end
@@ -535,17 +536,29 @@ end
 if $extout
   extout = RbConfig.expand("#{$extout}", RbConfig::CONFIG.merge("topdir"=>$topdir))
   unless $ignore
-    FileUtils.mkpath(extout)
+    FileUtils.mkpath("#{extout}/gems")
   end
 end
 
 FileUtils.makedirs('gems')
 ext_prefix = "#$top_srcdir/gems"
-gems = Dir.glob("#{ext_prefix}/**/extconf.rb").collect {|d|
+gems = Dir.glob(File.join(ext_prefix, ($extension || ''), '**/extconf.rb')).collect {|d|
   d = File.dirname(d)
   d.slice!(0, ext_prefix.length + 1)
   d
+}.find_all {|ext|
+  with_config(ext, &cond)
 }.sort
+
+extend Module.new {
+  def timestamp_file(name, target_prefix = nil)
+    super.sub(%r[/\.extout\.(?:-\.)?], '/.')
+  end
+
+  def configuration(srcdir)
+    super << "EXTSO #{['=', $extso].join(' ')}\n"
+  end
+}
 
 dir = Dir.pwd
 FileUtils::makedirs('ext')
@@ -553,32 +566,57 @@ Dir::chdir('ext')
 
 hdrdir = $hdrdir
 $hdrdir = ($top_srcdir = relative_from(srcdir, $topdir = "..")) + "/include"
+extso = []
 fails = []
 exts.each do |d|
   $static = $force_static ? true : $static_ext[d]
 
   if $ignore or !$nodynamic or $static
     result = extmake(d) or abort
+    extso |= $extso
     fails << result unless result == true
   end
 end
 
 Dir.chdir('..')
 FileUtils::makedirs('gems')
-FileUtils::makedirs("#$extout/gems")
 Dir.chdir('gems')
 extout = $extout
+unless gems.empty?
+  def self.timestamp_file(name, target_prefix = nil)
+    name = "$(arch)/gems/#{@gemname}#{target_prefix}" if name == '$(TARGET_SO_DIR)'
+    super
+  end
+
+  def self.create_makefile(*args, &block)
+    super(*args) do |conf|
+      conf.find do |s|
+        s.sub!(/^(TARGET_SO_DIR *= *)\$\(RUBYARCHDIR\)/) {
+          "TARGET_GEM_DIR = $(extout)/gems/$(arch)/#{@gemname}\n"\
+          "#{$1}$(TARGET_GEM_DIR)$(target_prefix)"
+        }
+      end
+      conf.any? {|s| /^TARGET *= *\S/ =~ s} and conf << %{
+
+# default target
+all:
+
+build_complete = $(TARGET_GEM_DIR)/gem.build_complete
+install-so: build_complete
+build_complete: $(build_complete)
+$(build_complete): $(TARGET_SO)
+	$(Q) $(TOUCH) $@
+
+}
+      conf
+    end
+  end
+end
 gems.each do |d|
   $extout = extout.dup
-  extmake(d, 'gems') do |mf|
-    mf.sub!(/^RUBYARCHDIR *= *(\$\(extout\))\/(\$\(arch\))(.*)/) {
-      "TARGET_SO_DIR = #$1/gems/#$2/#{d[%r{\A[^/]+}]}#$3\n" \
-      "TARGET_SO_TIME = .gems.-.arch.-.#{d[/\A[^\/]+/]}.time"
-    }
-    mf.gsub!(/\bRUBYARCHDIR\b/, 'TARGET_SO_DIR')
-    mf.gsub!(/\.TARGET_SO_DIR\.time/, '$(TARGET_SO_TIME)')
-    mf
-  end
+  @gemname = d[%r{\A[^/]+}]
+  extmake(d, 'gems')
+  extso |= $extso
 end
 $extout = extout
 Dir.chdir('../ext')
@@ -683,18 +721,6 @@ unless $destdir.to_s.empty?
 end
 $makeflags.uniq!
 
-if $nmake == ?b
-  unless (vars = $mflags.grep(/\A\w+=/n)).empty?
-    open(mkf = "libruby.mk", "wb") do |tmf|
-      tmf.puts("!include Makefile")
-      tmf.puts
-      tmf.puts(*vars.map {|v| v.sub(/\=/, " = ")})
-      tmf.puts("PRE_LIBRUBY_UPDATE = del #{mkf}")
-    end
-    $mflags.unshift("-f#{mkf}")
-    vars.each {|flag| flag.sub!(/\A/, "-D")}
-  end
-end
 $mflags.unshift("topdir=#$topdir")
 ENV.delete("RUBYOPT")
 if $configure_only and $command_output
@@ -728,6 +754,7 @@ if $configure_only and $command_output
     mf.macro "gems", gems
     mf.macro "EXTOBJS", $extlist.empty? ? ["dmyext.#{$OBJEXT}"] : ["ext/extinit.#{$OBJEXT}", *$extobjs]
     mf.macro "EXTLIBS", $extlibs
+    mf.macro "EXTSO", extso
     mf.macro "EXTLDFLAGS", $extflags.split
     submakeopts = []
     if enable_config("shared", $enable_shared)
@@ -780,6 +807,9 @@ if $configure_only and $command_output
         mf.puts "#{d[0..-2]}#{tgt}:\n\t$(Q)#{submake} $(MFLAGS) V=$(V) $(@F)"
       end
     end
+    mf.puts "\n""extso:\n"
+    mf.puts "\t@echo EXTSO=$(EXTSO)"
+
     mf.puts "\n""note:\n"
     unless fails.empty?
       mf.puts %Q<\t@echo "*** Following extensions failed to configure:">

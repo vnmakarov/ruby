@@ -238,9 +238,10 @@ signo2signm(int no)
 
 /*
  * call-seq:
- *     Signal.signame(signo)  ->  string
+ *     Signal.signame(signo)  ->  string or nil
  *
- *  convert signal number to signal name
+ *  Convert signal number to signal name.
+ *  Returns +nil+ if the signo is an invalid signal number.
  *
  *     Signal.trap("INT") { |signo| puts Signal.signame(signo) }
  *     Process.kill("INT", 0)
@@ -368,7 +369,7 @@ static void signal_enque(int sig);
 
 /*
  *  call-seq:
- *     Process.kill(signal, pid, ...)    -> fixnum
+ *     Process.kill(signal, pid, ...)    -> integer
  *
  *  Sends the given signal to the specified process id(s) if _pid_ is positive.
  *  If _pid_ is zero _signal_ is sent to all processes whose group ID is equal
