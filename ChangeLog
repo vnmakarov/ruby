@@ -1,3 +1,8 @@
+Thu Nov  3 22:06:18 2016  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* st.c (MINIMAL_POWER2): Make it equal to 2.
+	(MAX_POWER2_FOR_TABLES_WITHOUT_BINS): Make it equal to 4.
+
 Wed Nov  2 23:22:05 2016  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* st.c (features): Decrease # bins two times for tables < 2*32 for

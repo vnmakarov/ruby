@@ -317,7 +317,7 @@ do_hash(st_data_t key, st_table *tab) {
 }
 
 /* Power of 2 defining the minimal number of allocated entries.  */
-#define MINIMAL_POWER2 3
+#define MINIMAL_POWER2 2
 
 #if MINIMAL_POWER2 < 2
 #error "MINIMAL_POWER2 should be >= 2"
@@ -325,7 +325,7 @@ do_hash(st_data_t key, st_table *tab) {
 
 /* If the power2 of the allocated `entries` is less than the following
    value, don't allocate bins and use a linear search.  */
-#define MAX_POWER2_FOR_TABLES_WITHOUT_BINS 3
+#define MAX_POWER2_FOR_TABLES_WITHOUT_BINS 4
 
 /* Return smallest n >= MINIMAL_POWER2 such 2^n > SIZE.  */
 static int
