@@ -358,9 +358,9 @@ get_bin(st_index_t *bins, int s, st_index_t n) {
    value V.  */
 static inline void
 set_bin(st_index_t *bins, int s, st_index_t n, st_index_t v) {
-    if (s == 0) ((unsigned char *) bins)[n] = v;
-    else if (s == 1) ((unsigned short *) bins)[n] = v;
-    else if (s == 2) ((unsigned int *) bins)[n] = v;
+    if (s == 0) ((unsigned char *) bins)[n] = (unsigned char) v;
+    else if (s == 1) ((unsigned short *) bins)[n] = (unsigned short) v;
+    else if (s == 2) ((unsigned int *) bins)[n] = (unsigned int) v;
     else ((st_index_t *) bins)[n] = v;
 }
 
@@ -409,7 +409,7 @@ set_bin(st_index_t *bins, int s, st_index_t n, st_index_t v) {
 #define DELETED_ENTRY_P(e_ptr) ((e_ptr)->hash == RESERVED_HASH_VAL)
 
 /* Return bin size index of table TAB.  */
-static inline st_index_t
+static inline unsigned int
 get_size_ind(const st_table *tab) {
     return tab->size_ind;
 }
@@ -713,7 +713,8 @@ count_collision(const struct st_hash_type *type) {
    compaction of the existing one.  */
 static void
 rebuild_table(st_table *tab) {
-    st_index_t i, ni, bound, size_ind;
+    st_index_t i, ni, bound;
+    unsigned int size_ind;
     st_table *new_tab;
     st_table_entry *entries, *new_entries;
     st_table_entry *curr_entry_ptr;

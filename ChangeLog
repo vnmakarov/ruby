@@ -1,3 +1,11 @@
+Thu Nov  5 11:14:03 2016  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* hash.c (rb_objid_hash, rb_ident_hash): Use explicit integer
+	conversion.
+	* st.c (set_bin): Ditto.
+	(get_size_ind): Change return type.
+	(rebuild_table): Change type for size_ind/
+
 Thu Nov  3 22:06:18 2016  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* st.c (MINIMAL_POWER2): Make it equal to 2.

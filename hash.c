@@ -271,7 +271,7 @@ key64_hash (uint64_t key, uint32_t seed)
 long
 rb_objid_hash(st_index_t index)
 {
-    return key64_hash (index, prime2);
+    return key64_hash(index, (uint32_t) prime2);
 }
 
 static st_index_t
@@ -315,7 +315,7 @@ rb_ident_hash(st_data_t n)
     }
 #endif
 
-    return (st_index_t) key64_hash((st_index_t)n, prime2);
+    return (st_index_t) key64_hash((st_index_t)n, (uint32_t) prime2);
 }
 
 static const struct st_hash_type identhash = {
