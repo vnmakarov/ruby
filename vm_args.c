@@ -8,8 +8,12 @@
 
 **********************************************************************/
 
+NORETURN(extern void argument_arity_error(rb_thread_t *th, const rb_iseq_t *iseq, const int miss_argc, const int min_argc, const int max_argc));
+extern void vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
+				      struct rb_calling_info *calling, const struct rb_call_info *ci, rb_iseq_t *blockiseq, const int is_super);
+#ifndef MJIT_HEADER
+
 NORETURN(static void raise_argument_error(rb_thread_t *th, const rb_iseq_t *iseq, const VALUE exc));
-NORETURN(static void argument_arity_error(rb_thread_t *th, const rb_iseq_t *iseq, const int miss_argc, const int min_argc, const int max_argc));
 NORETURN(static void argument_kw_error(rb_thread_t *th, const rb_iseq_t *iseq, const char *error, const VALUE keys));
 VALUE rb_keyword_error_new(const char *error, VALUE keys); /* class.c */
 
@@ -552,7 +556,7 @@ setup_parameters_complex(rb_thread_t * const th, const rb_iseq_t * const iseq,
     args->argv = locals;
 
     if (ci->flag & VM_CALL_KWARG) {
-	args->kw_arg = ((struct rb_call_info_with_kwarg *)ci)->kw_arg;
+	args->kw_arg = ((struct rb_call_data_with_kwarg *)ci)->kw_arg;
 
 	if (iseq->body->param.flags.has_kw) {
 	    int kw_len = args->kw_arg->keyword_len;
@@ -722,7 +726,7 @@ raise_argument_error(rb_thread_t *th, const rb_iseq_t *iseq, const VALUE exc)
     rb_exc_raise(exc);
 }
 
-static void
+void
 argument_arity_error(rb_thread_t *th, const rb_iseq_t *iseq, const int miss_argc, const int min_argc, const int max_argc)
 {
     raise_argument_error(th, iseq, rb_arity_error_new(miss_argc, min_argc, max_argc));
@@ -759,9 +763,9 @@ vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calli
 static inline void
 vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci)
 {
-    struct rb_call_info_with_kwarg *ci_kw = (struct rb_call_info_with_kwarg *)ci;
-    const VALUE *const passed_keywords = ci_kw->kw_arg->keywords;
-    const int kw_len = ci_kw->kw_arg->keyword_len;
+    struct rb_call_info_kw_arg *kw_arg = ((struct rb_call_data_with_kwarg *)ci)->kw_arg;
+    const VALUE *const passed_keywords = kw_arg->keywords;
+    const int kw_len = kw_arg->keyword_len;
     const VALUE h = rb_hash_new();
     VALUE *sp = cfp->sp;
     int i;
@@ -814,12 +818,13 @@ refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
     return vm_call0(GET_THREAD(), obj, mid, argc, argv, me);
 }
 
-static void
+RUBY_SYMBOL_EXPORT_BEGIN
+void
 vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
 			  struct rb_calling_info *calling, const struct rb_call_info *ci, rb_iseq_t *blockiseq, const int is_super)
 {
     if (ci->flag & VM_CALL_ARGS_BLOCKARG) {
-	VALUE block_code = *(--reg_cfp->sp);
+        VALUE block_code = *(--reg_cfp->sp);
 
 	if (NIL_P(block_code)) {
 	    calling->block_handler = VM_BLOCK_HANDLER_NONE;
@@ -858,6 +863,9 @@ vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
 	}
     }
 }
+RUBY_SYMBOL_EXPORT_END
+
+#endif /* #ifndef MJIT_HEADER */
 
 #define IS_ARGS_SPLAT(ci)   ((ci)->flag & VM_CALL_ARGS_SPLAT)
 #define IS_ARGS_KEYWORD(ci) ((ci)->flag & VM_CALL_KWARG)

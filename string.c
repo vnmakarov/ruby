@@ -2774,6 +2774,7 @@ rb_str_append(VALUE str, VALUE str2)
     return rb_str_buf_append(str, str2);
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_str_concat_literals(size_t num, const VALUE *strary)
 {
@@ -2796,6 +2797,7 @@ rb_str_concat_literals(size_t num, const VALUE *strary)
     }
     return str;
 }
+RUBY_SYMBOL_EXPORT_END
 
 /*
  *  call-seq:
@@ -9589,11 +9591,13 @@ rb_str_quote_unprintable(VALUE str)
     return str;
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_id_quote_unprintable(ID id)
 {
     return rb_str_quote_unprintable(rb_id2str(id));
 }
+RUBY_SYMBOL_EXPORT_END
 
 /*
  *  call-seq:

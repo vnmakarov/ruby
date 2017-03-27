@@ -68,7 +68,7 @@ debugflags = @debugflags@
 warnflags = @warnflags@ @strict_warnflags@
 cppflags = @cppflags@
 XCFLAGS = @XCFLAGS@
-CPPFLAGS = @CPPFLAGS@ $(INCFLAGS)
+CPPFLAGS = @CPPFLAGS@ $(INCFLAGS) -DBUILD_DIR=\""$(PWD)"\" -DDEST_INCDIR=\""$(prefix)/include/$(RUBY_BASE_NAME)-$(ruby_version)/$(arch)"\"
 LDFLAGS = @STATIC@ $(CFLAGS) @LDFLAGS@
 EXTLDFLAGS = @EXTLDFLAGS@
 XLDFLAGS = @XLDFLAGS@ $(EXTLDFLAGS)
@@ -276,6 +276,7 @@ install-cross: $(arch)-fake.rb $(RBCONFIG) rbconfig.rb $(arch_hdrdir)/ruby/confi
 	$(INSTALL_SCRIPT) fake-rbconfig.rb $(XRUBY_RUBYLIBDIR)/$(arch)/rbconfig.rb
 	@$(RM) fake.rb fake-rbconfig.rb
 	$(INSTALL_DATA) $(arch_hdrdir)/ruby/config.h $(XRUBY_RUBYHDRDIR)/$(arch)/ruby
+	$(INSTALL_DATA) rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h $(XRUBY_RUBYHDRDIR)/$(arch)/ruby
 	$(INSTALL_DATA) $(top_srcdir)/include/ruby/win32.h $(XRUBY_RUBYHDRDIR)/ruby
 	$(INSTALL_DATA) $(LIBRUBY) $(LIBRUBY_A) $(XRUBY_RUBYLIBDIR)/$(arch)
 	$(INSTALL_PROGRAM) $(LIBRUBY_SO) $(XRUBY_RUBYLIBDIR)/$(arch)
@@ -411,6 +412,7 @@ distclean-local::
 	$(Q)$(RM) ext/config.cache $(RBCONFIG) Doxyfile
 	-$(Q)$(RM) run.gdb
 	-$(Q)$(RM) $(INSTALLED_LIST) $(arch_hdrdir)/ruby/config.h verconf.h
+	-$(Q)$(RM) $(arch_hdrdir)/ruby/rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h
 	-$(Q)$(RMDIRS) $(arch_hdrdir)/ruby 2> /dev/null || true
 
 clean-ext distclean-ext realclean-ext::
@@ -533,6 +535,7 @@ INSNS	= opt_sc.inc optinsn.inc optunifs.inc insns.inc insns_info.inc \
 
 $(INSNS): $(srcdir)/insns.def vm_opts.h \
 	  $(srcdir)/defs/opt_operand.def $(srcdir)/defs/opt_insn_unif.def \
+          $(srcdir)/rtl_exec.c \
 	  $(srcdir)/tool/instruction.rb $(srcdir)/tool/insns2vm.rb
 	$(ECHO) generating $@
 	$(Q) $(BASERUBY) -Ku $(srcdir)/tool/insns2vm.rb $(INSNS2VMOPT) $@

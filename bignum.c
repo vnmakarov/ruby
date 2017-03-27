@@ -4462,6 +4462,7 @@ rb_uint128t2big(uint128_t n)
     return big;
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_int128t2big(int128_t n)
 {
@@ -4482,6 +4483,8 @@ rb_int128t2big(int128_t n)
     }
     return big;
 }
+RUBY_SYMBOL_EXPORT_END
+
 #endif
 
 VALUE

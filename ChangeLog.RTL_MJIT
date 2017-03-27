@@ -1,0 +1,282 @@
+2017-03-27  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* bignum.c (rb_int128t2big): Add visibility.
+	* class.c (rb_class_inherited): Ditto.
+	* common.mk: Update dependencies.
+	(COMMONOBJS): Add mjit.o.
+	(install-rb-mjit-header): New entry.  Add to install dependencies.
+	(realclean-local): Remove rb_mjit_header.h and
+	rb_mjit_min_header-XXX.h.
+	(incs): Add rb_mjit_min_header-XXX.h.
+	(rb_mjit_header.h, rb_mjit_min_header-XXX.h): New entry.
+	* compile.c (USE_INSN_STACK_INCREASE):
+	(mjit.h): Include.
+	(struct iseq_link_element): Remove ISEQ_ELEMENT_ADJUST.
+	(struct iseq_adjust_data): Remove.
+	(USE_SELF_LD, INT2LINT, LINT2INT, FIXNUM2LINT): New.
+	(INSERT_BEFORE_INSN, INSERT_BEFORE_INSN1, ADD_GETLOCAL): Remove.
+	(ADD_SETLOCAL, ADD_ADJUST, ADD_ADJUST_RESTORE): Remove.
+	(ADD_RTL_GOTO, ADD_RTL_INSNL, ADD_INSN4, ADD_INSN5, ADD_INSN6): New.
+	(ADD_INSN7, ADD_RTL_CALL_RECEIVER, ADD_RTL_SEND_R): New.
+	(ADD_RTL_SEND_RECV, ADD_RTL_VMCORE_SEND): New.
+	(COMPILE, COMPILE_POPPED, COMPILE_, COMPILE_RECV): Add args res
+	and curr_temp_vars.
+	(IS_ADJUST): Remove.
+	(iseq_compile_each, iseq_set_arguments): Add args result and
+	curr_temp_vars.
+	(INSERT_ELEM_AFTER, increment_temps_var, get_temp_stack_slot):
+	New.
+	(stack_result, anywhere_result, setup_result_var_number): New.
+	(prev_used_label_p): New.
+	(rb_iseq_compile_node, rb_iseq_translate_threaded_code): Rewrite
+	for RTL.
+	(rb_iseq_original_iseq): Ditto.
+	(rb_vm_insn_addr2insn): Move to iseq.c.
+	(compile_data_alloc_adjust, INSERT_ELEM_NEXT, INSERT_ELEM_PREV):
+	Remove.
+	(LAST_ELEMENT, LIST_SIZE_ZERO, INSERT_LIST, new_adjust_body):
+	Remove.
+	(new_insn_core): Initiate check.
+	(new_local_move, new_calldata): New.
+	(new_callinfo): Remove.
+	(new_rtl_insn_send, new_rtl_insn_send_recv, new_rtl_vmcore_send):
+	New.
+	(new_insn_send): Remove.
+	(new_child_iseq): Remove const for arg parent.
+	(iseq_setup): Call mjit_aot_process.
+	(get_local_var_idx): Return decrease idx.
+	(get_dyna_var_idx): Ditto.  Remove cosnt for arg iseq.  Add arg
+	id_iseq.
+	(iseq_set_arguments_keywords, iseq_set_arguments): Add new args
+	result and curr_temp_vars_num.  Rewrite for RTL.
+	(iseq_set_sequence): Rewrite for RTL.
+	(iseq_set_exception_table): Ditto.
+	(destination_offset): New.
+	(get_destination_insn, replace_destination): Rewrite.
+	(remove_unreachable_chunk): Rewrite.
+	(get_branch_reverse_id, branch_insn_p, combined_branch_p): New.
+	(get_combined_branch_id, peephole_pass): New.
+	(iseq_peephole_optimize): Rewrite for RTL.
+	(insn_set_specialized_instruction): Remove.
+	(iseq_specialized_instruction, insn_set_sc_state): Rewrite for RTL
+	insns.
+	(new_value_load, add_value_load, add_local_move): New.
+	(compile_dstr_fragments, compile_dstr, compile_dregx): Add new
+	args result and curr_temp_vars_num.  Rewrite for RTL.
+	(compile_flip_flop, compile_branch_condition): Ditto.
+	(compile_array_keyword_arg): Ditto.
+	(new_ret_to, add_ret_to): New.
+	(compile_array_, compile_array, when_vals, compile_massign_lhs):
+	Add new args result and curr_temp_vars_num.  Rewrite for RTL
+	insns.
+	(compile_massign_opt_lhs, compile_massign_opt): Ditto.
+	(adjust_stack): Remove.
+	(compile_massign, compile_colon2, compile_cpath, defined_expr0):
+	Add new args result and curr_temp_vars_num.  Rewrite for RTL
+	insns.
+	(defined_expr, add_ensure_iseq, setup_args): Ditto.
+	(has_keyword_args_p): New.
+	(build_postexe_iseq): Rewrite for RTL.
+	(compile_named_capture_assign): Ditto.  Add arg
+	curr_temp_vars_num.
+	(get_opt_id, make_imm_id, gen_op2, finish_op1_assign): New.
+	(joint_result, update_result, cdhash_increase_label_refcnt): New.
+	(iseq_compile_each): Add new args result and curr_temp_vars_num.
+	Rewrite for RTL.
+	(calc_sp_depth): Remove.
+	(opobj_inspect): Rewrite for RTL insn.
+	(iseq_build_callinfo_from_hash): Rename to
+	iseq_build_calldata_from_hash.  Rewrite.
+	(rb_iseq_build_from_ary, rb_iseq_build_from_ary_body): Rewrite for
+	RTL.
+	(for_self_aref, for_self_arset): Rewrite for RTL.
+	(ibf_dump_callinfo): Ditto.  Rename to ibf_dump_calldata.
+	(ibf_dump_code, ibf_load_code): Modify.
+	(ibf_dump_local_table): Decrease size.
+	(ibf_dump_ci_entries): Rename to ibf_dump_cd_entries.  Rewrite.
+	(ibf_load_ci_entries): Rename to ibf_load_cd_entries.  Rewrite.
+	(ibf_dump_iseq_each): Modify.
+	(ibf_load_iseq_each): Ditto.
+	* cont.c (cont_capture): Modify vm_stack_slen calculation.
+	* opt_operand.def: Make it empty.
+	* eval.c (mjit.h): Include.
+	(ruby_cleanup): Call mjit_finish.
+	* ext/rubyvm/lib/forwardable/impl.rb: Modify for RTL.
+	* hash.c (rb_hash_compare_by_id_p): Add visibility.
+	* insns.def: Rewrite.
+	* internal.h (do_inline): New.
+	(rb_float_flonum_value, rb_float_noflonum_value): Use it instead
+	of inline.
+	(rb_float_value_inline, rb_float_new_inline, rb_obj_builtin_type):
+	Ditto.
+	* iseq.c (mjit.h): Include.
+	(rb_iseq_free): Remove const from arg iseq.  Call mjit_free_iseq.
+	Modify for calldata use.
+	(iseq_memsize): Modify for calldata use.
+	(set_relation): Remove const from arg piseq.
+	(prepare_iseq_build): Remove const from arg parent.
+	(rb_iseq_new, rb_iseq_new_top, rb_iseq_new_main): Ditto.
+	(iseq_load): Ditto.
+	(rb_iseq_new_with_opt): Ditto.
+	(rb_insn_operand_intern): Rewrite for RTL and call data.
+	(rb_vm_insn_addr2insn): Move from compile.c.
+	(iseq_data_to_ary): Rewrite for RTL.
+	* iseq.h (struct iseq_compile_data): Add fields cd_index,
+	cd_kw_index, result.  Remove ci_index and ci_kw_index.
+	* Makefile.in (install-cross, distclean-local): Process
+	rb_mjit_min_header-XXX.h.
+	($(INSNS)): Add rtl_exec.c as a dependence.
+	* mjit.h: New.
+	* mjit.c: New.
+	* numeric.c (ruby_float_mod): Add visibility.
+	* object.c (rb_obj_equal, rb_obj_not): Ditto.
+	* README.md: Rewrite.
+	* re.c (rb_reg_new_ary): Add visibility.
+	* rtl_exec.c: New.
+	* ruby.c (mjit.h): Include.
+	(struct ruby_cmdline_options): Change type for field mjit.
+	(usage): Print JIT options.
+	(setup_mjit_options): New.
+	(proc_options): Use it to process jit options.  Call mjit_init.
+	* string.c (rb_str_concat_literals, rb_id_quote_unprintable): Add
+	visibility.
+	* test/ruby/test_iseq.rb (test_safe_call_chain): Modify for RTL.
+	* test/ruby/test_optimization.rb: Ditto.
+	* test/ruby/test_rubyoptions.rb (test_usage): Ditto.
+	* test/ruby/test_settracefunc.rb (TestSetTraceFunc): Ditto.
+	* thread.c (hreadptr_get_interrupts): Add visibility.
+	* tool/instruction.rb (RubyVM::initialize): Add arg alt_names.
+	(RubyVM): Add reader for alt_names.
+	(sp_increase_c_expr): Add CALL_DATA processing.
+	(make_insn): Add arg alt_names.
+	(): Process "_" and "<type> _".
+	(add_insn, make_insn_operand_optimized): Pass alt_names.
+	(make_unified): Modify for new insn format.
+	(make_unified_insn_each, make_insn_sc): Pass alt_names to a new
+	instruction.
+	(make_header_operands): Process "_" type.
+	(make_header_analysis): Ignore "_" for COLLECT_USAGE_OPERAND
+	generation.
+	(make_header_defines): Generate CURRENT_INSN_NAME and
+	CURRENT_INSN_XXX.
+	(make_footer_undefs): Undefine them.
+	(op2typesig): Process insn_t, sindex_t, rindex_t, CALL_DATA, and
+	"_".
+	(TYPE_CHARS): Add TS_INSN, TS_SIDNEX, TS_RINDEX.
+	(val_as_type): Process sindex_t and rindex_t.
+	* tool//minimize_mjit_header.rb: New.
+	* variable.c (rb_gvar_get, rb_gvar_set, rb_autoloading_value)
+	(rb_const_warn_if_deprecated, rb_public_const_get_from)
+	(rb_public_const_get_at, rb_public_const_defined_from)
+	(rb_const_lookup): Add visibility.
+	* vm_args.c: Use MJIT_HEADER to exclude declarations for MJIT.
+	(argument_arity_error): Make external.
+	(setup_parameters_complex): Use rb_call_data_with_kwarg.
+	(vm_caller_setup_arg_kw): Use new call info format.
+	(vm_caller_setup_arg_block): Make extern and add visibility.
+	* vm.c: Use MJIT_HEADER to exclude declarations for
+	MJIT.
+	(VM_EP_LEP, rb_vm_search_cf_from_ep): Use do_inline.
+	(USE_INSN_STACK_INCREASE): New.
+	(VM_CFP_IN_HEAP_P, VM_EP_IN_HEAP_P): Use inline.
+	(vm_ep_in_heap_p_, rb_vm_ep_in_heap_p): Use static inline.
+	(VM_CAPTURED_BLOCK_TO_CFP): Use inline.
+	(VM_BH_FROM_CFP_P,vm_passed_block_handler): Use inline.
+	(vm_cref_new0, vm_cref_new, vm_cref_new_use_prev, vm_cref_dup):
+	Ditto.
+	(vm_cref_new_toplevel, vm_cref_dump): Make external.
+	(vm_bind_update_env): Use inline.
+	(VM_INSN_STAT): New.
+	(constant.h, mjit.h, insn_inc, rtl_exec.c): Include.
+	(ruby_vm_global_method_state, ruby_vm_global_constant_state): Make
+	external.  Add visibility.
+	(ruby_vm_class_serial): Make external.
+	(ruby_vm_const_missing_count, ruby_current_vm): Add visibility.
+	(ruby_vm_event_flags): Ditto.
+	(vm_make_env_object, vm_invoke_proc, vm_invoke_bmethod): Make
+	external.
+	(rb_binding_add_dynavars): Remove const for base_iseq.
+	(rb_source_loc): Add visibility.
+	(vm_exec): Ditto.  Add visibility.  Modify to use JIT.
+	(all_executed_insns_num, all_executed_insns_len): New.
+	(rb_iseq_eval_main): Print their value.
+	(rb_thread_mark): Modify for RTL.
+	(Init_VM): Remove const for iseq.
+	* vm_core.h (lindex_t): Move from vm_exec.h.
+	(struct call_data): New.
+	(struct rb_call_data_with_kwarg): New.
+	(struct rb_iseq_constant_body): Add fields temp_vars_num,
+	cd_entries, cd_size, cd_kw_size, nonlocal_var_p, jit_code,
+	batch_iseq, jit_mutations_num.  Remove fields ci_entries,
+	cc_entries, ci_size, ci_kw_size.  Remove const from parent_iseq.
+	(struct rb_captured_block): Add field bp.  Remove const for iseq.
+	(struct rb_control_frame_struct): Remove const from pc and
+	iseq.  Add bp.
+	(rb_iseq_new, rb_iseq_new_top, rb_iseq_new_main): Remove const
+	from parent.
+	(rb_iseq_new_with_opt): Ditto.
+	(rb_env_t): Remove const form iseq.
+	(CALL_DATA): New.
+	(vm_env_write_slowpath): Add extern.
+	(vm_block_iseq, vm_proc_iseq): Remove const from return type.
+	* vm_dump.c (vm_stack_dump_each): Use local_size instead of
+	local_table_size.
+	(rb_vmdebug_debug_print_pre): Use stderr.
+	* vm_eval.c (vm_exec): Remove forward decl.
+	(make_no_method_exception): Make external.
+	* vm_exec.c (vm_exec_core): Switch off DECL_SG_REG for x86_64.
+	Remove register from the reg_cfp declaration.
+	(rb_vm_get_insns_address_table): Add visibility.
+	* vm_exec.h (lindex_t): Move to vm_core.h.
+	(insn_t, sindex_t, rindex_t): New.
+	(DEBUG_ENTER_INSN): Use getenv and increase SP temporarily.
+	(END_INSN): Update all_executed_insns_num and
+	all_executed_insns_len.
+	* vm_insnhelper.c: Remove insns.inc and constant.h inclusion.  Use
+	MJIT_HEADER to exclude declarations for MJIT.
+	(vm_stackoverflow): Make external.  Add visibility.
+	(vm_check_frame): Make external.
+	(vm_push_frame): Use do_inline.  Set up bp.
+	(vm_pop_frame): Use do_inline.
+	(vm_env_write_slowpath): Make external.  Add visibility.
+	(vm_env_write): Use do_inline.
+	(lep_svar_get): Make external.  Add visibility.
+	(lep_svar_set): Make external.
+	(rb_vm_get_cref, vm_get_const_key_cref, vm_cref_push): Make
+	external.  Add visibility.
+	(vm_get_cbase, vm_get_const_base, vm_check_if_namespace): Use
+	do_inline.
+	(vm_ensure_not_refinement_module, vm_get_iclass): Ditto.
+	(vm_search_const_defined_class): Make external.  Add visibility.
+	(vm_getivar, vm_setivar, vm_getinstancevariable): Use do_inline.
+	(vm_setinstancevariable): Ditto.
+	(vm_throw): Make external.  Add visibility.
+	(vm_expandarray, vm_search_method, check_cfunc): Use do_inline.
+	(check_match): Make external.  Add visibility.
+	(double_cmp_lt, double_cmp_le, double_cmp_gt, double_cmp_ge): Use
+	do_inline.
+	(vm_call_opt_send): Moddify to use call data.
+	(vm_call_general, vm_search_super_method, vm_invoke_block): Make
+	external.  Add visibility.
+	(vm_make_proc_with_iseq): Remove const from block_iseq.
+	(vm_once_exec, vm_once_clear, vm_defined): Make external.  Add
+	visibility.
+	* vm_insnhelper.h (COLLECT_USAGE_INSN): Make variant for
+	MJIT_INSN_STATISTICS.
+	(VM_REG_BP, GET_BP): New.
+	(CALL_METHOD): Modify to use call data.  Call set_default_sp.  Put
+	result at call_start.
+	(CALL_SIMPLE_METHOD): Remove.
+	(THROW_DATA_NEW, THROW_DATA_CATCH_FRAME_SET): Use do_inline.
+	(THROW_DATA_STATE_SET): Ditto.
+	(THROW_DATA_VAL, THROW_DATA_CATCH_FRAME): Ditto.
+	(rb_vm_get_cref, lep_svar_get, lep_svar_set, vm_defined): New externs.
+	(vm_invoke_block, vm_search_super_method, check_match, vm_throw):
+	Ditto.
+	(vm_search_const_defined_class, vm_check_frame, vm_stackoverflow):
+	Ditto.
+	(vm_cref_push, vm_once_exec, vm_once_clear, vm_exec): Ditto.
+	(vm_change_insn): New.
+	* vm_method.c (rb_callable_method_entry): Add visibility.
+	* vm_trace.c (rb_threadptr_exec_event_hooks_and_pop_frame): Ditto.
+	(rb_threadptr_exec_event_hooks): Ditto.

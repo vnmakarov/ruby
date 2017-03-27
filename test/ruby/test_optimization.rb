@@ -447,7 +447,7 @@ EOS
       0xffffffffffffffff => :big,
     }
     iseq = RubyVM::InstructionSequence.compile(code)
-    assert_match %r{\bopt_case_dispatch\b}, iseq.disasm
+    assert_match %r{\bcase_dispatch\b}, iseq.disasm
     check.each do |foo, expect|
       assert_equal expect, eval("foo = #{foo.inspect}\n#{code}")
     end

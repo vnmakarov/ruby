@@ -829,13 +829,15 @@ prepare_callable_method_entry(VALUE defined_class, ID id, const rb_method_entry_
     return cme;
 }
 
-const rb_callable_method_entry_t *
+RUBY_SYMBOL_EXPORT_BEGIN
+const rb_callable_method_entry_t  *
 rb_callable_method_entry(VALUE klass, ID id)
 {
     VALUE defined_class;
     rb_method_entry_t *me = method_entry_get(klass, id, &defined_class);
     return prepare_callable_method_entry(defined_class, id, me);
 }
+RUBY_SYMBOL_EXPORT_END
 
 static const rb_method_entry_t *resolve_refined_method(VALUE refinements, const rb_method_entry_t *me, VALUE *defined_class_ptr);
 

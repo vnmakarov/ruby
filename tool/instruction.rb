@@ -10,7 +10,7 @@ require 'vpath'
 
 class RubyVM
   class Instruction
-    def initialize name, opes, pops, rets, comm, body, tvars, sp_inc,
+    def initialize name, opes, pops, rets, comm, body, tvars, sp_inc, alt_names,
                    orig = self, defopes = [], type = nil,
                    nsc = [], psc = [[], []]
 
@@ -33,6 +33,7 @@ class RubyVM
       @optimized = []
       @is_sc  = false
       @sp_inc = sp_inc
+      @alt_names = alt_names
     end
 
     def add_sc sci
@@ -48,7 +49,7 @@ class RubyVM
     attr_reader :unifs, :optimized
     attr_reader :is_sc
     attr_reader :tvars
-    attr_reader :sp_inc
+    attr_reader :sp_inc, :alt_names
 
     def set_sc
       @is_sc = true
@@ -75,6 +76,8 @@ class RubyVM
             ret << "        int #{v} = FIX2INT(opes[#{i}]);\n"
           elsif (t == 'CALL_INFO' && ((re = /\b#{v}\b/n) =~ @sp_inc))
             ret << "        CALL_INFO #{v} = (CALL_INFO)(opes[#{i}]);\n"
+          elsif (t == 'CALL_DATA' && ((re = /\b#{v}\b/n) =~ @sp_inc))
+            ret << "        CALL_DATA #{v} = (CALL_DATA)(opes[#{i}]);\n"
           end
         }
 
@@ -168,8 +171,8 @@ class RubyVM
       @insn_map[insn.name] = insn
     end
 
-    def make_insn name, opes, pops, rets, comm, body, sp_inc
-      add_insn Instruction.new(name, opes, pops, rets, comm, body, [], sp_inc)
+    def make_insn name, opes, pops, rets, comm, body, sp_inc, alt_names
+      add_insn Instruction.new(name, opes, pops, rets, comm, body, [], sp_inc, alt_names)
     end
 
     # str -> [[type, var], ...]
@@ -182,6 +185,11 @@ class RubyVM
           var  = $2
         elsif /\s*\.\.\.\s*/ =~ v
           type = var  = '...'
+        elsif /\s*(\S+)\s+_\s*/ =~ v
+          type = $1
+          var  = '_'
+        elsif /\s*_\s*/ =~ v
+          type = var  = '_'
         else
           raise
         end
@@ -253,7 +261,7 @@ class RubyVM
 
             # start instruction body
           when /^DEFINE_INSN$/
-            insn = f.gets.chomp
+            insn = f.gets.chomp.split
             opes = parse_vars(f.gets.chomp)
             pops = parse_vars(f.gets.chomp).reverse
             rets_str = f.gets.chomp
@@ -272,7 +280,9 @@ class RubyVM
             if insn_in
               body.instance_variable_set(:@line_no, line_no)
               body.instance_variable_set(:@file, f.path)
-              insn = make_insn(insn, opes, pops, rets, comment, body, sp_inc)
+              insn.each do |insn_name|
+                make_insn(insn_name, opes, pops, rets, comment, body, sp_inc, insn)
+              end
               insn_in = false
               comment = ''
             end
@@ -332,7 +342,7 @@ class RubyVM
       comm[:c] = 'optimize'
       add_insn insn = Instruction.new(
         name, opes, orig_insn.pops, orig_insn.rets, comm,
-        orig_insn.body, orig_insn.tvars, orig_insn.sp_inc,
+        orig_insn.body, orig_insn.tvars, orig_insn.sp_inc, orig_insn.alt_names,
         orig_insn, defopes)
       orig_insn.add_optimized insn
     end
@@ -412,6 +422,12 @@ class RubyVM
     end
 
     def make_unified_insn_each insns
+      insns.each do |insn|
+        if insn.alt_names.length > 1
+          raise "we can not make unification of #{insn.name} with non-separate definition"
+        end
+      end
+      
       names = []
       opes = []
       pops = []
@@ -455,7 +471,6 @@ class RubyVM
         rets.concat e_rets
         defopes.concat e_defs
         sp_inc << "#{insn.sp_inc}"
-
         body << "{ /* unif: #{i} */\n" +
                 passed_vars.map{|rpvars|
                   pv = rpvars[0]
@@ -494,9 +509,10 @@ class RubyVM
           tvars_ary << tvar
         end
       }
-      add_insn insn = Instruction.new("UNIFIED_" + names.join('_'),
-                                   opes, pops, rets.reverse, comm, body,
-                                   tvars_ary, sp_inc)
+      insn_name = "UNIFIED_" + names.join('_')
+      add_insn insn = Instruction.new(insn_name,
+                                      opes, pops, rets.reverse, comm, body,
+                                      tvars_ary, sp_inc, [insn_name])
       insn.defopes.replace defopes
       insns[0].add_unif [insn, insns]
     end
@@ -539,7 +555,7 @@ class RubyVM
 
       scinsn = Instruction.new(
         name, opes, pops, rets, comm,
-        orig_insn.body, orig_insn.tvars, orig_insn.sp_inc,
+        orig_insn.body, orig_insn.tvars, orig_insn.sp_inc, orig_insn.alt_names,
         orig_insn, orig_insn.defopes, :sc, nextsc, pushs)
 
       add_insn scinsn
@@ -720,6 +736,11 @@ class RubyVM
           break
         end
 
+        if type == '_'
+          n += 1
+          next
+        end
+
         # skip make operands when body has no reference to this operand
         # TODO: really needed?
         re = /\b#{var}\b/n
@@ -727,7 +748,7 @@ class RubyVM
           ops << "  #{type} #{var} = (#{type})GET_OPERAND(#{i+1});"
         end
 
-        n   += 1
+        n += 1
       }
       @opn = n
 
@@ -810,7 +831,7 @@ class RubyVM
     def make_header_analysis insn
       commit "  COLLECT_USAGE_INSN(BIN(#{insn.name}));"
       insn.opes.each_with_index{|op, i|
-        commit "  COLLECT_USAGE_OPERAND(BIN(#{insn.name}), #{i}, #{op[1]});"
+        commit "  COLLECT_USAGE_OPERAND(BIN(#{insn.name}), #{i}, #{op[1]});" if op[1] != '_'
       }
     end
 
@@ -830,7 +851,11 @@ class RubyVM
     end
 
     def make_header_defines insn
+      commit  "  #define CURRENT_INSN_NAME #{insn.name}"
       commit  "  #define CURRENT_INSN_#{insn.name} 1"
+      insn.alt_names.each do |name|
+        commit  "  #define CURRENT_INSN_#{name} 0" if name != insn.name
+      end
       commit  "  #define INSN_IS_SC()     #{insn.sc ? 0 : 1}"
       commit  "  #define INSN_LABEL(lab)  LABEL_#{insn.name}_##lab"
       commit  "  #define LABEL_IS_SC(lab) LABEL_##lab##_###{insn.sc.size == 0 ? 't' : 'f'}"
@@ -861,7 +886,10 @@ class RubyVM
     end
 
     def make_footer_undefs insn
-      commit "#undef CURRENT_INSN_#{insn.name}"
+      commit "#undef CURRENT_INSN_NAME"
+      insn.alt_names.each do |name|
+        commit "#undef CURRENT_INSN_#{name}"
+      end
       commit "#undef INSN_IS_SC"
       commit "#undef INSN_LABEL"
       commit "#undef LABEL_IS_SC"
@@ -941,12 +969,18 @@ class RubyVM
 
     def op2typesig op
       case op
+      when /^insn_t/
+        "TS_INSN"
       when /^OFFSET/
         "TS_OFFSET"
       when /^rb_num_t/
         "TS_NUM"
       when /^lindex_t/
         "TS_LINDEX"
+      when /^sindex_t/
+        "TS_SINDEX"
+      when /^rindex_t/
+        "TS_RINDEX"
       when /^VALUE/
         "TS_VALUE"
       when /^ID/
@@ -959,6 +993,10 @@ class RubyVM
         "TS_CALLINFO"
       when /^CALL_CACHE/
         "TS_CALLCACHE"
+      when /^CALL_DATA/
+        "TS_CALLDATA"
+      when /^_/
+        "TS_VARIABLE"
       when /^\.\.\./
         "TS_VARIABLE"
       when /^CDHASH/
@@ -975,13 +1013,17 @@ class RubyVM
     TYPE_CHARS = {
       'TS_OFFSET'    => 'O',
       'TS_NUM'       => 'N',
+      'TS_INSN'      => 'A',
       'TS_LINDEX'    => 'L',
+      'TS_SINDEX'    => 's',
+      'TS_RINDEX'    => 'R',
       'TS_VALUE'     => 'V',
       'TS_ID'        => 'I',
       'TS_GENTRY'    => 'G',
       'TS_IC'        => 'K',
       'TS_CALLINFO'  => 'C',
       'TS_CALLCACHE' => 'E',
+      'TS_CALLDATA'  => 'D',
       'TS_CDHASH'    => 'H',
       'TS_ISEQ'      => 'S',
       'TS_VARIABLE'  => '.',
@@ -1084,7 +1126,7 @@ class RubyVM
       val  = op[1]
 
       case type
-      when /^long/, /^rb_num_t/, /^lindex_t/
+      when /^long/, /^rb_num_t/, /^lindex_t/, /^sindex_t/, /^rindex_t/
         "INT2FIX(#{val})"
       when /^VALUE/
         val

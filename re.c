@@ -2820,11 +2820,13 @@ rb_reg_init_str_enc(VALUE re, VALUE s, rb_encoding *enc, int options)
     return re;
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_reg_new_ary(VALUE ary, int opt)
 {
     return rb_reg_new_str(rb_reg_preprocess_dregexp(ary, opt), opt);
 }
+RUBY_SYMBOL_EXPORT_END
 
 VALUE
 rb_enc_reg_new(const char *s, long len, rb_encoding *enc, int options)

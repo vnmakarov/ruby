@@ -89,6 +89,7 @@ COMMONOBJS    = array.$(OBJEXT) \
 		inits.$(OBJEXT) \
 		io.$(OBJEXT) \
 		iseq.$(OBJEXT) \
+		mjit.$(OBJEXT) \
 		load.$(OBJEXT) \
 		marshal.$(OBJEXT) \
 		math.$(OBJEXT) \
@@ -266,7 +267,11 @@ ruby.imp: $(COMMONOBJS)
 	awk 'BEGIN{print "#!"}; $$2~/^[BDT]$$/&&$$1!~/^(Init_|ruby_static_id_|.*_threadptr_|\.)/{print $$1}' | \
 	sort -u -o $@
 
-install: install-$(INSTALLDOC)
+install: install-rb-mjit-header install-$(INSTALLDOC)
+
+install-rb-mjit-header: rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h
+	$(Q)$(INSTALL_DATA) rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h $(arch_hdrdir)
+
 docs: $(DOCTARGETS)
 pkgconfig-data: $(ruby_pc)
 $(ruby_pc): $(srcdir)/template/ruby.pc.in config.status
@@ -532,7 +537,7 @@ distclean-platform: clean-platform
 realclean:: realclean-ext realclean-local realclean-enc realclean-golf realclean-extout
 realclean-local:: distclean-local
 	$(Q)$(RM) parse.c parse.h lex.c enc/trans/newline.c revision.h
-	$(Q)$(RM) id.c id.h probes.dmyh
+	$(Q)$(RM) id.c id.h probes.dmyh rb_mjit_header.h rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h
 	$(Q)$(CHDIR) $(srcdir) && $(exec) $(RM) parse.c parse.h lex.c enc/trans/newline.c $(PRELUDES) revision.h
 	$(Q)$(CHDIR) $(srcdir) && $(exec) $(RM) id.c id.h probes.dmyh
 	$(Q)$(CHDIR) $(srcdir) && $(exec) $(RM) configure aclocal.m4 tool/config.guess tool/config.sub gems/*.gem
@@ -829,7 +834,7 @@ srcs-enc: $(ENC_MK)
 all-incs: incs {$(VPATH)}encdb.h {$(VPATH)}transdb.h
 incs: $(INSNS) {$(VPATH)}node_name.inc {$(VPATH)}known_errors.inc \
       {$(VPATH)}vm_call_iseq_optimized.inc $(srcdir)/revision.h \
-      $(REVISION_H) \
+      $(REVISION_H) {$(VPATH)}rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h\
       $(UNICODE_DATA_HEADERS) $(srcdir)/enc/jis/props.h \
       {$(VPATH)}id.h {$(VPATH)}probes.dmyh
 
@@ -866,6 +871,16 @@ known_errors.inc: $(srcdir)/template/known_errors.inc.tmpl $(srcdir)/defs/known_
 vm_call_iseq_optimized.inc: $(srcdir)/tool/mk_call_iseq_optimized.rb
 	$(ECHO) generating $@
 	$(Q) $(BASERUBY) $(srcdir)/tool/mk_call_iseq_optimized.rb > $@
+
+# Build miniruby first to check errors:
+rb_mjit_header.h: miniruby$(EXEEXT) PHONY probes.h
+	@$(ECHO) building $@
+	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -DMJIT_HEADER $(srcdir)/vm.c $(COUTFLAG) $@.new -E
+	@cmp $@.new $@ > /dev/null 2>&1 && echo $@ unchanged && rm $@.new && exit 0; mv $@.new $@
+	
+rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h: rb_mjit_header.h
+	@$(ECHO) building $@
+	$(Q)$(exec) egrep -v '^#|^$$' rb_mjit_header.h | $(BASERUBY) $(srcdir)/tool/minimize_mjit_header.rb $(CC) > $@
 
 $(MINIPRELUDE_C): $(COMPILE_PRELUDE)
 	$(ECHO) generating $@
@@ -1304,6 +1319,7 @@ compile.$(OBJEXT): {$(VPATH)}intern.h
 compile.$(OBJEXT): {$(VPATH)}internal.h
 compile.$(OBJEXT): {$(VPATH)}io.h
 compile.$(OBJEXT): {$(VPATH)}iseq.h
+compile.$(OBJEXT): {$(VPATH)}mjit.h
 compile.$(OBJEXT): {$(VPATH)}method.h
 compile.$(OBJEXT): {$(VPATH)}missing.h
 compile.$(OBJEXT): {$(VPATH)}node.h
@@ -1572,6 +1588,7 @@ eval.$(OBJEXT): {$(VPATH)}intern.h
 eval.$(OBJEXT): {$(VPATH)}internal.h
 eval.$(OBJEXT): {$(VPATH)}io.h
 eval.$(OBJEXT): {$(VPATH)}iseq.h
+eval.$(OBJEXT): {$(VPATH)}mjit.h
 eval.$(OBJEXT): {$(VPATH)}method.h
 eval.$(OBJEXT): {$(VPATH)}missing.h
 eval.$(OBJEXT): {$(VPATH)}node.h
@@ -1759,6 +1776,7 @@ iseq.$(OBJEXT): {$(VPATH)}internal.h
 iseq.$(OBJEXT): {$(VPATH)}io.h
 iseq.$(OBJEXT): {$(VPATH)}iseq.c
 iseq.$(OBJEXT): {$(VPATH)}iseq.h
+iseq.$(OBJEXT): {$(VPATH)}mjit.h
 iseq.$(OBJEXT): {$(VPATH)}method.h
 iseq.$(OBJEXT): {$(VPATH)}missing.h
 iseq.$(OBJEXT): {$(VPATH)}node.h
@@ -1774,6 +1792,40 @@ iseq.$(OBJEXT): {$(VPATH)}util.h
 iseq.$(OBJEXT): {$(VPATH)}vm_core.h
 iseq.$(OBJEXT): {$(VPATH)}vm_debug.h
 iseq.$(OBJEXT): {$(VPATH)}vm_opts.h
+mjit.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
+mjit.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
+mjit.$(OBJEXT): $(CCAN_DIR)/list/list.h
+mjit.$(OBJEXT): $(CCAN_DIR)/str/str.h
+mjit.$(OBJEXT): $(hdrdir)/ruby/ruby.h
+mjit.$(OBJEXT): $(hdrdir)/ruby/version.h
+mjit.$(OBJEXT): $(top_srcdir)/include/ruby.h
+mjit.$(OBJEXT): $(top_srcdir)/revision.h
+mjit.$(OBJEXT): $(top_srcdir)/version.h
+mjit.$(OBJEXT): {$(VPATH)}config.h
+mjit.$(OBJEXT): {$(VPATH)}defines.h
+mjit.$(OBJEXT): {$(VPATH)}encoding.h
+mjit.$(OBJEXT): {$(VPATH)}id.h
+mjit.$(OBJEXT): {$(VPATH)}insns.inc
+mjit.$(OBJEXT): {$(VPATH)}insns_info.inc
+mjit.$(OBJEXT): {$(VPATH)}intern.h
+mjit.$(OBJEXT): {$(VPATH)}internal.h
+mjit.$(OBJEXT): {$(VPATH)}io.h
+mjit.$(OBJEXT): {$(VPATH)}iseq.h
+mjit.$(OBJEXT): {$(VPATH)}mjit.c
+mjit.$(OBJEXT): {$(VPATH)}mjit.h
+mjit.$(OBJEXT): {$(VPATH)}method.h
+mjit.$(OBJEXT): {$(VPATH)}missing.h
+mjit.$(OBJEXT): {$(VPATH)}node.h
+mjit.$(OBJEXT): {$(VPATH)}oniguruma.h
+mjit.$(OBJEXT): {$(VPATH)}ruby_assert.h
+mjit.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+mjit.$(OBJEXT): {$(VPATH)}st.h
+mjit.$(OBJEXT): {$(VPATH)}subst.h
+mjit.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
+mjit.$(OBJEXT): {$(VPATH)}thread_native.h
+mjit.$(OBJEXT): {$(VPATH)}vm_core.h
+mjit.$(OBJEXT): {$(VPATH)}vm_debug.h
+mjit.$(OBJEXT): {$(VPATH)}vm_opts.h
 load.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 load.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 load.$(OBJEXT): $(CCAN_DIR)/list/list.h
@@ -2218,6 +2270,7 @@ ruby.$(OBJEXT): {$(VPATH)}id.h
 ruby.$(OBJEXT): {$(VPATH)}intern.h
 ruby.$(OBJEXT): {$(VPATH)}internal.h
 ruby.$(OBJEXT): {$(VPATH)}io.h
+ruby.$(OBJEXT): {$(VPATH)}mjit.h
 ruby.$(OBJEXT): {$(VPATH)}method.h
 ruby.$(OBJEXT): {$(VPATH)}missing.h
 ruby.$(OBJEXT): {$(VPATH)}node.h
@@ -2551,6 +2604,7 @@ vm.$(OBJEXT): {$(VPATH)}intern.h
 vm.$(OBJEXT): {$(VPATH)}internal.h
 vm.$(OBJEXT): {$(VPATH)}io.h
 vm.$(OBJEXT): {$(VPATH)}iseq.h
+vm.$(OBJEXT): {$(VPATH)}mjit.h
 vm.$(OBJEXT): {$(VPATH)}method.h
 vm.$(OBJEXT): {$(VPATH)}missing.h
 vm.$(OBJEXT): {$(VPATH)}node.h
@@ -2558,6 +2612,7 @@ vm.$(OBJEXT): {$(VPATH)}oniguruma.h
 vm.$(OBJEXT): {$(VPATH)}probes.dmyh
 vm.$(OBJEXT): {$(VPATH)}probes.h
 vm.$(OBJEXT): {$(VPATH)}probes_helper.h
+vm.$(OBJEXT): {$(VPATH)}rtl_exec.c
 vm.$(OBJEXT): {$(VPATH)}ruby_assert.h
 vm.$(OBJEXT): {$(VPATH)}ruby_atomic.h
 vm.$(OBJEXT): {$(VPATH)}st.h

@@ -1,21 +1,63 @@
 /** ##skip -*- mode:c; style:ruby; coding: utf-8 -*-
-  insns.def - YARV instruction definitions
+  insns.def - YARV RTL instruction definitions
 
   $Author: $
   created at: 04/01/01 01:17:55 JST
 
   Copyright (C) 2004-2007 Koichi Sasada
+
+  Rewritten in 2017 by Vladimir Makarov <vmakarov@redhat.com> to
+  implement RTL insns
+
 */
 
-/** ##skip
-  instruction comment
-  @c: category
-  @e: english description
-  @j: japanese description
+/* The file describes RTL (Register Transfer Language) insns.  We keep
+   minimal code here.  The RTL insn semantics are actually implemented
+   in file rtl_exec.c.  Please, read comments there to understand what
+   the insns do.
 
-  instruction form:
+   Code for most insns here is just a call of the corresponding
+   function.  There is a strict correspondence between the insn name
+   and the corresponding function name and between insn operands and
+   their types and the function arguments and their types.  It is done
+   to simplify JIT compilation by mostly translating each RTL insn
+   into the corresponding function call in the JIT generated code.
+
+
+   Some abbreviations in the insn names:
+
+   temp   - a temporary variable in the current stack frame.  It is
+            addressed by negative integers
+   loc    - a Ruby local variable (environemnt variable in MRI terms)
+            of the current scope.  It is addressed by positive integers
+   var    - temp or local
+   uploc  - a Ruby local variable from an upper level
+   ivar   - a Ruby instance variable
+   cvar   - a Ruby class variable
+   global - a Ruby global variable
+
+   Some prefixes in the insn names:
+     u - an unchanging general insn.  Some general insns can be
+         transformed into speculative ones and after that into the
+         unchanging insns if the speculation was wrong
+     i - a speculative insn assuming integer operands
+     f - a speculative insn assuming floating point operands
+
+   Some insn operand types:
+
+     lindex_t - offset on the stack or in the environment.  Positive
+                value means local var, negative value means a
+                temporary var.  The function implementing the insn get
+                the address of the local or temporary operand as an
+                argument
+     rindex_t - the same as above but the offset is passed to besides
+                the address
+     sindex_t - a negative number which offset of the temporary on the
+                stack. Only the number itself is passed as an argument
+
+  instruction format:
     DEFINE_INSN
-    instruction_name
+    instruction_name ..
     (instruction_operands, ..)
     (pop_values, ..)
     (return value)
@@ -23,2125 +65,834 @@
        .. // insn body
     }
 
- */
+    DEFINE_INSN can define more one similar insns.  Macro
+    CURRENT_INSN_NAME is defined in the body and contains the name of
+    the currently executed insn.
+
+    Instruction operand can be underscore "_" or "<type> _".  It means
+    we ignore the operand completely for execution of this insn in the
+    interpreter.  Just underscore also means don't pass the operand in
+    JIT generated code to a function executing the insn.
+
+    TODO: Remove pop_values and the return value as RTL insns never
+    use them.
+*/
 
 
-/**
-  @c nop
-  @e nop
-  @j nop
- */
+/* NOP */
 DEFINE_INSN
 nop
 ()
 ()
 ()
 {
-    /* none */
+    nop_f(reg_cfp);
 }
 
-/**********************************************************/
-/* deal with variables                                    */
-/**********************************************************/
-
-/**
-  @c variable
-  @e Get local variable (pointed by `idx' and `level').
-     'level' indicates the nesting depth from the current block.
-  @j level, idx で指定されたローカル変数の値をスタックに置く。
-     level はブロックのネストレベルで、何段上かを示す。
- */
-DEFINE_INSN
-getlocal
-(lindex_t idx, rb_num_t level)
-()
-(VALUE val)
-{
-    int i, lev = (int)level;
-    const VALUE *ep = GET_EP();
-
-    /* optimized insns generated for level == (0|1) in defs/opt_operand.def */
-    for (i = 0; i < lev; i++) {
-	ep = GET_PREV_EP(ep);
-    }
-    val = *(ep - idx);
-}
-
-/**
-  @c variable
-  @e Set a local variable (pointed to by 'idx') as val.
-     'level' indicates the nesting depth from the current block.
-  @j level, idx で指定されたローカル変数の値を val にする。
-     level はブロックのネストレベルで、何段上かを示す。
- */
-DEFINE_INSN
-setlocal
-(lindex_t idx, rb_num_t level)
-(VALUE val)
-()
-{
-    int i, lev = (int)level;
-    const VALUE *ep = GET_EP();
-
-    /* optimized insns generated for level == (0|1) in defs/opt_operand.def */
-    for (i = 0; i < lev; i++) {
-	ep = GET_PREV_EP(ep);
-    }
-    vm_env_write(ep, -(int)idx, val);
-}
-
-/**
-  @c variable
-  @e Get value of special local variable ($~, $_, ..).
-  @j 特殊なローカル変数（$~, $_, ...）の値を得る。
- */
-DEFINE_INSN
-getspecial
-(rb_num_t key, rb_num_t type)
-()
-(VALUE val)
-{
-    val = vm_getspecial(th, GET_LEP(), key, type);
-}
-
-/**
-  @c variable
-  @e Set value of special local variable ($~, $_, ...) to obj.
-  @j 特別なローカル変数（$~, $_, ...）の値を設定する。
- */
-DEFINE_INSN
-setspecial
-(rb_num_t key)
-(VALUE obj)
-()
-{
-    lep_svar_set(th, GET_LEP(), key, obj);
-}
-
-/**
-  @c variable
-  @e Get value of instance variable id of self.
-     If is_local is not 0, get value of class local variable.
-  @j self のインスタンス変数 id の値を得る。
- */
-DEFINE_INSN
-getinstancevariable
-(ID id, IC ic)
-()
-(VALUE val)
-{
-    val = vm_getinstancevariable(GET_SELF(), id, ic);
-}
-
-/**
-  @c variable
-  @e Set value of instance variable id of self to val.
-     If is_local is not 0, set value of class local variable.
-  @j self のインスタンス変数 id を val にする。
- */
-DEFINE_INSN
-setinstancevariable
-(ID id, IC ic)
-(VALUE val)
-()
-{
-    vm_setinstancevariable(GET_SELF(), id, val, ic);
-}
-
-/**
-  @c variable
-  @e Get value of class variable id of klass as val.
-  @j 現在のスコープのクラス変数 id の値を得る。
- */
-DEFINE_INSN
-getclassvariable
-(ID id)
-()
-(VALUE val)
-{
-    val = rb_cvar_get(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id);
-}
-
-/**
-  @c variable
-  @e Set value of class variable id of klass as val.
-  @j klass のクラス変数 id を val にする。
- */
-DEFINE_INSN
-setclassvariable
-(ID id)
-(VALUE val)
-()
-{
-    vm_ensure_not_refinement_module(GET_SELF());
-    rb_cvar_set(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id, val);
-}
-
-/**
-  @c variable
-  @e
-   Get constant variable id. If klass is Qnil, constants
-   are searched in the current scope. If klass is Qfalse, constants
-   are searched as top level constants. Otherwise, get constant under klass
-   class or module.
-  @j 定数 id の値を得る。
-   klass が Qnil なら、そのスコープで得られる定数の値を得る。
-   Qfalse なら、トップレベルスコープを得る。
-   それ以外なら、klass クラスの下の定数を得る。
- */
-DEFINE_INSN
-getconstant
-(ID id)
-(VALUE klass)
-(VALUE val)
-{
-    val = vm_get_ev_const(th, klass, id, 0);
-}
-
-/**
-  @c variable
-  @e
-   Set constant variable id. If klass is Qfalse, constant
-   is able to access in this scope. if klass is Qnil, set
-   top level constant. otherwise, set constant under klass
-   class or module.
-
-  @j 定数 id の値を val にする。
-   klass が Qfalse なら、そのスコープで得られる定数 id の値を設定する。
-   Qnil なら、トップレベルスコープの値を設定する。
-   それ以外なら、klass クラスの下の定数を設定する。
- */
-DEFINE_INSN
-setconstant
-(ID id)
-(VALUE val, VALUE cbase)
-()
-{
-    vm_check_if_namespace(cbase);
-    vm_ensure_not_refinement_module(GET_SELF());
-    rb_const_set(cbase, id, val);
-}
-
-/**
-  @c variable
-  @e get global variable id.
-  @j グローバル変数 id の値を得る。
- */
-DEFINE_INSN
-getglobal
-(GENTRY entry)
-()
-(VALUE val)
-{
-    val = GET_GLOBAL((VALUE)entry);
-}
-
-/**
-  @c variable
-  @e set global variable id as val.
-  @j グローバル変数 id の値を設定する。
- */
-DEFINE_INSN
-setglobal
-(GENTRY entry)
-(VALUE val)
-()
-{
-    SET_GLOBAL((VALUE)entry, val);
-}
-
-
-/**********************************************************/
-/* deal with values                                       */
-/**********************************************************/
-
-/**
-  @c put
-  @e put nil to stack.
-  @j スタックに nil をプッシュする。
- */
-DEFINE_INSN
-putnil
-()
-()
-(VALUE val)
-{
-    val = Qnil;
-}
-
-/**
-  @c put
-  @e put self.
-  @j スタックに self をプッシュする。
- */
-DEFINE_INSN
-putself
-()
-()
-(VALUE val)
-{
-    val = GET_SELF();
-}
-
-/**
-  @c put
-  @e put some object.
-     i.e. Fixnum, true, false, nil, and so on.
-  @j オブジェクト val をスタックにプッシュする。
-     i.e. Fixnum, true, false, nil, and so on.
- */
-DEFINE_INSN
-putobject
-(VALUE val)
-()
-(VALUE val)
-{
-    /* */
-}
-
-/**
-  @c put
-  @e put special object.  "value_type" is for expansion.
-  @j 特別なオブジェクト val をスタックにプッシュする。
-     オブジェクトの種類は value_type による．
- */
-DEFINE_INSN
-putspecialobject
-(rb_num_t value_type)
-()
-(VALUE val)
-{
-    enum vm_special_object_type type = (enum vm_special_object_type)value_type;
-
-    switch (type) {
-      case VM_SPECIAL_OBJECT_VMCORE:
-	val = rb_mRubyVMFrozenCore;
-	break;
-      case VM_SPECIAL_OBJECT_CBASE:
-	val = vm_get_cbase(GET_EP());
-	break;
-      case VM_SPECIAL_OBJECT_CONST_BASE:
-	val = vm_get_const_base(GET_EP());
-	break;
-      default:
-	rb_bug("putspecialobject insn: unknown value_type");
-    }
-}
-
-/**
-  @c put
-  @e put iseq value.
-  @j iseq をスタックにプッシュする。
- */
-DEFINE_INSN
-putiseq
-(ISEQ iseq)
-()
-(VALUE ret)
-{
-    ret = (VALUE)iseq;
-}
-
-/**
-  @c put
-  @e put string val. string will be copied.
-  @j 文字列をコピーしてスタックにプッシュする。
- */
-DEFINE_INSN
-putstring
-(VALUE str)
-()
-(VALUE val)
-{
-    val = rb_str_resurrect(str);
-}
-
-/**
-  @c put
-  @e put concatenate strings
-  @j スタックトップの文字列を n 個連結し，結果をスタックにプッシュする。
- */
-DEFINE_INSN
-concatstrings
-(rb_num_t num)
-(...)
-(VALUE val) // inc += 1 - num;
-{
-    val = rb_str_concat_literals(num, &TOPN(num-1));
-    POPN(num);
-}
-
-/**
-  @c put
-  @e push the result of to_str.
-  @j to_str の結果をスタックにプッシュする。
- */
-DEFINE_INSN
-tostring
-()
-(VALUE val)
-(VALUE val)
-{
-    val = rb_obj_as_string(val);
-}
-
-/**
-  @c put
-  @e Freeze (dynamically) created strings. if debug_info is given, set it.
-  @j （埋め込み）文字列を freeze する。もし、debug_info が与えられていれば、それを設定する。
- */
-DEFINE_INSN
-freezestring
-(VALUE debug_info)
-(VALUE str)
-(VALUE str)
-{
-    if (!NIL_P(debug_info)) {
-	rb_ivar_set(str, id_debug_created_info, debug_info);
-    }
-    rb_str_freeze(str);
-}
-
-/**
-  @c put
-  @e compile str to Regexp and push it.
-     opt is the option for the Regexp.
-  @j 文字列 str を正規表現にコンパイルしてスタックにプッシュする。
-     コンパイル時，opt を正規表現のオプションとする。
- */
-DEFINE_INSN
-toregexp
-(rb_num_t opt, rb_num_t cnt)
-(...)
-(VALUE val) // inc += 1 - cnt;
-{
-    VALUE rb_reg_new_ary(VALUE ary, int options);
-    rb_num_t i;
-    const VALUE ary = rb_ary_tmp_new(cnt);
-    for (i = 0; i < cnt; i++) {
-	rb_ary_store(ary, cnt-i-1, TOPN(i));
-    }
-    POPN(cnt);
-    val = rb_reg_new_ary(ary, (int)opt);
-    rb_ary_clear(ary);
-}
-
-/**
-  @c put
-  @e put new array initialized with num values on the stack.
-  @j 新しい配列をスタック上の num 個の値で初期化して生成しプッシュする。
- */
-DEFINE_INSN
-newarray
-(rb_num_t num)
-(...)
-(VALUE val) // inc += 1 - num;
-{
-    val = rb_ary_new4((long)num, STACK_ADDR_FROM_TOP(num));
-    POPN(num);
-}
-
-/**
-  @c put
-  @e dup array
-  @j 配列 ary を dup してスタックにプッシュする。
- */
-DEFINE_INSN
-duparray
-(VALUE ary)
-()
-(VALUE val)
-{
-    val = rb_ary_resurrect(ary);
-}
-
-/**
-  @c put
-  @e if TOS is an array expand, expand it to num objects.
-     if the number of the array is less than num, push nils to fill.
-     if it is greater than num, exceeding elements are dropped.
-     unless TOS is an array, push num - 1 nils.
-     if flags is non-zero, push the array of the rest elements.
-     flag: 0x01 - rest args array
-     flag: 0x02 - for postarg
-     flag: 0x04 - reverse?
-  @j スタックトップのオブジェクトが配列であれば、それを展開する。
-     配列オブジェクトの要素数が num以下ならば、代わりに nil を積む。num以上なら、
-     num以上の要素は切り捨てる。
-     配列オブジェクトでなければ、num - 1 個の nil を積む。
-     もし flag が真なら、残り要素の配列を積む
-     flag: 0x01 - 最後を配列に
-     flag: 0x02 - postarg 用
-     flag: 0x04 - reverse?
- */
-DEFINE_INSN
-expandarray
-(rb_num_t num, rb_num_t flag)
-(..., VALUE ary)
-(...) // inc += num - 1 + (flag & 1 ? 1 : 0);
-{
-    vm_expandarray(GET_CFP(), ary, num, (int)flag);
-}
-
-/**
-  @c put
-  @e concat two arrays
-  @j 二つの配列 ary1, ary2 を連結しスタックへプッシュする。
- */
-DEFINE_INSN
-concatarray
-()
-(VALUE ary1, VALUE ary2st)
-(VALUE ary)
-{
-    const VALUE ary2 = ary2st;
-    VALUE tmp1 = rb_check_convert_type(ary1, T_ARRAY, "Array", "to_a");
-    VALUE tmp2 = rb_check_convert_type(ary2, T_ARRAY, "Array", "to_a");
-
-    if (NIL_P(tmp1)) {
-	tmp1 = rb_ary_new3(1, ary1);
-    }
-
-    if (NIL_P(tmp2)) {
-	tmp2 = rb_ary_new3(1, ary2);
-    }
-
-    if (tmp1 == ary1) {
-	tmp1 = rb_ary_dup(ary1);
-    }
-    ary = rb_ary_concat(tmp1, tmp2);
-}
-
-/**
-  @c put
-  @e call to_a on array ary to splat
-  @j splat のために配列 ary に対して to_a を呼び出す。
- */
-DEFINE_INSN
-splatarray
-(VALUE flag)
-(VALUE ary)
-(VALUE obj)
-{
-    VALUE tmp = rb_check_convert_type(ary, T_ARRAY, "Array", "to_a");
-    if (NIL_P(tmp)) {
-	tmp = rb_ary_new3(1, ary);
-    }
-    else if (RTEST(flag)) {
-	tmp = rb_ary_dup(tmp);
-    }
-    obj = tmp;
-}
-
-/**
-  @c put
-  @e put new Hash from n elements. n must be an even number.
-  @j 新しいハッシュをスタックトップの n 個を初期値として生成する。
-     n はキーと値のペアなので 2 の倍数でなければならない。
- */
-DEFINE_INSN
-newhash
-(rb_num_t num)
-(...)
-(VALUE val) // inc += 1 - num;
-{
-    rb_num_t i;
-
-    RUBY_DTRACE_CREATE_HOOK(HASH, num);
-
-    val = rb_hash_new();
-
-    for (i = num; i > 0; i -= 2) {
-	const VALUE v = TOPN(i - 2);
-	const VALUE k = TOPN(i - 1);
-	rb_hash_aset(val, k, v);
-    }
-    POPN(num);
-}
-
-/**
-  @c put
-  @e put new Range object.(Range.new(low, high, flag))
-  @j Range.new(low, high, flag) のようなオブジェクトを生成しスタックにプッシュする。
- */
-DEFINE_INSN
-newrange
-(rb_num_t flag)
-(VALUE low, VALUE high)
-(VALUE val)
-{
-    val = rb_range_new(low, high, (int)flag);
-}
-
-/**********************************************************/
-/* deal with stack operation                              */
-/**********************************************************/
-
-/**
-  @c stack
-  @e pop from stack.
-  @j スタックから一つポップする。
- */
-DEFINE_INSN
-pop
-()
-(VALUE val)
-()
-{
-    (void)val;
-    /* none */
-}
-
-/**
-  @c stack
-  @e duplicate stack top.
-  @j スタックトップをコピーしてスタックにプッシュする。
- */
-DEFINE_INSN
-dup
-()
-(VALUE val)
-(VALUE val1, VALUE val2)
-{
-    val1 = val2 = val;
-}
-
-/**
-  @c stack
-  @e duplicate stack top n elements
-  @j スタックトップの n 個をコピーしてスタックにプッシュする。
- */
-DEFINE_INSN
-dupn
-(rb_num_t n)
-(...)
-(...) // inc += n;
-{
-    rb_num_t i;
-    VALUE *sp = STACK_ADDR_FROM_TOP(n);
-    for (i = 0; i < n; i++) {
-	GET_SP()[i] = sp[i];
-    }
-    INC_SP(n);
-}
-
-
-/**
-  @c stack
-  @e swap top 2 vals
-  @j スタックトップの 2 つの値を交換する。
- */
-DEFINE_INSN
-swap
-()
-(VALUE val, VALUE obj)
-(VALUE obj, VALUE val)
-{
-    /* none */
-}
-
-/**
-  @c stack
-  @e reverse stack top N order.
-  @j スタックトップの n 個の値を逆転する。
- */
-DEFINE_INSN
-reverse
-(rb_num_t n)
-(...)
-(...) // inc += 0;
-{
-    rb_num_t i;
-    VALUE *sp = STACK_ADDR_FROM_TOP(n);
-
-    for (i=0; i<n/2; i++) {
-	VALUE v0 = sp[i];
-	VALUE v1 = TOPN(i);
-	sp[i] = v1;
-	TOPN(i) = v0;
-    }
-}
-
-/**
-  @c stack
-  @e for stack caching.
-  @j スタックキャッシングの状態を調整するために必要な命令。
- */
-DEFINE_INSN
-reput
-()
-(..., VALUE val)
-(VALUE val) // inc += 0;
-{
-    /* none */
-}
-
-/**
-  @c stack
-  @e get nth stack value from stack top
-  @j スタックトップから n 個目をスタックにプッシュする。
- */
-DEFINE_INSN
-topn
-(rb_num_t n)
-(...)
-(VALUE val) // inc += 1;
-{
-    val = TOPN(n);
-}
-
-/**
-  @c stack
-  @e set Nth stack entry to stack top
-  @j スタックトップの値を n 個目のスタックにコピー
- */
-DEFINE_INSN
-setn
-(rb_num_t n)
-(..., VALUE val)
-(VALUE val) // inc += 0
-{
-    TOPN(n-1) = val;
-}
-
-/**
-  @c stack
-  @e empty current stack
-  @j current stack を空にする。
- */
-DEFINE_INSN
-adjuststack
-(rb_num_t n)
-(...)
-(...) // inc -= n
-{
-    DEC_SP(n);
-}
-
-
-/**********************************************************/
-/* deal with setting                                      */
-/**********************************************************/
-
-/**
-  @c setting
-  @e defined?
-  @j defined? を行う。
- */
-DEFINE_INSN
-defined
-(rb_num_t op_type, VALUE obj, VALUE needstr)
-(VALUE v)
-(VALUE val)
-{
-    val = vm_defined(th, GET_CFP(), op_type, obj, needstr, v);
-}
-
-/**
-  @c setting
-  @e check `target' matches `pattern'.
-     `flag & VM_CHECKMATCH_TYPE_MASK' describe how to check pattern.
-      VM_CHECKMATCH_TYPE_WHEN: ignore target and check pattern is truthy.
-      VM_CHECKMATCH_TYPE_CASE: check `patten === target'.
-      VM_CHECKMATCH_TYPE_RESCUE: check `pattern.kind_op?(Module) && pattern == target'.
-     if `flag & VM_CHECKMATCH_ARRAY' is not 0, then `patten' is array of patterns.
-  @j see above comments.
- */
-DEFINE_INSN
-checkmatch
-(rb_num_t flag)
-(VALUE target, VALUE pattern)
-(VALUE result)
-{
-    enum vm_check_match_type checkmatch_type =
-      (enum vm_check_match_type)(flag & VM_CHECKMATCH_TYPE_MASK);
-    result = Qfalse;
-
-    if (flag & VM_CHECKMATCH_ARRAY) {
-	long i;
-	for (i = 0; i < RARRAY_LEN(pattern); i++) {
-	    if (RTEST(check_match(RARRAY_AREF(pattern, i), target, checkmatch_type))) {
-		result = Qtrue;
-		break;
-	    }
-	}
-    }
-    else {
-	if (RTEST(check_match(pattern, target, checkmatch_type))) {
-	    result = Qtrue;
-	}
-    }
-}
-
-/**
-  @c setting
-  @e check keywords are specified or not.
-  @j キーワードが指定されているかどうかチェックする
- */
-DEFINE_INSN
-checkkeyword
-(lindex_t kw_bits_index, rb_num_t keyword_index)
-()
-(VALUE ret)
-{
-    const VALUE *ep = GET_EP();
-    const VALUE kw_bits = *(ep - kw_bits_index);
-
-    if (FIXNUM_P(kw_bits)) {
-	int bits = FIX2INT(kw_bits);
-	ret = (bits & (0x01 << keyword_index)) ? Qfalse : Qtrue;
-    }
-    else {
-	VM_ASSERT(RB_TYPE_P(kw_bits, T_HASH));
-	ret = rb_hash_has_key(kw_bits, INT2FIX(keyword_index)) ? Qfalse : Qtrue;
-    }
-}
-
-/**
-  @c setting
-  @e trace
-  @j trace 用の命令。
- */
 DEFINE_INSN
 trace
 (rb_num_t nf)
 ()
 ()
 {
-    rb_event_flag_t flag = (rb_event_flag_t)nf;
-
-    if (RUBY_DTRACE_METHOD_ENTRY_ENABLED() ||
-	RUBY_DTRACE_METHOD_RETURN_ENABLED() ||
-	RUBY_DTRACE_CMETHOD_ENTRY_ENABLED() ||
-	RUBY_DTRACE_CMETHOD_RETURN_ENABLED()) {
-
-	switch (flag) {
-	  case RUBY_EVENT_CALL:
-	    RUBY_DTRACE_METHOD_ENTRY_HOOK(th, 0, 0);
-	    break;
-	  case RUBY_EVENT_C_CALL:
-	    RUBY_DTRACE_CMETHOD_ENTRY_HOOK(th, 0, 0);
-	    break;
-	  case RUBY_EVENT_RETURN:
-	    RUBY_DTRACE_METHOD_RETURN_HOOK(th, 0, 0);
-	    break;
-	  case RUBY_EVENT_C_RETURN:
-	    RUBY_DTRACE_CMETHOD_RETURN_HOOK(th, 0, 0);
-	    break;
-	}
-    }
-
-    EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
-		    (flag & (RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN)) ? TOPN(0) : Qundef);
+    trace_f(th, reg_cfp, nf);
 }
 
-/**********************************************************/
-/* deal with control flow 1: class/module                 */
-/**********************************************************/
-
-/**
-  @c class/module
-  @e
-   enter class definition scope. if super is Qfalse, and class
-   "klass" is defined, it's redefine. otherwise, define "klass" class.
-  @j クラス定義スコープへ移行する。
-   もし super が Qfalse で klassクラスが定義されていれば再定義である。
-   そうでなければ、klass クラスを定義する。
- */
 DEFINE_INSN
-defineclass
-(ID id, ISEQ class_iseq, rb_num_t flags)
-(VALUE cbase, VALUE super)
-(VALUE val)
+var2var
+(rindex_t to, lindex_t from, rb_num_t n)
+()
+()
 {
-    VALUE klass;
-    rb_vm_defineclass_type_t type = VM_DEFINECLASS_TYPE(flags);
+    var2var_f(reg_cfp, get_var_addr(reg_cfp, to), to, get_var_addr(reg_cfp, from), n);
+}
 
-    switch (type) {
-      case VM_DEFINECLASS_TYPE_CLASS:
-	/* val is dummy.  classdef returns class scope value */
+DEFINE_INSN
+var_swap
+(rindex_t op1, rindex_t op2)
+()
+()
+{
+    var_swap_f(reg_cfp, get_var_addr(reg_cfp, op1), op1, get_var_addr(reg_cfp, op2), op2);
+}
 
-	if (VM_DEFINECLASS_HAS_SUPERCLASS_P(flags) &&
-	    !RB_TYPE_P(super, T_CLASS)) {
-	    rb_raise(rb_eTypeError, "superclass must be a Class (%"PRIsVALUE" given)",
-		     rb_obj_class(super));
-	}
+DEFINE_INSN
+temp2temp
+(lindex_t res, lindex_t op)
+()
+()
+{
+    temp2temp_f(reg_cfp, get_temp_addr(reg_cfp, res), get_temp_addr(reg_cfp, op));
+}
 
-	vm_check_if_namespace(cbase);
+DEFINE_INSN
+temp_swap
+(lindex_t op1, lindex_t op2)
+()
+()
+{
+    temp_swap_f(reg_cfp, get_temp_addr(reg_cfp, op1), get_temp_addr(reg_cfp, op2));
+}
 
-	/* find klass */
-	rb_autoload_load(cbase, id);
-	if ((klass = vm_search_const_defined_class(cbase, id)) != 0) {
-	    /* already exist */
-	    klass = VM_DEFINECLASS_SCOPED_P(flags) ?
-		rb_public_const_get_at(klass, id) : rb_const_get_at(klass, id);
-	    if (!RB_TYPE_P(klass, T_CLASS)) {
-		rb_raise(rb_eTypeError, "%"PRIsVALUE" is not a class", rb_id2str(id));
-	    }
+DEFINE_INSN
+loc2loc
+(rindex_t res, lindex_t op)
+()
+()
+{
+    loc2loc_f(reg_cfp, get_loc_addr(reg_cfp, res), res, get_loc_addr(reg_cfp, op));
+}
 
-	    if (VM_DEFINECLASS_HAS_SUPERCLASS_P(flags)) {
-		VALUE tmp;
-		tmp = rb_class_real(RCLASS_SUPER(klass));
+DEFINE_INSN
+loc2temp
+(lindex_t res, lindex_t op)
+()
+()
+{
+    loc2temp_f(reg_cfp, get_temp_addr(reg_cfp, res), get_loc_addr(reg_cfp, op));
+}
 
-		if (tmp != super) {
-		    rb_raise(rb_eTypeError, "superclass mismatch for class %"PRIsVALUE"",
-			     rb_id2str(id));
-		}
-	    }
-	}
-	else {
-	    if (!VM_DEFINECLASS_HAS_SUPERCLASS_P(flags)) {
-		super = rb_cObject;
-	    }
-	    /* new class declaration */
-	    klass = rb_define_class_id(id, super);
-	    rb_set_class_path_string(klass, cbase, rb_id2str(id));
-	    rb_const_set(cbase, id, klass);
-	    rb_class_inherited(super, klass);
-	}
-	break;
-      case VM_DEFINECLASS_TYPE_SINGLETON_CLASS:
-	/* val is dummy.  classdef returns class scope value */
-	/* super is dummy */
-	klass = rb_singleton_class(cbase);
-	break;
-      case VM_DEFINECLASS_TYPE_MODULE:
-	/* val is dummy.  classdef returns class scope value */
-	/* super is dummy */
+DEFINE_INSN
+temp2loc
+(rindex_t res, lindex_t op)
+()
+()
+{
+    temp2loc_f(reg_cfp, get_loc_addr(reg_cfp, res), res, get_temp_addr(reg_cfp, op));
+}
 
-	vm_check_if_namespace(cbase);
+DEFINE_INSN
+uploc2temp
+(lindex_t res, sindex_t op, rb_num_t level)
+()
+()
+{
+    uploc2temp_f(reg_cfp, get_var_addr(reg_cfp, res), op, level);
+}
 
-	/* find klass */
-	if ((klass = vm_search_const_defined_class(cbase, id)) != 0) {
-	    klass = VM_DEFINECLASS_SCOPED_P(flags) ?
-		rb_public_const_get_at(klass, id) : rb_const_get_at(klass, id);
-	    /* already exist */
-	    if (!RB_TYPE_P(klass, T_MODULE)) {
-		rb_raise(rb_eTypeError, "%"PRIsVALUE" is not a module", rb_id2str(id));
-	    }
-	}
-	else {
-	    /* new module declaration */
-	    klass = rb_define_module_id(id);
-	    rb_set_class_path_string(klass, cbase, rb_id2str(id));
-	    rb_const_set(cbase, id, klass);
-	}
-	break;
-      default:
-	rb_bug("unknown defineclass type: %d", (int)type);
-    }
+DEFINE_INSN
+uploc2var
+(rindex_t res, sindex_t op, rb_num_t level)
+()
+()
+{
+    uploc2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, op, level);
+}
 
-    rb_iseq_check(class_iseq);
+DEFINE_INSN
+val2loc
+(rindex_t res, VALUE val)
+()
+()
+{
+    val2loc_f(reg_cfp, get_loc_addr(reg_cfp, res), res, val);
+}
 
-    /* enter scope */
-    vm_push_frame(th, class_iseq, VM_FRAME_MAGIC_CLASS | VM_ENV_FLAG_LOCAL, klass,
-		  GET_BLOCK_HANDLER(),
-		  (VALUE)vm_cref_push(th, klass, NULL, FALSE),
-		  class_iseq->body->iseq_encoded, GET_SP(),
-		  class_iseq->body->local_table_size,
-		  class_iseq->body->stack_max);
+DEFINE_INSN
+val2temp
+(lindex_t res, VALUE val)
+()
+()
+{
+    val2temp_f(reg_cfp, get_temp_addr(reg_cfp, res), val);
+}
+
+DEFINE_INSN
+str2var
+(rindex_t res, VALUE str)
+()
+()
+{
+    str2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, str);
+}
+
+DEFINE_INSN
+const2var
+(ID id, rindex_t res, lindex_t klass_op)
+()
+()
+{
+    const2var_f(th, reg_cfp, id, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, klass_op));
+}
+
+DEFINE_INSN
+const_ld_val
+(ID id, rindex_t res, VALUE klass)
+()
+()
+{
+    const_ld_val_f(th, reg_cfp, id, get_var_addr(reg_cfp, res), res, klass);
+}
+
+DEFINE_INSN
+const_cached_val_ld
+(rindex_t res, VALUE klass, ID id, IC ic)
+()
+()
+{
+    const_cached_val_ld_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, klass, id, ic);
+}
+
+DEFINE_INSN
+get_inline_cache
+(OFFSET dst, rindex_t res, IC ic)
+()
+()
+{
+    if (get_inline_cache_f(reg_cfp, get_var_addr(reg_cfp, res), res, ic))
+	JUMP(dst);
+}
+
+DEFINE_INSN
+set_inline_cache
+(lindex_t op, IC ic)
+()
+()
+{
+    set_inline_cache_f(reg_cfp, get_var_addr(reg_cfp, op), ic);
+}
+
+DEFINE_INSN
+specialobj2var
+(rindex_t res, rb_num_t value_type)
+()
+()
+{
+    specialobj2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, value_type);
+}
+
+DEFINE_INSN
+special2var
+(rindex_t res, rb_num_t key, rb_num_t type)
+()
+()
+{
+    special2var_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, key, type);
+}
+
+DEFINE_INSN
+self2var
+(rindex_t res)
+()
+()
+{
+    self2var_f(reg_cfp, get_var_addr(reg_cfp, res), res);
+}
+
+DEFINE_INSN
+global2var
+(rindex_t res, GENTRY entry)
+()
+()
+{
+    global2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, entry);
+}
+
+DEFINE_INSN
+ivar2var
+(rindex_t res, ID id, IC ic)
+()
+()
+{
+    ivar2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, id, ic);
+}
+
+DEFINE_INSN
+cvar2var
+(rindex_t res, ID id)
+()
+()
+{
+    cvar2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, id);
+}
+
+DEFINE_INSN
+iseq2var
+(rindex_t res, ISEQ iseq)
+()
+()
+{
+    iseq2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, iseq);
+}
+
+DEFINE_INSN
+var2uploc
+(sindex_t idx, lindex_t from, rb_num_t level)
+()
+()
+{
+    var2uploc_f(reg_cfp, idx, get_var_addr(reg_cfp, from), level);
+}
+
+DEFINE_INSN
+val2uploc
+(sindex_t idx, VALUE val, rb_num_t level)
+()
+()
+{
+    val2uploc_f(reg_cfp, idx, val, level);
+}
+
+DEFINE_INSN
+ret_to_loc
+(sindex_t idx, lindex_t from)
+()
+()
+{
+    ret_to_loc_f(th, reg_cfp, idx, get_var_addr(reg_cfp, from));
     RESTORE_REGS();
-    NEXT_INSN();
-}
-
-
-/**********************************************************/
-/* deal with control flow 2: method/iterator              */
-/**********************************************************/
-
-/**
-  @c method/iterator
-  @e invoke method.
-  @j メソッド呼び出しを行う。ci に必要な情報が格納されている。
- */
-DEFINE_INSN
-send
-(CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq)
-(...)
-(VALUE val) // inc += - (int)(ci->orig_argc + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0));
-{
-    struct rb_calling_info calling;
-
-    vm_caller_setup_arg_block(th, reg_cfp, &calling, ci, blockiseq, FALSE);
-    vm_search_method(ci, cc, calling.recv = TOPN(calling.argc = ci->orig_argc));
-    CALL_METHOD(&calling, ci, cc);
+    set_default_sp(reg_cfp);
 }
 
 DEFINE_INSN
-opt_str_freeze
-(VALUE str)
+ret_to_temp
+(sindex_t idx, lindex_t from)
 ()
-(VALUE val)
-{
-    if (BASIC_OP_UNREDEFINED_P(BOP_FREEZE, STRING_REDEFINED_OP_FLAG)) {
-	val = str;
-    }
-    else {
-	val = rb_funcall(rb_str_resurrect(str), idFreeze, 0);
-    }
-}
-
-DEFINE_INSN
-opt_newarray_max
-(rb_num_t num)
-(...)
-(VALUE val) // inc += 1 - num;
-{
-#define id_cmp  idCmp
-    if (BASIC_OP_UNREDEFINED_P(BOP_MAX, ARRAY_REDEFINED_OP_FLAG)) {
-	if (num == 0) {
-	    val = Qnil;
-	}
-	else {
-	    struct cmp_opt_data cmp_opt = { 0, 0 };
-	    VALUE result = Qundef;
-	    rb_num_t i = num - 1;
-	    result = TOPN(i);
-	    while (i-- > 0) {
-		const VALUE v = TOPN(i);
-		if (result == Qundef || OPTIMIZED_CMP(v, result, cmp_opt) > 0) {
-		    result = v;
-		}
-	    }
-	    val = result == Qundef ? Qnil : result;
-	}
-	POPN(num);
-    }
-    else {
-	VALUE ary = rb_ary_new4((long)num, STACK_ADDR_FROM_TOP(num));
-	val = rb_funcall(ary, idMax, 0);
-	POPN(num);
-    }
-#undef id_cmp
-}
-
-DEFINE_INSN
-opt_newarray_min
-(rb_num_t num)
-(...)
-(VALUE val) // inc += 1 - num;
-{
-#define id_cmp  idCmp
-    if (BASIC_OP_UNREDEFINED_P(BOP_MIN, ARRAY_REDEFINED_OP_FLAG)) {
-	if (num == 0) {
-	    val = Qnil;
-	}
-	else {
-	    struct cmp_opt_data cmp_opt = { 0, 0 };
-	    VALUE result = Qundef;
-	    rb_num_t i = num - 1;
-	    result = TOPN(i);
-	    while (i-- > 0) {
-		const VALUE v = TOPN(i);
-		if (result == Qundef || OPTIMIZED_CMP(v, result, cmp_opt) < 0) {
-		    result = v;
-		}
-	    }
-	    val = result == Qundef ? Qnil : result;
-	}
-	POPN(num);
-    }
-    else {
-	VALUE ary = rb_ary_new4((long)num, STACK_ADDR_FROM_TOP(num));
-	val = rb_funcall(ary, idMin, 0);
-	POPN(num);
-    }
-#undef id_cmp
-}
-
-/**
-  @c optimize
-  @e Invoke method without block
-  @j Invoke method without block
- */
-DEFINE_INSN
-opt_send_without_block
-(CALL_INFO ci, CALL_CACHE cc)
-(...)
-(VALUE val) // inc += -ci->orig_argc;
-{
-    struct rb_calling_info calling;
-    calling.block_handler = VM_BLOCK_HANDLER_NONE;
-    vm_search_method(ci, cc, calling.recv = TOPN(calling.argc = ci->orig_argc));
-    CALL_METHOD(&calling, ci, cc);
-}
-
-/**
-  @c method/iterator
-  @e super(args) # args.size => num
-  @j super を実行する。ci に必要な情報が格納されている。
- */
-DEFINE_INSN
-invokesuper
-(CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq)
-(...)
-(VALUE val) // inc += - (int)(ci->orig_argc + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0));
-{
-    struct rb_calling_info calling;
-    calling.argc = ci->orig_argc;
-
-    vm_caller_setup_arg_block(th, reg_cfp, &calling, ci, blockiseq, TRUE);
-    calling.recv = GET_SELF();
-    vm_search_super_method(th, GET_CFP(), &calling, ci, cc);
-    CALL_METHOD(&calling, ci, cc);
-}
-
-/**
-  @c method/iterator
-  @e yield(args)
-  @j yield を実行する。
- */
-DEFINE_INSN
-invokeblock
-(CALL_INFO ci)
-(...)
-(VALUE val)  // inc += 1 - ci->orig_argc;
-{
-    struct rb_calling_info calling;
-    calling.argc = ci->orig_argc;
-    calling.block_handler = VM_BLOCK_HANDLER_NONE;
-    calling.recv = GET_SELF();
-
-    val = vm_invoke_block(th, GET_CFP(), &calling, ci);
-    if (val == Qundef) {
-	RESTORE_REGS();
-	NEXT_INSN();
-    }
-}
-
-/**
-  @c method/iterator
-  @e return from this scope.
-  @j このスコープから抜ける。
- */
-DEFINE_INSN
-leave
 ()
-(VALUE val)
-(VALUE val)
 {
-    if (OPT_CHECKED_RUN) {
-	const VALUE *const bp = vm_base_ptr(reg_cfp);
-	if (reg_cfp->sp != bp) {
-	    rb_bug("Stack consistency error (sp: %"PRIdPTRDIFF", bp: %"PRIdPTRDIFF")",
-		   VM_SP_CNT(th, reg_cfp->sp), VM_SP_CNT(th, bp));
-	}
-    }
+    ret_to_temp_f(th, reg_cfp, idx, get_var_addr(reg_cfp, from));
+    RESTORE_REGS();
+    set_default_sp(reg_cfp);
+}
 
-    RUBY_VM_CHECK_INTS(th);
+DEFINE_INSN
+var2const
+(ID id, lindex_t val_op, lindex_t cbase_op)
+()
+()
+{
+    var2const_f(reg_cfp, id, get_var_addr(reg_cfp, val_op), get_var_addr(reg_cfp, cbase_op));
+}
 
-    if (vm_pop_frame(th, GET_CFP(), GET_EP())) {
-#if OPT_CALL_THREADED_CODE
-	th->retval = val;
-	return 0;
-#else
-	return val;
-#endif
-    }
-    else {
+DEFINE_INSN
+var2global
+(GENTRY entry, lindex_t val_op)
+()
+()
+{
+    var2global_f(reg_cfp, entry, get_var_addr(reg_cfp, val_op));
+}
+
+DEFINE_INSN
+var2ivar
+(ID id, IC ic, lindex_t val_op)
+()
+()
+{
+    var2ivar_f(reg_cfp, id, ic, get_var_addr(reg_cfp, val_op));
+}
+
+DEFINE_INSN
+val2ivar
+(ID id, IC ic, VALUE val)
+()
+()
+{
+    val2ivar_f(reg_cfp, id, ic, val);
+}
+
+DEFINE_INSN
+var2cvar
+(ID id, lindex_t val_op)
+()
+()
+{
+    var2cvar_f(reg_cfp, id, get_var_addr(reg_cfp, val_op));
+}
+
+DEFINE_INSN
+var2special
+(rb_num_t key, lindex_t op)
+()
+()
+{
+    var2special_f(th, reg_cfp, key, get_var_addr(reg_cfp, op));
+}
+
+/* The following insn is always a part of some bigger insn with one
+   operand.  It is executed if the bigger insn is actually implemented
+   by a send with usual dispatching.  The purpose of the insn
+   execution to move the result from the stack to the bigger insn
+   destination.  */
+DEFINE_INSN
+cont_op1
+(CALL_DATA cd, rindex_t res, _)
+()
+()
+{
+    var_assign(reg_cfp, get_var_addr(reg_cfp, res), res, *get_temp_addr(reg_cfp, cd->call_start));
+}
+
+/* The following insn is always a part of some bigger insn with two
+   operands.  See also the comment for cont_op1.  */
+DEFINE_INSN
+cont_op2
+(CALL_DATA cd, rindex_t res, _, _)
+()
+()
+{
+    var_assign(reg_cfp, get_var_addr(reg_cfp, res), res, *get_temp_addr(reg_cfp, cd->call_start));
+}
+
+DEFINE_INSN
+length size empty_p succ not
+(insn_t _, CALL_DATA cd, rindex_t res, lindex_t op)
+()
+()
+{
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op))) {
+	/* We actuall started a new ISEQ execution.  Change pc to
+	   execute cont_op1 insn after the return. */
+	th->cfp[1].pc -= 4;
 	RESTORE_REGS();
+	set_default_sp(reg_cfp);
     }
 }
 
-/**********************************************************/
-/* deal with control flow 3: exception                    */
-/**********************************************************/
-
-/**
-  @c exception
-  @e longjump
-  @j 大域ジャンプを行う。
- */
+/* General and unchanging insns:  */
 DEFINE_INSN
-throw
-(rb_num_t throw_state)
-(VALUE throwobj)
-(VALUE val)
+plus minus mult div mod ltlt aref eq ne lt gt le ge uplus uminus umult udiv umod ueq une ult ugt ule uge
+(insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, lindex_t op2)
+()
+()
 {
-    RUBY_VM_CHECK_INTS(th);
-    val = vm_throw(th, GET_CFP(), throw_state, throwobj);
-    THROW_EXCEPTION(val);
-    /* unreachable */
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2))) {
+	/* We actuall started a new ISEQ execution.  Change pc to
+	   execute cont_op2 insn after the return. */
+	th->cfp[1].pc -= 5;
+	RESTORE_REGS();
+	set_default_sp(reg_cfp);
+    }
 }
 
-/**********************************************************/
-/* deal with control flow 4: local jump                   */
-/**********************************************************/
-
-/**
-  @c jump
-  @e set PC to (PC + dst).
-  @j PC を (PC + dst) にする。
- */
+/* Speculative insns:  */
 DEFINE_INSN
-jump
+iplus iminus imult idiv imod ieq ine ilt igt ile ige fplus fminus fmult fdiv fmod feq fne flt fgt fle fge
+(_, _, rindex_t res, lindex_t op1, lindex_t op2)
+()
+()
+{
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2))) {
+	/* Speculation was wrong.  Re-execute the modified insn.  */
+	ADD_PC(-6);
+    }
+}
+
+/* General immediate insns:  */
+DEFINE_INSN
+plusi plusf minusi minusf multi multf divi divf modi modf ltlti arefi aref_str eqi eqf nei nef lti ltf gti gtf lei lef gei gef
+(insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm)) {
+	th->cfp[1].pc -= 5; /* Execute cont_op2 after */
+	RESTORE_REGS();
+        set_default_sp(reg_cfp);
+    }
+}
+
+/* Unchanging immediate insns:  */
+DEFINE_INSN
+uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf ueqi ueqf unei unef ulti ultf ugti ugtf ulei ulef ugei ugef
+(insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm)) {
+	th->cfp[1].pc -= 5; /* Execute cont_op2 after */
+	RESTORE_REGS();
+        set_default_sp(reg_cfp);
+    }
+}
+
+/* Speculative immediate insns:  */
+DEFINE_INSN
+iplusi iminusi imulti idivi imodi ieqi inei ilti igti ilei igei fplusf fminusf fmultf fdivf fmodf feqf fnef fltf fgtf flef fgef
+(_, _, rindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm)) {
+	ADD_PC(-6); /* Re-execute the modified insn  */
+    }
+}
+
+DEFINE_INSN
+aset
+(CALL_DATA cd, lindex_t op1, lindex_t op2, lindex_t op3)
+()
+()
+{
+  if (aset_f(th, reg_cfp, cd, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
+      RESTORE_REGS();
+      set_default_sp(reg_cfp);
+  }
+}
+
+DEFINE_INSN
+aset_str
+(CALL_DATA cd, lindex_t op1, VALUE str, lindex_t op3)
+()
+()
+{
+  if (aset_str_f(th, reg_cfp, cd, get_var_addr(reg_cfp, op1), str, get_var_addr(reg_cfp, op3))) {
+      RESTORE_REGS();
+      set_default_sp(reg_cfp);
+  }
+}
+
+DEFINE_INSN
+goto
 (OFFSET dst)
 ()
 ()
 {
-    RUBY_VM_CHECK_INTS(th);
+    goto_f(th, reg_cfp);
     JUMP(dst);
 }
 
-/**
-  @c jump
-  @e if val is not false or nil, set PC to (PC + dst).
-  @j もし val が false か nil でなければ、PC を (PC + dst) にする。
- */
+/* First operand should be a label.  This is used in
+   get_destination_insn for peephole optimizer in compile.c */
 DEFINE_INSN
-branchif
-(OFFSET dst)
-(VALUE val)
+bf bt bnil
+(OFFSET dst, lindex_t op)
+()
 ()
 {
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, get_var_addr(reg_cfp, op)))
+	JUMP(dst);
+}
+DEFINE_INSN
+cont_btcmp
+(OFFSET dst, CALL_DATA cd, rindex_t res, _, _)
+()
+()
+{
+    VALUE val = *get_temp_addr(reg_cfp, cd->call_start);
+
+    var_assign(reg_cfp, get_var_addr(reg_cfp, res), res, val);
     if (RTEST(val)) {
 	RUBY_VM_CHECK_INTS(th);
 	JUMP(dst);
     }
 }
 
-/**
-  @c jump
-  @e if val is false or nil, set PC to (PC + dst).
-  @j もし val が false か nil ならば、PC を (PC + dst) にする。
- */
 DEFINE_INSN
-branchunless
-(OFFSET dst)
-(VALUE val)
+cont_bfcmp
+(OFFSET dst, CALL_DATA cd, rindex_t res, _, _)
+()
 ()
 {
-    if (!RTEST(val)) {
+    VALUE val = *get_temp_addr(reg_cfp, cd->call_start);
+
+    var_assign(reg_cfp, get_var_addr(reg_cfp, res), res, val);
+    if (! RTEST(val)) {
 	RUBY_VM_CHECK_INTS(th);
 	JUMP(dst);
     }
 }
 
-/**
-  @c jump
-  @e if val is nil, set PC to (PC + dst).
-  @j もし val が nil ならば、PC を (PC + dst) にする。
- */
+/* The following insns are combined insns of (eq,ne,lt,gt,le,ge)[if] and (bt|bf):  */
 DEFINE_INSN
-branchnil
-(OFFSET dst)
-(VALUE val)
+bteq bfeq btne bfne btlt bflt btgt bfgt btle bfle btge bfge
+(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, lindex_t op1, lindex_t op2)
+()
 ()
 {
-    if (NIL_P(val)) {
-	RUBY_VM_CHECK_INTS(th);
-	JUMP(dst);
-    }
-}
-
-
-/**********************************************************/
-/* for optimize                                           */
-/**********************************************************/
-
-/**
-  @c optimize
-  @e push inline-cached value and go to dst if it is valid
-  @j インラインキャッシュが有効なら、値をスタックにプッシュして dst へジャンプする。
- */
-DEFINE_INSN
-getinlinecache
-(OFFSET dst, IC ic)
-()
-(VALUE val)
-{
-    if (ic->ic_serial == GET_GLOBAL_CONSTANT_STATE() &&
-	(ic->ic_cref == NULL || ic->ic_cref == rb_vm_get_cref(GET_EP()))) {
-	val = ic->ic_value.value;
-	JUMP(dst);
-    }
-    else {
-	/* none */
-	val = Qnil;
-    }
-}
-
-/**
-  @c optimize
-  @e set inline cache
-  @j インラインキャッシュの値を設定する。
- */
-DEFINE_INSN
-setinlinecache
-(IC ic)
-(VALUE val)
-(VALUE val)
-{
-    VM_ASSERT(ic->ic_value.value != Qundef);
-    ic->ic_value.value = val;
-    ic->ic_serial = GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count;
-    ic->ic_cref = vm_get_const_key_cref(GET_EP());
-    ruby_vm_const_missing_count = 0;
-}
-
-/**
-  @c optimize
-  @e run iseq only once
-  @j once を実現する。
- */
-DEFINE_INSN
-once
-(ISEQ iseq, IC ic)
-()
-(VALUE val)
-{
-    union iseq_inline_storage_entry *is = (union iseq_inline_storage_entry *)ic;
-
-#define RUNNING_THREAD_ONCE_DONE ((rb_thread_t *)(0x1))
-  retry:
-    if (is->once.running_thread == RUNNING_THREAD_ONCE_DONE) {
-	val = is->once.value;
-    }
-    else if (is->once.running_thread == NULL) {
-	is->once.running_thread = th;
-	val = is->once.value = rb_ensure(vm_once_exec, (VALUE)iseq, vm_once_clear, (VALUE)is);
-	/* is->once.running_thread is cleared by vm_once_clear() */
-	is->once.running_thread = RUNNING_THREAD_ONCE_DONE; /* success */
-	rb_iseq_add_mark_object(GET_ISEQ(), val);
-    }
-    else if (is->once.running_thread == th) {
-	/* recursive once */
-	val = vm_once_exec((VALUE)iseq);
-    }
-    else {
-	/* waiting for finish */
-	RUBY_VM_CHECK_INTS(th);
-	rb_thread_schedule();
-	goto retry;
-    }
-}
-
-/**
-  @c optimize
-  @e case dispatcher, jump by table if possible
-  @j case 文で、可能なら表引きでジャンプする。
- */
-DEFINE_INSN
-opt_case_dispatch
-(CDHASH hash, OFFSET else_offset)
-(..., VALUE key)
-() // inc += -1;
-{
-    switch (OBJ_BUILTIN_TYPE(key)) {
-      case -1:
-      case T_FLOAT:
-      case T_SYMBOL:
-      case T_BIGNUM:
-      case T_STRING:
-	if (BASIC_OP_UNREDEFINED_P(BOP_EQQ,
-				   SYMBOL_REDEFINED_OP_FLAG |
-				   INTEGER_REDEFINED_OP_FLAG |
-				   FLOAT_REDEFINED_OP_FLAG |
-				   NIL_REDEFINED_OP_FLAG    |
-				   TRUE_REDEFINED_OP_FLAG   |
-				   FALSE_REDEFINED_OP_FLAG  |
-				   STRING_REDEFINED_OP_FLAG)) {
-	    st_data_t val;
-	    if (RB_FLOAT_TYPE_P(key)) {
-		double kval = RFLOAT_VALUE(key);
-		if (!isinf(kval) && modf(kval, &kval) == 0.0) {
-		    key = FIXABLE(kval) ? LONG2FIX((long)kval) : rb_dbl2big(kval);
-		}
-	    }
-	    if (st_lookup(RHASH_TBL_RAW(hash), key, &val)) {
-		JUMP(FIX2INT((VALUE)val));
-	    }
-	    else {
-		JUMP(else_offset);
-	    }
-	}
-    }
-}
-
-/** simple functions */
-
-/**
-  @c optimize
-  @e optimized X+Y.
-  @j 最適化された X+Y。
- */
-DEFINE_INSN
-opt_plus
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_PLUS,INTEGER_REDEFINED_OP_FLAG)) {
-	/* fixnum + fixnum */
-#ifndef LONG_LONG_VALUE
-	VALUE msb = (VALUE)1 << ((sizeof(VALUE) * CHAR_BIT) - 1);
-	val = recv - 1 + obj;
-	if ((~(recv ^ obj) & (recv ^ val)) & msb) {
-	    val = rb_int2big((SIGNED_VALUE)((val>>1) | (recv & msb)));
-	}
-#else
-	val = LONG2NUM(FIX2LONG(recv) + FIX2LONG(obj));
-#endif
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_PLUS, FLOAT_REDEFINED_OP_FLAG)) {
-	val = DBL2NUM(RFLOAT_VALUE(recv) + RFLOAT_VALUE(obj));
-    }
-    else if (!SPECIAL_CONST_P(recv) && !SPECIAL_CONST_P(obj)) {
-	if (RBASIC_CLASS(recv) == rb_cFloat && RBASIC_CLASS(obj) == rb_cFloat &&
-	    BASIC_OP_UNREDEFINED_P(BOP_PLUS, FLOAT_REDEFINED_OP_FLAG)) {
-	    val = DBL2NUM(RFLOAT_VALUE(recv) + RFLOAT_VALUE(obj));
-	}
-	else if (RBASIC_CLASS(recv) == rb_cString && RBASIC_CLASS(obj) == rb_cString &&
-		 BASIC_OP_UNREDEFINED_P(BOP_PLUS, STRING_REDEFINED_OP_FLAG)) {
-	    val = rb_str_plus(recv, obj);
-	}
-	else if (RBASIC_CLASS(recv) == rb_cArray &&
-		 BASIC_OP_UNREDEFINED_P(BOP_PLUS, ARRAY_REDEFINED_OP_FLAG)) {
-	    val = rb_ary_plus(recv, obj);
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-	INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized X-Y.
-  @j 最適化された X-Y。
- */
-DEFINE_INSN
-opt_minus
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_MINUS, INTEGER_REDEFINED_OP_FLAG)) {
-	long a, b, c;
-
-	a = FIX2LONG(recv);
-	b = FIX2LONG(obj);
-	c = a - b;
-	val = LONG2NUM(c);
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_MINUS, FLOAT_REDEFINED_OP_FLAG)) {
-	val = DBL2NUM(RFLOAT_VALUE(recv) - RFLOAT_VALUE(obj));
-    }
-    else if (!SPECIAL_CONST_P(recv) && !SPECIAL_CONST_P(obj)) {
-	if (RBASIC_CLASS(recv) == rb_cFloat && RBASIC_CLASS(obj) == rb_cFloat  &&
-	    BASIC_OP_UNREDEFINED_P(BOP_MINUS, FLOAT_REDEFINED_OP_FLAG)) {
-	    val = DBL2NUM(RFLOAT_VALUE(recv) - RFLOAT_VALUE(obj));
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-	/* other */
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized X*Y.
-  @j 最適化された X*Y。
- */
-DEFINE_INSN
-opt_mult
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_MULT, INTEGER_REDEFINED_OP_FLAG)) {
-	val = rb_fix_mul_fix(recv, obj);
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_MULT, FLOAT_REDEFINED_OP_FLAG)) {
-	val = DBL2NUM(RFLOAT_VALUE(recv) * RFLOAT_VALUE(obj));
-    }
-    else if (!SPECIAL_CONST_P(recv) && !SPECIAL_CONST_P(obj)) {
-	if (RBASIC_CLASS(recv) == rb_cFloat && RBASIC_CLASS(obj) == rb_cFloat  &&
-	    BASIC_OP_UNREDEFINED_P(BOP_MULT, FLOAT_REDEFINED_OP_FLAG)) {
-	    val = DBL2NUM(RFLOAT_VALUE(recv) * RFLOAT_VALUE(obj));
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized X/Y.
-  @j 最適化された X/Y。
- */
-DEFINE_INSN
-opt_div
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_DIV, INTEGER_REDEFINED_OP_FLAG)) {
-	if (FIX2LONG(obj) == 0) goto INSN_LABEL(normal_dispatch);
-	val = rb_fix_div_fix(recv, obj);
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_DIV, FLOAT_REDEFINED_OP_FLAG)) {
-	val = DBL2NUM(RFLOAT_VALUE(recv) / RFLOAT_VALUE(obj));
-    }
-    else if (!SPECIAL_CONST_P(recv) && !SPECIAL_CONST_P(obj)) {
-	if (RBASIC_CLASS(recv) == rb_cFloat && RBASIC_CLASS(obj) == rb_cFloat  &&
-	    BASIC_OP_UNREDEFINED_P(BOP_DIV, FLOAT_REDEFINED_OP_FLAG)) {
-	    val = DBL2NUM(RFLOAT_VALUE(recv) / RFLOAT_VALUE(obj));
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized X%Y.
-  @j 最適化された X%Y。
- */
-DEFINE_INSN
-opt_mod
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_MOD, INTEGER_REDEFINED_OP_FLAG )) {
-	if (FIX2LONG(obj) == 0) goto INSN_LABEL(normal_dispatch);
-	val = rb_fix_mod_fix(recv, obj);
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_MOD, FLOAT_REDEFINED_OP_FLAG)) {
-	val = DBL2NUM(ruby_float_mod(RFLOAT_VALUE(recv), RFLOAT_VALUE(obj)));
-    }
-    else if (!SPECIAL_CONST_P(recv) && !SPECIAL_CONST_P(obj)) {
-	if (RBASIC_CLASS(recv) == rb_cFloat && RBASIC_CLASS(obj) == rb_cFloat &&
-	    BASIC_OP_UNREDEFINED_P(BOP_MOD, FLOAT_REDEFINED_OP_FLAG)) {
-	    val = DBL2NUM(ruby_float_mod(RFLOAT_VALUE(recv), RFLOAT_VALUE(obj)));
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized X==Y.
-  @j 最適化された X==Y。
- */
-DEFINE_INSN
-opt_eq
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    val = opt_eq_func(recv, obj, ci, cc);
+    VALUE val;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
 
     if (val == Qundef) {
-	/* other */
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
+	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
+        RESTORE_REGS();
+	set_default_sp(reg_cfp);
     }
+    else if (jmp_p)
+	JUMP(dst);
 }
 
-/**
-  @c optimize
-  @e optimized X!=Y.
-  @j 最適化された X!=Y。
- */
+/* Unchanging insns:  */
 DEFINE_INSN
-opt_neq
-(CALL_INFO ci, CALL_CACHE cc, CALL_INFO ci_eq, CALL_CACHE cc_eq)
-(VALUE recv, VALUE obj)
-(VALUE val)
+ubteq ubfeq ubtne ubfne ubtlt ubflt ubtgt ubfgt ubtle ubfle ubtge ubfge
+(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, lindex_t op1, lindex_t op2)
+()
+()
 {
-    extern VALUE rb_obj_not_equal(VALUE obj1, VALUE obj2);
-    vm_search_method(ci, cc, recv);
-
-    val = Qundef;
-
-    if (check_cfunc(cc->me, rb_obj_not_equal)) {
-	val = opt_eq_func(recv, obj, ci_eq, cc_eq);
-
-	if (val != Qundef) {
-	    val = RTEST(val) ? Qfalse : Qtrue;
-	}
-    }
+    VALUE val;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
 
     if (val == Qundef) {
-	/* other */
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
+	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
+        RESTORE_REGS();
+	set_default_sp(reg_cfp);
     }
+    else if (jmp_p)
+	JUMP(dst);
 }
 
-/**
-  @c optimize
-  @e optimized X<Y.
-  @j 最適化された X<Y。
- */
+/* Speculative integer insns:  */
 DEFINE_INSN
-opt_lt
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_LT, INTEGER_REDEFINED_OP_FLAG)) {
-	SIGNED_VALUE a = recv, b = obj;
-
-	if (a < b) {
-	    val = Qtrue;
-	}
-	else {
-	    val = Qfalse;
-	}
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_LT, FLOAT_REDEFINED_OP_FLAG)) {
-	/* flonum is not NaN */
-	val = RFLOAT_VALUE(recv) < RFLOAT_VALUE(obj) ? Qtrue : Qfalse;
-    }
-    else if (!SPECIAL_CONST_P(recv) && !SPECIAL_CONST_P(obj)) {
-	if (RBASIC_CLASS(recv) == rb_cFloat && RBASIC_CLASS(obj) == rb_cFloat  &&
-	    BASIC_OP_UNREDEFINED_P(BOP_LT, FLOAT_REDEFINED_OP_FLAG)) {
-	    val = double_cmp_lt(RFLOAT_VALUE(recv), RFLOAT_VALUE(obj));
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized X<=Y.
-  @j 最適化された X<=Y。
- */
-DEFINE_INSN
-opt_le
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_LE, INTEGER_REDEFINED_OP_FLAG)) {
-	SIGNED_VALUE a = recv, b = obj;
-
-	if (a <= b) {
-	    val = Qtrue;
-	}
-	else {
-	    val = Qfalse;
-	}
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_LE, FLOAT_REDEFINED_OP_FLAG)) {
-	/* flonum is not NaN */
-	val = RFLOAT_VALUE(recv) <= RFLOAT_VALUE(obj) ? Qtrue : Qfalse;
-    }
-    else {
-	/* other */
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized X>Y.
-  @j 最適化された X>Y。
- */
-DEFINE_INSN
-opt_gt
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_GT, INTEGER_REDEFINED_OP_FLAG)) {
-	SIGNED_VALUE a = recv, b = obj;
-
-	if (a > b) {
-	    val = Qtrue;
-	}
-	else {
-	    val = Qfalse;
-	}
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_GT, FLOAT_REDEFINED_OP_FLAG)) {
-	/* flonum is not NaN */
-	val = RFLOAT_VALUE(recv) > RFLOAT_VALUE(obj) ? Qtrue : Qfalse;
-    }
-    else if (!SPECIAL_CONST_P(recv) && !SPECIAL_CONST_P(obj)) {
-	if (RBASIC_CLASS(recv) == rb_cFloat && RBASIC_CLASS(obj) == rb_cFloat  &&
-	    BASIC_OP_UNREDEFINED_P(BOP_GT, FLOAT_REDEFINED_OP_FLAG)) {
-	    val = double_cmp_gt(RFLOAT_VALUE(recv), RFLOAT_VALUE(obj));
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized X>=Y.
-  @j 最適化された X>=Y。
- */
-DEFINE_INSN
-opt_ge
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (FIXNUM_2_P(recv, obj) &&
-	BASIC_OP_UNREDEFINED_P(BOP_GE, INTEGER_REDEFINED_OP_FLAG)) {
-	SIGNED_VALUE a = recv, b = obj;
-
-	if (a >= b) {
-	    val = Qtrue;
-	}
-	else {
-	    val = Qfalse;
-	}
-    }
-    else if (FLONUM_2_P(recv, obj) &&
-	     BASIC_OP_UNREDEFINED_P(BOP_GE, FLOAT_REDEFINED_OP_FLAG)) {
-	/* flonum is not NaN */
-	val = RFLOAT_VALUE(recv) >= RFLOAT_VALUE(obj) ? Qtrue : Qfalse;
-    }
-    else {
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e <<
-  @j 最適化された X<<Y。
- */
-DEFINE_INSN
-opt_ltlt
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (!SPECIAL_CONST_P(recv)) {
-	if (RBASIC_CLASS(recv) == rb_cString &&
-	    BASIC_OP_UNREDEFINED_P(BOP_LTLT, STRING_REDEFINED_OP_FLAG)) {
-	    val = rb_str_concat(recv, obj);
-	}
-	else if (RBASIC_CLASS(recv) == rb_cArray &&
-		 BASIC_OP_UNREDEFINED_P(BOP_LTLT, ARRAY_REDEFINED_OP_FLAG)) {
-	    val = rb_ary_push(recv, obj);
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e []
-  @j 最適化された recv[obj]。
- */
-DEFINE_INSN
-opt_aref
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj)
-(VALUE val)
-{
-    if (!SPECIAL_CONST_P(recv)) {
-	if (RBASIC_CLASS(recv) == rb_cArray && BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG) && FIXNUM_P(obj)) {
-	    val = rb_ary_entry(recv, FIX2LONG(obj));
-	}
-	else if (RBASIC_CLASS(recv) == rb_cHash && BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)) {
-	    val = rb_hash_aref(recv, obj);
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e recv[obj] = set
-  @j 最適化された recv[obj] = set。
- */
-DEFINE_INSN
-opt_aset
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv, VALUE obj, VALUE set)
-(VALUE val)
-{
-    if (!SPECIAL_CONST_P(recv)) {
-	if (RBASIC_CLASS(recv) == rb_cArray && BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG) && FIXNUM_P(obj)) {
-	    rb_ary_store(recv, FIX2LONG(obj), set);
-	    val = set;
-	}
-	else if (RBASIC_CLASS(recv) == rb_cHash && BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)) {
-	    rb_hash_aset(recv, obj, set);
-	    val = set;
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	PUSH(obj);
-	PUSH(set);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e recv[str] = set
-  @j 最適化された recv[str] = set。
- */
-DEFINE_INSN
-opt_aset_with
-(CALL_INFO ci, CALL_CACHE cc, VALUE key)
-(VALUE recv, VALUE val)
-(VALUE val)
-{
-    if (!SPECIAL_CONST_P(recv) && RBASIC_CLASS(recv) == rb_cHash &&
-	BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG) &&
-	rb_hash_compare_by_id_p(recv) == Qfalse) {
-	rb_hash_aset(recv, key, val);
-    }
-    else {
-	PUSH(recv);
-	PUSH(rb_str_resurrect(key));
-	PUSH(val);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e recv[str]
-  @j 最適化された recv[str]。
- */
-DEFINE_INSN
-opt_aref_with
-(CALL_INFO ci, CALL_CACHE cc, VALUE key)
-(VALUE recv)
-(VALUE val)
-{
-    if (!SPECIAL_CONST_P(recv) && RBASIC_CLASS(recv) == rb_cHash &&
-	BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG) &&
-	rb_hash_compare_by_id_p(recv) == Qfalse) {
-	val = rb_hash_aref(recv, key);
-    }
-    else {
-	PUSH(recv);
-	PUSH(rb_str_resurrect(key));
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized length
-  @j 最適化された recv.length()。
- */
-DEFINE_INSN
-opt_length
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv)
-(VALUE val)
-{
-    if (!SPECIAL_CONST_P(recv)) {
-	if (RBASIC_CLASS(recv) == rb_cString &&
-	    BASIC_OP_UNREDEFINED_P(BOP_LENGTH, STRING_REDEFINED_OP_FLAG)) {
-	    val = rb_str_length(recv);
-	}
-	else if (RBASIC_CLASS(recv) == rb_cArray &&
-		 BASIC_OP_UNREDEFINED_P(BOP_LENGTH, ARRAY_REDEFINED_OP_FLAG)) {
-	    val = LONG2NUM(RARRAY_LEN(recv));
-	}
-	else if (RBASIC_CLASS(recv) == rb_cHash &&
-		 BASIC_OP_UNREDEFINED_P(BOP_LENGTH, HASH_REDEFINED_OP_FLAG)) {
-	    val = INT2FIX(RHASH_SIZE(recv));
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized size
-  @j 最適化された recv.size()。
- */
-DEFINE_INSN
-opt_size
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv)
-(VALUE val)
-{
-    if (!SPECIAL_CONST_P(recv)) {
-	if (RBASIC_CLASS(recv) == rb_cString &&
-	    BASIC_OP_UNREDEFINED_P(BOP_SIZE, STRING_REDEFINED_OP_FLAG)) {
-	    val = rb_str_length(recv);
-	}
-	else if (RBASIC_CLASS(recv) == rb_cArray &&
-		 BASIC_OP_UNREDEFINED_P(BOP_SIZE, ARRAY_REDEFINED_OP_FLAG)) {
-	    val = LONG2NUM(RARRAY_LEN(recv));
-	}
-	else if (RBASIC_CLASS(recv) == rb_cHash &&
-		 BASIC_OP_UNREDEFINED_P(BOP_SIZE, HASH_REDEFINED_OP_FLAG)) {
-	    val = INT2FIX(RHASH_SIZE(recv));
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized empty?
-  @j 最適化された recv.empty?()。
- */
-DEFINE_INSN
-opt_empty_p
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv)
-(VALUE val)
-{
-    if (!SPECIAL_CONST_P(recv)) {
-	if (RBASIC_CLASS(recv) == rb_cString &&
-	    BASIC_OP_UNREDEFINED_P(BOP_EMPTY_P, STRING_REDEFINED_OP_FLAG)) {
-	    if (RSTRING_LEN(recv) == 0) val = Qtrue;
-	    else val = Qfalse;
-	}
-	else if (RBASIC_CLASS(recv) == rb_cArray &&
-		 BASIC_OP_UNREDEFINED_P(BOP_EMPTY_P, ARRAY_REDEFINED_OP_FLAG)) {
-	    if (RARRAY_LEN(recv) == 0) val = Qtrue;
-	    else val = Qfalse;
-	}
-	else if (RBASIC_CLASS(recv) == rb_cHash &&
-		 BASIC_OP_UNREDEFINED_P(BOP_EMPTY_P, HASH_REDEFINED_OP_FLAG)) {
-	    if (RHASH_EMPTY_P(recv)) val = Qtrue;
-	    else val = Qfalse;
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized succ
-  @j 最適化された recv.succ()。
- */
-DEFINE_INSN
-opt_succ
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv)
-(VALUE val)
-{
-    if (SPECIAL_CONST_P(recv)) {
-	if (FIXNUM_P(recv) &&
-	    BASIC_OP_UNREDEFINED_P(BOP_SUCC, INTEGER_REDEFINED_OP_FLAG)) {
-	    /* fixnum + INT2FIX(1) */
-	    if (recv != LONG2FIX(FIXNUM_MAX)) {
-		val = recv - 1 + INT2FIX(1);
-	    }
-	    else {
-		val = LONG2NUM(FIXNUM_MAX + 1);
-	    }
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    else {
-	if (RBASIC_CLASS(recv) == rb_cString &&
-	    BASIC_OP_UNREDEFINED_P(BOP_SUCC, STRING_REDEFINED_OP_FLAG)) {
-	    val = rb_str_succ(recv);
-	}
-	else {
-	    goto INSN_LABEL(normal_dispatch);
-	}
-    }
-    if (0) {
-      INSN_LABEL(normal_dispatch):
-	PUSH(recv);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized not
-  @j 最適化された recv.!()。
- */
-DEFINE_INSN
-opt_not
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE recv)
-(VALUE val)
-{
-    vm_search_method(ci, cc, recv);
-
-    if (check_cfunc(cc->me, rb_obj_not)) {
-	val = RTEST(recv) ? Qfalse : Qtrue;
-    }
-    else {
-	PUSH(recv);
-	CALL_SIMPLE_METHOD(recv);
-    }
-}
-
-
-/**
-  @c optimize
-  @e optimized regexp match
-  @j 最適化された正規表現マッチ。
- */
-DEFINE_INSN
-opt_regexpmatch1
-(VALUE r)
-(VALUE obj)
-(VALUE val)
-{
-    if (BASIC_OP_UNREDEFINED_P(BOP_MATCH, REGEXP_REDEFINED_OP_FLAG)) {
-	val = rb_reg_match(r, obj);
-    }
-    else {
-	val = rb_funcall(r, idEqTilde, 1, obj);
-    }
-}
-
-/**
-  @c optimize
-  @e optimized regexp match 2
-  @j 最適化された正規表現マッチ 2
- */
-DEFINE_INSN
-opt_regexpmatch2
-(CALL_INFO ci, CALL_CACHE cc)
-(VALUE obj2, VALUE obj1)
-(VALUE val)
-{
-    if (CLASS_OF(obj2) == rb_cString &&
-	BASIC_OP_UNREDEFINED_P(BOP_MATCH, STRING_REDEFINED_OP_FLAG)) {
-	val = rb_reg_match(obj1, obj2);
-    }
-    else {
-	PUSH(obj2);
-	PUSH(obj1);
-	CALL_SIMPLE_METHOD(obj2);
-    }
-}
-
-/**
-  @c optimize
-  @e call native compiled method
-  @j ネイティブコンパイルしたメソッドを起動。
- */
-DEFINE_INSN
-opt_call_c_function
-(rb_insn_func_t funcptr)
+ibteq ibfeq ibtne ibfne ibtlt ibflt ibtgt ibfgt ibtle ibfle ibtge ibfge
+(_, OFFSET dst, _, rindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
 {
+    VALUE val;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
+
+    if (val == Qundef) {
+	ADD_PC(-7); /* Re-execute the modified insn  */
+    }
+    else if (jmp_p)
+	JUMP(dst);
+}
+
+/* Speculative floating point insns:  */
+DEFINE_INSN
+fbteq fbfeq fbtne fbfne fbtlt fbflt fbtgt fbfgt fbtle fbfle fbtge fbfge
+(_, OFFSET dst, _, rindex_t res, lindex_t op1, lindex_t op2)
+()
+()
+{
+    VALUE val;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
+
+    if (val == Qundef) {
+	ADD_PC(-7); /* Re-execute the modified insn  */
+    }
+    else if (jmp_p)
+	JUMP(dst);
+}
+
+DEFINE_INSN
+bteqi bfeqi btnei bfnei btlti bflti btgti bfgti btlei bflei btgei bfgei bteqf bfeqf btnef bfnef btltf bfltf btgtf bfgtf btlef bflef btgef bfgef
+(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    VALUE val;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val);
+
+    if (val == Qundef) {
+	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
+        RESTORE_REGS();
+	set_default_sp(reg_cfp);
+    } else if (jmp_p)
+	JUMP(dst);
+}
+
+/* Unchanging immediate insns:  */
+DEFINE_INSN
+ubteqi ubfeqi ubtnei ubfnei ubtlti ubflti ubtgti ubfgti ubtlei ubflei ubtgei ubfgei ubteqf ubfeqf ubtnef ubfnef ubtltf ubfltf ubtgtf ubfgtf ubtlef ubflef ubtgef ubfgef
+(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    VALUE val;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val);
+
+    if (val == Qundef) {
+	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
+        RESTORE_REGS();
+	set_default_sp(reg_cfp);
+    } else if (jmp_p)
+	JUMP(dst);
+}
+
+/* Speculative immediate integer insns:  */
+DEFINE_INSN
+ibteqi ibfeqi ibtnei ibfnei ibtlti ibflti ibtgti ibfgti ibtlei ibflei ibtgei ibfgei
+(_, OFFSET dst, _, rindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    VALUE val;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val);
+
+    if (val == Qundef) {
+	ADD_PC(-7); /* Re-execute the modified insn  */
+    }
+    else if (jmp_p)
+	JUMP(dst);
+}
+
+/* Speculative immediate floating point insns:  */
+DEFINE_INSN
+fbteqf fbfeqf fbtnef fbfnef fbtltf fbfltf fbtgtf fbfgtf fbtlef fbflef fbtgef fbfgef
+(_, OFFSET dst, _, rindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    VALUE val;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val);
+
+    if (val == Qundef) {
+	ADD_PC(-7); /* Re-execute the modified insn  */
+    }
+    else if (jmp_p)
+	JUMP(dst);
+}
+
+DEFINE_INSN
+freeze_string
+(lindex_t op, VALUE debug_info)
+()
+()
+{
+    freeze_string_f(reg_cfp, get_var_addr(reg_cfp, op), debug_info);
+}
+
+DEFINE_INSN
+to_string
+(rindex_t res, lindex_t op)
+()
+()
+{
+    to_string_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op));
+}
+
+DEFINE_INSN
+concat_strings
+(lindex_t start, rb_num_t cnt)
+()
+()
+{
+    concat_strings_f(reg_cfp, get_temp_addr(reg_cfp, start), cnt);
+}
+
+DEFINE_INSN
+to_regexp
+(sindex_t start, rb_num_t opt, rb_num_t cnt)
+()
+()
+{
+    to_regexp_f(reg_cfp, start, opt, cnt);
+}
+
+DEFINE_INSN
+defined_p
+(rindex_t res, lindex_t op, rb_num_t op_type, VALUE obj, VALUE needstr)
+()
+()
+{
+    defined_p_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op), op_type, obj, needstr);
+}
+
+DEFINE_INSN
+val_defined_p
+(rindex_t res, VALUE v, rb_num_t op_type, VALUE obj, VALUE needstr)
+()
+()
+{
+    val_defined_p_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, v, op_type, obj, needstr);
+}
+
+DEFINE_INSN
+str_freeze_call
+(rindex_t res, VALUE str)
+()
+()
+{
+    str_freeze_call_f(reg_cfp, get_var_addr(reg_cfp, res), res, str);
+}
+
+DEFINE_INSN
+temp_ret
+(lindex_t op, rb_num_t nf)
+()
+()
+{
+    VALUE val;
+
+    if (temp_ret_f(th, reg_cfp, get_temp_addr(reg_cfp, op), nf, &val))
+	return val;
+    RESTORE_REGS();
+    finish_ret(reg_cfp, val);
+}
+
+DEFINE_INSN
+loc_ret
+(lindex_t op, rb_num_t nf)
+()
+()
+{
+    VALUE val;
+
+    if (loc_ret_f(th, reg_cfp, get_loc_addr(reg_cfp, op), nf, &val))
+	return val;
+    RESTORE_REGS();
+    finish_ret(reg_cfp, val);
+}
+
+DEFINE_INSN
+val_ret
+(VALUE val, rb_num_t nf)
+()
+()
+{
+    if (val_ret_f(th, reg_cfp, val, nf, &val))
+	return val;
+    RESTORE_REGS();
+    finish_ret(reg_cfp, val);
+}
+
+DEFINE_INSN
+simple_call simple_call_self
+(CALL_DATA cd, sindex_t call_start)
+()
+()
+{
+    struct rb_calling_info calling;
+
+    RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, &calling, cd, call_start);
+    CALL_METHOD(&calling, cd);
+}
+
+DEFINE_INSN
+simple_call_recv
+(CALL_DATA cd, sindex_t call_start, lindex_t recv_op)
+()
+()
+{
+    struct rb_calling_info calling;
+
+    simple_call_recv_f(th, reg_cfp, &calling, cd, call_start, get_var_addr(reg_cfp, recv_op));
+    CALL_METHOD(&calling, cd);
+}
+
+DEFINE_INSN
+call vmcore_call call_self
+(CALL_DATA cd, sindex_t call_start, ISEQ blockiseq)
+()
+()
+{
+    struct rb_calling_info calling;
+
+    RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, &calling, cd, call_start, blockiseq);
+    CALL_METHOD(&calling, cd);
+}
+
+DEFINE_INSN
+call_recv
+(CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, lindex_t recv_op)
+()
+()
+{
+    struct rb_calling_info calling;
+
+    call_recv_f(th, reg_cfp, &calling, cd, call_start, blockiseq, get_var_addr(reg_cfp, recv_op));
+    CALL_METHOD(&calling, cd);
+}
+
+DEFINE_INSN
+call_c_func
+(rb_insn_func_t funcptr, sindex_t args_num)
+()
+()
+{
+    /* SP here is always on the stack beginning.  */
+    reg_cfp->sp = reg_cfp->bp + 1 + args_num;
     reg_cfp = (funcptr)(th, reg_cfp);
 
     if (reg_cfp == 0) {
@@ -2151,34 +902,193 @@ opt_call_c_function
     }
 
     RESTORE_REGS();
-    NEXT_INSN();
+    set_default_sp(reg_cfp);
 }
 
-/**
-  @c joke
-  @e BLT
-  @j BLT
- */
 DEFINE_INSN
-bitblt
+call_block
+(CALL_DATA cd, sindex_t call_start)
 ()
 ()
-(VALUE ret)
 {
-    ret = rb_str_new2("a bit of bacon, lettuce and tomato");
+    VALUE val = call_block_f(th, reg_cfp, cd, call_start);
+    if (val == Qundef) {
+	RESTORE_REGS();
+    } else {
+	*get_temp_addr(reg_cfp, call_start) = val;
+    }
+    set_default_sp(reg_cfp);
 }
 
-/**
-  @c joke
-  @e The Answer to Life, the Universe, and Everything
-  @j 人生、宇宙、すべての答え。
- */
 DEFINE_INSN
-answer
+call_super
+(CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, VALUE rec_val)
 ()
 ()
-(VALUE ret)
 {
-    ret = INT2FIX(42);
+    struct rb_calling_info calling;
+
+    call_super_f(th, reg_cfp, &calling, cd, call_start, blockiseq, rec_val);
+    CALL_METHOD(&calling, cd);
 }
 
+DEFINE_INSN
+make_range
+(rindex_t res, lindex_t op1, lindex_t op2, rb_num_t flag)
+()
+()
+{
+    make_range_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag);
+}
+
+DEFINE_INSN
+make_array make_hash new_array_min new_array_max
+(rindex_t res, sindex_t start, rb_num_t num)
+()
+()
+{
+    RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, start, num);
+}
+
+DEFINE_INSN
+clone_array
+(rindex_t res, VALUE arr)
+()
+()
+{
+    clone_array_f(reg_cfp, get_var_addr(reg_cfp, res), res, arr);
+}
+
+/* op1 is always in a temporary variable and it is a location of the
+   result too.  */
+DEFINE_INSN
+spread_array
+(lindex_t op1, rb_num_t num, rb_num_t flag)
+()
+()
+{
+    spread_array_f(reg_cfp, get_var_addr(reg_cfp, op1), num, flag);
+}
+
+DEFINE_INSN
+splat_array
+(rindex_t res, lindex_t arr, VALUE flag)
+()
+()
+{
+    splat_array_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, arr), flag);
+}
+
+
+DEFINE_INSN
+concat_array
+(rindex_t res, lindex_t op1, lindex_t op2)
+()
+()
+{
+    concat_array_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2));
+}
+
+DEFINE_INSN
+bkw
+(OFFSET dst, lindex_t kw_bits_index, rb_num_t keyword_index)
+()
+()
+{
+    if (bkw_f(th, reg_cfp, kw_bits_index, keyword_index))
+	JUMP(dst);
+}
+
+DEFINE_INSN
+check_match
+(rindex_t res, lindex_t op1, lindex_t op2, rb_num_t flag)
+()
+()
+{
+    check_match_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag);
+}
+
+DEFINE_INSN
+bt_match
+(OFFSET dst, rindex_t res, lindex_t op1, lindex_t op2, rb_num_t flag)
+()
+()
+{
+    if (bt_match_f(th, reg_cfp, get_temp_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag))
+	JUMP(dst);
+}
+
+DEFINE_INSN
+case_dispatch
+(lindex_t op, CDHASH hash, OFFSET else_offset)
+()
+()
+{
+    OFFSET dst;
+
+    if ((dst = case_dispatch_f(reg_cfp, get_var_addr(reg_cfp, op), hash, else_offset)) != 0)
+	JUMP(dst);
+}
+
+DEFINE_INSN
+regexp_match1
+(rindex_t res, VALUE regex, lindex_t str_op)
+()
+()
+{
+    regexp_match1_f(reg_cfp, get_var_addr(reg_cfp, res), res, regex, get_var_addr(reg_cfp, str_op));
+}
+
+DEFINE_INSN
+regexp_match2
+(insn_t _, CALL_DATA cd, rindex_t res, lindex_t str_op, lindex_t regex_op)
+()
+()
+{
+    if (regexp_match2_f(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, str_op), get_var_addr(reg_cfp, regex_op))) {
+	RESTORE_REGS();
+	set_default_sp(reg_cfp);
+    }
+}
+
+DEFINE_INSN
+raise_except
+(lindex_t op, rb_num_t throw_state)
+()
+()
+{
+    VALUE val = raise_except_f(th, reg_cfp, get_var_addr(reg_cfp, op), throw_state);
+    THROW_EXCEPTION(val);
+    /* unreachable */
+}
+
+DEFINE_INSN
+raise_except_val
+(VALUE throwobj, rb_num_t throw_state)
+()
+()
+{
+    VALUE val = raise_except_val_f(th, reg_cfp, throwobj, throw_state);
+    THROW_EXCEPTION(val);
+    /* unreachable */
+}
+
+DEFINE_INSN
+define_class
+(ID id, ISEQ class_iseq, rb_num_t flags, lindex_t op1, lindex_t op2, sindex_t stack_top)
+()
+()
+{
+    define_class(th, reg_cfp, id, class_iseq, flags, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), stack_top);
+    RESTORE_REGS();
+    set_default_sp(reg_cfp);
+}
+
+DEFINE_INSN
+run_once
+(rindex_t res, ISEQ iseq, IC ic)
+()
+()
+{
+    run_once_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, iseq, ic);
+}

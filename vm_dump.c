@@ -248,7 +248,7 @@ vm_stack_dump_each(rb_thread_t *th, rb_control_frame_t *cfp)
     if (VM_FRAME_RUBYFRAME_P(cfp)) {
 	rb_iseq_t *iseq = cfp->iseq;
 	argc = iseq->body->param.lead_num;
-	local_size = iseq->body->local_size;
+	local_size = iseq->body->local_table_size;
     }
 
     /* stack trace header */
@@ -345,12 +345,12 @@ rb_vmdebug_debug_print_pre(rb_thread_t *th, rb_control_frame_t *cfp, const VALUE
 	int i;
 
 	for (i=0; i<(int)VM_CFP_CNT(th, cfp); i++) {
-	    printf(" ");
+	    fprintf(stderr," ");
 	}
-	printf("| ");
-	if(0)printf("[%03ld] ", (long)(cfp->sp - th->stack));
+	fprintf(stderr,"| ");
+	if(0)fprintf(stderr,"[%03ld] ", (long)(cfp->sp - th->stack));
 
-	/* printf("%3"PRIdPTRDIFF" ", VM_CFP_CNT(th, cfp)); */
+	/* fprintf(stderr,"%3"PRIdPTRDIFF" ", VM_CFP_CNT(th, cfp)); */
 	if (pc >= 0) {
 	    const VALUE *iseq_original = rb_iseq_original_iseq((rb_iseq_t *)iseq);
 

@@ -135,12 +135,14 @@ rb_eql(VALUE obj1, VALUE obj2)
  *     1.eql? 1.0   #=> false
  */
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_obj_equal(VALUE obj1, VALUE obj2)
 {
     if (obj1 == obj2) return Qtrue;
     return Qfalse;
 }
+RUBY_SYMBOL_EXPORT_END
 
 #if 0
 /*
@@ -183,11 +185,13 @@ VALUE rb_obj_hash(VALUE obj);
  *  Boolean negate.
  */
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_obj_not(VALUE obj)
 {
     return RTEST(obj) ? Qfalse : Qtrue;
 }
+RUBY_SYMBOL_EXPORT_END
 
 /*
  *  call-seq:

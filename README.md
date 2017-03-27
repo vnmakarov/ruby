@@ -1,167 +1,325 @@
-[![Build Status](https://travis-ci.org/ruby/ruby.svg)](https://travis-ci.org/ruby/ruby)
-[![Build status](https://ci.appveyor.com/api/projects/status/0sy8rrxut4o0k960/branch/trunk?svg=true)](https://ci.appveyor.com/project/ruby/ruby/branch/trunk)
+# What's the branch about
 
-# What's Ruby
+* The branch `rtl_mjit_branch` is used for development of **RTL
+  (register transfer language)** VM insns and MRI JIT (**MJIT** in
+  brief) of the RTL insns
 
-Ruby is the interpreted scripting language for quick and easy object-oriented
-programming.  It has many features to process text files and to do system
-management tasks (as in Perl).  It is simple, straight-forward, and
-extensible.
-
-## Features of Ruby
-
-*   Simple Syntax
-*   **Normal** Object-oriented Features (e.g. class, method calls)
-*   **Advanced** Object-oriented Features (e.g. Mix-in, Singleton-method)
-*   Operator Overloading
-*   Exception Handling
-*   Iterators and Closures
-*   Garbage Collection
-*   Dynamic Loading of Object Files (on some architectures)
-*   Highly Portable (works on many Unix-like/POSIX compatible platforms as
-    well as Windows, Mac OS X, Haiku, etc.) cf.
-    https://bugs.ruby-lang.org/projects/ruby-trunk/wiki/SupportedPlatforms
+* The last branch merge point with the trunk is always the head of the
+  branch `rtl_mjit_branch_base`
+    * The branch `rtl_mjit_branch` will be merged with the trunk from
+      time to time and correspondingly the head of the branch
+      `rtl_mjit_branch_base` will be the last merge point with the trunk
 
 
-## How to get Ruby
+# RTL insns
 
-For a complete list of ways to install Ruby, including using third-party tools
-like rvm, see:
+* The major goal of RTL insns introduction is an implementation of **IR
+  for Ruby code analysis and optimizations**
+    * The current **stack based insns** are an inconvenient IR for such goal
 
-https://www.ruby-lang.org/en/downloads/
+* Secondary goal is faster interpretation of VM insns
 
-The Ruby distribution files can be found on the following FTP site:
+    * Stack based insns create additional memory traffic.  Let us
+      consider Ruby code `a = b + c`.  Stack insns vs RTL insns for
+      the code:
 
-ftp://ftp.ruby-lang.org/pub/ruby/
-
-The trunk of the Ruby source tree can be checked out with the following
-command:
-
-    $ svn co https://svn.ruby-lang.org/repos/ruby/trunk/ ruby
-
-Or if you are using git then use the following command:
-
-    $ git clone git://github.com/ruby/ruby.git
-
-There are some other branches under development.  Try the following command
-to see the list of branches:
-
-    $ svn ls https://svn.ruby-lang.org/repos/ruby/branches/
-
-Or if you are using git then use the following command:
-
-    $ git ls-remote git://github.com/ruby/ruby.git
-
-## Ruby home page
-
-The URL of the Ruby home page is:
-
-https://www.ruby-lang.org/
-
-## Mailing list
-
-There is a mailing list to talk about Ruby. To subscribe to this list, please
-send the following phrase:
-
-    subscribe
-
-in the mail body (not subject) to the address
-<mailto:ruby-talk-request@ruby-lang.org>.
-
-## How to compile and install
-
-This is what you need to do to compile and install Ruby:
-
-1.  If you want to use Microsoft Visual C++ to compile ruby, read
-    win32/README.win32 instead of this document.
-
-2.  If `./configure` does not exist or is older than configure.in, run
-    `autoconf` to (re)generate configure.
-
-3.  Run `./configure`, which will generate `config.h` and `Makefile`.
-
-    Some C compiler flags may be added by default depending on your
-    environment.  Specify `optflags=..` and `warnflags=..` as necessary to
-    override them.
-
-4.  Edit `defines.h` if you need. Usually this step will not be needed.
-
-5.  Remove comment mark(`#`) before the module names from `ext/Setup` (or add
-    module names if not present), if you want to link modules statically.
-
-    If you don't want to compile non static extension modules (probably on
-    architectures which do not allow dynamic loading), remove comment mark
-    from the line "`#option nodynamic`" in `ext/Setup`.
-
-    Usually this step will not be needed.
-
-6.  Run `make`.
-
-7.  Optionally, run '`make check`' to check whether the compiled Ruby
-    interpreter works well. If you see the message "`check succeeded`", your
-    ruby works as it should (hopefully).
-
-8.  Run '`make install`'
-
-    This command will create the following directories and install files into
-    them.
-
-    *   `${DESTDIR}${prefix}/bin`
-    *   `${DESTDIR}${prefix}/include/ruby-${MAJOR}.${MINOR}.${TEENY}`
-    *   `${DESTDIR}${prefix}/include/ruby-${MAJOR}.${MINOR}.${TEENY}/${PLATFORM}`
-    *   `${DESTDIR}${prefix}/lib`
-    *   `${DESTDIR}${prefix}/lib/ruby`
-    *   `${DESTDIR}${prefix}/lib/ruby/${MAJOR}.${MINOR}.${TEENY}`
-    *   `${DESTDIR}${prefix}/lib/ruby/${MAJOR}.${MINOR}.${TEENY}/${PLATFORM}`
-    *   `${DESTDIR}${prefix}/lib/ruby/site_ruby`
-    *   `${DESTDIR}${prefix}/lib/ruby/site_ruby/${MAJOR}.${MINOR}.${TEENY}`
-    *   `${DESTDIR}${prefix}/lib/ruby/site_ruby/${MAJOR}.${MINOR}.${TEENY}/${PLATFORM}`
-    *   `${DESTDIR}${prefix}/lib/ruby/vendor_ruby`
-    *   `${DESTDIR}${prefix}/lib/ruby/vendor_ruby/${MAJOR}.${MINOR}.${TEENY}`
-    *   `${DESTDIR}${prefix}/lib/ruby/vendor_ruby/${MAJOR}.${MINOR}.${TEENY}/${PLATFORM}`
-    *   `${DESTDIR}${prefix}/lib/ruby/gems/${MAJOR}.${MINOR}.${TEENY}`
-    *   `${DESTDIR}${prefix}/share/man/man1`
-    *   `${DESTDIR}${prefix}/share/ri/${MAJOR}.${MINOR}.${TEENY}/system`
+```
+                  getlocal_OP__WC__0 <b index>
+                  getlocal_OP__WC__0 <c index>
+                  opt_plus
+                  setlocal_OP__WC__0 <a index>
+```
+                               vs   
+```
+                  plus <a index>, <b index>, <c index>
+```
 
 
-    If Ruby's API version is '*x.y.z*', the `${MAJOR}` is '*x*', the
-    `${MINOR}` is '*y*', and the `${TEENY}` is '*z*'.
+* Stack based insns are **shorter** but usually **require more
+  insns** than RTL ones for the same Ruby code
+    * We save time on memory traffic and insn dispatching
+    * In some cases, RTL insns can be the same number as stack-based
+      insns as typical Ruby code contains a lot of calls.  In such
+      cases, executing RTL insns will be slower executing stack insns
 
-    **NOTE**: teeny of the API version may be different from one of Ruby's
-    program version
+## RTL insn operands
 
-    You may have to be a super user to install ruby.
+* What could be an operand:
+    * only temporaries
+    * temporaries and locals
+    * temporaries and locals even from higher levels
+    * above + instance variables
+    * above + class variables, globals
+
+* Using only temporaries has little sense as it will produce code
+  with practically the same number insns which are longer
+
+* Decoding overhead of numerous type operands will be not
+  compensated by processing smaller number of insns
+
+* The complicated operands also complicate optimizations and MJIT
+
+* Currently **we use only temporaries and locals** as preliminary
+  experiments show that it is the best approach
+      
+* Practically any RTL insn might be an ISEQ call. Therefore we need
+  to provide a solution to put a result at the destination operand
+  as the call will always put it on the stack
+    * If RTL insn is actually an ISEQ call, we change a return PC.  So
+      the next insn executed after call will be an insn moving the result
+      on the stack to the insn destination
+    * To decrease memory overhead, the move insn is a part of the
+      original insn
+        * For example, in the case of a call in "`plus <cont insn>,
+          <call data>, dst, op1, op2`" the next executed insn will be
+          "`<cont insn> <call data>, dst, op1, op2`"
+  
+## RTL insn combining and specialization
+
+* Immediate value specialization (e.g. `plusi` - addition with
+  immediate fixnum)
+      
+* Frequent insn sequences combining (e.g. `bteq` - comparison and
+  branch if the operands are equal)
+  
+## Speculative insn generation
+
+* Some initially generated insns **during their execution** can be transformed
+  into **speculative** ones
+    * Speculation is based on **operand types** (e.g. plus can be
+      transformed into an integer plus) and on the **operand values**
+      (e.g. no multi-precision integers)
+
+* Speculative insns can be transformed into **unchanging regular
+  insns** if the speculation is wrong
+    * Speculation insns have a code checking the speculation correctness
+
+* Speculation will be more important for JITed code performance
+  
+## Two approaches to generate RTL insns:
+
+* The **simplest** way is to generate RTL insns from the stack
+  insns
+* A **faster** approach is to generate directly from MRI parse
+  tree nodes.
+* We use the later approach as it makes MRI faster
+
+## RTL insns status and future work
+
+* It mostly works (`make check` reports no regressions)
+
+* Still a lot of work should be done for performance analysis and
+  performance tuning work
+
+* There are a lot of changed files but major changes are in:
+
+    * `insns.def`: New definitions of RTL insns
+    * `rtl_exec.c`: Most of code executing RTL insns
+    * `compile.c`: Translations of the parse tree into RTL insns.  The
+      file is practically rewritten but I tried to use the
+      same structure and function names
+
+---
+
+# MRI JIT
+
+## A few possible approaches in JIT implementation:
+
+* JIT specialized for a specific language (e.g. luajit, rujit)
+    * Pro: achievability of very fast compilation
+    * Con: a lot of efforts to implement decent optimizations and
+      multi-target generation
+          
+* Using existing VMs with JIT or JIT libraries: Oracle JVM and Graal, IBM OMR,
+  different JavaScript JITs, libjit
+    * Pro: saving a lot of efforts
+    * Cons: Big dependency on code which is hard to control.
+      Less optimized code than MRI generated by used C compilers
+      (even with using JVM server compiler).
+      Most of the JITs are already used for Ruby implementation
+
+* Using JITs frameworks of existing C compilers: GCC JIT, LLVM JIT
+  engines
+    * Pro: saving a lot of efforts in generating highly optimized
+      code for multiple targets.  No new dependencies as C
+      compilers are used for building MRI
+    * Cons: Unstable interfaces. An LLVM JIT is already used by
+      Rubicon.  A lot of efforts in preparation of code used by
+      RTL insns (**an environment**)
+          
+* Using existing C compilers
+    * Pro: Very stable interface.  The simplest approach to
+      generate highly optimized code for multiple targets (minimal
+      changes to MRI).  Small efforts to prepare the environment.
+      Portability (e.g. GCC or LLVM can be used).  No new dependencies.
+      Easy JITed code debugging.  Rich optimization set of
+        industrial C compilers has a potential to generate a
+        better code especially if we manage to provide profile
+        info to them
+    * Con: Big JIT code compilation time because of time spent on
+      lexical, syntax, semantic analysis and optimizations not
+      tailored for the speedy work
+
+* The above is just a very brief analysis resulting in me to use the
+  last approach.  It is the simplest one and adequate for long running
+  Ruby programs like Ruby on Rails
+    * Spending efforts to speed up the compilation
+  
+## MJIT organization
 
 
-If you fail to compile ruby, please send the detailed error report with the
-error log and machine/OS type, to help others.
+```
+  _______     _________________
+ |header |-->| minimized header|
+ |_______|   |_________________|
+               |                         MRI building
+ --------------|----------------------------------------
+               |                         MRI execution
+               |                                            
+  _____________|_____
+ |             |     |
+ |          ___V__   |  CC      ____________________
+ |         |      |----------->| precompiled header |
+ |         |      |  |         |____________________|
+ |         |      |  |              |
+ |         | MJIT |  |              |
+ |         |      |  |              |
+ |         |      |  |          ____V___  CC  __________
+ |         |______|----------->| C code |--->| .so file |
+ |                   |         |________|    |__________|
+ |                   |                              |
+ |                   |                              |
+ | MRI machine code  |<-----------------------------
+ |___________________|             loading
 
-Some extension libraries may not get compiled because of lack of necessary
-external libraries and/or headers, then you will need to run '`make distclean-ext`'
-to remove old configuration after installing them in such case.
+```
 
-## Copying
+* MJIT is a **method JIT** (one more reason for the name)
 
-See the file [COPYING](COPYING).
+* An important organization goal is to minimize the JIT compilation time
 
-## Feedback
+* To simplify JIT implementation the environment (C code header needed
+  to C code generated by MJIT) is just `vm.c` file
 
-Questions about the Ruby language can be asked on the Ruby-Talk mailing list
-(https://www.ruby-lang.org/en/community/mailing-lists) or on websites like
-(https://stackoverflow.com).
+* A special Ruby **script minimize the environment**
+      * Removing about 90% declarations
 
-Bug reports should be filed at https://bugs.ruby-lang.org. Read [HowToReport] for more information.
+* MJIT has a several threads (workers) to do **parallel compilations**
+    * One worker prepares a **precompiled code of the minimized header**
+        * It starts at the MRI execution start
 
-[HowToReport]: https://bugs.ruby-lang.org/projects/ruby/wiki/HowToReport
+    * One or more workers generate PIC object files of ISEQs
+        * They start when the precompiled header is ready
+        * They take ISEQs from a **priority queue** unless it is empty.
+        * They translate ISEQs into C-code using the precompiled header,
+          call CC and load PIC code when it is ready
 
-##Contributing
+* MJIT put ISEQ in the queue when ISEQ is called or right after
+  generating ISEQ for AOT (**Ahead Of Time** compilation) 
 
-See the file [CONTRIBUTING.md](CONTRIBUTING.md)
+* MJIT can **reorder ISEQs in the queue** if some ISEQ has been called many
+  times and its compilation did not start yet or we need the ISEQ code
+  for AOT
 
+* MRI reuses the machine code if it already exists for ISEQ
 
-## The Author
+* All files are stored in `/tmp`.  On modern Linux `/tmp` is a file
+  system in memory
 
-Ruby was originally designed and developed by Yukihiro Matsumoto (Matz) in
-1995.
+* The machine code execution **can stop and switch to the ISEQ
+  interpretation** if some condition is not satisfied as the machine
+  code can be speculative or some exception raises
 
-<mailto:matz@ruby-lang.org>
+* Speculative machine code can be **canceled**, and a new **mutated**
+  machine code can be queued for creation
+    * It can happen when insn speculation was wrong
+    * There is a constraint on the mutation number.  The default
+      value can be changed by a MJIT option.  The last mutation will
+      contain the code without any speculation insns
+
+* In AOT mode, ISEQ JIT code creation is queued
+  right after the ISEQ creation and ISEQ JIT code is always tried to be
+  executed first.  In other words, VM waits the creation of JIT code
+  if it is not available
+    * Now AOT probably has a sense mostly for big long running programs
+
+* MJIT options can be given on the command line or by environment
+  variable RUBYOPT (the later probably will be removed in the future)
+
+## MJIT status
+
+* It is on very early stages of the development and only ready for
+  usage of few small and simple Ruby programs
+    * `make test` has no issues
+    * The compilation of small ISEQ takes about 50-70 ms on modern
+      x86-64 CPUs
+    * No Ruby program real time execution slow down because of MJIT
+    * Depending on a MJIT option, GCC or LLVM is used
+        * Some benchmarks are faster with GCC, some are faster with
+          LLVM Clang
+        * There are a few factors (mostly relation between compilation
+          speed and generated code quality) making hard to predict the
+          outcome
+        * As GCC and LLVM are ABI compatible you can compile MRI by GCC
+          and use LLVM for MJIT or vise verse
+
+    * MJIT is switched on by `-j` option
+    * Some other useful MJIT options:
+        * `-j:v` helps to see how MJIT works: what ISEQs and when are
+          compiled
+        * `-j:p` prints a final profile about how frequently ISEQs were
+          executed in the interpreter and JIT mode
+        * `-j:a` switches NJIT on in AOT mode
+        * `-j:s` saves the precompiled header and all C files and object
+          files in `/tmp` after MRI finish
+        * `-j:t=N` defines number of threads used by MJIT to compile
+          ISEQs in parallel (default N is 1)
+        * Use ruby option `--help` to see all MJIT options
+
+## MJIT future works
+
+* A lot of things should be done to use MJIT.  Here are the high
+  priority ones:
+
+    * Make it working for `make check`
+
+    * Generation of optimized C code:
+        * The ultimate goal is to provide possibility of **inlining on
+          paths `Ruby->C->Ruby`** where Ruby means C code generated by MJIT
+          for user defined Ruby methods and C means MRI C code implementing
+          some predefined Ruby methods (e.g. `times` for `Number`)
+        * More aggressively speculative C code generation with more
+          possibilities for C compiler optimizations, e.g. speculative
+          constant usage for C compiler constant folding, (conditional) constant
+          propagation, etc.
+        * Translations of Ruby temporaries and locals into C locals and
+          saving them on MRI thread stack in case of deoptimization
+            * Direct calls of C functions generated for ISEQs by MJIT
+              (another form of speculations)
+        * Transition from `static inline` functions to `extern inline`
+          for GCC and Clang to permit the compilers themselves decide
+          about inlining profitability
+        * Pass profile info through hot/cold function attributes
+             * May be pass more detail info through C compiler profile
+               info format in the future
+        
+    * Implement ISEQ JIT code unloading in the case ISEQ cancellation
+    
+    * Tuning MJIT for faster compilation and less waiting time
+    
+    * Implementing **On Stack Replacement** (OSR)
+        * OSR is a replacement of still executed byte code ISEQ by JIT
+          generated machine code for the ISEQ
+        * It is a low priority task as it is usable now only for ISEQs
+          with while-statements
+
+    * Tailor MJIT for a server environment
+        * Reuse the same ISEQ JIT code for different running MRI instances
+        * Use a crypto-hash function to search JIT code for given pair
+         (PCH hash, ISEQ hash)
+
+    * MJIT vulnerability
+        * Prevent adversary from changing C compiler
+        * Prevent adversary from changing MJIT C and object files
+        * Prevent adversary from changing MJIT headers
+            * Use crypto hash function to check the header authenticity

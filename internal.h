@@ -26,6 +26,12 @@ extern "C" {
 #define LIKELY(x) RB_LIKELY(x)
 #define UNLIKELY(x) RB_UNLIKELY(x)
 
+#if defined(__GNUC__)
+#define do_inline inline __attribute__ ((__always_inline__))
+#else
+#define do_inline inline
+#endif
+
 #ifndef MAYBE_UNUSED
 # define MAYBE_UNUSED(x) x
 #endif
@@ -1211,7 +1217,7 @@ VALUE rb_float_abs(VALUE flt);
 #define RUBY_BIT_ROTR(v, n) (((v) >> (n)) | ((v) << ((sizeof(v) * 8) - n)))
 #endif
 
-static inline double
+static do_inline double
 rb_float_flonum_value(VALUE v)
 {
 #if USE_FLONUM
@@ -1232,13 +1238,13 @@ rb_float_flonum_value(VALUE v)
     return 0.0;
 }
 
-static inline double
+static do_inline double
 rb_float_noflonum_value(VALUE v)
 {
     return ((struct RFloat *)v)->float_value;
 }
 
-static inline double
+static do_inline double
 rb_float_value_inline(VALUE v)
 {
     if (FLONUM_P(v)) {
@@ -1247,7 +1253,7 @@ rb_float_value_inline(VALUE v)
     return rb_float_noflonum_value(v);
 }
 
-static inline VALUE
+static do_inline VALUE
 rb_float_new_inline(double d)
 {
 #if USE_FLONUM
@@ -1751,7 +1757,7 @@ __extension__({ \
 	RB_BUILTIN_TYPE(arg_obj); \
     })
 #else
-static inline int
+static do_inline int
 rb_obj_builtin_type(VALUE obj)
 {
     return RB_SPECIAL_CONST_P(obj) ? -1 :

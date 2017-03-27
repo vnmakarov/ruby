@@ -50,6 +50,8 @@
 
 #include "ruby/util.h"
 
+#include "mjit.h"
+
 #ifndef HAVE_STDLIB_H
 char *getenv();
 #endif
@@ -129,6 +131,7 @@ struct ruby_cmdline_options {
     unsigned int features;
     int verbose;
     int safe_level;
+    struct mjit_options mjit;
     unsigned int setids;
     unsigned int dump;
     const char *script;
@@ -233,7 +236,9 @@ usage(const char *name, int help)
 	M("-w",		   "",			   "turn warnings on for your script"),
 	M("-W[level=2]",   "",			   "set warning level; 0=silence, 1=medium, 2=verbose"),
 	M("-x[directory]", "",			   "strip off text before #!ruby line and perhaps cd to directory"),
-	M("-h",		   "",			   "show this message, --help for more info"),
+	M("-j",		   ", --jit",		   "use MJIT with default options"),
+	M("-j:option",     ", --jit:option",       "use MJIT with an option"),
+	M("-h",		   "",			   "show this message, --help for more info including MJIT options"),
     };
     static const struct message help_msg[] = {
 	M("--copyright",                   "", "print the copyright"),
@@ -250,6 +255,17 @@ usage(const char *name, int help)
 	M("rubyopt", "",        "RUBYOPT environment variable (default: enabled)"),
 	M("frozen-string-literal", "", "freeze all string literals (default: disabled)"),
     };
+    static const struct message mjit_options[] = {
+	M("0",     "",                 "Switch off MJIT"),
+	M("a",     ", aot",            "Use MJIT for Ahead of Time Compilation"),
+	M("p",     ", profile",        "Print iseq MJIT statistics to stderr"),
+	M("s",     ", save-temps",     "Save MJIT temporary files in /tmp"),
+	M("v",     ", verbose",        "Print MJIT logs to stderr"),
+	M("l",     ", llvm"   ,        "Use LLVM clang instead of GCC"),
+	M("w",     ", warnings",       "Enable printing MJIT warnings"),
+	M("t=num", ", threads=num",    "Use given number of MJIT threads"),
+	M("m=num", ", mutations=num",  "Maximum number of permitted iseq mutations"),
+    };
     int i;
     const int num = numberof(usage_msg) - (help ? 1 : 0);
 #define SHOW(m) show_usage_line((m).str, (m).namelen, (m).secondlen, help)
@@ -265,6 +281,9 @@ usage(const char *name, int help)
     puts("Features:");
     for (i = 0; i < numberof(features); ++i)
 	SHOW(features[i]);
+    puts("MJIT options:");
+    for (i = 0; i < numberof(mjit_options); ++i)
+	SHOW(mjit_options[i]);
 }
 
 #define rubylib_path_new rb_str_new
@@ -893,6 +912,39 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 #define set_source_encoding_once(opt, e, elen) \
     set_option_encoding_once("source", &(opt)->src.enc.name, (e), (elen))
 
+static void
+setup_mjit_options(const char *s, struct mjit_options *mjit_opt) {
+    mjit_opt->on = 1;
+    if (*s == 0) return;
+    if (strcmp(s, ":0") == 0) {
+	mjit_opt->on = 0;
+    } else if (strcmp(s, ":a") == 0 || strcmp(s, ":aot") == 0) {
+	mjit_opt->aot = 1;
+    } else if (strcmp(s, ":p") == 0 || strcmp(s, ":profile") == 0) {
+	mjit_opt->profile = 1;
+    } else if (strcmp(s, ":s") == 0 || strcmp(s, ":save-temps") == 0) {
+	mjit_opt->save_temps = 1;
+    } else if (strcmp(s, ":v") == 0 || strcmp(s, ":verbose") == 0) {
+	mjit_opt->verbose = 1;
+    } else if (strcmp(s, ":l") == 0 || strcmp(s, ":llvm") == 0) {
+	mjit_opt->llvm = 1;
+    } else if (strcmp(s, ":w") == 0 || strcmp(s, ":warnings") == 0) {
+	mjit_opt->warnings = 1;
+    } else if (strncmp(s, ":t=", 3) == 0) {
+	mjit_opt->threads = atoi(s + 3);
+    } else if (strncmp(s, ":threads=", 9) == 0) {
+	mjit_opt->threads = atoi(s + 9);
+    } else if (strncmp(s, ":m=", 3) == 0) {
+	mjit_opt->max_mutations = atoi(s + 3);
+    } else if (strncmp(s, ":mutations=", 11) == 0) {
+	mjit_opt->max_mutations = atoi(s + 11);
+    } else {
+	rb_raise(rb_eRuntimeError,
+		 "invalid MJIT option `%s' (--help will show valid MJIT options)", s + 1);
+    }
+}
+
+
 static long
 proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 {
@@ -1000,6 +1052,10 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 	    opt->dump |= DUMP_BIT(usage);
 	    goto switch_end;
 
+	  case 'j':
+	    setup_mjit_options(s + 1, &opt->mjit);
+	    break;
+	    
 	  case 'l':
 	    if (envopt) goto noenvopt;
 	    opt->do_line = TRUE;
@@ -1244,6 +1300,9 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 		opt->verbose = 1;
 		ruby_verbose = Qtrue;
 	    }
+	    else if (strncmp("jit", s, 3) == 0) {
+		setup_mjit_options(s + 3, &opt->mjit);
+	    }
 	    else if (strcmp("yydebug", s) == 0) {
 		if (envopt) goto noenvopt_long;
 		opt->dump |= DUMP_BIT(yydebug);
@@ -1475,6 +1534,9 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
 	    opt->intern.enc.name = int_enc_name;
     }
 
+    if (opt->mjit.on)
+      mjit_init(&opt->mjit);
+    
     if (opt->src.enc.name)
 	rb_warning("-K is specified; it is for 1.8 compatibility and may cause odd behavior");
 

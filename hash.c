@@ -2793,6 +2793,7 @@ rb_hash_compare_by_id(VALUE hash)
  *
  */
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_hash_compare_by_id_p(VALUE hash)
 {
@@ -2803,6 +2804,7 @@ rb_hash_compare_by_id_p(VALUE hash)
     }
     return Qfalse;
 }
+RUBY_SYMBOL_EXPORT_END
 
 VALUE
 rb_ident_hash_new(void)

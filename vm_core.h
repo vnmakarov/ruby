@@ -148,6 +148,7 @@
 #endif /* OPT_CALL_THREADED_CODE */
 
 typedef unsigned long rb_num_t;
+typedef unsigned long lindex_t;
 
 enum ruby_tag_type {
     RUBY_TAG_RETURN	= 0x1,
@@ -211,30 +212,10 @@ enum method_missing_reason {
     MISSING_NONE      = 0x40
 };
 
-struct rb_call_info {
-    /* fixed at compile time */
-    ID mid;
-    unsigned int flag;
-    int orig_argc;
-};
-
-struct rb_call_info_kw_arg {
-    int keyword_len;
-    VALUE keywords[1];
-};
-
-struct rb_call_info_with_kwarg {
-    struct rb_call_info ci;
-    struct rb_call_info_kw_arg *kw_arg;
-};
-
-struct rb_calling_info {
-    VALUE block_handler;
-    VALUE recv;
-    int argc;
-};
-
 struct rb_call_cache;
+struct rb_calling_info;
+struct rb_call_info;
+
 typedef VALUE (*vm_call_handler)(struct rb_thread_struct *th, struct rb_control_frame_struct *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc);
 
 struct rb_call_cache {
@@ -252,6 +233,42 @@ struct rb_call_cache {
 	enum method_missing_reason method_missing_reason; /* used by method_missing */
 	int inc_sp; /* used by cfunc */
     } aux;
+};
+
+struct rb_call_info {
+    /* fixed at compile time */
+    ID mid;
+    unsigned int flag;
+    int orig_argc;
+};
+
+struct rb_call_data {
+    struct rb_call_info call_info;
+    struct rb_call_cache call_cache;
+    lindex_t call_start;
+};
+
+struct rb_call_info_kw_arg {
+    int keyword_len;
+    VALUE keywords[1];
+};
+
+struct rb_call_data_with_kwarg {
+    struct rb_call_info call_info;
+    struct rb_call_cache call_cache;
+    lindex_t call_start;
+    struct rb_call_info_kw_arg *kw_arg;
+};
+
+struct rb_call_info_with_kwarg {
+    struct rb_call_info ci;
+    struct rb_call_info_kw_arg *kw_arg;
+};
+
+struct rb_calling_info {
+    VALUE block_handler;
+    VALUE recv;
+    int argc;
 };
 
 #if 1
@@ -282,8 +299,10 @@ struct rb_iseq_constant_body {
 	ISEQ_TYPE_DEFINED_GUARD
     } type;              /* instruction sequence type */
 
+    unsigned int temp_vars_num;
+    
     unsigned int iseq_size;
-    const VALUE *iseq_encoded; /* encoded iseq (insn addr and operands) */
+    VALUE *iseq_encoded; /* encoded iseq (insn addr and operands) */
 
     /**
      * parameter information
@@ -329,7 +348,7 @@ struct rb_iseq_constant_body {
 	int post_start;
 	int post_num;
 	int block_start;
-
+      
 	const VALUE *opt_table; /* (opt_num + 1) entries. */
 	/* opt_num and opt_table:
 	 *
@@ -366,24 +385,35 @@ struct rb_iseq_constant_body {
     const struct iseq_catch_table *catch_table;
 
     /* for child iseq */
-    const struct rb_iseq_struct *parent_iseq;
+    struct rb_iseq_struct *parent_iseq;
     struct rb_iseq_struct *local_iseq; /* local_iseq->flip_cnt can be modified */
 
     union iseq_inline_storage_entry *is_entries;
-    struct rb_call_info *ci_entries; /* struct rb_call_info ci_entries[ci_size];
-				      * struct rb_call_info_with_kwarg cikw_entries[ci_kw_size];
+    struct rb_call_data *cd_entries; /* struct rb_call_data cd_entries[cd_size];
+				      * struct rb_call_data_with_kwarg cikw_entries[cd_kw_size];
 				      * So that:
-				      * struct rb_call_info_with_kwarg *cikw_entries = &body->ci_entries[ci_size];
+				      * struct rb_call_data_with_kwarg *cdkw_entries = &body->cd_entries[cd_size];
 				      */
-    struct rb_call_cache *cc_entries; /* size is ci_size = ci_kw_size */
-
+    
     VALUE mark_ary;     /* Array: includes operands which should be GC marked */
 
     unsigned int local_table_size;
     unsigned int is_size;
-    unsigned int ci_size;
-    unsigned int ci_kw_size;
+    unsigned int cd_size;
+    unsigned int cd_kw_size;
     unsigned int line_info_size;
+
+    /* Non-zero for an element if the corresponding var is
+       accessed from an inside scope.  */
+    char *nonlocal_var_p;
+
+    /* The following MJIT related info.  */
+    void *jit_code;
+    long unsigned overall_calls, jit_calls;
+    struct rb_mjit_batch_iseq *batch_iseq;
+    /* Number of JIT code mutations (and cancellations).  */
+    int jit_mutations_num;
+
     unsigned int stack_max; /* for stack overflow check */
 };
 
@@ -393,7 +423,7 @@ struct rb_iseq_struct {
     VALUE flags;
     VALUE reserved1;
     struct rb_iseq_constant_body *body;
-
+    
     union { /* 4, 5 words */
 	struct iseq_compile_data *compile_data; /* used at compile time */
 
@@ -596,9 +626,9 @@ typedef struct rb_vm_struct {
 
 struct rb_captured_block {
     VALUE self;
-    const VALUE *ep;
+    const VALUE *ep, *bp;
     union {
-	const rb_iseq_t *iseq;
+	rb_iseq_t *iseq;
 	const struct vm_ifunc *ifunc;
 	VALUE val;
     } code;
@@ -628,11 +658,11 @@ struct rb_block {
 };
 
 typedef struct rb_control_frame_struct {
-    const VALUE *pc;		/* cfp[0] */
-    VALUE *sp;			/* cfp[1] */
-    const rb_iseq_t *iseq;	/* cfp[2] */
-    VALUE self;			/* cfp[3] / block[0] */
-    const VALUE *ep;		/* cfp[4] / block[1] */
+    VALUE *pc;		/* cfp[0] */
+    VALUE *sp;		/* cfp[1] */
+    rb_iseq_t *iseq;	/* cfp[2] */
+    VALUE self;			/* cfp[4] / block[0] */
+    VALUE *restrict ep, *restrict bp;	/* cfp[5] / block[1] */
     const void *block_code;     /* cfp[5] / block[2] */ /* iseq or ifunc */
 
 #if VM_DEBUG_BP_CHECK
@@ -839,11 +869,11 @@ typedef enum {
 RUBY_SYMBOL_EXPORT_BEGIN
 
 /* node -> iseq */
-rb_iseq_t *rb_iseq_new(NODE*, VALUE, VALUE, VALUE, const rb_iseq_t *parent, enum iseq_type);
-rb_iseq_t *rb_iseq_new_top(NODE *node, VALUE name, VALUE path, VALUE absolute_path, const rb_iseq_t *parent);
-rb_iseq_t *rb_iseq_new_main(NODE *node, VALUE path, VALUE absolute_path, const rb_iseq_t *parent);
+rb_iseq_t *rb_iseq_new(NODE*, VALUE, VALUE, VALUE, rb_iseq_t *parent, enum iseq_type);
+rb_iseq_t *rb_iseq_new_top(NODE *node, VALUE name, VALUE path, VALUE absolute_path, rb_iseq_t *parent);
+rb_iseq_t *rb_iseq_new_main(NODE *node, VALUE path, VALUE absolute_path, rb_iseq_t *parent);
 rb_iseq_t *rb_iseq_new_with_bopt(NODE*, VALUE, VALUE, VALUE, VALUE, VALUE, enum iseq_type, VALUE);
-rb_iseq_t *rb_iseq_new_with_opt(NODE*, VALUE, VALUE, VALUE, VALUE, const rb_iseq_t *parent, enum iseq_type, const rb_compile_option_t*);
+rb_iseq_t *rb_iseq_new_with_opt(NODE*, VALUE, VALUE, VALUE, VALUE, rb_iseq_t *parent, enum iseq_type, const rb_compile_option_t*);
 
 /* src -> iseq */
 rb_iseq_t *rb_iseq_compile(VALUE src, VALUE file, VALUE line);
@@ -852,6 +882,9 @@ rb_iseq_t *rb_iseq_compile_with_option(VALUE src, VALUE file, VALUE absolute_pat
 
 VALUE rb_iseq_disasm(const rb_iseq_t *iseq);
 int rb_iseq_disasm_insn(VALUE str, const VALUE *iseqval, size_t pos, const rb_iseq_t *iseq, VALUE child);
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+int rb_vm_insn_addr2insn(const void *addr);
+#endif
 const char *ruby_node_name(int node);
 
 VALUE rb_iseq_coverage(const rb_iseq_t *iseq);
@@ -873,7 +906,7 @@ typedef struct {
 
 typedef struct {
     VALUE flags; /* imemo header */
-    const rb_iseq_t *iseq;
+    rb_iseq_t *iseq;
     const VALUE *ep;
     const VALUE *env;
     unsigned int env_size;
@@ -930,6 +963,7 @@ enum vm_svar_index {
 typedef struct iseq_inline_cache_entry *IC;
 typedef struct rb_call_info *CALL_INFO;
 typedef struct rb_call_cache *CALL_CACHE;
+typedef struct rb_call_data *CALL_DATA;
 
 void rb_vm_change_state(void);
 
@@ -1165,6 +1199,9 @@ VM_STACK_ENV_WRITE(const VALUE *ep, int index, VALUE v)
     VM_FORCE_WRITE(&ep[index], v);
 }
 
+
+extern void vm_env_write_slowpath(const VALUE *ep, int index, VALUE v);
+
 const VALUE *rb_vm_ep_local_ep(const VALUE *ep);
 VALUE rb_vm_frame_block_handler(const rb_control_frame_t *cfp);
 
@@ -1314,10 +1351,10 @@ vm_proc_block(VALUE procval)
     return &proc->block;
 }
 
-static inline const rb_iseq_t *vm_block_iseq(const struct rb_block *block);
+static inline rb_iseq_t *vm_block_iseq(const struct rb_block *block);
 static inline const VALUE *vm_block_ep(const struct rb_block *block);
 
-static inline const rb_iseq_t *
+static inline rb_iseq_t *
 vm_proc_iseq(VALUE procval)
 {
     VM_ASSERT(rb_obj_is_proc(procval));
@@ -1330,7 +1367,7 @@ vm_proc_ep(VALUE procval)
     return vm_block_ep(vm_proc_block(procval));
 }
 
-static inline const rb_iseq_t *
+static inline rb_iseq_t *
 vm_block_iseq(const struct rb_block *block)
 {
     switch (vm_block_type(block)) {

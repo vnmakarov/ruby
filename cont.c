@@ -482,7 +482,7 @@ cont_capture(volatile int *volatile stat)
     contval = cont->self;
 
 #ifdef CAPTURE_JUST_VALID_VM_STACK
-    cont->vm_stack_slen = th->cfp->sp - th->stack;
+    cont->vm_stack_slen = (th->cfp->iseq == NULL || imemo_type((VALUE) th->cfp->iseq) != imemo_iseq ? th->cfp->sp : th->cfp->bp + 1 + th->cfp->iseq->body->temp_vars_num + 3) - th->stack;
     cont->vm_stack_clen = th->stack + th->stack_size - (VALUE*)th->cfp;
     cont->vm_stack = ALLOC_N(VALUE, cont->vm_stack_slen + cont->vm_stack_clen);
     MEMCPY(cont->vm_stack, th->stack, VALUE, cont->vm_stack_slen);

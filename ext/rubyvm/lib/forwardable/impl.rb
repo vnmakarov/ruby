@@ -7,7 +7,9 @@ module Forwardable
   rescue SyntaxError
     false
   else
-    iseq.to_a.dig(-1, 1, 1, :mid) == method.to_sym
+    insn = iseq.to_a.dig(-1, 1)
+    # the method is the 1st operand or the 2nd one in case of insn with a cont
+    (insn[1].instance_of?(Hash) ? insn[1][:mid] : insn[2][:mid]) == method.to_sym 
   end
 
   def self._compile_method(src, file, line)

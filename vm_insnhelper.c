@@ -9,13 +9,13 @@
 **********************************************************************/
 
 /* finish iseq array */
-#include "insns.inc"
 #include <math.h>
-#include "constant.h"
 #include "internal.h"
 #include "probes.h"
 #include "probes_helper.h"
 #include "ruby/config.h"
+
+#ifndef MJIT_HEADER
 
 /* control stack frame */
 
@@ -29,11 +29,13 @@ ruby_vm_sysstack_error_copy(void)
     return e;
 }
 
-static void
+RUBY_SYMBOL_EXPORT_BEGIN
+void
 vm_stackoverflow(void)
 {
     rb_exc_raise(ruby_vm_sysstack_error_copy());
 }
+RUBY_SYMBOL_EXPORT_END
 
 #if VM_CHECK_MODE > 0
 static int
@@ -128,7 +130,7 @@ vm_check_frame_detail(VALUE type, int req_block, int req_me, int req_cref, VALUE
     }
 }
 
-static void
+void
 vm_check_frame(VALUE type,
 	       VALUE specval,
 	       VALUE cref_or_me,
@@ -164,7 +166,9 @@ vm_check_frame(VALUE type,
 #define vm_check_frame(a, b, c, d)
 #endif /* VM_CHECK_MODE > 0 */
 
-static inline rb_control_frame_t *
+#endif /* #ifndef MJIT_HEADER */
+
+static do_inline rb_control_frame_t *
 vm_push_frame(rb_thread_t *th,
 	      const rb_iseq_t *iseq,
 	      VALUE type,
@@ -208,7 +212,7 @@ vm_push_frame(rb_thread_t *th,
     *sp++ = specval     /* ep[-1] / block handler or prev env ptr */;
     *sp   = type;       /* ep[-0] / ENV_FLAGS */
 
-    cfp->ep = sp;
+    cfp->ep = cfp->bp = sp;
     cfp->sp = sp + 1;
 
 #if VM_DEBUG_BP_CHECK
@@ -218,10 +222,10 @@ vm_push_frame(rb_thread_t *th,
     if (VMDEBUG == 2) {
 	SDR();
     }
-
     return cfp;
 }
 
+#ifndef MJIT_HEADER
 rb_control_frame_t *
 rb_vm_push_frame(rb_thread_t *th,
 		 const rb_iseq_t *iseq,
@@ -237,8 +241,9 @@ rb_vm_push_frame(rb_thread_t *th,
     return vm_push_frame(th, iseq, type, self, specval, cref_or_me, pc, sp, local_size, stack_max);
 }
 
-/* return TRUE if the frame is finished */
-static inline int
+#endif /* #ifndef MJIT_HEADER */
+
+static do_inline int
 vm_pop_frame(rb_thread_t *th, rb_control_frame_t *cfp, const VALUE *ep)
 {
     VALUE flags = ep[VM_ENV_DATA_INDEX_FLAGS];
@@ -251,6 +256,7 @@ vm_pop_frame(rb_thread_t *th, rb_control_frame_t *cfp, const VALUE *ep)
     return flags & VM_FRAME_FLAG_FINISH;
 }
 
+#ifndef MJIT_HEADER
 void
 rb_vm_pop_frame(rb_thread_t *th)
 {
@@ -282,9 +288,10 @@ rb_error_arity(int argc, int min, int max)
 
 /* lvar */
 
-NOINLINE(static void vm_env_write_slowpath(const VALUE *ep, int index, VALUE v));
+NOINLINE(void vm_env_write_slowpath(const VALUE *ep, int index, VALUE v));
 
-static void
+RUBY_SYMBOL_EXPORT_BEGIN
+void
 vm_env_write_slowpath(const VALUE *ep, int index, VALUE v)
 {
     /* remember env value forcely */
@@ -292,8 +299,11 @@ vm_env_write_slowpath(const VALUE *ep, int index, VALUE v)
     VM_FORCE_WRITE(&ep[index], v);
     VM_ENV_FLAGS_UNSET(ep, VM_ENV_FLAG_WB_REQUIRED);
 }
+RUBY_SYMBOL_EXPORT_END
 
-static inline void
+#endif /* #ifndef MJIT_HEADER */
+
+static do_inline void
 vm_env_write(const VALUE *ep, int index, VALUE v)
 {
     VALUE flags = ep[VM_ENV_DATA_INDEX_FLAGS];
@@ -304,6 +314,8 @@ vm_env_write(const VALUE *ep, int index, VALUE v)
 	vm_env_write_slowpath(ep, index, v);
     }
 }
+
+#ifndef MJIT_HEADER
 
 void
 rb_vm_env_write(const VALUE *ep, int index, VALUE v)
@@ -363,7 +375,8 @@ lep_svar_write(rb_thread_t *th, const VALUE *lep, const struct vm_svar *svar)
     }
 }
 
-static VALUE
+RUBY_SYMBOL_EXPORT_BEGIN
+VALUE
 lep_svar_get(rb_thread_t *th, const VALUE *lep, rb_num_t key)
 {
     const struct vm_svar *svar = lep_svar(th, lep);
@@ -387,6 +400,7 @@ lep_svar_get(rb_thread_t *th, const VALUE *lep, rb_num_t key)
       }
     }
 }
+RUBY_SYMBOL_EXPORT_END
 
 static struct vm_svar *
 svar_new(VALUE obj)
@@ -394,7 +408,7 @@ svar_new(VALUE obj)
     return (struct vm_svar *)rb_imemo_new(imemo_svar, Qnil, Qnil, Qnil, obj);
 }
 
-static void
+void
 lep_svar_set(rb_thread_t *th, const VALUE *lep, rb_num_t key, VALUE val)
 {
     struct vm_svar *svar = lep_svar(th, lep);
@@ -420,6 +434,8 @@ lep_svar_set(rb_thread_t *th, const VALUE *lep, rb_num_t key, VALUE val)
       }
     }
 }
+
+#endif /* #ifndef MJIT_HEADER */
 
 static inline VALUE
 vm_getspecial(rb_thread_t *th, const VALUE *lep, rb_num_t key, rb_num_t type)
@@ -457,6 +473,7 @@ vm_getspecial(rb_thread_t *th, const VALUE *lep, rb_num_t key, rb_num_t type)
     return val;
 }
 
+#ifndef MJIT_HEADER
 PUREFUNC(static rb_callable_method_entry_t *check_method_entry(VALUE obj, int can_be_svar));
 static rb_callable_method_entry_t *
 check_method_entry(VALUE obj, int can_be_svar)
@@ -631,7 +648,8 @@ vm_cref_replace_with_duplicated_cref(const VALUE *ep)
 }
 
 
-static rb_cref_t *
+RUBY_SYMBOL_EXPORT_BEGIN
+rb_cref_t *
 rb_vm_get_cref(const VALUE *ep)
 {
     rb_cref_t *cref = vm_env_cref(ep);
@@ -644,7 +662,7 @@ rb_vm_get_cref(const VALUE *ep)
     }
 }
 
-static const rb_cref_t *
+const rb_cref_t *
 vm_get_const_key_cref(const VALUE *ep)
 {
     const rb_cref_t *cref = rb_vm_get_cref(ep);
@@ -660,6 +678,7 @@ vm_get_const_key_cref(const VALUE *ep)
     /* does not include singleton class */
     return NULL;
 }
+RUBY_SYMBOL_EXPORT_END
 
 void
 rb_vm_rewrite_cref(rb_cref_t *cref, VALUE old_klass, VALUE new_klass, rb_cref_t **new_cref_ptr)
@@ -680,7 +699,8 @@ rb_vm_rewrite_cref(rb_cref_t *cref, VALUE old_klass, VALUE new_klass, rb_cref_t 
     *new_cref_ptr = NULL;
 }
 
-static rb_cref_t *
+RUBY_SYMBOL_EXPORT_BEGIN
+rb_cref_t *
 vm_cref_push(rb_thread_t *th, VALUE klass, const VALUE *ep, int pushed_by_eval)
 {
     rb_cref_t *prev_cref = NULL;
@@ -698,8 +718,11 @@ vm_cref_push(rb_thread_t *th, VALUE klass, const VALUE *ep, int pushed_by_eval)
 
     return vm_cref_new(klass, METHOD_VISI_PUBLIC, FALSE, prev_cref, pushed_by_eval);
 }
+RUBY_SYMBOL_EXPORT_END
 
-static inline VALUE
+#endif /* #ifndef MJIT_HEADER */
+
+static do_inline VALUE
 vm_get_cbase(const VALUE *ep)
 {
     const rb_cref_t *cref = rb_vm_get_cref(ep);
@@ -715,7 +738,7 @@ vm_get_cbase(const VALUE *ep)
     return klass;
 }
 
-static inline VALUE
+static do_inline VALUE
 vm_get_const_base(const VALUE *ep)
 {
     const rb_cref_t *cref = rb_vm_get_cref(ep);
@@ -732,7 +755,7 @@ vm_get_const_base(const VALUE *ep)
     return klass;
 }
 
-static inline void
+static do_inline void
 vm_check_if_namespace(VALUE klass)
 {
     if (!RB_TYPE_P(klass, T_CLASS) && !RB_TYPE_P(klass, T_MODULE)) {
@@ -740,7 +763,7 @@ vm_check_if_namespace(VALUE klass)
     }
 }
 
-static inline void
+static do_inline void
 vm_ensure_not_refinement_module(VALUE self)
 {
     if (RB_TYPE_P(self, T_MODULE) && FL_TEST(self, RMODULE_IS_REFINEMENT)) {
@@ -748,7 +771,7 @@ vm_ensure_not_refinement_module(VALUE self)
     }
 }
 
-static inline VALUE
+static do_inline VALUE
 vm_get_iclass(rb_control_frame_t *cfp, VALUE klass)
 {
     return klass;
@@ -858,7 +881,10 @@ vm_get_cvar_base(const rb_cref_t *cref, rb_control_frame_t *cfp)
     return klass;
 }
 
-static VALUE
+#ifndef MJIT_HEADER
+
+RUBY_SYMBOL_EXPORT_BEGIN
+VALUE
 vm_search_const_defined_class(const VALUE cbase, ID id)
 {
     if (rb_const_defined_at(cbase, id)) return cbase;
@@ -871,13 +897,15 @@ vm_search_const_defined_class(const VALUE cbase, ID id)
     }
     return 0;
 }
+RUBY_SYMBOL_EXPORT_END
+
+#endif /* #ifndef MJIT_HEADER */
 
 #ifndef USE_IC_FOR_IVAR
 #define USE_IC_FOR_IVAR 1
 #endif
 
-ALWAYS_INLINE(static VALUE vm_getivar(VALUE, ID, IC, struct rb_call_cache *, int));
-static inline VALUE
+static do_inline VALUE
 vm_getivar(VALUE obj, ID id, IC ic, struct rb_call_cache *cc, int is_attr)
 {
 #if USE_IC_FOR_IVAR
@@ -923,7 +951,7 @@ vm_getivar(VALUE obj, ID id, IC ic, struct rb_call_cache *cc, int is_attr)
     return rb_ivar_get(obj, id);
 }
 
-static inline VALUE
+static do_inline VALUE
 vm_setivar(VALUE obj, ID id, VALUE val, IC ic, struct rb_call_cache *cc, int is_attr)
 {
 #if USE_IC_FOR_IVAR
@@ -966,18 +994,19 @@ vm_setivar(VALUE obj, ID id, VALUE val, IC ic, struct rb_call_cache *cc, int is_
     return rb_ivar_set(obj, id, val);
 }
 
-static inline VALUE
+static do_inline VALUE
 vm_getinstancevariable(VALUE obj, ID id, IC ic)
 {
     return vm_getivar(obj, id, ic, 0, 0);
 }
 
-static inline void
+static do_inline void
 vm_setinstancevariable(VALUE obj, ID id, VALUE val, IC ic)
 {
     vm_setivar(obj, id, val, ic, 0, 0);
 }
 
+#ifndef MJIT_HEADER
 static VALUE
 vm_throw_continue(rb_thread_t *th, VALUE err)
 {
@@ -1135,7 +1164,8 @@ vm_throw_start(rb_thread_t *const th, rb_control_frame_t *const reg_cfp, enum ru
     return (VALUE)THROW_DATA_NEW(throwobj, escape_cfp, state);
 }
 
-static VALUE
+RUBY_SYMBOL_EXPORT_BEGIN
+VALUE
 vm_throw(rb_thread_t *th, rb_control_frame_t *reg_cfp,
 	 rb_num_t throw_state, VALUE throwobj)
 {
@@ -1150,8 +1180,11 @@ vm_throw(rb_thread_t *th, rb_control_frame_t *reg_cfp,
 	return vm_throw_continue(th, throwobj);
     }
 }
+RUBY_SYMBOL_EXPORT_END
 
-static inline void
+#endif /* #ifndef MJIT_HEADER */
+
+static do_inline void
 vm_expandarray(rb_control_frame_t *cfp, VALUE ary, rb_num_t num, int flag)
 {
     int is_splat = flag & 0x01;
@@ -1212,9 +1245,9 @@ vm_expandarray(rb_control_frame_t *cfp, VALUE ary, rb_num_t num, int flag)
     RB_GC_GUARD(ary);
 }
 
-static VALUE vm_call_general(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc);
+extern VALUE vm_call_general(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc);
 
-static void
+static do_inline void
 vm_search_method(const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE recv)
 {
     VALUE klass = CLASS_OF(recv);
@@ -1236,7 +1269,7 @@ vm_search_method(const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE 
 #endif
 }
 
-static inline int
+static do_inline int
 check_cfunc(const rb_callable_method_entry_t *me, VALUE (*func)())
 {
     if (me && me->def->type == VM_METHOD_TYPE_CFUNC &&
@@ -1248,6 +1281,7 @@ check_cfunc(const rb_callable_method_entry_t *me, VALUE (*func)())
     }
 }
 
+#ifndef MJIT_HEADER
 static
 #ifndef NO_BIG_INLINE
 inline
@@ -1308,7 +1342,8 @@ rb_equal_opt(VALUE obj1, VALUE obj2)
 
 static VALUE vm_call0(rb_thread_t*, VALUE, ID, int, const VALUE*, const rb_callable_method_entry_t *);
 
-static VALUE
+RUBY_SYMBOL_EXPORT_BEGIN
+VALUE
 check_match(VALUE pattern, VALUE target, enum vm_check_match_type type)
 {
     switch (type) {
@@ -1333,7 +1368,9 @@ check_match(VALUE pattern, VALUE target, enum vm_check_match_type type)
 	rb_bug("check_match: unreachable");
     }
 }
+RUBY_SYMBOL_EXPORT_END
 
+#endif /* #ifndef MJIT_HEADER */
 
 #if defined(_MSC_VER) && _MSC_VER < 1300
 #define CHECK_CMP_NAN(a, b) if (isnan(a) || isnan(b)) return Qfalse;
@@ -1341,41 +1378,42 @@ check_match(VALUE pattern, VALUE target, enum vm_check_match_type type)
 #define CHECK_CMP_NAN(a, b) /* do nothing */
 #endif
 
-static inline VALUE
+static do_inline VALUE
 double_cmp_lt(double a, double b)
 {
     CHECK_CMP_NAN(a, b);
     return a < b ? Qtrue : Qfalse;
 }
 
-static inline VALUE
+static do_inline VALUE
 double_cmp_le(double a, double b)
 {
     CHECK_CMP_NAN(a, b);
     return a <= b ? Qtrue : Qfalse;
 }
 
-static inline VALUE
+static do_inline VALUE
 double_cmp_gt(double a, double b)
 {
     CHECK_CMP_NAN(a, b);
     return a > b ? Qtrue : Qfalse;
 }
 
-static inline VALUE
+static do_inline VALUE
 double_cmp_ge(double a, double b)
 {
     CHECK_CMP_NAN(a, b);
     return a >= b ? Qtrue : Qfalse;
 }
 
+#ifndef MJIT_HEADER
 static VALUE *
 vm_base_ptr(const rb_control_frame_t *cfp)
 {
     const rb_control_frame_t *prev_cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
 
     if (cfp->iseq && VM_FRAME_RUBYFRAME_P(cfp)) {
-	VALUE *bp = prev_cfp->sp + cfp->iseq->body->local_table_size + VM_ENV_DATA_SIZE;
+        VALUE *bp = prev_cfp->sp + cfp->iseq->body->local_table_size + VM_ENV_DATA_SIZE;
 	if (cfp->iseq->body->type == ISEQ_TYPE_METHOD) {
 	    /* adjust `self' */
 	    bp += 1;
@@ -1394,10 +1432,13 @@ vm_base_ptr(const rb_control_frame_t *cfp)
 	return NULL;
     }
 }
+#endif /* #ifndef MJIT_HEADER */
 
 /* method call processes with call_info */
 
 #include "vm_args.c"
+
+#ifndef MJIT_HEADER
 
 static inline VALUE vm_call_iseq_setup_2(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc, int opt_pc, int param_size, int local_size);
 static inline VALUE vm_call_iseq_setup_normal(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc, int opt_pc, int param_size, int local_size);
@@ -1908,7 +1949,11 @@ vm_call_opt_send(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling
     int i;
     VALUE sym;
     struct rb_call_info *ci;
+#if RTL_INSNS
+    struct rb_call_data_with_kwarg cd_entry;
+#else
     struct rb_call_info_with_kwarg ci_entry;
+#endif
     struct rb_call_cache cc_entry, *cc;
 
     CALLER_SETUP_ARG(reg_cfp, calling, orig_ci);
@@ -1921,12 +1966,23 @@ vm_call_opt_send(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling
 
     /* setup new ci */
     if (orig_ci->flag & VM_CALL_KWARG) {
+#if RTL_INSNS
+	ci = (struct rb_call_info *)&cd_entry;
+	cd_entry.call_info = ((struct rb_call_data_with_kwarg *)orig_ci)->call_info;
+	cd_entry.kw_arg = ((struct rb_call_data_with_kwarg *)orig_ci)->kw_arg;
+#else
 	ci = (struct rb_call_info *)&ci_entry;
 	ci_entry = *(struct rb_call_info_with_kwarg *)orig_ci;
+#endif
     }
     else {
+#if RTL_INSNS
+	ci = &cd_entry.call_info;
+	cd_entry.call_info = *orig_ci;
+#else
 	ci = &ci_entry.ci;
 	ci_entry.ci = *orig_ci;
+#endif
     }
     ci->flag = ci->flag & ~VM_CALL_KWARG; /* TODO: delegate kw_arg without making a Hash object */
 
@@ -2302,11 +2358,13 @@ vm_call_method(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info 
     }
 }
 
-static VALUE
+RUBY_SYMBOL_EXPORT_BEGIN
+VALUE
 vm_call_general(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
 {
     return vm_call_method(th, reg_cfp, calling, ci, cc);
 }
+RUBY_SYMBOL_EXPORT_END
 
 static VALUE
 vm_call_super_method(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
@@ -2335,7 +2393,8 @@ vm_super_outside(void)
     rb_raise(rb_eNoMethodError, "super called outside of method");
 }
 
-static void
+RUBY_SYMBOL_EXPORT_BEGIN
+void
 vm_search_super_method(rb_thread_t *th, rb_control_frame_t *reg_cfp,
 		       struct rb_calling_info *calling, struct rb_call_info *ci, struct rb_call_cache *cc)
 {
@@ -2387,6 +2446,7 @@ vm_search_super_method(rb_thread_t *th, rb_control_frame_t *reg_cfp,
 	CI_SET_FASTPATH(cc, vm_call_super_method, 1);
     }
 }
+RUBY_SYMBOL_EXPORT_END
 
 /* yield */
 
@@ -2627,7 +2687,8 @@ vm_proc_to_block_handler(VALUE procval)
     return Qundef;
 }
 
-static VALUE
+RUBY_SYMBOL_EXPORT_BEGIN
+VALUE
 vm_invoke_block(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci)
 {
     VALUE block_handler = VM_CF_BLOCK_HANDLER(reg_cfp);
@@ -2661,9 +2722,10 @@ vm_invoke_block(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_
     VM_UNREACHABLE(vm_invoke_block: unreachable);
     return Qnil;
 }
+RUBY_SYMBOL_EXPORT_END
 
 static VALUE
-vm_make_proc_with_iseq(const rb_iseq_t *blockiseq)
+vm_make_proc_with_iseq(rb_iseq_t *blockiseq)
 {
     rb_thread_t *th = GET_THREAD();
     const rb_control_frame_t *cfp = rb_vm_get_ruby_level_next_cfp(th, th->cfp);
@@ -2679,20 +2741,22 @@ vm_make_proc_with_iseq(const rb_iseq_t *blockiseq)
     return rb_vm_make_proc(th, captured, rb_cProc);
 }
 
-static VALUE
+RUBY_SYMBOL_EXPORT_BEGIN
+VALUE
 vm_once_exec(VALUE iseq)
 {
     VALUE proc = vm_make_proc_with_iseq((rb_iseq_t *)iseq);
     return rb_proc_call_with_block(proc, 0, 0, Qnil);
 }
 
-static VALUE
+VALUE
 vm_once_clear(VALUE data)
 {
     union iseq_inline_storage_entry *is = (union iseq_inline_storage_entry *)data;
     is->once.running_thread = NULL;
     return Qnil;
 }
+RUBY_SYMBOL_EXPORT_END
 
 rb_control_frame_t *
 FUNC_FASTCALL(rb_vm_opt_struct_aref)(rb_thread_t *th, rb_control_frame_t *reg_cfp)
@@ -2726,7 +2790,8 @@ check_respond_to_missing(VALUE obj, VALUE v)
     }
 }
 
-static VALUE
+RUBY_SYMBOL_EXPORT_BEGIN
+VALUE
 vm_defined(rb_thread_t *th, rb_control_frame_t *reg_cfp, rb_num_t op_type, VALUE obj, VALUE needstr, VALUE v)
 {
     VALUE klass;
@@ -2836,3 +2901,6 @@ vm_defined(rb_thread_t *th, rb_control_frame_t *reg_cfp, rb_num_t op_type, VALUE
 	return Qnil;
     }
 }
+RUBY_SYMBOL_EXPORT_END
+
+#endif /* #ifndef MJIT_HEADER */

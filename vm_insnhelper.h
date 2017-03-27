@@ -20,7 +20,11 @@ extern VALUE ruby_vm_const_missing_count;
 
 #define COLLECT_USAGE_REGISTER(reg, s)     vm_collect_usage_register((reg), (s))
 #else
+#if MJIT_INSN_STATISTICS
+#define COLLECT_USAGE_INSN(insn)	   byte_code_insns_num++
+#else
 #define COLLECT_USAGE_INSN(insn)		/* none */
+#endif
 #define COLLECT_USAGE_OPERAND(insn, n, op)	/* none */
 #define COLLECT_USAGE_REGISTER(reg, s)		/* none */
 #endif
@@ -44,6 +48,7 @@ extern VALUE ruby_vm_const_missing_count;
 #define VM_REG_CFP (reg_cfp)
 #define VM_REG_PC  (VM_REG_CFP->pc)
 #define VM_REG_SP  (VM_REG_CFP->sp)
+#define VM_REG_BP  (VM_REG_CFP->bp)
 #define VM_REG_EP  (VM_REG_CFP->ep)
 
 #define RESTORE_REGS() do { \
@@ -86,6 +91,7 @@ enum vm_regan_acttype {
 #define GET_EP()   (COLLECT_USAGE_REGISTER_HELPER(EP, GET, VM_REG_EP))
 #define SET_EP(x)  (VM_REG_EP = (COLLECT_USAGE_REGISTER_HELPER(EP, SET, (x))))
 #define GET_LEP()  (VM_EP_LEP(GET_EP()))
+#define GET_BP()   (COLLECT_USAGE_REGISTER_HELPER(SP, GET, REG_BP))
 
 /* SP */
 #define GET_SP()   (COLLECT_USAGE_REGISTER_HELPER(SP, GET, VM_REG_SP))
@@ -121,14 +127,16 @@ enum vm_regan_acttype {
 /* deal with control flow 2: method/iterator              */
 /**********************************************************/
 
-#define CALL_METHOD(calling, ci, cc) do { \
-    VALUE v = (*(cc)->call)(th, GET_CFP(), (calling), (ci), (cc)); \
-    if (v == Qundef) { \
+#define CALL_METHOD(calling, cd) do { \
+	VALUE v = ((cd)->call_cache.call)(th, GET_CFP(), (calling), &(cd)->call_info, &(cd)->call_cache); \
+    if (v == Qundef && (v = mjit_execute_iseq(th, 0)) == Qundef) {	\
 	RESTORE_REGS(); \
+	set_default_sp(reg_cfp); \
 	NEXT_INSN(); \
     } \
     else { \
-	val = v; \
+	set_default_sp(reg_cfp); \
+        *get_temp_addr(reg_cfp, (cd)->call_start) = v;	\
     } \
 } while (0)
 
@@ -171,57 +179,85 @@ enum vm_regan_acttype {
 #define USE_IC_FOR_SPECIALIZED_METHOD 1
 #endif
 
-#define CALL_SIMPLE_METHOD(recv_) do { \
-    struct rb_calling_info calling; \
-    calling.block_handler = VM_BLOCK_HANDLER_NONE; \
-    calling.argc = ci->orig_argc; \
-    vm_search_method(ci, cc, calling.recv = (recv_)); \
-    CALL_METHOD(&calling, ci, cc); \
-} while (0)
-
 #define NEXT_CLASS_SERIAL() (++ruby_vm_class_serial)
 #define GET_GLOBAL_METHOD_STATE() (ruby_vm_global_method_state)
 #define INC_GLOBAL_METHOD_STATE() (++ruby_vm_global_method_state)
 #define GET_GLOBAL_CONSTANT_STATE() (ruby_vm_global_constant_state)
 #define INC_GLOBAL_CONSTANT_STATE() (++ruby_vm_global_constant_state)
 
-static VALUE make_no_method_exception(VALUE exc, VALUE format, VALUE obj,
+extern VALUE make_no_method_exception(VALUE exc, VALUE format, VALUE obj,
 				      int argc, const VALUE *argv, int priv);
 
-static inline struct vm_throw_data *
+static do_inline struct vm_throw_data *
 THROW_DATA_NEW(VALUE val, const rb_control_frame_t *cf, VALUE st)
 {
     return (struct vm_throw_data *)rb_imemo_new(imemo_throw_data, val, (VALUE)cf, st, 0);
 }
 
-static inline void
+static do_inline void
 THROW_DATA_CATCH_FRAME_SET(struct vm_throw_data *obj, const rb_control_frame_t *cfp)
 {
     obj->catch_frame = cfp;
 }
 
-static inline void
+static do_inline void
 THROW_DATA_STATE_SET(struct vm_throw_data *obj, int st)
 {
     obj->throw_state = (VALUE)st;
 }
 
-static inline VALUE
+static do_inline VALUE
 THROW_DATA_VAL(const struct vm_throw_data *obj)
 {
     return obj->throw_obj;
 }
 
-static inline const rb_control_frame_t *
+static do_inline const rb_control_frame_t *
 THROW_DATA_CATCH_FRAME(const struct vm_throw_data *obj)
 {
     return obj->catch_frame;
 }
 
-static int
+static do_inline int
 THROW_DATA_STATE(const struct vm_throw_data *obj)
 {
     return (int)obj->throw_state;
+}
+
+extern rb_cref_t *rb_vm_get_cref(const VALUE *ep);
+
+extern const rb_cref_t *vm_get_const_key_cref(const VALUE *ep);
+
+extern VALUE lep_svar_get(rb_thread_t *th, const VALUE *lep, rb_num_t key);
+extern void lep_svar_set(rb_thread_t *th, const VALUE *lep, rb_num_t key, VALUE val);
+
+extern VALUE vm_defined(rb_thread_t *th, rb_control_frame_t *reg_cfp, rb_num_t op_type, VALUE obj, VALUE needstr, VALUE v);
+extern VALUE vm_invoke_block(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci);
+extern void vm_search_super_method(rb_thread_t *th, rb_control_frame_t *reg_cfp,
+				   struct rb_calling_info *calling, struct rb_call_info *ci, struct rb_call_cache *cc);
+
+extern VALUE check_match(VALUE pattern, VALUE target, enum vm_check_match_type type);
+extern VALUE vm_throw(rb_thread_t *th, rb_control_frame_t *reg_cfp, rb_num_t throw_state, VALUE throwobj);
+extern VALUE vm_search_const_defined_class(const VALUE cbase, ID id);
+
+#if VM_CHECK_MODE > 0
+extern void vm_check_frame(VALUE type, VALUE specval, VALUE cref_or_me, const rb_iseq_t *iseq);
+#else
+#define vm_check_frame(a, b, c, d)
+#endif
+
+extern void vm_stackoverflow(void);
+
+extern rb_cref_t *vm_cref_push(rb_thread_t *th, VALUE klass, const VALUE *ep, int pushed_by_eval);
+extern VALUE vm_once_exec(VALUE iseq);
+extern VALUE vm_once_clear(VALUE data);
+extern VALUE vm_exec(rb_thread_t *th);
+
+static inline void
+vm_change_insn(rb_iseq_t *iseq, VALUE *pc, int insn_id) {
+    if (mjit_init_p)
+        mjit_change_iseq(iseq);
+    *pc = ((VALUE *)rb_vm_get_insns_address_table())[insn_id];
 }
 
 #endif /* RUBY_INSNHELPER_H */

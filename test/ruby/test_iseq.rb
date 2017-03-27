@@ -189,7 +189,7 @@ class TestISeq < Test::Unit::TestCase
   def test_safe_call_chain
     src = "a&.a&.a&.a&.a&.a"
     body = compile(src, __LINE__, {peephole_optimization: true}).to_a[13]
-    labels = body.select {|op, arg| op == :branchnil}.map {|op, arg| arg}
+    labels = body.select {|op, arg| op == :bnil}.map {|op, arg| arg}
     assert_equal(1, labels.uniq.size)
   end
 

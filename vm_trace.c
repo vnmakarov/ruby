@@ -371,6 +371,7 @@ rb_threadptr_exec_event_hooks_orig(rb_trace_arg_t *trace_arg, int pop_p)
     }
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 void
 rb_threadptr_exec_event_hooks_and_pop_frame(rb_trace_arg_t *trace_arg)
 {
@@ -382,6 +383,7 @@ rb_threadptr_exec_event_hooks(rb_trace_arg_t *trace_arg)
 {
     rb_threadptr_exec_event_hooks_orig(trace_arg, 0);
 }
+RUBY_SYMBOL_EXPORT_END
 
 VALUE
 rb_suppress_tracing(VALUE (*func)(VALUE), VALUE arg)

@@ -12,8 +12,10 @@
 #ifndef RUBY_VM_EXEC_H
 #define RUBY_VM_EXEC_H
 
+typedef enum ruby_vminsn_type insn_t;
 typedef long OFFSET;
-typedef unsigned long lindex_t;
+typedef lindex_t sindex_t;
+typedef lindex_t rindex_t;
 typedef VALUE GENTRY;
 typedef rb_iseq_t *ISEQ;
 
@@ -27,7 +29,7 @@ typedef rb_iseq_t *ISEQ;
 #if VMDEBUG > 0
 #define debugs printf
 #define DEBUG_ENTER_INSN(insn) \
-    rb_vmdebug_debug_print_pre(th, GET_CFP(),GET_PC());
+  if (getenv("MRI_INSN_TRACE")) (GET_CFP()->sp+=80,rb_vmdebug_debug_print_pre(th, GET_CFP(),GET_PC()),GET_CFP()->sp-=80)
 
 #if OPT_STACK_CACHING
 #define SC_REGS() , reg_a, reg_b
@@ -116,9 +118,19 @@ error !
 
 #endif /* DISPATCH_DIRECT_THREADED_CODE */
 
+#if VM_INSN_STAT
+#include "insns_info.inc"
+
 #define END_INSN(insn)      \
-  DEBUG_END_INSN();         \
+  all_executed_insns_num++;			\
+  all_executed_insns_len += insn_len(BIN(insn));\
+  DEBUG_END_INSN();				\
   TC_DISPATCH(insn);
+#else
+#define END_INSN(insn)      \
+  DEBUG_END_INSN();				\
+  TC_DISPATCH(insn);
+#endif
 
 #define INSN_DISPATCH()     \
   TC_DISPATCH(__START__)    \

@@ -787,12 +787,14 @@ rb_f_untrace_var(int argc, const VALUE *argv)
     return Qnil;
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_gvar_get(struct rb_global_entry *entry)
 {
     struct rb_global_variable *var = entry->var;
     return (*var->getter)(entry->id, var->data, var);
 }
+RUBY_SYMBOL_EXPORT_END
 
 struct trace_data {
     struct trace_var *trace;
@@ -820,6 +822,7 @@ trace_en(struct rb_global_variable *var)
     return Qnil;		/* not reached */
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_gvar_set(struct rb_global_entry *entry, VALUE val)
 {
@@ -836,6 +839,7 @@ rb_gvar_set(struct rb_global_entry *entry, VALUE val)
     }
     return val;
 }
+RUBY_SYMBOL_EXPORT_END
 
 VALUE
 rb_gv_set(const char *name, VALUE val)
@@ -2047,6 +2051,7 @@ check_autoload_required(VALUE mod, ID id, const char **loadingpath)
     return 0;
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 int
 rb_autoloading_value(VALUE mod, ID id, VALUE* value)
 {
@@ -2066,6 +2071,7 @@ rb_autoloading_value(VALUE mod, ID id, VALUE* value)
     }
     return 0;
 }
+RUBY_SYMBOL_EXPORT_END
 
 static int
 autoload_defined_p(VALUE mod, ID id)
@@ -2224,6 +2230,7 @@ rb_autoload_p(VALUE mod, ID id)
     return (ele = check_autoload_data(load)) ? ele->feature : Qnil;
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 void
 rb_const_warn_if_deprecated(const rb_const_entry_t *ce, VALUE klass, ID id)
 {
@@ -2237,6 +2244,7 @@ rb_const_warn_if_deprecated(const rb_const_entry_t *ce, VALUE klass, ID id)
 	}
     }
 }
+RUBY_SYMBOL_EXPORT_END
 
 static VALUE
 rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
@@ -2312,11 +2320,13 @@ rb_const_get_at(VALUE klass, ID id)
     return rb_const_get_0(klass, id, TRUE, FALSE, FALSE);
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_public_const_get_from(VALUE klass, ID id)
 {
     return rb_const_get_0(klass, id, TRUE, TRUE, TRUE);
 }
+RUBY_SYMBOL_EXPORT_END
 
 VALUE
 rb_public_const_get(VALUE klass, ID id)
@@ -2324,11 +2334,13 @@ rb_public_const_get(VALUE klass, ID id)
     return rb_const_get_0(klass, id, FALSE, TRUE, TRUE);
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 rb_public_const_get_at(VALUE klass, ID id)
 {
     return rb_const_get_0(klass, id, TRUE, FALSE, TRUE);
 }
+RUBY_SYMBOL_EXPORT_END
 
 /*
  *  call-seq:
@@ -2557,11 +2569,13 @@ rb_const_defined_at(VALUE klass, ID id)
     return rb_const_defined_0(klass, id, TRUE, FALSE, FALSE);
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 int
 rb_public_const_defined_from(VALUE klass, ID id)
 {
     return rb_const_defined_0(klass, id, TRUE, TRUE, TRUE);
 }
+RUBY_SYMBOL_EXPORT_END
 
 int
 rb_public_const_defined(VALUE klass, ID id)
@@ -3136,6 +3150,7 @@ rb_st_copy(VALUE obj, struct st_table *orig_tbl)
     return new_tbl;
 }
 
+RUBY_SYMBOL_EXPORT_BEGIN
 rb_const_entry_t *
 rb_const_lookup(VALUE klass, ID id)
 {
@@ -3147,3 +3162,4 @@ rb_const_lookup(VALUE klass, ID id)
     }
     return 0;
 }
+RUBY_SYMBOL_EXPORT_END
