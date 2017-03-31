@@ -60,11 +60,14 @@ while true
       n /= factor # Fail: decrease searched decls number
       next
     end
-    File.open(tfname, "w") do |test|
-      test.puts $code[0...pos.begin], $code[pos.end+1..-1] # Put all but decls found above
+    keep = $code[pos.begin..pos.end].include? "__attribute__ (())"
+    if !keep
+      File.open(tfname, "w") do |test|
+        test.puts $code[0...pos.begin], $code[pos.end+1..-1] # Put all but decls found above
+      end
     end
     before = all / dot_factor
-    if !system("#{cc} -S -DMJIT_HEADER -Werror=implicit-function-declaration -Werror=implicit-int -Wfatal-errors #{tfname} 2>/dev/null")
+    if keep || !system("#{cc} -S -DMJIT_HEADER -Werror=implicit-function-declaration -Werror=implicit-int -Wfatal-errors #{tfname} 2>/dev/null")
       if n != 1
         n /= factor; # Fail: decrease searched decls number
       else

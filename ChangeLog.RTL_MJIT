@@ -1,3 +1,10 @@
+2017-03-31  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* internal.h (MJIT_KEEP): New.
+	* rtl_exec.c (call_dtrace_hook): Put do_inline before void.
+	* tool/minimize_mjit_header.rb: Check '__attribute__ (())' to keep
+	a decl.
+
 2017-03-27  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* bignum.c (rb_int128t2big): Add visibility.

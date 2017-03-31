@@ -3115,7 +3115,7 @@ run_once_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, rindex_t res_in
     }
 }
 
-static void do_inline
+static do_inline void
 call_dtrace_hook(rb_thread_t *th) {
 #if 0
     /* TODO: Implement dtrace support (symbol visibility and weakness).  */

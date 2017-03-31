@@ -32,6 +32,12 @@ extern "C" {
 #define do_inline inline
 #endif
 
+#ifdef MJIT_HEADER
+#define MJIT_KEEP __attribute__ (())
+#else
+#define MJIT_KEEP
+#endif
+
 #ifndef MAYBE_UNUSED
 # define MAYBE_UNUSED(x) x
 #endif
