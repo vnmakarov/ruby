@@ -1,0 +1,6 @@
+# The file contains names of definition which should be kept in MJIT
+# header after the header minimization
+
+rb_type                    # to solve a static forward decl problem
+check_cref                 # see above
+vm_caller_setup_arg_block

@@ -978,7 +978,7 @@ get_op_str(char *buf, const rb_iseq_t *iseq, ptrdiff_t ind, int locals_p) {
 	if (ind < 0)
 	    sprintf(buf, "&t[%ld]", (long) -ind - 1);
 	else if (iseq->body->nonlocal_var_p[ind])
-	    sprintf(buf, "get_local_addr(cfp, %ld)", (long) ind);
+	    sprintf(buf, "get_loc_addr(cfp, %ld)", (long) ind);
 	else
 	    sprintf(buf, "&v[%ld]", (long) ind - VM_ENV_DATA_SIZE);
     } else {

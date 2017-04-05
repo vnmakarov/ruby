@@ -1,3 +1,45 @@
+2017-04-05  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* common.mk (install-rb-mjit-header): Use $<.
+	(realclean-local): Remove rb_mjit_import.h.
+	(rb_mjit_header.h): Remove miniruby from dependencies.
+	(rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h): Add mjit_header.rb
+	and minimize_mjit_header.rb to dependencies.  Add -I and MJIT_KEEP
+	to the command.  Use a temporary intermediate file.
+	(rb_mjit_import.h): New.
+	(vm.o): Add rb_mjit_import.h as a dependence.
+	* internal.h (MJIT_KEEP): Remove.
+	(rb_func_proc_new): Export.
+	* mjit.c (get_op_str): Use get_loc_addr instead of get_local_addr.
+	* tool/mjit_header.rb: New.
+	* tool/extract_mjit_header_externs.rb: New.
+	* MJIT_KEEP: New.
+	* tool/minimize_mjit_header.rb: Read the keep file.  Check initial
+	and final header correctness.  Transform external definitions to
+	static.  Print the result decls number.
+	(mjit_header): New require.
+	(get_decl): Add a parameter.  Move to mjit_header.rb.
+	(get_keep_hash, decl_names_in?): New methods.
+	* vm.c: Remove '#ifndef MJIT_HEADER' before inclussion of
+	rtl_exec.c.
+	(ruby_vm_global_method_state, ruby_vm_global_constant_state):
+	Remove export directives.
+	(ruby_vm_const_missing_count, ruby_current_vm): Ditto.
+	(ruby_vm_event_flags, rb_source_loc, vm_exec): Ditto.
+	(rb_mjit_header.h): Include with the export.
+	* vm_args.c: Remove '#ifndef MJIT_HEADER'.
+	(vm_caller_setup_arg_block): Remove export directives.
+	* vm_insnhelper.c:  Remove '#ifndef MJIT_HEADER'.
+	(vm_stackoverflow, vm_env_write_slowpath, lep_svar_get): Remove
+	export directives.
+	(rb_vm_get_cref, vm_get_const_key_cref, vm_cref_push): Ditto.
+	(vm_search_const_defined_class): Ditto.
+	(vm_throw, check_match, vm_call_general, vm_search_super_method):
+	Ditto.
+	(vm_invoke_block, vm_once_exec, vm_once_clear, vm_defined): Ditto.
+	* vm_exec.c (rb_vm_get_insns_address_table): Ditto.
+	* vm_method.c (rb_callable_method_entry): Ditto.
+
 2017-03-31  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* internal.h (MJIT_KEEP): New.
@@ -262,7 +304,7 @@
 	(check_match): Make external.  Add visibility.
 	(double_cmp_lt, double_cmp_le, double_cmp_gt, double_cmp_ge): Use
 	do_inline.
-	(vm_call_opt_send): Moddify to use call data.
+	(vm_call_opt_send): Modify to use call data.
 	(vm_call_general, vm_search_super_method, vm_invoke_block): Make
 	external.  Add visibility.
 	(vm_make_proc_with_iseq): Remove const from block_iseq.

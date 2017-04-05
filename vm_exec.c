@@ -126,26 +126,22 @@ vm_exec_core(rb_thread_t *th, VALUE initial)
     goto first;
 }
 
-RUBY_SYMBOL_EXPORT_BEGIN
 const void **
 rb_vm_get_insns_address_table(void)
 {
     return (const void **)vm_exec_core(0, 0);
 }
-RUBY_SYMBOL_EXPORT_END
 
 #else /* OPT_CALL_THREADED_CODE */
 
 #include "vm.inc"
 #include "vmtc.inc"
 
-RUBY_SYMBOL_EXPORT_BEGIN
 const void **
 rb_vm_get_insns_address_table(void)
 {
     return (const void **)insns_address_table;
 }
-RUBY_SYMBOL_EXPORT_END
 
 static VALUE
 vm_exec_core(rb_thread_t *th, VALUE initial)

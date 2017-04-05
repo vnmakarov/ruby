@@ -11,8 +11,6 @@
 NORETURN(extern void argument_arity_error(rb_thread_t *th, const rb_iseq_t *iseq, const int miss_argc, const int min_argc, const int max_argc));
 extern void vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
 				      struct rb_calling_info *calling, const struct rb_call_info *ci, rb_iseq_t *blockiseq, const int is_super);
-#ifndef MJIT_HEADER
-
 NORETURN(static void raise_argument_error(rb_thread_t *th, const rb_iseq_t *iseq, const VALUE exc));
 NORETURN(static void argument_kw_error(rb_thread_t *th, const rb_iseq_t *iseq, const char *error, const VALUE keys));
 VALUE rb_keyword_error_new(const char *error, VALUE keys); /* class.c */
@@ -798,7 +796,9 @@ vm_to_proc(VALUE proc)
     }
 }
 
-static VALUE
+extern VALUE refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg));
+
+VALUE
 refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
 {
     VALUE obj;
@@ -818,7 +818,6 @@ refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
     return vm_call0(GET_THREAD(), obj, mid, argc, argv, me);
 }
 
-RUBY_SYMBOL_EXPORT_BEGIN
 void
 vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
 			  struct rb_calling_info *calling, const struct rb_call_info *ci, rb_iseq_t *blockiseq, const int is_super)
@@ -863,9 +862,6 @@ vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
 	}
     }
 }
-RUBY_SYMBOL_EXPORT_END
-
-#endif /* #ifndef MJIT_HEADER */
 
 #define IS_ARGS_SPLAT(ci)   ((ci)->flag & VM_CALL_ARGS_SPLAT)
 #define IS_ARGS_KEYWORD(ci) ((ci)->flag & VM_CALL_KWARG)

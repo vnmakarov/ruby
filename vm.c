@@ -50,8 +50,6 @@ rb_vm_search_cf_from_ep(const rb_thread_t * const th, const rb_control_frame_t *
     }
 }
 
-#ifndef MJIT_HEADER
-
 #undef USE_INSN_STACK_INCREASE
 
 const VALUE *
@@ -59,8 +57,6 @@ rb_vm_ep_local_ep(const VALUE *ep)
 {
     return VM_EP_LEP(ep);
 }
-
-#endif
 
 PUREFUNC(static inline const VALUE *VM_CF_LEP(const rb_control_frame_t * const cfp));
 static inline const VALUE *
@@ -232,8 +228,6 @@ vm_cref_dup(const rb_cref_t *cref)
     return new_cref;
 }
 
-#ifndef MJIT_HEADER
-
 VALUE
 rb_vm_frame_block_handler(const rb_control_frame_t *cfp)
 {
@@ -268,7 +262,6 @@ vm_cref_dump(const char *mesg, const rb_cref_t *cref)
 	cref = CREF_NEXT(cref);
     }
 }
-#endif
 
 static inline void
 vm_bind_update_env(rb_binding_t *bind, VALUE envval)
@@ -315,10 +308,8 @@ extern rb_serial_t ruby_vm_class_serial;
 
 #ifndef MJIT_HEADER
 
-RUBY_SYMBOL_EXPORT_BEGIN
 rb_serial_t ruby_vm_global_method_state = 1;
 rb_serial_t ruby_vm_global_constant_state = 1;
-RUBY_SYMBOL_EXPORT_END
 rb_serial_t ruby_vm_class_serial = 1;
 
 #include "vm_exec.c"
@@ -340,11 +331,9 @@ VALUE rb_mRubyVMFrozenCore;
 
 #define ruby_vm_redefined_flag GET_VM()->redefined_flag
 rb_thread_t *ruby_current_thread = 0;
-RUBY_SYMBOL_EXPORT_BEGIN
 VALUE ruby_vm_const_missing_count = 0;
 rb_vm_t *ruby_current_vm = 0;
 rb_event_flag_t ruby_vm_event_flags;
-RUBY_SYMBOL_EXPORT_END
 
 static void thread_free(void *ptr);
 
@@ -1302,7 +1291,6 @@ rb_source_location(int *pline)
     }
 }
 
-RUBY_SYMBOL_EXPORT_BEGIN
 const char *
 rb_source_loc(int *pline)
 {
@@ -1310,7 +1298,6 @@ rb_source_loc(int *pline)
     if (!path) return 0;
     return RSTRING_PTR(path);
 }
-RUBY_SYMBOL_EXPORT_END
 
 rb_cref_t *
 rb_vm_cref(void)
@@ -1733,7 +1720,6 @@ hook_before_rewind(rb_thread_t *th, rb_control_frame_t *cfp, int will_finish_vm_
   };
  */
 
-RUBY_SYMBOL_EXPORT_BEGIN
 VALUE
 vm_exec(rb_thread_t *th)
 {
@@ -1980,7 +1966,6 @@ vm_exec(rb_thread_t *th)
     TH_POP_TAG();
     return result;
 }
-RUBY_SYMBOL_EXPORT_END
 
 /* misc */
 
@@ -3407,5 +3392,9 @@ vm_collect_usage_register(int reg, int isset)
 #endif
 
 #include "vm_call_iseq_optimized.inc" /* required from vm_insnhelper.c */
+
+RUBY_SYMBOL_EXPORT_BEGIN
+#include "rb_mjit_import.h"
+RUBY_SYMBOL_EXPORT_END
 
 #endif /* #ifndef MJIT_HEADER */

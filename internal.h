@@ -32,12 +32,6 @@ extern "C" {
 #define do_inline inline
 #endif
 
-#ifdef MJIT_HEADER
-#define MJIT_KEEP __attribute__ (())
-#else
-#define MJIT_KEEP
-#endif
-
 #ifndef MAYBE_UNUSED
 # define MAYBE_UNUSED(x) x
 #endif
@@ -1345,7 +1339,9 @@ ID rb_id_attrget(ID id);
 VALUE rb_proc_location(VALUE self);
 st_index_t rb_hash_proc(st_index_t hash, VALUE proc);
 int rb_block_arity(void);
+RUBY_SYMBOL_EXPORT_BEGIN
 VALUE rb_func_proc_new(rb_block_call_func_t func, VALUE val);
+RUBY_SYMBOL_EXPORT_END
 VALUE rb_func_lambda_new(rb_block_call_func_t func, VALUE val);
 
 /* process.c */

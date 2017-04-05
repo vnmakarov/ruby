@@ -270,7 +270,7 @@ ruby.imp: $(COMMONOBJS)
 install: install-rb-mjit-header install-$(INSTALLDOC)
 
 install-rb-mjit-header: rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h
-	$(Q)$(INSTALL_DATA) rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h $(arch_hdrdir)
+	$(Q)$(INSTALL_DATA) $< $(arch_hdrdir)
 
 docs: $(DOCTARGETS)
 pkgconfig-data: $(ruby_pc)
@@ -537,7 +537,7 @@ distclean-platform: clean-platform
 realclean:: realclean-ext realclean-local realclean-enc realclean-golf realclean-extout
 realclean-local:: distclean-local
 	$(Q)$(RM) parse.c parse.h lex.c enc/trans/newline.c revision.h
-	$(Q)$(RM) id.c id.h probes.dmyh rb_mjit_header.h rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h
+	$(Q)$(RM) id.c id.h probes.dmyh rb_mjit_header.h rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h rb_mjit_import.h
 	$(Q)$(CHDIR) $(srcdir) && $(exec) $(RM) parse.c parse.h lex.c enc/trans/newline.c $(PRELUDES) revision.h
 	$(Q)$(CHDIR) $(srcdir) && $(exec) $(RM) id.c id.h probes.dmyh
 	$(Q)$(CHDIR) $(srcdir) && $(exec) $(RM) configure aclocal.m4 tool/config.guess tool/config.sub gems/*.gem
@@ -872,15 +872,17 @@ vm_call_iseq_optimized.inc: $(srcdir)/tool/mk_call_iseq_optimized.rb
 	$(ECHO) generating $@
 	$(Q) $(BASERUBY) $(srcdir)/tool/mk_call_iseq_optimized.rb > $@
 
-# Build miniruby first to check errors:
-rb_mjit_header.h: miniruby$(EXEEXT) PHONY probes.h
+rb_mjit_header.h: PHONY probes.h
 	@$(ECHO) building $@
 	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) -DMJIT_HEADER $(srcdir)/vm.c $(COUTFLAG) $@.new -E
 	@cmp $@.new $@ > /dev/null 2>&1 && echo $@ unchanged && rm $@.new && exit 0; mv $@.new $@
 	
-rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h: rb_mjit_header.h
+rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h: rb_mjit_header.h $(srcdir)/MJIT_KEEP $(srcdir)/tool/mjit_header.rb $(srcdir)/tool/minimize_mjit_header.rb
 	@$(ECHO) building $@
-	$(Q)$(exec) egrep -v '^#|^$$' rb_mjit_header.h | $(BASERUBY) $(srcdir)/tool/minimize_mjit_header.rb $(CC) > $@
+	$(Q)$(exec) egrep -v '^#|^$$' rb_mjit_header.h | $(BASERUBY) -I$(srcdir)/tool $(srcdir)/tool/minimize_mjit_header.rb $(CC) $(srcdir)/MJIT_KEEP > $@.new && mv $@.new $@
+
+rb_mjit_import.h: rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h $(srcdir)/tool/mjit_header.rb $(srcdir)/tool/extract_mjit_header_externs.rb
+	$(Q)$(exec) cat $< | $(BASERUBY) -I$(srcdir)/tool $(srcdir)/tool/extract_mjit_header_externs.rb > $@.new && mv $@.new $@
 
 $(MINIPRELUDE_C): $(COMPILE_PRELUDE)
 	$(ECHO) generating $@
@@ -2634,6 +2636,7 @@ vm.$(OBJEXT): {$(VPATH)}vm_insnhelper.h
 vm.$(OBJEXT): {$(VPATH)}vm_method.c
 vm.$(OBJEXT): {$(VPATH)}vm_opts.h
 vm.$(OBJEXT): {$(VPATH)}vmtc.inc
+vm.$(OBJEXT): {$(VPATH)}rb_mjit_import.h
 vm_backtrace.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 vm_backtrace.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 vm_backtrace.$(OBJEXT): $(CCAN_DIR)/list/list.h
