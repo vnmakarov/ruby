@@ -967,10 +967,46 @@ vm_getinstancevariable(VALUE obj, ID id, IC ic)
     return vm_getivar(obj, id, ic, 0, 0);
 }
 
+/* A speculative version of vm_getinstancevariable.  We assume the
+   variable was created and the class is still the same.  */
+static do_inline VALUE
+vm_getinstancevariable_spec(VALUE obj, ID id, const_IC ic)
+{
+#if USE_IC_FOR_IVAR
+    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && ic->ic_serial == RCLASS_SERIAL(RBASIC(obj)->klass))) {
+	st_index_t index = ic->ic_value.index;
+	if (LIKELY(index < ROBJECT_NUMIV(obj)))
+	    return ROBJECT_IVPTR(obj)[index];
+    }
+#endif	/* USE_IC_FOR_IVAR */
+    return Qundef;
+}
+
 static do_inline void
 vm_setinstancevariable(VALUE obj, ID id, VALUE val, IC ic)
 {
     vm_setivar(obj, id, val, ic, 0, 0);
+}
+
+/* A speculative version of vm_setinstancevariable.  We assume the
+   variable was created and the class is still the same.  */
+static do_inline VALUE
+vm_setinstancevariable_spec(VALUE obj, ID id, VALUE val, IC ic)
+{
+#if USE_IC_FOR_IVAR
+    rb_check_frozen(obj);
+
+    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && ic->ic_serial == RCLASS_SERIAL(RBASIC(obj)->klass))) {
+	VALUE *ptr = ROBJECT_IVPTR(obj);
+	st_data_t index = ic->ic_value.index;
+	
+	if (index < ROBJECT_NUMIV(obj)) {
+	    RB_OBJ_WRITE(obj, &ptr[index], val);
+	    return val; /* inline cache hit */
+	}
+    }
+#endif	/* USE_IC_FOR_IVAR */
+    return Qundef;
 }
 
 static VALUE

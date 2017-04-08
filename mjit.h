@@ -88,7 +88,8 @@ mjit_execute_iseq(rb_thread_t *th, int in_wrapper_p) {
     struct rb_iseq_constant_body *body;
     unsigned long n_calls;
     mjit_fun_t fun;
-
+    VALUE v;
+    
     if (! mjit_init_p)
 	return Qundef;
     if (! in_wrapper_p)
@@ -124,7 +125,10 @@ mjit_execute_iseq(rb_thread_t *th, int in_wrapper_p) {
 	break;
     }
     body->jit_calls++;
-    return fun(th, th->cfp);
+    v = fun(th, th->cfp);
+    if (v == Qundef)
+	body->failed_jit_calls++;
+    return v;
 }
 
 /* Queue AOT compilation of ISEQ right after forming it.  */

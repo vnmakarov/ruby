@@ -409,7 +409,9 @@ struct rb_iseq_constant_body {
 
     /* The following MJIT related info.  */
     void *jit_code;
-    long unsigned overall_calls, jit_calls;
+    /* Number of iseq calls, number of them in JIT mode, and number of
+       JIT calls with speculation failures.  */
+    long unsigned overall_calls, jit_calls, failed_jit_calls;
     struct rb_mjit_batch_iseq *batch_iseq;
     /* Number of JIT code mutations (and cancellations).  */
     int jit_mutations_num;
@@ -961,6 +963,7 @@ enum vm_svar_index {
 
 /* inline cache */
 typedef struct iseq_inline_cache_entry *IC;
+typedef const struct iseq_inline_cache_entry *const_IC;
 typedef struct rb_call_info *CALL_INFO;
 typedef struct rb_call_cache *CALL_CACHE;
 typedef struct rb_call_data *CALL_DATA;

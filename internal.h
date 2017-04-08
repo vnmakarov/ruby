@@ -1221,19 +1221,21 @@ static do_inline double
 rb_float_flonum_value(VALUE v)
 {
 #if USE_FLONUM
-    if (v != (VALUE)0x8000000000000002) { /* LIKELY */
-	union {
-	    double d;
-	    VALUE v;
-	} t;
+    union {
+	double d;
+	VALUE v;
+    } t;
 
-	VALUE b63 = (v >> 63);
-	/* e: xx1... -> 011... */
-	/*    xx0... -> 100... */
-	/*      ^b63           */
-	t.v = RUBY_BIT_ROTR((2 - b63) | (v & ~(VALUE)0x03), 3);
+    VALUE b63 = (v >> 63);
+    /* e: xx1... -> 011... */
+    /*    xx0... -> 100... */
+    /*      ^b63           */
+
+    /* We could exclude the following statement execution for rare 0.0
+       case but it is better keep this way for JIT optimizations.  */
+    t.v = RUBY_BIT_ROTR((2 - b63) | (v & ~(VALUE)0x03), 3);
+    if (t.v != 0x3000000000000000)
 	return t.d;
-    }
 #endif
     return 0.0;
 }
@@ -1262,7 +1264,8 @@ rb_float_new_inline(double d)
 	VALUE v;
     } t;
     int bits;
-
+    VALUE v;
+    
     t.d = d;
     bits = (int)((VALUE)(t.v >> 60) & 0x7);
     /* bits contains 3 bits of b62..b60. */
@@ -1270,16 +1273,17 @@ rb_float_new_inline(double d)
     /*   b011 -> b000 */
     /*   b100 -> b001 */
 
-    if (t.v != 0x3000000000000000 /* 1.72723e-77 */ &&
-	!((bits-3) & ~0x01)) {
-	return (RUBY_BIT_ROTL(t.v, 3) & ~(VALUE)0x01) | 0x02;
+    /* See the comment in rb_float_flonum_value.  */
+    v = (RUBY_BIT_ROTL(t.v, 3) & ~(VALUE)0x01) | 0x02;
+    if (LIKELY(!((bits-3) & ~0x01) && t.v != 0x3000000000000000 /* 1.72723e-77 */)) {
+	return v;
     }
     else if (t.v == (VALUE)0) {
 	/* +0.0 */
 	return 0x8000000000000002;
     }
-    /* out of range */
 #endif
+    /* out of range */
     return rb_float_new_in_heap(d);
 }
 

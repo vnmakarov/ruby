@@ -1,3 +1,26 @@
+2017-04-07  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* vm_insnhelper.c (vm_getinstancevariable_spec): New.
+	(vm_setinstancevariable_spec): New.
+	* vm_core.h (struct rb_iseq_constant_body): New member
+	failed_jit_calls.
+	(const_IC): New.
+	* rtl_exec.c (mjit_spec_ivar2var_f, mjit_spec_val2ivar_f): New.
+	(mjit_spec_var2ivar_f): New.
+	* mjit.h (mjit_execute_iseq): Increment failed_jit_calls for iseq
+	executions with a speculation failure.
+	* mjit.c (struct rb_mjit_batch_iseq): New member failed_jit_calls.
+	(struct insn_fun_features): New member mjit_spec_p.
+	(get_insn_fun_features): Set up the new member.
+	(translate_iseq_insn): Use it to generate speculative variants
+	with constant IC.
+	(create_batch_iseq): Initiate failed_jit_calls.
+	(mjit_free_iseq): Save it.
+	(print_statistics): Output statistics about the failed calls.
+	* internal.h (rb_float_flonum_value, rb_float_new_inline):
+	Refactor to have a path for optimizations in JIT C compiler.
+	* common.mk (rb_mjit_header.h): Check the initial header with CC.
+
 2017-04-05  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* common.mk (install-rb-mjit-header): Use $<.

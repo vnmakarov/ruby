@@ -220,8 +220,9 @@ struct rb_mjit_batch_iseq {
     struct rb_mjit_batch_iseq *prev, *next;
     /* The fields used for profiling only:  */
     char *label; /* Name of the ISEQ */
-    /* Overall ISEQ calls and calls of the ISEQ machine code.  */
-    unsigned long overall_calls, jit_calls;
+    /* Number of iseq calls, number of them in JIT mode, and number of
+       JIT calls with speculation failures.  */
+    unsigned long overall_calls, jit_calls, failed_jit_calls;
 };
 
 /* Defined in the client thread before starting MJIT threads:  */
@@ -471,7 +472,7 @@ static const char *LLVM_COMMON_ARGS[] = {"clang", "-O0", "-g", "-fPIC", "-shared
 static const char *LLVM_COMMON_ARGS[] = {"clang", "-O2", "-fPIC", "-shared", "-I/usr/local/include", "-L/usr/local/lib", "-w", "-bundle", NULL};
 #endif
 
-#endif /* #if MJIT_DEBUG */
+#endif /* #if __MACH__ */
 
 static const char *LLVM_USE_PCH_ARGS[] = {"-include-pch", NULL, "-Wl,-undefined", "-Wl,dynamic_lookup", NULL};
 static const char *LLVM_EMIT_PCH_ARGS[] = {"-emit-pch", NULL};
@@ -508,6 +509,9 @@ struct insn_fun_features {
     char changing_p;
     /* Flag of a speculative insn.  */
     char speculative_p;
+    /* Flag of an insn whose speculative variant can be used only in
+       JIT.  */
+    char mjit_spec_p;
 };
 
 /*-------All the following code is executed in the worker threads only-----------*/
@@ -518,7 +522,7 @@ static void
 get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     f->th_p = f->skip_first_p = f->op_end_p = f->bcmp_p = FALSE;
     f->call_p = f->recv_p = f->jmp_p = f->jmp_true_p = FALSE;
-    f->special_p = f->changing_p = f->speculative_p = FALSE;
+    f->special_p = f->changing_p = f->speculative_p = f->mjit_spec_p = FALSE;
     switch (insn) {
     case BIN(const2var):
     case BIN(const_ld_val):
@@ -828,6 +832,11 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(call_block):
 	f->call_p = f->special_p = TRUE;
 	break;
+    case BIN(var2ivar):
+    case BIN(val2ivar):
+    case BIN(ivar2var):
+	f->mjit_spec_p = TRUE;
+	break;
     case BIN(var2var):
     case BIN(var_swap):
     case BIN(temp2temp):
@@ -844,15 +853,12 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(specialobj2var):
     case BIN(self2var):
     case BIN(global2var):
-    case BIN(ivar2var):
     case BIN(cvar2var):
     case BIN(iseq2var):
     case BIN(var2uploc):
     case BIN(val2uploc):
     case BIN(var2const):
     case BIN(var2global):
-    case BIN(var2ivar):
-    case BIN(val2ivar):
     case BIN(var2cvar):
     case BIN(make_range):
     case BIN(make_array):
@@ -1035,7 +1041,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 #endif
     get_insn_fun_features(insn, &features);
     fprintf(f, "  cfp->pc = (void *) 0x%"PRIxVALUE ";\n", (VALUE) (&code[pos] + len));
-   if (features.special_p) {
+    if (features.special_p) {
 	switch (insn) {
 	case BIN(nop):
 	    break;
@@ -1089,15 +1095,34 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 	    break;
 	}
     } else {
-	if (use_locals_p && features.call_p)
+       int mjit_spec_p = !safe_p && features.mjit_spec_p;
+       
+       if (use_locals_p && features.call_p)
 	    /* Generate copying temps to the stack.  */
 	    generate_param_setup(f, code, pos, features.recv_p);
-	if (features.jmp_p && features.speculative_p)
+	if (mjit_spec_p) {
+	    fprintf(f, " {\n");
+	    for (i = (features.jmp_p ? 2 : 1) + (features.skip_first_p ? 1 : 0); i < len; i++) {
+		op = code[pos + i];
+		switch (types[i - 1]) {
+		case TS_IC:
+		    {
+			IC ic = (IC) op;
+			
+			fprintf(f, "  static const struct iseq_inline_cache_entry ic%"PRIxVALUE " = {%lu, 0x%"PRIxVALUE ", {.index = %lu}};\n",
+				op, (unsigned long) ic->ic_serial, (VALUE) ic->ic_cref, (unsigned long) ic->ic_value.index);
+			break;
+		    }
+		}
+	    }
+	}
+	if (features.jmp_p && (features.speculative_p || mjit_spec_p))
 	    fprintf(f, "  flag = ");
 	else
 	    fprintf(f, (features.jmp_p || features.op_end_p
-			|| features.speculative_p ? "  if (" : "  "));
-	fprintf(f, "%s_f(", iname);
+			|| features.speculative_p || mjit_spec_p
+			? "  if (" : "  "));
+	fprintf(f, "%s%s_f(", mjit_spec_p ? "mjit_spec_" : "", iname);
 	if (features.th_p)
 	    fprintf(f, "th, ");
 	fprintf(f, "cfp");
@@ -1125,10 +1150,15 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 	    case TS_SINDEX:
 		fprintf(f, "(lindex_t) %"PRIdVALUE, op);
 		break;
+	    case TS_IC:
+		if (mjit_spec_p)
+		    fprintf(f, "&ic%"PRIxVALUE, op);
+		else
+		    fprintf(f, "(void *) 0x%"PRIxVALUE, op);
+		break;
 	    case TS_CDHASH:
 	    case TS_VALUE:
 	    case TS_ISEQ:
-	    case TS_IC:
 	    case TS_CALLINFO:
 	    case TS_CALLCACHE:
 	    case TS_CALLDATA:
@@ -1146,11 +1176,13 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 	}
 	if (features.op_end_p)
 	    fprintf(f, "))\n    mjit_op_end(th, cfp, %s);\n", get_op_str(buf, iseq, code[pos + 4], use_locals_p));
-	else if (features.speculative_p) {
+	else if (features.speculative_p || mjit_spec_p) {
 	    if (features.jmp_p)
 		fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n    cfp->pc = (void *) 0x%"PRIxVALUE, (VALUE) (&code[pos]));
 	    else
 		fprintf(f, ")) {\n    cfp->pc = (void *) 0x%"PRIxVALUE,	(VALUE) (&code[pos]));
+	    if (mjit_spec_p)
+	      fprintf(f, ";\n    mjit_change_iseq(cfp->iseq);\n");
 	    fprintf(f, ";\n    return RUBY_Qundef;\n  }\n");
 	    if (features.jmp_p)
 		fprintf(f, "  if (flag) goto l%ld;\n", pos + len + code[pos + 2]);
@@ -1168,6 +1200,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 	    fprintf(f, "  mjit_call_method(th, cfp, &calling, (void *) 0x%"PRIxVALUE
 		    ", %s);\n",
 		    code[pos + 1], get_op_str(buf, iseq, code[pos + 2], use_locals_p));
+	if (mjit_spec_p)
+	    fprintf(f, " }\n");
     }
     return len;
 }
@@ -1587,7 +1621,7 @@ create_batch_iseq(rb_iseq_t *iseq) {
     bi->iseq_size = iseq->body->iseq_size;
     if (MJIT_DEBUG || mjit_opts.profile) {
 	bi->label = get_string(RSTRING_PTR(iseq->body->location.label));
-	bi->overall_calls = bi->jit_calls = 0;
+	bi->overall_calls = bi->jit_calls = bi->failed_jit_calls = 0;
     }
     return bi;
 }
@@ -1914,7 +1948,8 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
     CRITICAL_SECTION_FINISH("to clear iseq in mjit_free_iseq");
 #if MJIT_DEBUG
     bi->overall_calls = iseq->body->overall_calls;
-    bi->mjit_calls = iseq->body->mjit_calls;
+    bi->jit_calls = iseq->body->jit_calls;
+    bi->failed_jit_calls = iseq->body->failed_jit_calls;
 #endif
 }
 
@@ -2064,17 +2099,20 @@ print_statistics(void) {
     struct rb_mjit_batch *b;
     struct rb_mjit_batch_iseq *bi;
 
-    fprintf(stderr, "Name                                          Batch Iseq  Size     Calls/JIT Calls\n");
+    fprintf(stderr, "Name                                          Batch Iseq  Size     Calls/JIT Calls           Spec Fails\n");
     for (b = done_batches; b != NULL; b = b->next) {
 	for (bi = b->first; bi != NULL; bi = bi->next) {
 	    unsigned long overall_calls
 		= (bi->iseq == NULL ? bi->overall_calls : bi->iseq->body->overall_calls);
 	    unsigned long jit_calls
 		= (bi->iseq == NULL ? bi->jit_calls : bi->iseq->body->jit_calls);
+	    unsigned long failed_jit_calls
+		= (bi->iseq == NULL ? bi->jit_calls : bi->iseq->body->failed_jit_calls);
 
-	    fprintf(stderr, "%-45s %5d %4d %5lu %9lu/%-9lu (%-5.2f%%)\n",
+	    fprintf(stderr, "%-45s %5d %4d %5lu %9lu/%-9lu (%-5.2f%%)   %9lu (%-5.2f%%)\n",
 		    bi->label, b->num, bi->num, bi->iseq_size,
-		    overall_calls, jit_calls, overall_calls == 0 ? 0.0 : jit_calls * 100.0 / overall_calls);
+		    overall_calls, jit_calls, overall_calls == 0 ? 0.0 : jit_calls * 100.0 / overall_calls,
+		    failed_jit_calls, jit_calls == 0 ? 0.0 : failed_jit_calls * 100.0 / jit_calls);
 	}
     }
 }

@@ -383,7 +383,7 @@ global2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, GENTRY entry
     var_assign(cfp, res, res_ind, GET_GLOBAL((VALUE)entry));
 }
 
-/* Assign vlaue of an instance variable with ID and occurrence cache
+/* Assign value of an instance variable with ID and occurrence cache
    IC to local or temporary variable with location RES and index
    RES_IND in frame CFP.  */
 static do_inline void
@@ -393,6 +393,22 @@ ivar2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, ID id, IC ic)
 
     check_sp_default(cfp);
     var_assign(cfp, res, res_ind, vm_getinstancevariable(GET_SELF(), id, ic));
+}
+
+/* Speculatively assign value of an instance variable with ID and
+   occurrence cache IC to local or temporary variable with location
+   RES and index RES_IND in frame CFP.  */
+static do_inline int
+mjit_spec_ivar2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, ID id, const_IC ic)
+{
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
+    VALUE v;
+    
+    check_sp_default(cfp);
+    if ((v = vm_getinstancevariable_spec(GET_SELF(), id, ic)) == Qundef)
+	return TRUE;
+    var_assign(cfp, res, res_ind, v);
+    return FALSE;
 }
 
 /* Assign value of a class variable with ID to local or temporary
@@ -507,11 +523,28 @@ val2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE val)
     vm_setinstancevariable(GET_SELF(), id, val, ic);
 }
 
-/* As above but VAL_OP of CFP location of the value.  */
+/* JIT speculative variant of the above.  */
+static do_inline int
+mjit_spec_val2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE val)
+{
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
+
+    check_sp_default(cfp);
+    return vm_setinstancevariable_spec(GET_SELF(), id, val, ic) == Qundef;
+}
+
+/* As val2ivar_f but VAL_OP of CFP location of the value.  */
 static do_inline void
 var2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE *val_op)
 {
     val2ivar_f(cfp, id, ic, *val_op);
+}
+
+/* As above but JIT speculative variant.  */
+static do_inline int
+mjit_spec_var2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE *val_op)
+{
+    return mjit_spec_val2ivar_f(cfp, id, ic, *val_op);
 }
 
 /* Assign value of local or temporary variable with location VAL_OP in
