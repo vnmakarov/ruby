@@ -10,18 +10,28 @@ require 'mjit_header'
 
 $code = "" # Current version of the header file.
 
-# Read file KEEP_FNAME and return hash containing identifiers in the
-# file
-def get_keep_hash(keep_fname)
+# Read file KEEP_FNAME and return hash containing identifiers and
+# array containing regexps in the file
+def get_keep_info(keep_fname)
   ids = []
+  rs = []
   ident_regex = /\w+/
   open(keep_fname) do |f|
     str = f.read
     str.gsub!(/[[:blank:]]*#.*$/, " ") # remove comments
     while true
       md = /\A\s*(#{ident_regex})\s*/.match(str)
-      break if !md
-      ids << md[1]
+      if md
+        ids << md[1]
+      else
+        md = /\A\s*\/(.*)\/\s*/.match(str)
+        break if !md
+        begin
+          rs << /#{md[1]}/
+        rescue
+          STDERR.puts "keep file #{keep_fname} contains wrong regexp: #{str[0,30]}"
+        end
+      end
       str.slice!(0, md.end(0))
     end
     if !str.empty?
@@ -31,7 +41,7 @@ def get_keep_hash(keep_fname)
 
   h = {}
   ids.each {|e| h[e] = e}
-  h
+  return h, rs
 end
 
 # Return true if name of declaration in DECLS is in hash KEEP_HASH
@@ -70,7 +80,7 @@ keep_fname = ARGV[1]
 $code = STDIN.read;
 start_time = Time.now;
 
-keep_hash = get_keep_hash ARGV[1]
+keep_hash, keep_rs = get_keep_info ARGV[1]
 
 # Find start of the code we should not change:
 start_invariant = get_decl($code, $code.length - 1, 1, "get_temp_addr")
@@ -99,7 +109,7 @@ while true
       next
     end
     decl = $code[pos_range]
-    keep_p = decl_names_in?(decl, keep_hash)
+    keep_p = decl_names_in?(decl, keep_hash) || keep_rs.any? {|r| r.match(decl)}
     if !keep_p
       File.open(tfname, "w") do |test|
         test.puts $code[0...pos_range.begin], $code[pos_range.end+1..-1] # Put all but decls found above
@@ -136,6 +146,7 @@ STDERR.puts "\nTransforming external function to static:"
 stop_pos = start_invariant.begin - 1
 func_header_regex = get_func_header_regex
 extern_name_hash = {}
+func_def_nums = 0
 while true
   pos_range = get_decl($code, stop_pos, 1)
   break if pos_range.end < 0
@@ -143,19 +154,22 @@ while true
   decl = $code[pos_range]
   decl_name = get_decl_name(decl)
   if  extern_name_hash.has_key?(decl_name) && (decl =~ /#{func_header_regex};/)
-    decl.sub!(/extern|inline/, "")
-    STDERR.puts "warning: making external declaration of '#{decl_name}' static inline:"
+    decl.sub!(/extern|static|inline/, "")
+    STDERR.puts "warning: making declaration of '#{decl_name}' static inline:"
     $code[pos_range] = "static inline " + decl
-  elsif (md = /#{func_header_regex}{/.match(decl)) && (md[0] !~ /static/)
-    extern_name_hash[decl_name] = decl_name
-    header = md[0]
-    decl[md.begin(0)...md.end(0)] = ""
-    if decl =~ /static/
-      STDERR.puts "warning: a static decl inside external definition of '#{decl_name}'"
+  elsif md = /#{func_header_regex}{/.match(decl)
+    func_def_nums += 1
+    if  md[0] !~ /static/
+      extern_name_hash[decl_name] = decl_name
+      header = md[0]
+      decl[md.begin(0)...md.end(0)] = ""
+      if decl =~ /static/
+        STDERR.puts "warning: a static decl inside external definition of '#{decl_name}'"
+      end
+      header.sub!(/extern|inline/, "")
+      STDERR.puts "warning: making external definition of '#{decl_name}' static inline:"
+      $code[pos_range] = "static inline " + header + decl
     end
-    header.sub!(/extern|inline/, "")
-    STDERR.puts "warning: making external definition of '#{decl_name}' static inline:"
-    $code[pos_range] = "static inline " + header + decl
   end
 end
 
@@ -169,8 +183,9 @@ begin
 rescue
 end
 
-STDERR.puts "\n#{compilations_num} compilations for #{Time.now - start_time} sec: " +
+STDERR.puts "\n+++#{compilations_num} compilations for #{Time.now - start_time} sec: " +
             "Keeping #{all_decls_num - removed_decls_num} decls " +
-            "(removed #{removed_decls_num} out of #{all_decls_num})"
+            "(removed #{removed_decls_num} out of #{all_decls_num})" +
+            "\n+++   #{func_def_nums} kept function definitions"
 
 puts $code # Output the result

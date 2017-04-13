@@ -1,3 +1,10 @@
+2017-04-13  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* tool/minimize_mjit_header.rb: Count kept function definitions
+	and print them.
+	(get_keep_hash): Rename to get_keep_info.  Process regexps and
+	return them too.
+
 2017-04-07  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* vm_insnhelper.c (vm_getinstancevariable_spec): New.
