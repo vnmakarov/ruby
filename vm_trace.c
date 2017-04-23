@@ -26,6 +26,7 @@
 
 #include "vm_core.h"
 #include "eval_intern.h"
+#include "mjit.h"
 
 /* (1) trace mechanisms */
 
@@ -71,6 +72,8 @@ recalc_add_ruby_vm_event_flags(rb_event_flag_t events)
 	ruby_vm_event_flags |= ruby_event_flag_count[i] ? (1<<i) : 0;
     }
 
+    if (ruby_vm_event_flags != 0)
+        mjit_cancel_all();
     rb_objspace_set_event_hook(ruby_vm_event_flags);
 }
 
@@ -87,6 +90,8 @@ recalc_remove_ruby_vm_event_flags(rb_event_flag_t events)
 	ruby_vm_event_flags |= ruby_event_flag_count[i] ? (1<<i) : 0;
     }
 
+    if (ruby_vm_event_flags != 0)
+        mjit_cancel_all();
     rb_objspace_set_event_hook(ruby_vm_event_flags);
 }
 

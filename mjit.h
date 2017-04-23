@@ -66,6 +66,7 @@ typedef VALUE (*mjit_fun_t)(rb_thread_t *, rb_control_frame_t *);
 extern void mjit_init(struct mjit_options *opts);
 extern void mjit_add_iseq_to_process(rb_iseq_t *iseq);
 extern mjit_fun_t mjit_get_iseq_fun(const rb_iseq_t *iseq);
+extern void mjit_cancel_all(void);
 extern void mjit_increase_iseq_priority(const rb_iseq_t *iseq);
 extern void mjit_redo_iseq(rb_iseq_t *iseq);
 extern void mjit_free_iseq(const rb_iseq_t *iseq);

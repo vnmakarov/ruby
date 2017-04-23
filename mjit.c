@@ -200,6 +200,12 @@ struct rb_mjit_batch {
     int active_iseqs_num;
     /* Overall byte code size of all ISEQs in the batch in VALUEs.  */
     size_t iseqs_size;
+    /* The following flags are true when we compiled the batch
+       *without speculation* about absense of tracing, absense of
+       basic operation redefinitions, and inequality of ep and bp.  */
+    int trace_p:1;
+    int bop_redefined_p:1;
+    int ep_neq_bp_p:1;
 #if MJIT_DEBUG
     /* The relative time when a worker started to process the
        batch.  */
@@ -513,6 +519,17 @@ struct insn_fun_features {
        JIT.  */
     char mjit_spec_p;
 };
+
+/* Return TRUE if any basic type operation has been redefined.  */
+static int
+get_bop_redefined_p(void) {
+    int i;
+    for (i = 0; i < BOP_LAST_; i++)
+	if (GET_VM()->redefined_flag[i] != 0) {
+	    return TRUE;
+	}
+    return FALSE;
+}
 
 /*-------All the following code is executed in the worker threads only-----------*/
 
@@ -982,11 +999,11 @@ static const char *
 get_op_str(char *buf, const rb_iseq_t *iseq, ptrdiff_t ind, int locals_p) {
     if (locals_p) {
 	if (ind < 0)
-	    sprintf(buf, "&t[%ld]", (long) -ind - 1);
+	    sprintf(buf, "&t%ld", (long) -ind - 1);
 	else if (iseq->body->nonlocal_var_p[ind])
 	    sprintf(buf, "get_loc_addr(cfp, %ld)", (long) ind);
 	else
-	    sprintf(buf, "&v[%ld]", (long) ind - VM_ENV_DATA_SIZE);
+	    sprintf(buf, "&v%ld", (long) ind - VM_ENV_DATA_SIZE);
     } else {
 	if (ind < 0)
 	    sprintf(buf, "get_temp_addr(cfp, %ld)", (long) ind);
@@ -1007,7 +1024,18 @@ generate_param_setup(FILE *f, const VALUE *code, size_t pos, int recv_p) {
     int i, args_num = cd->call_info.orig_argc;
 
     for (i = !recv_p; i <= args_num; i++)
-	fprintf(f, "  *get_temp_addr(cfp, %d) = t[%d];\n",  -call_start - i, call_start + i - 1);
+	fprintf(f, "  *get_temp_addr(cfp, %d) = t%d;\n",  -call_start - i, call_start + i - 1);
+}
+
+/* If SET_P is FALSE, return empty string.  Otherwise, return string
+   representing C code setting cfp pc to PC.  Use BUF as the string
+   container.  */
+static const char *
+generate_set_pc(int set_p, char *buf, const VALUE *pc) {
+    if (! set_p)
+	return "";
+    sprintf(buf, "  cfp->pc = (void *) 0x%"PRIxVALUE ";\n", (VALUE) pc);
+    return buf;
 }
 
 /* Output C code implementing an iseq BI insn starting with position
@@ -1017,7 +1045,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
     rb_iseq_t *iseq = bi->iseq;
     const VALUE *code = iseq->body->iseq_encoded;
     VALUE insn, op;
-    int len, i;
+    int len, i, mjit_spec_p;
     const char *types;
     const char *iname;
     struct insn_fun_features features;
@@ -1040,7 +1068,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
     fprintf(f, "  jit_insns_num++;\n");
 #endif
     get_insn_fun_features(insn, &features);
-    fprintf(f, "  cfp->pc = (void *) 0x%"PRIxVALUE ";\n", (VALUE) (&code[pos] + len));
+    mjit_spec_p = !safe_p && features.mjit_spec_p;
+    fprintf(f, "%s", generate_set_pc(TRUE, buf, &code[pos] + len));
     if (features.special_p) {
 	switch (insn) {
 	case BIN(nop):
@@ -1070,14 +1099,14 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 		    iname, code[pos + 1], code[pos + 2]);
 	    break;
 	case BIN(raise_except):
-	    fprintf(f, "  val = %s_f(th, cfp, %s, %"PRIuVALUE ");\n  return val;\n",
+	    fprintf(f, "  val = %s_f(th, cfp, %s, %"PRIuVALUE ");\n",
 		    iname, get_op_str(buf, iseq, code[pos + 1], use_locals_p), code[pos + 2]);
-
+	    fprintf(f, "  return val;\n");
 	    break;
 	case BIN(raise_except_val):
-	    fprintf(f, "  val = %s_f(th, cfp, 0x%"PRIxVALUE ", %"PRIuVALUE ");\n  return val;\n",
+	    fprintf(f, "  val = %s_f(th, cfp, 0x%"PRIxVALUE ", %"PRIuVALUE ");\n",
 		    iname, code[pos + 1], code[pos + 2]);
-
+	    fprintf(f, "  return val;\n");
 	    break;
 	case BIN(ret_to_loc):
 	case BIN(ret_to_temp):
@@ -1088,14 +1117,16 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 	    /* Generate copying temps to the stack.  */
 	    if (use_locals_p)
 		generate_param_setup(f, code, pos, TRUE);
-	    fprintf(f, "  val = %s_f(th, cfp, (void *) 0x%"PRIxVALUE ", (sindex_t) %"PRIdVALUE ");\n  mjit_call_block_end(th, cfp, val, %s);\n",
-		    iname, code[pos + 1], code[pos + 2], get_op_str(buf, iseq, code[pos + 2], use_locals_p));
+	    fprintf(f, "  val = %s_f(th, cfp, (void *) 0x%"PRIxVALUE ", (sindex_t) %"PRIdVALUE ");\n",
+	            iname, code[pos + 1], code[pos + 2]);
+	    fprintf(f, "  if (mjit_call_block_end(th, cfp, val, %s)) {\n",
+	            get_op_str(buf, iseq, code[pos + 2], use_locals_p));
+	    fprintf(f, "    return RUBY_Qundef;\n  }\n");
 	    break;
 	default:
 	    break;
 	}
     } else {
-       int mjit_spec_p = !safe_p && features.mjit_spec_p;
        
        if (use_locals_p && features.call_p)
 	    /* Generate copying temps to the stack.  */
@@ -1116,7 +1147,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 		}
 	    }
 	}
-	if (features.jmp_p && (features.speculative_p || mjit_spec_p))
+	if (features.jmp_p && (features.bcmp_p || features.speculative_p || mjit_spec_p))
 	    fprintf(f, "  flag = ");
 	else
 	    fprintf(f, (features.jmp_p || features.op_end_p
@@ -1175,31 +1206,36 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi, int safe
 	    }
 	}
 	if (features.op_end_p)
-	    fprintf(f, "))\n    mjit_op_end(th, cfp, %s);\n", get_op_str(buf, iseq, code[pos + 4], use_locals_p));
+	    fprintf(f, ")) {\n    return RUBY_Qundef;\n  }\n");
 	else if (features.speculative_p || mjit_spec_p) {
 	    if (features.jmp_p)
-		fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n    cfp->pc = (void *) 0x%"PRIxVALUE, (VALUE) (&code[pos]));
+		fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n");
 	    else
-		fprintf(f, ")) {\n    cfp->pc = (void *) 0x%"PRIxVALUE,	(VALUE) (&code[pos]));
+		fprintf(f, ")) {\n");
 	    if (mjit_spec_p)
-	      fprintf(f, ";\n    mjit_change_iseq(cfp->iseq);\n");
-	    fprintf(f, ";\n    return RUBY_Qundef;\n  }\n");
-	    if (features.jmp_p)
-		fprintf(f, "  if (flag) goto l%ld;\n", pos + len + code[pos + 2]);
+	        fprintf(f, "    mjit_change_iseq(cfp->iseq);\n");
+	    fprintf(f, "  %s    return RUBY_Qundef;\n  }\n", generate_set_pc(TRUE, buf, &code[pos]));
+	    if (features.jmp_p) {
+		unsigned long dest = pos + len + code[pos + 2];
+		fprintf(f, "  if (flag) goto l%ld;\n", dest);
+	    }
 	} else if (! features.jmp_p)
 	    fprintf(f, ");\n");
 	else if (! features.bcmp_p)
 	    fprintf(f, "))\n    goto l%ld;\n", pos + len + code[pos + 1]);
 	else {
-	    fprintf(f, ", &val)\n    || "
-		    "(val == RUBY_Qundef && mjit_bcmp_end(th, cfp, %s, %d)))\n"
-		    "    goto l%ld;\n", get_op_str(buf, iseq, code[pos + 5], use_locals_p),
-		    features.jmp_true_p, pos + len + code[pos + 2]);
+            unsigned long dest = pos + len + code[pos + 2];
+	    
+	    fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n");
+	    fprintf(f, "    if (flag)%s", generate_set_pc(TRUE, buf, &code[dest]));
+	    fprintf(f, "    return RUBY_Qundef;\n  }\n");
+	    fprintf(f, "  if (flag) goto l%lu;\n", dest);
 	}
-	if (features.call_p)
-	    fprintf(f, "  mjit_call_method(th, cfp, &calling, (void *) 0x%"PRIxVALUE
-		    ", %s);\n",
+	if (features.call_p) {
+	    fprintf(f, "  if (mjit_call_method(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %s)) {\n",
 		    code[pos + 1], get_op_str(buf, iseq, code[pos + 2], use_locals_p));
+	    fprintf(f, "    return RUBY_Qundef;\n  }\n");
+        }
 	if (mjit_spec_p)
 	    fprintf(f, " }\n");
     }
@@ -1230,6 +1266,17 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 #if MJIT_INSN_STATISTICS
     fprintf(f, "extern unsigned long jit_insns_num;\n");
 #endif
+    b->trace_p = ruby_vm_event_flags != 0;
+    b->bop_redefined_p = get_bop_redefined_p();
+    b->ep_neq_bp_p = 0;
+    for (bi = b->first; bi != NULL; bi = bi->next)
+	if (bi->iseq->body->jit_mutations_num >= mjit_opts.max_mutations) {
+	    b->ep_neq_bp_p = 1;
+	    break;
+	}
+    fprintf(f, "static const char mjit_trace_p = %d;\n", b->trace_p);
+    fprintf(f, "static const char mjit_bop_redefined_p = %d;\n", b->bop_redefined_p);
+    fprintf(f, "static const char mjit_ep_neq_bp_p = %d;\n", b->ep_neq_bp_p);
     for (bi = b->first; bi != NULL; bi = bi->next) {
 	struct rb_iseq_constant_body *body;
 	size_t i, size = bi->iseq_size;
@@ -1242,14 +1289,18 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 		get_batch_iseq_fname(bi, mjit_fname_holder));
 	fprintf(f, "  struct rb_calling_info calling;\n  VALUE val; int flag;\n");
 	if (use_locals_p)
-	    fprintf(f, "  VALUE v[%lu];\n", (unsigned long) body->local_table_size);
+	    for (i = 0; i < body->local_table_size; i++)
+		fprintf(f, "  VALUE v%lu;\n", i);
 	if (use_locals_p)
-	    fprintf(f, "  VALUE t[%ld];\n", (long) body->temp_vars_num + 1);
+	    for (i = 0; i <= body->temp_vars_num; i++)
+		fprintf(f, "  VALUE t%lu;\n", i);
 	fprintf(f, "  cfp->bp[0] |= 0x%x;\n", VM_FRAME_FLAG_FINISH);
+	if (! b->ep_neq_bp_p)
+	    fprintf(f, "  if (cfp->bp != cfp->ep) return RUBY_Qundef;\n");
 	if (use_locals_p) {
 	    for (i = VM_ENV_DATA_SIZE; i <= body->local_table_size; i++)
 		if (! body->nonlocal_var_p[i])
-		    fprintf(f, "  v[%ld] = *get_loc_addr(cfp, %ld);\n", i - VM_ENV_DATA_SIZE, i);
+		    fprintf(f, "  v%ld = *get_loc_addr(cfp, %ld);\n", i - VM_ENV_DATA_SIZE, i);
 	}
 	if (body->param.flags.has_opt) {
 	  int n;
@@ -1951,6 +2002,31 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
     bi->jit_calls = iseq->body->jit_calls;
     bi->failed_jit_calls = iseq->body->failed_jit_calls;
 #endif
+}
+
+/* Mark all JIT code being executed for cancellation.  It happens when
+   a global speculation fails.  For example, a basic operation is
+   redefined or tracing starts.  */
+void
+mjit_cancel_all(void)
+{
+    rb_iseq_t *iseq;
+    rb_control_frame_t *fp;
+    rb_vm_t *vm = GET_THREAD()->vm;
+    rb_thread_t *th = 0;
+
+    if (!mjit_init_p)
+	return;
+    list_for_each(&vm->living_threads, th, vmlt_node) {
+	rb_control_frame_t *limit_cfp = (void *)(th->stack + th->stack_size);
+	for(fp = th->cfp; fp < limit_cfp; fp = RUBY_VM_PREVIOUS_CONTROL_FRAME(fp))
+	  if ((iseq = fp->iseq) != NULL && imemo_type((VALUE) iseq) == imemo_iseq
+	      && iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
+	      fp->bp[0] |= VM_FRAME_FLAG_CANCEL;
+	      mjit_redo_iseq(iseq);
+	  }
+    }
+    verbose("Cancel all speculative JIT code");
 }
 
 /* A name of the header file included in any C file generated by MJIT for iseqs.  */

@@ -2711,6 +2711,7 @@ vm_trace.$(OBJEXT): {$(VPATH)}id.h
 vm_trace.$(OBJEXT): {$(VPATH)}intern.h
 vm_trace.$(OBJEXT): {$(VPATH)}internal.h
 vm_trace.$(OBJEXT): {$(VPATH)}io.h
+vm.trace.$(OBJEXT): {$(VPATH)}mjit.h
 vm_trace.$(OBJEXT): {$(VPATH)}method.h
 vm_trace.$(OBJEXT): {$(VPATH)}missing.h
 vm_trace.$(OBJEXT): {$(VPATH)}node.h

@@ -131,11 +131,11 @@ enum vm_regan_acttype {
 	VALUE v = ((cd)->call_cache.call)(th, GET_CFP(), (calling), &(cd)->call_info, &(cd)->call_cache); \
     if (v == Qundef && (v = mjit_execute_iseq(th, 0)) == Qundef) {	\
 	RESTORE_REGS(); \
-	set_default_sp(reg_cfp); \
+	set_default_sp(reg_cfp, reg_cfp->bp);		\
 	NEXT_INSN(); \
     } \
     else { \
-	set_default_sp(reg_cfp); \
+        set_default_sp(reg_cfp, reg_cfp->bp);		\
         *get_temp_addr(reg_cfp, (cd)->call_start) = v;	\
     } \
 } while (0)

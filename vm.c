@@ -298,6 +298,22 @@ extern rb_serial_t ruby_vm_global_method_state;
 extern rb_serial_t ruby_vm_global_constant_state;
 extern rb_serial_t ruby_vm_class_serial;
 
+/* Flag of a code for MJIT.  It can be used to specialize a code
+   common for the interpreter and JIT. */
+#ifndef MJIT_HEADER
+static const int in_mjit_p = FALSE;
+#else
+static const int in_mjit_p = TRUE;
+#endif
+
+/* The following are flags used to specialize a code common for the
+   interpreter and JIT.  When we compile JIT code the flags say about
+   used different global speculation: no tracing, no any basic
+   operator redefinition, equality of EP and BP.  */
+static const char mjit_trace_p;
+static const char mjit_bop_redefined_p;
+static const char mjit_ep_neq_bp_p;
+
 #include "constant.h"
 #include "mjit.h"
 #include "vm_insnhelper.h"
@@ -307,6 +323,10 @@ extern rb_serial_t ruby_vm_class_serial;
 #include "rtl_exec.c"
 
 #ifndef MJIT_HEADER
+
+static const char mjit_trace_p = 1;
+static const char mjit_bop_redefined_p = 1;
+static const char mjit_ep_neq_bp_p = 1;
 
 rb_serial_t ruby_vm_global_method_state = 1;
 rb_serial_t ruby_vm_global_constant_state = 1;
@@ -1513,6 +1533,8 @@ rb_vm_check_redefinition_opt_method(const rb_method_entry_t *me, VALUE klass)
 	    int flag = vm_redefinition_check_flag(klass);
 
 	    ruby_vm_redefined_flag[bop] |= flag;
+	    if (flag)
+	        mjit_cancel_all();
 	}
     }
 }

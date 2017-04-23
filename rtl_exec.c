@@ -13,15 +13,20 @@
    implementation of interpreter and MJIT compiler.  MJIT compiler
    mostly translates each insn into the corresponding C function call.
 
-   We have many different specialize move insns to improve the
+   We have many different specialized move insns to improve the
    interpreter performance.  We would not need such number of the
-   insns for JIT only as the uised C compiler can generate specialized
+   insns for JIT only as the used C compiler can generate specialized
    insns versions itself.  */
 
 /* Macros used to translate insn name into the corresponding function
    name.  */
 #define RTL_CONCAT(a, b) a ## b
 #define RTL_FUNC_NAME(insn_name) RTL_CONCAT(insn_name, _f)
+
+/* Return BP value of CFP.  If we compiled JIT code with speculation
+   that EP == BP, we use EP.  This can decrease a register pressure in
+   the JIT code.  */
+#define RTL_GET_BP(cfp) (mjit_ep_neq_bp_p ? (cfp)->bp : (cfp)->ep)
 
 /* Return address of temporary variable location with index IND (it
    should be negative) in frame CFP.  */
@@ -31,7 +36,7 @@ get_temp_addr(rb_control_frame_t *cfp, lindex_t ind)
     ptrdiff_t offset = ind;
 
     VM_ASSERT(offset < 0);
-    return cfp->bp - offset;
+    return RTL_GET_BP(cfp) - offset;
 }
 
 /* Return address of local variable location with index IND (it should
@@ -52,7 +57,7 @@ get_var_addr(rb_control_frame_t *cfp, lindex_t ind)
 {
     ptrdiff_t offset = ind;
 
-    return (offset < 0 ? cfp->bp : cfp->ep) - offset;
+    return (offset < 0 ? RTL_GET_BP(cfp) : cfp->ep) - offset;
 }
 
 
@@ -76,18 +81,19 @@ var_assign(rb_control_frame_t *cfp, VALUE *res, ptrdiff_t res_ind, VALUE v)
 {
     VALUE *ep = cfp->ep;
 
-    if (ep != cfp->bp && res_ind >= 0) {
+    if (mjit_ep_neq_bp_p && ep != cfp->bp && res_ind >= 0) {
 	vm_env_write(ep, (int) (res - ep), v);
     } else {
 	*res = v;
     }
 }
 
-/* Set sp in CFP right after the last temporary variable in frame CFP.
-   That is a default stack pointer value.  */
+/* Set sp in CFP right after the last temporary variable in frame CFP
+   with bp value given by BP.  That is a default stack pointer
+   value.  */
 static do_inline void
-set_default_sp(rb_control_frame_t *cfp) {
-    cfp->sp = cfp->bp + 1 + cfp->iseq->body->temp_vars_num;
+set_default_sp(rb_control_frame_t *cfp, VALUE *bp) {
+    cfp->sp = bp + 1 + cfp->iseq->body->temp_vars_num;
 }
 
 /* Call method given by CALLING, CI, and CC in the current thread TH
@@ -101,7 +107,11 @@ call_method(rb_thread_t *th, rb_control_frame_t *cfp,
 
     if (val != Qundef)
 	/* The call is finished with value VAL.  */
-	set_default_sp(cfp);
+	set_default_sp(cfp, RTL_GET_BP(cfp));
+    else if (in_mjit_p) {
+	val = vm_exec(th);
+	set_default_sp(cfp, RTL_GET_BP(cfp));
+    }
     return val;
 }
 
@@ -241,7 +251,7 @@ val2temp_f(rb_control_frame_t *cfp, VALUE *res, VALUE val)
 /* Check that sp of frame CFP has a default value.  */
 static do_inline void
 check_sp_default(rb_control_frame_t *cfp) {
-    VM_ASSERT(cfp->sp == cfp->bp + 1 + cfp->iseq->body->temp_vars_num);
+    VM_ASSERT(cfp->sp == RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num);
 }
 
 /* Assign string STR to local or temporary variable RES with index
@@ -585,6 +595,43 @@ op1_call(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd, VALUE *recv)
     return call_simple_method(th, cfp, &cd->call_info, &cd->call_cache, recv);
 }
 
+/* Finish an (arithmetic or compare) operation.  Put VAL into location
+   given by RES and RES_IND.  Undefined VAL means calling an iseq to
+   get the value.  Return non-zero if we need to cancel JITed code
+   execution and don't use the code anymore (it happens usually after
+   global changes, e.g. basic type operation redefinition).  */
+static do_inline int
+op_val_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, VALUE val) {
+    if (val == Qundef) {
+	if (! in_mjit_p)
+	    return 1;
+	val = vm_exec(th);
+    }
+    var_assign(cfp, res, res_ind, val);
+    if (! in_mjit_p)
+	return 0;
+    if ((RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) == 0)
+	return 0;
+    mjit_change_iseq(cfp->iseq);
+    return 1;
+}
+
+/* Like above but without the assignment.  */
+static do_inline int
+op_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val) {
+    if (val == Qundef) {
+	if (! in_mjit_p)
+	    return 1;
+	val = vm_exec(th);
+    }
+    if (! in_mjit_p)
+	return 0;
+    if ((RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) == 0)
+	return 0;
+    mjit_change_iseq(cfp->iseq);
+    return 1;
+}
+
 /* Header of a function NAME with 1 operand of specific type (array,
    string, or hash).  */
 #define ary_hash_f(name) static do_inline VALUE name(VALUE op)
@@ -609,7 +656,7 @@ ary_hash_f(hash_empty_p) {return RHASH_EMPTY_P(op) ? Qtrue : Qfalse;;}
    given correspondingly by functions STR_OP, ARY_OP, and HASH_OP.
    For the slow paths use call data CD.  Return non-zero if we started
    a new ISEQ execution (we need to update vm_exec_core regs in this
-   case).  */
+   case) or we need to cancel the current JITed code..  */
 static do_inline int
 ary_hash_op(rb_thread_t *th, rb_control_frame_t *cfp,
 	    CALL_DATA cd, VALUE *res, rindex_t res_ind, VALUE *op,
@@ -623,24 +670,21 @@ ary_hash_op(rb_thread_t *th, rb_control_frame_t *cfp,
 
     if (! SPECIAL_CONST_P(*src)) {
 	if (RBASIC_CLASS(*src) == rb_cString
-	    && BASIC_OP_UNREDEFINED_P(bop, STRING_REDEFINED_OP_FLAG))
+	    && BASIC_OP_UNREDEFINED_P(bop, STRING_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, str_op(*src));
-	else if (RBASIC_CLASS(*src) == rb_cArray
-		 && BASIC_OP_UNREDEFINED_P(bop, ARRAY_REDEFINED_OP_FLAG))
+	    return 0;
+	} else if (RBASIC_CLASS(*src) == rb_cArray
+		   && BASIC_OP_UNREDEFINED_P(bop, ARRAY_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, ary_op(*src));
-	else if (RBASIC_CLASS(*src) == rb_cHash
-		 && BASIC_OP_UNREDEFINED_P(bop, HASH_REDEFINED_OP_FLAG))
+	    return 0;
+	} else if (RBASIC_CLASS(*src) == rb_cHash
+		   && BASIC_OP_UNREDEFINED_P(bop, HASH_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, hash_op(*src));
-	else
-	    goto call;
-    } else {
-    call:
-	val = op1_call(th, cfp, cd, src);
-	if (val == Qundef)
-	    return 1;
-	var_assign(cfp, res, res_ind, val);
+	    return 0;
+	}
     }
-    return 0;
+    val = op1_call(th, cfp, cd, src);
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 /* A call of ary_has_op for operation BOP and suffix SUFF for fast
@@ -687,10 +731,7 @@ op1_fun(succ) {
 	return 0;
     }
     val = op1_call(th, cfp, cd, src);
-    if (val == Qundef)
-	return 1;
-    var_assign(cfp, res, res_ind, val);
-    return 0;
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 /* Function but for insn not with a fast path for pre-defined method
@@ -704,15 +745,13 @@ op1_fun(not) {
 
     vm_search_method(ci, cc, *src);
 
-    if (check_cfunc(cc->me, rb_obj_not))
+    if (check_cfunc(cc->me, rb_obj_not)) {
 	val = RTEST(*src) ? Qfalse : Qtrue;
-    else {
-	val = op1_call(th, cfp, cd, src);
-	if (val == Qundef)
-	    return 1;
+	var_assign(cfp, res, res_ind, val);
+	return 0;
     }
-    var_assign(cfp, res, res_ind, val);
-    return 0;
+    val = op1_call(th, cfp, cd, src);
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 /* Call method given by CD of object RECV with arg OP2 in the current
@@ -878,13 +917,7 @@ do_cmp(rb_thread_t *th,
 			   op2_fixnum_p, op2_flonum_p,
 			   offset, fix_insn_id, flo_insn_id);
 
-    if (val == Qundef) {
-	/* We actually call an ISEQ -- return a flag to restore
-	   vm_exec_core regs.  */
-	return 1;
-    }
-    var_assign(cfp, res, res_ind, val);
-    return 0;
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 /* It is a call of do_cmp when we don't know OP2 type.  */
@@ -1048,9 +1081,9 @@ static do_inline VALUE
 common_spec_fix_cmp(VALUE op1, VALUE op2, enum ruby_basic_operators bop,
 		    int (*fix_num_cmp)(VALUE, VALUE), int op2_fixnum_p)
 {
-    if (BASIC_OP_UNREDEFINED_P (bop, FLOAT_REDEFINED_OP_FLAG)
-	&& ((op2_fixnum_p && FIXNUM_P(op1))
-	    || (! op2_fixnum_p && FIXNUM_2_P(op1, op2))))
+    if (LIKELY((! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(bop, INTEGER_REDEFINED_OP_FLAG))
+	       && ((op2_fixnum_p && FIXNUM_P(op1))
+		   || (! op2_fixnum_p && FIXNUM_2_P(op1, op2)))))
 	return fix_num_cmp(op1, op2) ? Qtrue : Qfalse;
     return Qundef;
 }
@@ -1060,9 +1093,9 @@ static do_inline VALUE
 common_spec_flo_cmp(VALUE op1, VALUE op2, enum ruby_basic_operators bop,
 		    int (*float_num_cmp)(VALUE, VALUE), int op2_flonum_p)
 {
-    if (BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)
-	&& (op2_flonum_p && FLONUM_P(op1)
-	    || (! op2_flonum_p && FLONUM_2_P(op1, op2))))
+    if (LIKELY((! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG))
+	       && (op2_flonum_p && FLONUM_P(op1)
+		   || (! op2_flonum_p && FLONUM_2_P(op1, op2)))))
 	return float_num_cmp(op1, op2) ? Qtrue : Qfalse;
     return Qundef;
 }
@@ -1275,7 +1308,8 @@ bnil_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op) {
    FIX_NUM_CMP, FLOAT_NUM_CMP, and DOUBLE_NUM_CMP, otherwise use a
    method call given by call data CD.  Put the comparison result into
    local or temporary variable with location RES and index RES_IND in
-   frame CFP of thread TH and pass it also through VAL.  OP2_FIX_NUM_P
+   frame CFP of thread TH and pass it also through VAL.  Undefined VAL
+   in JITed code says to cancel the current JITed code.  OP2_FIX_NUM_P
    and OP2_FLO_NUM_P are flags of that OP2 is correspondingly fix or
    flo num.  In case of non-zero OFFSET and using a fast execution
    path, change the insn to its speculative variant FIX_INSN_ID or
@@ -1296,13 +1330,22 @@ do_bcmp(rb_thread_t *th, rb_control_frame_t *cfp,
 			 fix_num_cmp, float_num_cmp, double_num_cmp,
 			 op2_fixnum_p, op2_flonum_p,
 			 offset, fix_insn_id, flo_insn_id);
-    *val = v;
-    if (v != Qundef) {
-	/* The comparison is finished.  */
+    if (! in_mjit_p) {
+	*val = v;
+	if (v == Qundef)
+	    return FALSE;
 	var_assign(cfp, res, res_ind, v);
 	return true_p ? RTEST(v) : ! RTEST(v);
     }
-    return FALSE;
+    if (v == Qundef) {
+	v = vm_exec(th);
+    }
+    if ((RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) == 0)
+	*val = v;
+    else
+	*val = Qundef;
+    var_assign(cfp, res, res_ind, v);
+    return true_p ? RTEST(v) : ! RTEST(v);
 }
 
 /* It is a call of do_bcmp when we don't know OP2 type.  */
@@ -1464,7 +1507,9 @@ bcmpi_fun(ubfgei) {return ubcmp_fix_call(ge, FALSE, BOP_GE);}
 #define bcmp_flo_call(suff, true_p, bop)			\
   bcmp_imm_op(th, cfp, cd, res, res_ind, op1, imm, val,	 \
 	      true_p, bop, fix_num_ ## suff, float_num_ ## suff, \
-	      double_num_ ## suff, FALSE, TRUE,	0, 0, 0)
+	      double_num_ ## suff, FALSE, TRUE,	 7, \
+	      (true_p) ? BIN(ibt ## suff ## i) : BIN(ibf ## suff ## i),	\
+	      (true_p) ? BIN(fbt ## suff ## f) : BIN(fbf ## suff ## f))
 
 /* Definitions of the functions implementing comparison and branch
    insns with immediate flo num as the 2nd operand.  The insn can be
@@ -1778,7 +1823,7 @@ arithmf(double_num_mod) {return float_num_mult(op1, op2);}
    use a fast path, change the current insn to the corresponding
    speculative insn FIX_INSN_ID or FLO_INSN_ID.  Return non zero if we
    started a new ISEQ execution (we need to update vm_exec_core regs
-   in this case).  */
+   in this case) or we need to cancel the current JITed code..  */
 static do_inline int
 do_arithm(rb_thread_t *th,
 	  rb_control_frame_t *cfp,
@@ -1796,40 +1841,39 @@ do_arithm(rb_thread_t *th,
 	 || (! op2_fixnum_p && ! op2_flonum_p && FIXNUM_2_P(*op1, op2)))
 	&& BASIC_OP_UNREDEFINED_P(bop, INTEGER_REDEFINED_OP_FLAG)) {
 	val = fix_num_op(*op1, op2);
-	if ((bop == BOP_DIV || bop == BOP_MOD) && val == Qundef)
-	    goto call;
-	var_assign(cfp, res, res_ind, val);
-	if (change_p)
-	    vm_change_insn(cfp->iseq, cfp->pc - 6, fix_insn_id);
+	if (val != Qundef || (bop != BOP_DIV && bop != BOP_MOD)) {
+	    var_assign(cfp, res, res_ind, val);
+	    if (change_p)
+		vm_change_insn(cfp->iseq, cfp->pc - 6, fix_insn_id);
+	    return 0;
+	}
     } else if ((op2_flonum_p && FLONUM_P(*op1)
 		|| (! op2_fixnum_p && ! op2_flonum_p && FLONUM_2_P(*op1, op2)))
 	       && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)) {
 	var_assign(cfp, res, res_ind, float_num_op(*op1, op2));
 	if (change_p)
 	    vm_change_insn(cfp->iseq, cfp->pc - 6, flo_insn_id);
+	return 0;
     }
     else if (! op2_fixnum_p && ! op2_flonum_p
 	     && ! SPECIAL_CONST_P(*op1) && ! SPECIAL_CONST_P(op2)) {
 	if (RBASIC_CLASS(*op1) == rb_cFloat && RBASIC_CLASS(op2) == rb_cFloat
-	    && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG))
+	    && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, double_num_op(*op1, op2));
-	else if (bop == BOP_PLUS && RBASIC_CLASS(*op1) == rb_cString
-		 && RBASIC_CLASS(op2) == rb_cString
-		 && BASIC_OP_UNREDEFINED_P(bop, STRING_REDEFINED_OP_FLAG))
+	    return 0;
+	} else if (bop == BOP_PLUS && RBASIC_CLASS(*op1) == rb_cString
+		   && RBASIC_CLASS(op2) == rb_cString
+		   && BASIC_OP_UNREDEFINED_P(bop, STRING_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, rb_str_plus(*op1, op2));
-	else if (bop == BOP_PLUS && RBASIC_CLASS(*op1) == rb_cArray
-		 && BASIC_OP_UNREDEFINED_P(bop, ARRAY_REDEFINED_OP_FLAG))
+	    return 0;
+	} else if (bop == BOP_PLUS && RBASIC_CLASS(*op1) == rb_cArray
+		   && BASIC_OP_UNREDEFINED_P(bop, ARRAY_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, rb_ary_plus(*op1, op2));
-	else
-	    goto call;
-    } else {
-    call:
-	val = op2_call(th, cfp, cd, op1, op2);
-	if (val == Qundef)
-	    return 1;
-	var_assign(cfp, res, res_ind, val);
+	    return 0;
+	}
     }
-    return 0;
+    val = op2_call(th, cfp, cd, op1, op2);
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 /* It is just a call of do_arithm when we don't know the type of the
@@ -2060,9 +2104,9 @@ do_spec_fix_arithm(rb_control_frame_t *cfp,
 {
     VALUE val;
 
-    if (BASIC_OP_UNREDEFINED_P(bop, INTEGER_REDEFINED_OP_FLAG)
-	&& ((op2_fixnum_p && FIXNUM_P(*op1))
-	    || (! op2_fixnum_p && FIXNUM_2_P(*op1, op2)))) {
+    if (LIKELY((! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(bop, INTEGER_REDEFINED_OP_FLAG))
+	       && ((op2_fixnum_p && FIXNUM_P(*op1))
+		   || (! op2_fixnum_p && FIXNUM_2_P(*op1, op2))))) {
 	val = fix_num_op(*op1, op2);
 	if (val != Qundef) {
 	    var_assign(cfp, res, res_ind, val);
@@ -2082,9 +2126,9 @@ do_spec_flo_arithm(rb_control_frame_t *cfp,
 		   VALUE (*float_num_op)(VALUE, VALUE),
 		   int op2_flonum_p, int uinsn)
 {
-    if (BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)
-	&& ((op2_flonum_p && FLONUM_P(*op1))
-	    || (! op2_flonum_p && FLONUM_2_P(*op1, op2)))) {
+    if (LIKELY((! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG))
+	       && ((op2_flonum_p && FLONUM_P(*op1))
+		   || (! op2_flonum_p && FLONUM_2_P(*op1, op2))))) {
 	var_assign(cfp, res, res_ind, float_num_op(*op1, op2));
 	return FALSE;
     }
@@ -2201,7 +2245,8 @@ spec_op2i_fun(fmodf) {return spec_flo_arithm_imm_call(mod, BOP_MOD);}
    For the slow paths use call data CD.  Assign the result to local or
    temporary variable with address RES and index RES_IND.  Return non
    zero if we started a new ISEQ execution (we need to update
-   vm_exec_core regs in this case).  */
+   vm_exec_core regs in this case) or we need to cancel the current
+   JITed code.  */
 static do_inline int
 do_ltlt(rb_thread_t *th, rb_control_frame_t *cfp,
 	CALL_DATA cd, VALUE *res, rindex_t res_ind, VALUE *src1, VALUE src2)
@@ -2213,21 +2258,17 @@ do_ltlt(rb_thread_t *th, rb_control_frame_t *cfp,
     check_sp_default(cfp);
     if (! SPECIAL_CONST_P(*src1)) {
 	if (RBASIC_CLASS(*src1) == rb_cString
-	    && BASIC_OP_UNREDEFINED_P(BOP_LTLT, STRING_REDEFINED_OP_FLAG))
+	    && BASIC_OP_UNREDEFINED_P(BOP_LTLT, STRING_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, rb_str_concat(*src1, src2));
-	else if (RBASIC_CLASS(*src1) == rb_cArray
-		 && BASIC_OP_UNREDEFINED_P(BOP_LTLT, ARRAY_REDEFINED_OP_FLAG))
+	    return 0;
+	} else if (RBASIC_CLASS(*src1) == rb_cArray
+		   && BASIC_OP_UNREDEFINED_P(BOP_LTLT, ARRAY_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, rb_ary_push(*src1, src2));
-	else
-	  goto call;
-    } else {
-    call:
-	val = op2_call(th, cfp, cd, src1, src2);
-	if (val == Qundef)
-	    return 1;
-	var_assign(cfp, res, res_ind, val);
+	    return 0;
+	}
     }
-    return 0;
+    val = op2_call(th, cfp, cd, src1, src2);
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 /* Definitions of functions implementing << and [] operations
@@ -2254,23 +2295,18 @@ op2_fun(aref)
     if (! SPECIAL_CONST_P(*src1)) {
 	if (RBASIC_CLASS(*src1) == rb_cArray
 	    && BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG)
-	    && FIXNUM_P(src2))
+	    && FIXNUM_P(src2)) {
 	    var_assign(cfp, res, res_ind, rb_ary_entry(*src1, FIX2LONG(src2)));
-	else if (RBASIC_CLASS(*src1) == rb_cHash
-		 && BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)) {
+	    return 0;
+	} else if (RBASIC_CLASS(*src1) == rb_cHash
+		   && BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)) {
 	    check_sp_default(cfp);
 	    var_assign(cfp, res, res_ind, rb_hash_aref(*src1, src2));
+	    return 0;
 	}
-	else
-	    goto call;
-    } else {
-    call:
-	val = op2_call(th, cfp, cd, src1, src2);
-	if (val == Qundef)
-	    return 1;
-	var_assign(cfp, res, res_ind, val);
     }
-    return 0;
+    val = op2_call(th, cfp, cd, src1, src2);
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 op2i_fun(arefi)
@@ -2279,22 +2315,18 @@ op2i_fun(arefi)
 
     if (! SPECIAL_CONST_P(*src1)) {
 	if (RBASIC_CLASS(*src1) == rb_cArray
-	    && BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))
+	    && BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG)) {
 	    var_assign(cfp, res, res_ind, rb_ary_entry(*src1, FIX2LONG(imm)));
-	else if (RBASIC_CLASS(*src1) == rb_cHash
-		 && BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)) {
+	    return 0;
+	} else if (RBASIC_CLASS(*src1) == rb_cHash
+		   && BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)) {
 	    check_sp_default(cfp);
 	    var_assign(cfp, res, res_ind, rb_hash_aref(*src1, imm));
-	} else
-	    goto call;
-    } else {
-    call:
-	val = op2_call(th, cfp, cd, src1, imm);
-	if (val == Qundef)
-	    return 1;
-	var_assign(cfp, res, res_ind, val);
+	    return 0;
+	}
     }
-    return 0;
+    val = op2_call(th, cfp, cd, src1, imm);
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 op2i_fun(aref_str) {
@@ -2306,13 +2338,10 @@ op2i_fun(aref_str) {
 	&& rb_hash_compare_by_id_p(*src) == Qfalse) {
 	check_sp_default(cfp);
 	var_assign(cfp, res, res_ind, rb_hash_aref(*src, str));
-    } else {
-	val = op2_call(th, cfp, cd, src, rb_str_resurrect(str));
-	if (val == Qundef)
-	    return 1;
-	var_assign(cfp, res, res_ind, val);
+	return 0;
     }
-    return 0;
+    val = op2_call(th, cfp, cd, src, rb_str_resurrect(str));
+    return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
 /* Common function executing operation []= for operands OP1, IND, and
@@ -2321,7 +2350,8 @@ op2i_fun(aref_str) {
    hash.  For the slow paths use call data CD.  Assign the result to
    local or temporary variable with address RES and index RES_IND.
    Return non zero if we started a new ISEQ execution (we need to
-   update vm_exec_core regs in this case).  */
+   update vm_exec_core regs in this case) or we need to cancel the
+   current JITed code..  */
 static do_inline int
 common_aset(rb_thread_t *th,
 	    rb_control_frame_t *cfp,
@@ -2333,24 +2363,21 @@ common_aset(rb_thread_t *th,
     if (!SPECIAL_CONST_P(*recv)) {
 	if (RBASIC_CLASS(*recv) == rb_cArray
 	    && BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG)
-	    && FIXNUM_P(ind))
+	    && FIXNUM_P(ind)) {
 	    rb_ary_store(*recv, FIX2LONG(ind), el);
-	else if (RBASIC_CLASS(*recv) == rb_cHash
-		 && BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)
-		 && (!str_p || rb_hash_compare_by_id_p(*recv) == Qfalse)) {
+	    return 0;
+	} else if (RBASIC_CLASS(*recv) == rb_cHash
+		   && BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)
+		   && (!str_p || rb_hash_compare_by_id_p(*recv) == Qfalse)) {
 	    check_sp_default(cfp);
 	    rb_hash_aset(*recv, ind, el);
-	} else
-	    goto call;
-    } else {
-    call:
-	val = op3_call(th, cfp, cd, recv, str_p ? rb_str_resurrect(ind) : ind, el);
-	if (val == Qundef)
-	    return 1;
+	    return 0;
+	}
     }
-    return 0;
+    val = op3_call(th, cfp, cd, recv, str_p ? rb_str_resurrect(ind) : ind, el);
+    return op_call_end(th, cfp, val);
 }
-
+    
 
 /* It is just a call of common_aset when we don't know OP2 type.  */
 static do_inline int
@@ -2434,7 +2461,7 @@ defined_p_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, rindex_t res_i
 
     check_sp_default(cfp);
     var_assign(cfp, res, res_ind, vm_defined(th, cfp, op_type, obj, needstr, val));
-    set_default_sp(cfp);
+    set_default_sp(cfp, RTL_GET_BP(cfp));
 }
 
 /* As defined_p but the additional arg is given by value V.  */
@@ -2747,7 +2774,7 @@ spread_array_f(rb_control_frame_t *cfp, VALUE *op1, rb_num_t num, rb_num_t flag)
 
     cfp->sp = ary_ptr;
     vm_expandarray(cfp, *ary_ptr, num, (int)flag);
-    set_default_sp(cfp);
+    set_default_sp(cfp, RTL_GET_BP(cfp));
 }
 
 /* Assign the result array to local or temporary variable with location RES
@@ -2916,23 +2943,21 @@ regexp_match1_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind,
 
 /* Analogous to regexp_match1 but we don't know that value in STR_OP
    is a string.  Return non zero if we started a new ISEQ execution
-   (we need to update vm_exec_core regs in this case).  */
+   (we need to update vm_exec_core regs in this case) or we need to
+   cancel the current JITed code.  */
 static do_inline int
 regexp_match2_f(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd,
 		VALUE *res, rindex_t res_ind, VALUE *str_op, VALUE *regex_op) {
-    VALUE *str = str_op, regex = *regex_op;
+    VALUE v, *str = str_op, regex = *regex_op;
 
     check_sp_default(cfp);
     if (CLASS_OF(*str) == rb_cString &&
 	BASIC_OP_UNREDEFINED_P(BOP_MATCH, STRING_REDEFINED_OP_FLAG)) {
 	var_assign(cfp, res, res_ind, rb_reg_match(regex, *str));
-    } else {
-	VALUE v = op2_call(th, cfp, cd, str, regex);
-	if (v == Qundef)
-	    return 1;
-	var_assign(cfp, res, res_ind, v);
+	return 0;
     }
-    return 0;
+    v = op2_call(th, cfp, cd, str, regex);
+    return op_val_call_end(th, cfp, res, res_ind, v);
 }
 
 /* An optimized version for Ruby case with case operand in local or
@@ -3109,7 +3134,7 @@ define_class_f(rb_thread_t *th, rb_control_frame_t *cfp, ID id, ISEQ class_iseq,
 	       VALUE *op1, VALUE *op2, sindex_t stack_top) {
     define_class(th, cfp, id, class_iseq, flags, op1, op2, stack_top);
     *get_temp_addr(cfp, stack_top) = vm_exec(th);
-    set_default_sp(cfp);
+    set_default_sp(cfp, RTL_GET_BP(cfp));
 }
 
 /* Run ISEQ once storing the result in IC.  Assign the result to local
@@ -3182,6 +3207,8 @@ ret_trace(rb_thread_t *th, rb_control_frame_t *cfp, rb_event_flag_t flag, VALUE 
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
 
+    if (! mjit_trace_p)
+	return;
     call_dtrace_hook(th);
     EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
 		    (flag & (RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN)) ? ret_val : Qundef);
@@ -3191,7 +3218,7 @@ ret_trace(rb_thread_t *th, rb_control_frame_t *cfp, rb_event_flag_t flag, VALUE 
    VAL.  Trace event NF.  Return a flag to finish vm_exec_core.  */
 static do_inline int
 val_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE v, rb_num_t nf, VALUE *val) {
-    cfp->sp = cfp->bp + 1;
+    cfp->sp = RTL_GET_BP(cfp) + 1;
     ret_trace(th, cfp, (rb_event_flag_t) nf, v);
 
     RUBY_VM_CHECK_INTS(th);
@@ -3232,7 +3259,7 @@ loc_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *ret_op, rb_num_t nf, 
 static do_inline void
 finish_ret(rb_control_frame_t *cfp, VALUE val) {
     *cfp->sp = val;
-    cfp->sp = cfp->bp + 1 + cfp->iseq->body->temp_vars_num;
+    cfp->sp = RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num;
 }
 
 /* Non-return trace execution.  */
@@ -3241,54 +3268,52 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
     rb_event_flag_t flag = (rb_event_flag_t)nf;
     rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
 
+    if (! mjit_trace_p)
+	/* We are speculating in JITed code that there is no
+	   tracing.  */
+	return;
     call_dtrace_hook(th);
     EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
 		    Qundef);
 }
 
-/* Called only from JIT code to finish an (arithmetic or compare)
-   operation when we need to call an iseq to calculate the value.
-   Pass the result through RES.  */
-static do_inline void
-mjit_op_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res) {
-    *res = vm_exec(th);
-}
-
-/* Called only from JIT code to finish a compare and branch operation
-   when we need to call an iseq to calculate the value.  Pass the
-   result through RES.  */
+/* Called only from JIT code to finish a call insn.  Pass VAL through
+   RES.  Undefined VAL means calling an iseq to get the value.  Return
+   non-zero if we need to cancel JITed code execution and don't use
+   the code anymore.  */
 static do_inline int
-mjit_bcmp_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, int true_p) {
-    VALUE val = vm_exec(th);
-
+mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
+    if (val == Qundef) {
+	val = vm_exec(th);
+    }
     *res = val;
-    return true_p ? RTEST(val) : ! RTEST(val);
+    if (! mjit_ep_neq_bp_p && cfp->bp != cfp->ep) {
+        set_default_sp(cfp, cfp->bp);
+        return TRUE;
+    }
+    set_default_sp(cfp, RTL_GET_BP(cfp));
+    return (RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) != 0;
 }
-
+ 
 /* Called only from JIT code to implement a call insn and pass the
-   call result through RES.  */
-static do_inline void
+   call result through RES.  Return non-zero if we need to cancel
+   JITed code execution and don't use the code anymore.  */
+static do_inline int
 mjit_call_method(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
 		CALL_DATA cd, VALUE *res) {
     CALL_INFO ci = &cd->call_info;
     CALL_CACHE cc = &cd->call_cache;
     VALUE val = (*(cc)->call)(th, cfp, calling, ci, cc);
-    if (val == Qundef) {
-	val = vm_exec(th);
-    }
-    *res = val;
-    set_default_sp(cfp);
+
+    return mjit_call_finish(th, cfp, val, res);
 }
 
 /* Called only from JIT code to finish a call block insn and pass the
-   result through RES.  */
-static do_inline void
+   result through RES.  Return non-zero if we need to cancel JITed
+   code execution and don't use the code anymore.  */
+static do_inline int
 mjit_call_block_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
-    if (val == Qundef) {
-	val = vm_exec(th);
-    }
-    *res = val;
-    set_default_sp(cfp);
+    return mjit_call_finish(th, cfp, val, res);
 }
 
 /* NOP insn.  */

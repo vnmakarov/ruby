@@ -988,12 +988,12 @@ typedef rb_control_frame_t *
 
 enum {
     /* Frame/Environment flag bits:
-     *   MMMM MMMM MMMM MMMM ____ ____ FFFF EEEX (LSB)
+     *   MMMM MMMM MMMM MMMM ____ ____ FFFFF EEEX (LSB)
      *
-     * X   : tag for GC marking (It seems as Fixnum)
-     * EEE : 3 bits Env flags
-     * FFFF: 4 bits Frame flags
-     * MMMM: 16 bits frame magic (to check frame corruption)
+     * X    : tag for GC marking (It seems as Fixnum)
+     * EEE  : 3 bits Env flags
+     * FFFFF: 5 bits Frame flags
+     * MMMM : 16 bits frame magic (to check frame corruption)
      */
 
     /* frame types */
@@ -1016,6 +1016,7 @@ enum {
     VM_FRAME_FLAG_FINISH    = 0x0020,
     VM_FRAME_FLAG_BMETHOD   = 0x0040,
     VM_FRAME_FLAG_CFRAME    = 0x0080,
+    VM_FRAME_FLAG_CANCEL    = 0x0100,
 
     /* env flag */
     VM_ENV_FLAG_LOCAL       = 0x0002,

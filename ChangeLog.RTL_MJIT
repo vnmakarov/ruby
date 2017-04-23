@@ -1,3 +1,49 @@
+2017-04-23  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def: Pass a new arg to set_default_sp.
+	* rtl_exec.c (RTL_GET_BP): New.  Use it almost everywhere instead
+	of cfp->bp.
+	(var_assign): Check mjit_ep_neq_bp_p.
+	(set_default_sp): Add a new arg.  Use it.
+	(op_val_call_end, op_call_end): New.
+	(ary_hash_op_f, not_f, do_arithm): Reorganize code.  Use
+	op_vall_call_end.
+	(succ_f, do_cmp): Use op_vall_call_end.
+	(common_spec_fix_cmp, common_spec_flo_cmp): Use LIKELY and
+	mjit_bop_redefined_p.
+	(do_bcmp): Reorganize code.
+	(bcmp_flo_call): Pass speculative insns.
+	(do_arithm, do_ltlt, aref_f, arefi_f, aref_str, common_aset_f):
+	Reorganize code.  Use op_vall_call_end.
+	(regexp_match2_f): Ditto.
+	(do_spec_fix_arithm, do_spec_flo_arithm): Use LIKELY and
+	mjit_bop_redefined_p.
+	(ret_trace, trace_f): Use mjit_trace_p.
+	(mjit_op_end, mjit_bcmp_end): Remove.
+	(mjit_call_finish): New.
+	(mjit_call_method, mjit_call_block_end): Change return type.  Use
+	mjit_call_finish.
+	* vm_core.h (VM_FRAME_FLAG_CANCEL): Add.
+	* vm.c (in_mjit_p, mjit_trace_p, mjit_bop_redefined_p): New
+	definitions and declarations.
+	(mjit_ep_neq_bp_p): Ditto.
+	(rb_vm_check_redefinition_opt_method): Call mjit_cancel_all.
+	* vm_trace.c: Include mjit.h.
+	(recalc_add_ruby_vm_event_flags): Call mjit_cancel_all.
+	(recalc_remove_ruby_vm_event_flags): Ditto.
+	* mjit.h (mjit_cancel_all): New exteren definitions.
+	* mjit.c (struct rb_mjit_batch): Add trace_p, bop_redefined_p,
+	ep_neq_bp_p.
+	(get_bop_redefined_p): New.
+	(get_op_str): Don't use arrays for temps and vars.
+	(generate_param_setup): Ditto.
+	(generate_set_pc): New.
+	(translate_iseq_insn): Use generate_set_pc.  Check
+	mjit_call_block_end and mjit_call_method return value and return
+	Qundef.  Reorganize code for speculative and bcmp.
+	* vm_insnhelper.h (CALL_METHOD): Pass a new arg to set_default_sp.
+	* common.mk (vm_trace.o): Add mjit.h dependence.
+
 2017-04-13  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* tool/minimize_mjit_header.rb: Count kept function definitions

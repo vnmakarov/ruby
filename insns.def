@@ -341,7 +341,7 @@ ret_to_loc
 {
     ret_to_loc_f(th, reg_cfp, idx, get_var_addr(reg_cfp, from));
     RESTORE_REGS();
-    set_default_sp(reg_cfp);
+    set_default_sp(reg_cfp, reg_cfp->bp);
 }
 
 DEFINE_INSN
@@ -352,7 +352,7 @@ ret_to_temp
 {
     ret_to_temp_f(th, reg_cfp, idx, get_var_addr(reg_cfp, from));
     RESTORE_REGS();
-    set_default_sp(reg_cfp);
+    set_default_sp(reg_cfp, reg_cfp->bp);
 }
 
 DEFINE_INSN
@@ -445,7 +445,7 @@ length size empty_p succ not
 	   execute cont_op1 insn after the return. */
 	th->cfp[1].pc -= 4;
 	RESTORE_REGS();
-	set_default_sp(reg_cfp);
+	set_default_sp(reg_cfp, reg_cfp->bp);
     }
 }
 
@@ -461,7 +461,7 @@ plus minus mult div mod ltlt aref eq ne lt gt le ge uplus uminus umult udiv umod
 	   execute cont_op2 insn after the return. */
 	th->cfp[1].pc -= 5;
 	RESTORE_REGS();
-	set_default_sp(reg_cfp);
+	set_default_sp(reg_cfp, reg_cfp->bp);
     }
 }
 
@@ -488,7 +488,7 @@ plusi plusf minusi minusf multi multf divi divf modi modf ltlti arefi aref_str e
     if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm)) {
 	th->cfp[1].pc -= 5; /* Execute cont_op2 after */
 	RESTORE_REGS();
-        set_default_sp(reg_cfp);
+        set_default_sp(reg_cfp, reg_cfp->bp);
     }
 }
 
@@ -502,7 +502,7 @@ uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf ueqi ueqf un
     if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm)) {
 	th->cfp[1].pc -= 5; /* Execute cont_op2 after */
 	RESTORE_REGS();
-        set_default_sp(reg_cfp);
+        set_default_sp(reg_cfp, reg_cfp->bp);
     }
 }
 
@@ -526,7 +526,7 @@ aset
 {
   if (aset_f(th, reg_cfp, cd, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
       RESTORE_REGS();
-      set_default_sp(reg_cfp);
+      set_default_sp(reg_cfp, reg_cfp->bp);
   }
 }
 
@@ -538,7 +538,7 @@ aset_str
 {
   if (aset_str_f(th, reg_cfp, cd, get_var_addr(reg_cfp, op1), str, get_var_addr(reg_cfp, op3))) {
       RESTORE_REGS();
-      set_default_sp(reg_cfp);
+      set_default_sp(reg_cfp, reg_cfp->bp);
   }
 }
 
@@ -606,7 +606,7 @@ bteq bfeq btne bfne btlt bflt btgt bfgt btle bfle btge bfge
     if (val == Qundef) {
 	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
         RESTORE_REGS();
-	set_default_sp(reg_cfp);
+	set_default_sp(reg_cfp, reg_cfp->bp);
     }
     else if (jmp_p)
 	JUMP(dst);
@@ -625,7 +625,7 @@ ubteq ubfeq ubtne ubfne ubtlt ubflt ubtgt ubfgt ubtle ubfle ubtge ubfge
     if (val == Qundef) {
 	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
         RESTORE_REGS();
-	set_default_sp(reg_cfp);
+	set_default_sp(reg_cfp, reg_cfp->bp);
     }
     else if (jmp_p)
 	JUMP(dst);
@@ -677,7 +677,7 @@ bteqi bfeqi btnei bfnei btlti bflti btgti bfgti btlei bflei btgei bfgei bteqf bf
     if (val == Qundef) {
 	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
         RESTORE_REGS();
-	set_default_sp(reg_cfp);
+	set_default_sp(reg_cfp, reg_cfp->bp);
     } else if (jmp_p)
 	JUMP(dst);
 }
@@ -695,7 +695,7 @@ ubteqi ubfeqi ubtnei ubfnei ubtlti ubflti ubtgti ubfgti ubtlei ubflei ubtgei ubf
     if (val == Qundef) {
 	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
         RESTORE_REGS();
-	set_default_sp(reg_cfp);
+	set_default_sp(reg_cfp, reg_cfp->bp);
     } else if (jmp_p)
 	JUMP(dst);
 }
@@ -902,7 +902,7 @@ call_c_func
     }
 
     RESTORE_REGS();
-    set_default_sp(reg_cfp);
+    set_default_sp(reg_cfp, reg_cfp->bp);
 }
 
 DEFINE_INSN
@@ -917,7 +917,7 @@ call_block
     } else {
 	*get_temp_addr(reg_cfp, call_start) = val;
     }
-    set_default_sp(reg_cfp);
+    set_default_sp(reg_cfp, reg_cfp->bp);
 }
 
 DEFINE_INSN
@@ -1047,7 +1047,7 @@ regexp_match2
 {
     if (regexp_match2_f(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, str_op), get_var_addr(reg_cfp, regex_op))) {
 	RESTORE_REGS();
-	set_default_sp(reg_cfp);
+	set_default_sp(reg_cfp, reg_cfp->bp);
     }
 }
 
@@ -1081,7 +1081,7 @@ define_class
 {
     define_class(th, reg_cfp, id, class_iseq, flags, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), stack_top);
     RESTORE_REGS();
-    set_default_sp(reg_cfp);
+    set_default_sp(reg_cfp, reg_cfp->bp);
 }
 
 DEFINE_INSN
