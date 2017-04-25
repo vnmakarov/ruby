@@ -152,10 +152,14 @@ static pthread_t client_pid;
     The diagram shows the possible status transitions:
 
     NOT_FORMED -> IN_QUEUE -> IN_EXECUTION -> FAILED
-                                   |            ^
-                                   |            |   load_batch
-                                   |            |
-                                    -------> SUCCESS ----> LOADED
+                     ^             |            ^
+                     |             |            |   load_batch
+                     |             |            |
+                     |              -------> SUCCESS ----> LOADED
+                     |                          |            |
+                     |                          V            |
+                      ------------------<--------------------
+                                change in global speculation
 */
 
 enum batch_status {
@@ -173,6 +177,15 @@ enum batch_status {
     BATCH_SUCCESS,
     /* The batch ISEQ machine code was successfully loaded.  */
     BATCH_LOADED,
+};
+
+/* State of global speculation.
+   TODO: Fine grain flags for different bop redefinitions.  */
+struct global_spec_state {
+    /* The following flags reflect presence of tracing and basic
+       operation redefinitions.  */
+    int trace_p:1;
+    int bop_redefined_p:1;
 };
 
 /* The batch structure.  */
@@ -200,11 +213,10 @@ struct rb_mjit_batch {
     int active_iseqs_num;
     /* Overall byte code size of all ISEQs in the batch in VALUEs.  */
     size_t iseqs_size;
-    /* The following flags are true when we compiled the batch
-       *without speculation* about absense of tracing, absense of
-       basic operation redefinitions, and inequality of ep and bp.  */
-    int trace_p:1;
-    int bop_redefined_p:1;
+    /* The following member is used to generate a code with global
+       speculation.  */
+    struct global_spec_state spec_state;
+    /* The following flags reflect inequality of ep and bp.  */
     int ep_neq_bp_p:1;
 #if MJIT_DEBUG
     /* The relative time when a worker started to process the
@@ -383,6 +395,31 @@ remove_from_queue(struct rb_mjit_batch *b) {
    synced.  It is a head of the list.  */
 static struct rb_mjit_batch *done_batches;
 
+/* Add batch B to the done batches.  It should be not in the done
+   batches before.  */
+static void
+add_to_done_batches(struct rb_mjit_batch *b) {
+    b->prev = NULL;
+    if (done_batches != NULL)
+	done_batches->prev = b;
+    b->next = done_batches;
+    done_batches = b;
+}
+
+/* Remove batch B from the done batches.  It should be in the done
+   batches before.  */
+static void
+remove_from_done_batches(struct rb_mjit_batch *b) {
+    struct rb_mjit_batch *prev = b->prev, *next = b->next;
+    
+    if (prev != NULL)
+	prev->next = next;
+    else
+	done_batches = next;
+    if (next != NULL)
+	next->prev = prev;
+}
+
 /* Print ARGS according to FORMAT to stderr.  */
 static void
 va_list_log(const char *format, va_list args) {
@@ -520,15 +557,33 @@ struct insn_fun_features {
     char mjit_spec_p;
 };
 
-/* Return TRUE if any basic type operation has been redefined.  */
-static int
-get_bop_redefined_p(void) {
+/* Initiate S with no speculation.  */
+static void
+init_global_spec_state(struct global_spec_state *s) {
+    s->trace_p = s->bop_redefined_p = TRUE;
+}
+
+/* Set up S to the currently possible speculation state.  */
+static void
+setup_global_spec_state(struct global_spec_state *s) {
     int i;
+    
+    s->trace_p = ruby_vm_event_flags != 0;
+    s->bop_redefined_p = FALSE;
     for (i = 0; i < BOP_LAST_; i++)
 	if (GET_VM()->redefined_flag[i] != 0) {
-	    return TRUE;
+	    s->bop_redefined_p = TRUE;
+	    break;
 	}
-    return FALSE;
+}
+
+/* Return TRUE if speculations described by S can be used in
+   CURR_STATE.  */
+static int
+valid_global_spec_state_p(const struct global_spec_state *s,
+			  const struct global_spec_state *curr_state) {
+    return ((s->trace_p || ! curr_state->trace_p)
+	    && (s->bop_redefined_p || ! curr_state->bop_redefined_p));
 }
 
 /*-------All the following code is executed in the worker threads only-----------*/
@@ -1266,16 +1321,15 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 #if MJIT_INSN_STATISTICS
     fprintf(f, "extern unsigned long jit_insns_num;\n");
 #endif
-    b->trace_p = ruby_vm_event_flags != 0;
-    b->bop_redefined_p = get_bop_redefined_p();
+    setup_global_spec_state(&b->spec_state);
     b->ep_neq_bp_p = 0;
     for (bi = b->first; bi != NULL; bi = bi->next)
 	if (bi->iseq->body->jit_mutations_num >= mjit_opts.max_mutations) {
 	    b->ep_neq_bp_p = 1;
 	    break;
 	}
-    fprintf(f, "static const char mjit_trace_p = %d;\n", b->trace_p);
-    fprintf(f, "static const char mjit_bop_redefined_p = %d;\n", b->bop_redefined_p);
+    fprintf(f, "static const char mjit_trace_p = %d;\n", b->spec_state.trace_p);
+    fprintf(f, "static const char mjit_bop_redefined_p = %d;\n", b->spec_state.bop_redefined_p);
     fprintf(f, "static const char mjit_ep_neq_bp_p = %d;\n", b->ep_neq_bp_p);
     for (bi = b->first; bi != NULL; bi = bi->next) {
 	struct rb_iseq_constant_body *body;
@@ -1515,8 +1569,9 @@ load_batch(struct rb_mjit_batch *b) {
 	}
 	/* TODO: Do we need a critcial section here.  */
 	CRITICAL_SECTION_START("in load_batch to setup MJIT code");
-	if (bi->iseq != NULL)
+	if (bi->iseq != NULL) {
 	    bi->iseq->body->jit_code = addr;
+	}
 	CRITICAL_SECTION_FINISH("in load_batch to setup MJIT code");
     }
 }
@@ -1586,19 +1641,30 @@ worker(void *arg) {
 		verbose("Success in compilation of batch %d");
 	    else if (mjit_opts.warnings || mjit_opts.verbose)
 		fprintf(stderr, "MJIT warning: failure in compilation of batch %d\n", b->num);
-	    b->prev = NULL;
-	    if (done_batches != NULL)
-		done_batches->prev = b;
-	    b->next = done_batches;
-	    done_batches = b;
+	    add_to_done_batches(b);
 	    CRITICAL_SECTION_FINISH("in worker to setup status");
 	    if (! mjit_opts.save_temps) {
 		remove(b->cfname);
 		free(b->cfname); b->cfname = NULL;
 	    }
 	    if (exit_code == 0) {
-		debug(2, "Start loading batch %d", b->num);
-		load_batch(b);
+		struct global_spec_state curr_state;
+		int recompile_p;
+		
+		CRITICAL_SECTION_START("in worker to check global speculation status");
+		setup_global_spec_state(&curr_state);
+		recompile_p = ! valid_global_spec_state_p(&b->spec_state, &curr_state);
+		if (recompile_p) {
+		    remove_from_done_batches(b);
+		    add_to_queue(b);
+		    b->status = BATCH_IN_QUEUE;
+		    verbose("Global speculation changed -- put batch %d back into the queue", b->num);
+		}
+		CRITICAL_SECTION_FINISH("in worker to check global speculation status");
+		if (! recompile_p) {
+		    debug(2, "Start loading batch %d", b->num);
+		    load_batch(b);
+		}
 	    }
 	    debug(3, "Sending wakeup signal to client in a mjit-worker");
 	    if (pthread_cond_signal(&mjit_client_wakeup) != 0) {
@@ -1697,6 +1763,8 @@ create_batch(void) {
     b->cfname = b->ofname = NULL;
     b->next = NULL;
     b->first = b->last = NULL;
+    init_global_spec_state(&b->spec_state);
+    b->ep_neq_bp_p = TRUE;
     return b;
 }
 
@@ -2004,9 +2072,10 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
 #endif
 }
 
-/* Mark all JIT code being executed for cancellation.  It happens when
-   a global speculation fails.  For example, a basic operation is
-   redefined or tracing starts.  */
+/* Mark all JIT code being executed for cancellation.  Redo JIT code
+   with invalid speculation. It happens when a global speculation
+   fails.  For example, a basic operation is redefined or tracing
+   starts.  */
 void
 mjit_cancel_all(void)
 {
@@ -2014,6 +2083,8 @@ mjit_cancel_all(void)
     rb_control_frame_t *fp;
     rb_vm_t *vm = GET_THREAD()->vm;
     rb_thread_t *th = 0;
+    struct global_spec_state curr_state;
+    struct rb_mjit_batch *b, *next;
 
     if (!mjit_init_p)
 	return;
@@ -2023,10 +2094,32 @@ mjit_cancel_all(void)
 	  if ((iseq = fp->iseq) != NULL && imemo_type((VALUE) iseq) == imemo_iseq
 	      && iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
 	      fp->bp[0] |= VM_FRAME_FLAG_CANCEL;
-	      mjit_redo_iseq(iseq);
 	  }
     }
-    verbose("Cancel all speculative JIT code");
+    CRITICAL_SECTION_START("mjit_cancel_all");
+    verbose("Cancel all wrongly speculative JIT code");
+    setup_global_spec_state(&curr_state);
+    for (b = done_batches; b != NULL; b = next) {
+	next = b->next;
+	if (b->status == BATCH_LOADED
+	    && ! valid_global_spec_state_p(&b->spec_state, &curr_state)) {
+#if 0
+	    verbose("Global speculation changed -- unload code of batch", b->num);
+	    dlclose(b->handle);
+	    b->handle = NULL;
+#endif
+	    verbose("Global speculation changed -- recompiling batch %d", b->num);
+	    remove_from_done_batches(b);
+	    add_to_queue(b);
+	    b->status = BATCH_IN_QUEUE;
+	}
+    }
+    debug(3, "Sending wakeup signal to workers in mjit_cancel_all");
+    if (pthread_cond_broadcast(&mjit_worker_wakeup) != 0) {
+        fprintf(stderr, "Cannot send wakeup signal to workers in mjit_cancel_all: time - %.3f ms\n",
+		relative_ms_time());
+    }
+    CRITICAL_SECTION_FINISH("mjit_cancel_all");
 }
 
 /* A name of the header file included in any C file generated by MJIT for iseqs.  */

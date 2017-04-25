@@ -9,18 +9,18 @@
 /* Special address values of a function generated from the
    corresponding iseq by MJIT: */
 enum rb_mjit_iseq_fun {
-  /* ISEQ was not queued yet for the machine code generation */
-  NOT_ADDED_JIT_ISEQ_FUN = 0,
-  /* ISEQ was not queued and will be never queued for the machine code
-     generation */
-  NEVER_JIT_ISEQ_FUN = 1,
-  /* ISEQ is already queued for the machine code generation but the
-     code is not ready yet for the execution */
-  NOT_READY_JIT_ISEQ_FUN = 2,
-  /* The same as above but in AOT mode */
-  NOT_READY_AOT_ISEQ_FUN = 3,
-  /* End mark */
-  LAST_JIT_ISEQ_FUN = 4,
+    /* ISEQ was not queued yet for the machine code generation */
+    NOT_ADDED_JIT_ISEQ_FUN = 0,
+    /* ISEQ was not queued and will be never queued for the machine code
+       generation */
+    NEVER_JIT_ISEQ_FUN = 1,
+    /* ISEQ is already queued for the machine code generation but the
+       code is not ready yet for the execution */
+    NOT_READY_JIT_ISEQ_FUN = 2,
+    /* The same as above but in AOT mode */
+    NOT_READY_AOT_ISEQ_FUN = 3,
+    /* End mark */
+    LAST_JIT_ISEQ_FUN = 4,
 };
 
 /* A forward declaration  */

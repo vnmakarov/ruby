@@ -1,3 +1,19 @@
+2017-04-24  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.h: Indentation.
+	* mjit.c (struct global_spec_state): New.
+	(struct rb_mjit_batch): Remove trace_p and bop_redefined_p.  Add
+	spec_state.
+	(add_to_done_batches, remove_from_done_batches): New.
+	(init_global_spec_state, setup_global_spec_state): New.
+	(valid_global_spec_state_p): New.
+	(get_bop_redefined_p): Remove.
+	(translate_batch_iseqs): Use setup_global_spec_state.
+	(worker): Use add_to_done_batches.  Check spec status.  Put batch
+	back to queue if necessary.
+	(create_batch): Use init_global_spec_state.
+	(mjit_cancel_all): Put done batches back to queue if necessary.
+
 2017-04-23  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def: Pass a new arg to set_default_sp.
