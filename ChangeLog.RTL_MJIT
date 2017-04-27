@@ -1,3 +1,31 @@
+2017-04-27  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* ruby.c (usage): Add JIT debug flag.
+	(setup_mjit_options): Process the flag.
+	* mjit.h (struct mjit_options): Add debug field.
+	* mjit.c (MJIT_DEBUG): Remove.
+	(struct rb_mji_batch_list): New.
+	(queue_head, queue_tail): Remove.
+	(batch_queue): New.
+	(done_batches): Make it the list.
+	(get_from_queue, add_to_queue, remove_from_queue): Remove.
+	(add_to_done_batches, remove_from_done_batches): Remove.
+	(get_from_list, add_to_list, remove_from_list): New.
+	(debug): Check debug and verbose options.
+	(GCC_COMMON_ARGS_DEBUG, LLVM_COMMON_ARGS_DEBUG): Rename from debug
+	variant of corresponding options.
+	(translate_iseq_insn): Check debug option and null bi->iseq.
+	(make_pch, start_batch): Use GCC_COMMON_ARGS_DEBUG and
+	LLVM_COMMON_ARGS_DEBUG for debug mode.
+	(worker): Use new functions for the batch lists.
+	(init_workers): Initialize the batch lists.
+	(create_batch_iseq): Initiate bi->label.  Check debug option.
+	(finish_forming_curr_batch, mjit_increase_iseq_priority): Use new
+	functions for the batch lists.
+	(mjit_redo_iseq, mjit_cancel_all): Ditto.
+	(mjit_free_iseq): Check debug option.
+	* README.md: Describe additional JIT speculations.
+
 2017-04-24  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.h: Indentation.

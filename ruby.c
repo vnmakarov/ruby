@@ -263,6 +263,7 @@ usage(const char *name, int help)
 	M("v",     ", verbose",        "Print MJIT logs to stderr"),
 	M("l",     ", llvm"   ,        "Use LLVM clang instead of GCC"),
 	M("w",     ", warnings",       "Enable printing MJIT warnings"),
+	M("d",     ", debug",          "Enable MJIT debuging (very slow)"),
 	M("t=num", ", threads=num",    "Use given number of MJIT threads"),
 	M("m=num", ", mutations=num",  "Maximum number of permitted iseq mutations"),
     };
@@ -930,6 +931,8 @@ setup_mjit_options(const char *s, struct mjit_options *mjit_opt) {
 	mjit_opt->llvm = 1;
     } else if (strcmp(s, ":w") == 0 || strcmp(s, ":warnings") == 0) {
 	mjit_opt->warnings = 1;
+    } else if (strcmp(s, ":d") == 0 || strcmp(s, ":debug") == 0) {
+	mjit_opt->debug = 1;
     } else if (strncmp(s, ":t=", 3) == 0) {
 	mjit_opt->threads = atoi(s + 3);
     } else if (strncmp(s, ":threads=", 9) == 0) {

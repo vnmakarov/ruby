@@ -52,6 +52,9 @@ struct mjit_options {
     char save_temps;
     /* Print MJIT warnings to stderr.  */
     char warnings;
+    /* Use debug mode.  It can be very slow as no optimizations are
+       used.  */
+    char debug;
     /* Number of threads processing MJIT queue.  */
     int threads;
     /* Number of max mutations of iseq JIT code.  */

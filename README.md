@@ -237,6 +237,18 @@
       value can be changed by a MJIT option.  The last mutation will
       contain the code without any speculation insns
 
+* There are more speculations in JIT code than in the interpreter mode:
+    * Global speculation about tracing
+    * Global speculation about absence of basic type operations redefinition
+    * Speculation about equality of EP (environment pointer)
+      and BP (basic stack pointer)
+
+* When a global speculation becomes wrong, all currently executed JIT
+  functions are canceled and the corresponding ISEQs continue their
+  execution in the interpreter mode
+    * It is implemented by checking a special control frame flag after
+      each call which can affect a global speculation
+
 * In AOT mode, ISEQ JIT code creation is queued
   right after the ISEQ creation and ISEQ JIT code is always tried to be
   executed first.  In other words, VM waits the creation of JIT code
