@@ -96,7 +96,6 @@ rb_iseq_free(rb_iseq_t *iseq)
 		ruby_xfree((void *)iseq->body->param.keyword->default_values);
 		ruby_xfree((void *)iseq->body->param.keyword);
 	    }
-	    ruby_xfree((void *)iseq->body->nonlocal_var_p);
 	    compile_data_free(ISEQ_COMPILE_DATA(iseq));
 	    ruby_xfree(iseq->body);
 	}
@@ -249,6 +248,7 @@ set_relation(rb_iseq_t *iseq, rb_iseq_t *piseq)
 
     if (piseq) {
 	iseq->body->parent_iseq = piseq;
+	piseq->body->parent_iseq_p = TRUE;
     }
 
     if (type == ISEQ_TYPE_MAIN) {

@@ -44,7 +44,7 @@ vm_stack_overflow_for_insn(void)
 #endif
 
 #if !OPT_CALL_THREADED_CODE
-static VALUE
+VALUE
 vm_exec_core(rb_thread_t *th, VALUE initial)
 {
 

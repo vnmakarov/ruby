@@ -403,10 +403,13 @@ struct rb_iseq_constant_body {
     unsigned int cd_kw_size;
     unsigned int line_info_size;
 
-    /* Non-zero for an element if the corresponding var is
-       accessed from an inside scope.  */
-    char *nonlocal_var_p;
-
+    /* Non-zero for potential processing an exception for break, next,
+       or redo.  */
+    char break_next_redo_raise_p;
+    /* Non-zero for ISEQ which is a parent iseq of some other
+       iseq.  */
+    char parent_iseq_p;
+    
     /* The following MJIT related info.  */
     void *jit_code;
     /* Number of iseq calls, number of them in JIT mode, and number of
@@ -660,7 +663,7 @@ struct rb_block {
 };
 
 typedef struct rb_control_frame_struct {
-    VALUE *pc;		/* cfp[0] */
+    VALUE *restrict pc;		/* cfp[0] */
     VALUE *sp;		/* cfp[1] */
     rb_iseq_t *iseq;	/* cfp[2] */
     VALUE self;			/* cfp[4] / block[0] */

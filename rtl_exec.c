@@ -39,6 +39,18 @@ get_temp_addr(rb_control_frame_t *cfp, lindex_t ind)
     return RTL_GET_BP(cfp) - offset;
 }
 
+/* Return address of temporary variable location with index IND (it
+   should be negative) in frame CFP.  It is accurate and safe as we
+   ignore mjit_ep_neq_bp_p whose value can be wrong in some cases.  */
+static do_inline VALUE *
+get_temp_addr_safe(rb_control_frame_t *cfp, lindex_t ind)
+{
+    ptrdiff_t offset = ind;
+
+    VM_ASSERT(offset < 0);
+    return cfp->bp - offset;
+}
+
 /* Return address of local variable location with index IND (it should
    be positive) in frame CFP.  */
 static do_inline VALUE *
@@ -3280,7 +3292,7 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
 /* Called only from JIT code to finish a call insn.  Pass VAL through
    RES.  Undefined VAL means calling an iseq to get the value.  Return
    non-zero if we need to cancel JITed code execution and don't use
-   the code anymore.  */
+   the code anymore. */
 static do_inline int
 mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
     if (val == Qundef) {
@@ -3300,10 +3312,23 @@ mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res
    JITed code execution and don't use the code anymore.  */
 static do_inline int
 mjit_call_method(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
-		CALL_DATA cd, VALUE *res) {
+	         CALL_DATA cd, VALUE *res) {
     CALL_INFO ci = &cd->call_info;
     CALL_CACHE cc = &cd->call_cache;
     VALUE val = (*(cc)->call)(th, cfp, calling, ci, cc);
+
+    return mjit_call_finish(th, cfp, val, res);
+}
+
+/* Called only from JIT code to implement a call insn and pass the
+   call result through RES.  Return non-zero if we need to cancel
+   JITed code execution and not to use the code anymore.  */
+static do_inline int
+mjit_call_iseq_normal(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
+		      CALL_DATA cd, int param, int local, VALUE *res) {
+    CALL_INFO ci = &cd->call_info;
+    CALL_CACHE cc = &cd->call_cache;
+    VALUE val = vm_call_iseq_setup_normal(th, cfp, calling, ci, cc, 0, param, local);
 
     return mjit_call_finish(th, cfp, val, res);
 }

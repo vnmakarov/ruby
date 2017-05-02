@@ -687,7 +687,6 @@ rb_iseq_compile_node(rb_iseq_t *iseq, NODE *node)
     else if (nd_type(node) == NODE_SCOPE) {
 	/* iseq type of top, method, class, block */
 	iseq_set_local_table(iseq, node->nd_tbl);
-	iseq->body->nonlocal_var_p = ZALLOC_N(char, iseq->body->local_table_size + VM_ENV_DATA_SIZE);
 	iseq_set_arguments(iseq, ret, node->nd_args, &result, &temp_vars_num);
 	temp_vars_num = 0;
 	result = anywhere_result;
@@ -5386,6 +5385,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	}
 	else if (iseq->body->type == ISEQ_TYPE_BLOCK) {
 	    int op_result, temp_vars_num;
+	    iseq->body->break_next_redo_raise_p = TRUE;
 	break_by_insn:
 	    temp_vars_num = *curr_temp_vars_num;
 	    op_result = anywhere_result;
@@ -5411,10 +5411,12 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		level++;
 		if (ISEQ_COMPILE_DATA(ip)->redo_label != 0) {
 		    level = VM_THROW_NO_ESCAPE_FLAG;
+		    ip->body->break_next_redo_raise_p = TRUE;
 		    goto break_by_insn;
 		}
 		else if (ip->body->type == ISEQ_TYPE_BLOCK) {
 		    level <<= VM_THROW_LEVEL_SHIFT;
+		    ip->body->break_next_redo_raise_p = TRUE;
 		    goto break_by_insn;
 		}
 		else if (ip->body->type == ISEQ_TYPE_EVAL) {
@@ -5492,6 +5494,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		ADD_INSN2(ret, line, raise_except,
 			  INT2LINT(ls - op_result),
 			  INT2FIX(level | TAG_NEXT));
+		ip->body->break_next_redo_raise_p = TRUE;
 	    }
 	    else {
 		COMPILE_ERROR(ERROR_ARGS "Invalid next");
@@ -5548,6 +5551,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	    }
 	    if (ip != 0) {
 		ADD_INSN2(ret, line, raise_except_val, Qnil, INT2FIX(level | TAG_REDO));
+		ip->body->break_next_redo_raise_p = TRUE;
 	    }
 	    else {
 		COMPILE_ERROR(ERROR_ARGS "Invalid redo");
@@ -5796,7 +5800,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	{
 	    int idx_ls = iseq->body->local_iseq->body->local_table_size;
 	    if (lev != 0) {
-		iseq->body->local_iseq->body->nonlocal_var_p[idx_ls - idx] = TRUE;
 		ADD_INSN3(ret, line, var2uploc, INT2LINT(idx_ls - idx), INT2LINT(ls - val_result), INT2FIX(lev));
 	    } else if (val_result != idx)
 		add_local_move(iseq, ret, line, idx_ls - idx, ls - val_result);
@@ -5823,7 +5826,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	debugi("dassn id", rb_id2str(node->nd_vid) ? node->nd_vid : '*');
 
 	if (lv != 0) {
-	    id_iseq->body->nonlocal_var_p[idx_ls - idx] = TRUE;
 	    ADD_INSN3(ret, line, var2uploc, INT2LINT(idx_ls - idx),
 		      INT2LINT(ls - val_result),  INT2FIX(lv));
 	}
@@ -6595,7 +6597,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 				   ls - setup_result_var_number(iseq, &temp_res, &temp_vars_num),
 				   idx);
 		else {
-		    liseq->body->nonlocal_var_p[idx] = TRUE;
 		    ADD_INSN3(args, line, uploc2temp,
 			      INT2LINT(ls - setup_result_var_number(iseq, &temp_res, &temp_vars_num)),
 			      INT2LINT(idx), INT2FIX(lvar_level));
@@ -6612,7 +6613,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		    if (lvar_level == 0)
 			add_local_move(iseq, args, line, res, idx);
 		    else {
-			liseq->body->nonlocal_var_p[idx] = TRUE;
 			ADD_INSN3(args, line, uploc2temp,
 				  INT2LINT(res),
 				  INT2LINT(idx), INT2FIX(lvar_level));
@@ -6631,7 +6631,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		if (lvar_level == 0)
 		    add_local_move(iseq, args, line, ls - temp_res, idx);
 		else {
-		    liseq->body->nonlocal_var_p[idx] = TRUE;
 		    ADD_INSN3(args, line, uploc2temp,
 			      INT2LINT(ls - temp_res),
 			      INT2LINT(idx), INT2FIX(lvar_level));
@@ -6657,7 +6656,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 					   ls - setup_result_var_number(iseq, &temp_res, &temp_vars_num),
 					   idx);
 			else {
-			    liseq->body->nonlocal_var_p[idx] = TRUE;
 			    ADD_INSN3(args, line, uploc2temp,
 				      INT2LINT(ls - setup_result_var_number(iseq, &temp_res, &temp_vars_num)),
 				      INT2LINT(idx), INT2FIX(lvar_level));
@@ -6692,7 +6690,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 			if (lvar_level == 0)
 			    add_local_move(iseq, args, line, ls - post_arg_res, idx);
 			else {
-			    liseq->body->nonlocal_var_p[idx] = TRUE;
 			    ADD_INSN3(args, line, uploc2temp,
 				      INT2LINT(ls - post_arg_res),
 				      INT2LINT(idx), INT2FIX(lvar_level));
@@ -6719,7 +6716,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 			add_local_move(iseq, args, line, dup_start,
 				       liseq->body->local_table_size - liseq->body->param.keyword->rest_start + VM_ENV_DATA_SIZE - 1);
 		    else {
-			liseq->body->nonlocal_var_p[liseq->body->local_table_size - liseq->body->param.keyword->rest_start] = TRUE;
 			ADD_INSN3(args, line, uploc2temp,
 				  INT2LINT(dup_start),
 				  INT2LINT(liseq->body->local_table_size - liseq->body->param.keyword->rest_start + VM_ENV_DATA_SIZE - 1),
@@ -6746,7 +6742,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 				       ls - setup_result_var_number(iseq, &temp_res, &temp_vars_num),
 				       idx);
 		    else {
-			liseq->body->nonlocal_var_p[idx] = TRUE;
 			ADD_INSN3(args, line, uploc2temp,
 				  INT2LINT(ls - setup_result_var_number(iseq, &temp_res, &temp_vars_num)),
 				  INT2LINT(idx),
@@ -6775,7 +6770,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		    add_local_move(iseq, args, line, dup_start,
 				   liseq->body->local_table_size - liseq->body->param.keyword->rest_start + VM_ENV_DATA_SIZE - 1);
 		else {
-		    liseq->body->nonlocal_var_p[liseq->body->local_table_size - liseq->body->param.keyword->rest_start] = TRUE;
 		    ADD_INSN3(args, line, uploc2temp, INT2LINT(dup_start),
 			      INT2LINT(liseq->body->local_table_size - liseq->body->param.keyword->rest_start + VM_ENV_DATA_SIZE - 1),
 			      INT2FIX(lvar_level));
@@ -6947,7 +6941,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	    } else {
 		int idx_ls = iseq->body->local_iseq->body->local_table_size;
 
-		iseq->body->local_iseq->body->nonlocal_var_p[idx_ls - idx] = TRUE;
 		ADD_INSN3(ret, line, uploc2var,
 			  INT2LINT(ls - setup_result_var_number(iseq, result, curr_temp_vars_num)),
 			  INT2LINT(idx_ls - idx), INT2FIX(get_lvar_level(iseq)));
@@ -6978,7 +6971,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 			*result = idx;
 		}
 	    else {
-		id_iseq->body->nonlocal_var_p[idx_ls - idx] = TRUE;
 		ADD_INSN3(ret, line, uploc2var,
 			  INT2LINT(ls - setup_result_var_number(iseq, result, curr_temp_vars_num)),
 			  INT2LINT(idx_ls - idx), INT2FIX(lv));
@@ -7626,7 +7618,6 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 				   ls - setup_result_var_number(iseq, result, curr_temp_vars_num),
 				   VM_ENV_DATA_SIZE);
 		else {
-		    ip->body->nonlocal_var_p[2] = TRUE;
 		    ADD_INSN3(ret, line, uploc2var,
 			      INT2LINT(ls - setup_result_var_number(iseq, result, curr_temp_vars_num)),
 			      INT2LINT(2), INT2FIX(level));

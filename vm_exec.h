@@ -191,4 +191,8 @@ default:                        \
 #define CHECK_VM_STACK_OVERFLOW_FOR_INSN(cfp, margin)
 #endif
 
+RUBY_SYMBOL_EXPORT_BEGIN
+extern VALUE vm_exec_core(rb_thread_t *, VALUE);
+RUBY_SYMBOL_EXPORT_END
+
 #endif /* RUBY_VM_EXEC_H */

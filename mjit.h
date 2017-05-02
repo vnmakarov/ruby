@@ -81,6 +81,9 @@ extern void mjit_finish(void);
 /* A forward declaration */
 extern VALUE vm_exec(rb_thread_t *th);
 
+/* An used external.  */
+extern int vm_call_iseq_setup_normal_p(vm_call_handler h);
+
 /* Try to execute the current ISEQ of thread TH.  Make it through
    vm_exec if IN_WRAPPER_P.  Otherwise, use JIT code if it is ready.
    If it is not, add ISEQ to the compilation queue and return Qundef.

@@ -1,3 +1,36 @@
+2017-05-02  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* vm_core.h (struct rb_iseq_constant_body): Remove nonlocal_var_p.
+	Add parent_iseq_p and break_next_redo_raise_p.
+	(struct rb_control_frame_struct): Use restrict for pc.
+	* vm_exec.h (vm_exec_core): Add an extern.
+	* vm_exec.c (vm_exec_core): Make extern.
+	* compile.c (rb_iseq_compile_node): Remove allocation of
+	nonlocal_var_p.
+	(iseq_compile_each): Set up break_next_redo_raise_p.  Remove
+	setting nonlocal_var_p up.
+	* iseq.c (rb_iseq_free): Remove deallocation of nonlocal_var_p.
+	(set_relation): Set parent_iseq_p.
+	* mjit.h (vm_call_iseq_setup_normal_p): New extern.
+	* mjit.c (use_locals_p): Remove.
+	(struct translation_control): New.
+	(update_tc_from_insns, generate_result_on_stack): New.
+	(get_op_str): Rewrite using translation_control.
+	(generate_param_setup): Modify args_num for block arg.
+	(translate_iseq_insn): Use translation_control.  Use goto instead
+	of return for failed speculation.  Generate
+	vm_call_iseq_setup_normal_p call.
+	(translate_batch_iseqs): Set up tcp and use it.  Don't check
+	body->nonlocal_var_p.  Generate labeled failed speculation
+	section.
+	(mjit_add_iseq_to_process, mjit_increase_iseq_priority): Export.
+	(mjit_get_iseq_fun): Export.
+	* rtl_exec.c (get_temp_addr_safe): New.
+	(mjit_call_iseq_normal): New.
+	* tool/mk_call_iseq_optimized.rb (vm_call_iseq_setup_normal_p):
+	Add generation.
+	* MJIT_KEEP: Add vm_call_iseq_setup_normal.
+
 2017-04-27  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* ruby.c (usage): Add JIT debug flag.

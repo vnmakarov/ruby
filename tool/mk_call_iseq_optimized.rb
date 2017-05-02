@@ -55,6 +55,20 @@ vm_call_iseq_setup_func(const struct rb_call_info *ci, const int param_size, con
     }
 }
 
+int
+vm_call_iseq_setup_normal_p(vm_call_handler h)
+{ 
+    int p, l;
+
+    if (h == &vm_call_iseq_setup_normal_0start)
+        return TRUE;
+    for (p = 0; p <= #{P.end}; p++)
+        for (l = 0; l <= #{L.end}; l++)
+            if (h == vm_call_iseq_handlers[p][l])
+                return TRUE;
+    return FALSE;
+}
+
 #else
 
 
@@ -67,6 +81,12 @@ vm_call_iseq_setup_func(const struct rb_call_info *ci, struct rb_call_cache *cc)
     else {
         return &vm_call_iseq_setup_normal_0start;
     }
+}
+
+int
+vm_call_iseq_setup_normal_p(vm_call_handler h)
+{ 
+    return h == &vm_call_iseq_setup_normal_0start;
 }
 #endif
 EOS

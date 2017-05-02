@@ -5,3 +5,4 @@ rb_type                    # to solve a static forward decl problem
 check_cref                 # see above
 rb_ivar_set
 vm_caller_setup_arg_block
+vm_call_iseq_setup_normal
