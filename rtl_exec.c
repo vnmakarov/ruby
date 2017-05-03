@@ -3341,6 +3341,42 @@ mjit_call_block_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *
     return mjit_call_finish(th, cfp, val, res);
 }
 
+/* Called only from JIT code to check call cache attributes
+   METHOD_STATE and CLASS_SERIAL for object OBJ.  Return non-zero if
+   they are obsolete.  */
+static do_inline int
+mjit_check_cc_attr_p(VALUE obj, rb_serial_t method_state, rb_serial_t class_serial) {
+    return GET_GLOBAL_METHOD_STATE() != method_state || RCLASS_SERIAL(CLASS_OF(obj)) != class_serial;
+}
+
+/* Called only from JIT code to get ivar value with INDEX from the
+   corresponding call cache.  Return non-zero if the speculation
+   failed.  Otherwise, return zero and the value through VAL.  */
+static do_inline int
+mjit_call_ivar(VALUE obj, unsigned int index, VALUE *val) {
+    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && index > 0)) {
+	if (LIKELY(index <= ROBJECT_NUMIV(obj)))
+	    *val = ROBJECT_IVPTR(obj)[index - 1];
+	else
+	    *val = Qnil;
+	return FALSE;
+    }
+    return TRUE;
+}
+
+/* Called only from JIT code to set ivar value VAL with INDEX from the
+   corresponding call cache.  Return non-zero if the speculation
+   failed.  */
+static do_inline int
+mjit_call_setivar(VALUE obj, unsigned int index, VALUE val) {
+    rb_check_frozen(obj);
+    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && index > 0 && index <= ROBJECT_NUMIV(obj))) {
+	RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[index - 1], val);
+	return FALSE;
+    }
+    return TRUE;
+}
+
 /* NOP insn.  */
 static do_inline void
 nop_f(rb_control_frame_t *cfp) {

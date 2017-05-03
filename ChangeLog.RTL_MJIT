@@ -1,3 +1,13 @@
+2017-05-03  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.h (vm_call_ivar, vm_call_attrset): New externals.
+	* vm_insnhelper.c (vm_call_ivar, vm_call_attrset): Make them
+	external.
+	* rtl_exec.c (mjit_check_cc_attr_p, mjit_call_ivar): New.
+	(mjit_call_setivar): New.
+	* mjit.c (translate_iseq_insn): Generate speculative code for
+	accessing to ivars.
+
 2017-05-02  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* vm_core.h (struct rb_iseq_constant_body): Remove nonlocal_var_p.

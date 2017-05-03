@@ -1193,8 +1193,19 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    break;
 	}
     } else {
-       
-       if (tcp->use_temp_vars_p && features.call_p)
+	CALL_CACHE cc = NULL;
+	int call_ivar_obj_op = 0;
+	
+	if (features.call_p)
+	    /* Always the 1st operand.  */
+	    cc = &((CALL_DATA) code[pos + 1])->call_cache;
+	if (! tcp->safe_p && features.call_p
+	    && (cc->call == vm_call_ivar || cc->call == vm_call_attrset)
+	    && cc->aux.index > 0) {
+	    assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call) || insn == BIN(simple_call_self));
+	    call_ivar_obj_op = features.recv_p ? code[pos + 2] : code[pos + 3];
+	}
+	if (tcp->use_temp_vars_p && features.call_p && call_ivar_obj_op == 0)
 	    /* Generate copying temps to the stack.  */
 	    generate_param_setup(f, code, pos, features.recv_p);
 	if (mjit_spec_p) {
@@ -1298,9 +1309,25 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    fprintf(f, "  if (flag) goto l%lu;\n", dest);
 	}
 	if (features.call_p) {
-	    CALL_CACHE cc = &((CALL_DATA) code[pos + 1])->call_cache;
+	    ptrdiff_t call_start = code[pos + 2];
 	    
-	    if (!tcp->safe_p && vm_call_iseq_setup_normal_p(cc->call)) {
+	    if (call_ivar_obj_op != 0) {
+		const char *rec = (insn == BIN(simple_call_self)
+				   ? "&cfp->self"
+				   : get_op_str(buf, iseq, call_ivar_obj_op, tcp));
+		
+		fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu) || ",
+			rec, (unsigned long long) cc->method_state,
+			(unsigned long long) cc->class_serial);
+		if (cc->call == vm_call_ivar) {
+		    fprintf(f, "mjit_call_ivar(*%s, %u, ", rec, (unsigned) cc->aux.index);
+		    fprintf(f, "%s)) {\n", get_op_str(buf, iseq, call_start, tcp));
+		} else {
+		    fprintf(f, "mjit_call_setivar(*%s, %u, ", rec, (unsigned) cc->aux.index);
+		    fprintf(f, "*%s)) {\n", get_op_str(buf, iseq, call_start - 1, tcp));
+		}
+		fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
+	    } else if (!tcp->safe_p && vm_call_iseq_setup_normal_p(cc->call)) {
 		const rb_iseq_t *iseq = rb_iseq_check(cc->me->def->body.iseq.iseqptr);
 		
 		fprintf(f, "  if (((CALL_CACHE) 0x%"PRIxVALUE ")->call != 0x%"PRIxVALUE ")",
@@ -1309,10 +1336,10 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 			generate_set_pc(TRUE, buf, &code[pos]));
 		fprintf(f, "  if (mjit_call_iseq_normal(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %d, %d, %s)) {\n",
 			code[pos + 1], iseq->body->param.size, iseq->body->local_table_size,
-			get_op_str(buf, iseq, code[pos + 2], tcp));
+			get_op_str(buf, iseq, call_start, tcp));
 	    } else {
 		fprintf(f, "  if (mjit_call_method(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %s)) {\n",
-			code[pos + 1], get_op_str(buf, iseq, code[pos + 2], tcp));
+			code[pos + 1], get_op_str(buf, iseq, call_start, tcp));
 	    }
 	    fprintf(f, "    goto stop_spec;\n  }\n");
 	    if (tcp->use_temp_vars_p)

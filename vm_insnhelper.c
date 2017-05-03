@@ -1878,14 +1878,14 @@ vm_call_cfunc(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_in
 }
 #endif
 
-static VALUE
+VALUE
 vm_call_ivar(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
 {
     cfp->sp -= 1;
     return vm_getivar(calling->recv, cc->me->def->body.attr.id, NULL, cc, 1);
 }
 
-static VALUE
+VALUE
 vm_call_attrset(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
 {
     VALUE val = *(cfp->sp - 1);

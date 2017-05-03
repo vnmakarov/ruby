@@ -83,6 +83,10 @@ extern VALUE vm_exec(rb_thread_t *th);
 
 /* An used external.  */
 extern int vm_call_iseq_setup_normal_p(vm_call_handler h);
+extern VALUE vm_call_ivar(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
+			  const struct rb_call_info *ci, struct rb_call_cache *cc);
+extern VALUE vm_call_attrset(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
+			     const struct rb_call_info *ci, struct rb_call_cache *cc);
 
 /* Try to execute the current ISEQ of thread TH.  Make it through
    vm_exec if IN_WRAPPER_P.  Otherwise, use JIT code if it is ready.
