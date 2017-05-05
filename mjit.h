@@ -87,6 +87,9 @@ extern VALUE vm_call_ivar(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_ca
 			  const struct rb_call_info *ci, struct rb_call_cache *cc);
 extern VALUE vm_call_attrset(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
 			     const struct rb_call_info *ci, struct rb_call_cache *cc);
+extern VALUE
+vm_call_cfunc(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling,
+	      const struct rb_call_info *ci, struct rb_call_cache *cc);
 
 /* Try to execute the current ISEQ of thread TH.  Make it through
    vm_exec if IN_WRAPPER_P.  Otherwise, use JIT code if it is ready.
@@ -137,8 +140,6 @@ mjit_execute_iseq(rb_thread_t *th, int in_wrapper_p) {
     }
     body->jit_calls++;
     v = fun(th, th->cfp);
-    if (v == Qundef)
-	body->failed_jit_calls++;
     return v;
 }
 
@@ -163,6 +164,8 @@ mjit_aot_process(rb_iseq_t *iseq) {
    have speculative insns.  */
 static inline void
 mjit_change_iseq(rb_iseq_t *iseq) {
-    if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN)
+    if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
+	iseq->body->failed_jit_calls++;
 	mjit_redo_iseq(iseq);
+    }
 }

@@ -2498,17 +2498,18 @@ str_freeze_call_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, VALUE s
 		  ? str : rb_funcall(rb_str_resurrect(str), idFreeze, 0)));
 }
 
-/* Call a method given by CI and CC using CALLING.  The receiver and
-   arguments are in temporary variables starting with location with
-   index CALL_START.  If SIMPLE_P is true, a block for the call is not
-   given.  Otherwise, the block is given by BLOCKISEQ.  If RECV_SET_P
-   is TRUE, the receiver is not on the stack and it is given by RECV.
-   Put it on the stack (a reserved location) in this case.  */
+/* Initiale a call of method given by CI and CC using CALLING.  The
+   receiver and arguments are in temporary variables starting with
+   location with index CALL_START.  If SIMPLE_P is true, a block for
+   the call is not given.  Otherwise, the block is given by BLOCKISEQ.
+   If RECV_SET_P is TRUE, the receiver is not on the stack and it is
+   given by RECV.  Put it on the stack (a reserved location) in this
+   case.  */
 static do_inline void
-call_common(rb_thread_t *th, rb_control_frame_t *cfp,
-	    struct rb_calling_info *calling, CALL_INFO ci, CALL_CACHE cc, sindex_t call_start,
-	    ISEQ blockiseq, VALUE recv,
-	    int recv_set_p, int simple_p)
+call_setup(rb_thread_t *th, rb_control_frame_t *cfp,
+	   struct rb_calling_info *calling, CALL_INFO ci, CALL_CACHE cc, sindex_t call_start,
+	   ISEQ blockiseq, VALUE recv,
+	   int recv_set_p, int simple_p)
 {
     VALUE *top = get_temp_addr(cfp, call_start);
 
@@ -2524,6 +2525,17 @@ call_common(rb_thread_t *th, rb_control_frame_t *cfp,
     }
     calling->argc = ci->orig_argc;
     calling->recv = *top;
+}
+
+/* As above but also update CC (if it is obsolete) by calling
+   vm_search_method.  */
+static do_inline void
+call_common(rb_thread_t *th, rb_control_frame_t *cfp,
+	    struct rb_calling_info *calling, CALL_INFO ci, CALL_CACHE cc, sindex_t call_start,
+	    ISEQ blockiseq, VALUE recv,
+	    int recv_set_p, int simple_p)
+{
+    call_setup(th, cfp, calling, ci, cc, call_start, blockiseq, recv, recv_set_p, simple_p);
     vm_search_method(ci, cc, calling->recv);
 }
 
@@ -3377,7 +3389,20 @@ mjit_call_setivar(VALUE obj, unsigned int index, VALUE val) {
     return TRUE;
 }
 
+/* Call vm_call_cfunc with the corresponding args and return the
+   result through VAL.  The CC should be not obsolete and refers for a
+   C function. */
+static do_inline void
+mjit_call_cfunc(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
+		const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE *val) {
+    *val = vm_call_cfunc(th, cfp, calling, ci, cc);
+    set_default_sp(cfp, RTL_GET_BP(cfp));
+}
+
 /* NOP insn.  */
 static do_inline void
 nop_f(rb_control_frame_t *cfp) {
 }
+
+/*  LocalWords:  vm cfunc args
+ */

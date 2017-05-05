@@ -1,3 +1,26 @@
+2017-05-05  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* MJIT_KEEP: Add vm_call_cfunc.
+	* mjit.h (vm_call_cfunc): New extern.
+	(mjit_execute_iseq): Move failed_jit_calls increment too ...
+	(mjit_change_iseq): ... here.
+	* mjit.c (get_op_str): Remove arugment iseq.
+	(output_const_ci, output_const_cc): New.
+	(translate_iseq_insn): Make and use local copies of cc and ic.
+	Generate a special code for speculative cfunc call.  Add cancel
+	label.  Use it for cancelling in mjit_call_method.  Add
+	mjit_change_iseq output in spec_stop code section.  Remove such
+	code for mjit_spec.
+	* vm_args.c (vm_caller_setup_arg_splat): Make extern.  Add extern
+	prototype.
+	(vm_caller_setup_arg_kw): Ditto.
+	* vm_insnhelper.c (vm_call_cfunc_with_frame): Declare inline.  Use
+	mjit_trace_p guard for tracing code.
+	(vm_call_cfunc): Make extern.
+	* rtl_exec.c (call_setup): Extract from call_common.
+	(call_common): Use it.
+	(mjit_call_cfunc): New.
+
 2017-05-03  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.h (vm_call_ivar, vm_call_attrset): New externals.

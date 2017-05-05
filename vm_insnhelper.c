@@ -1756,7 +1756,7 @@ vm_method_cfunc_entry(const rb_callable_method_entry_t *me)
     return &me->def->body.cfunc;
 }
 
-static VALUE
+static inline VALUE
 vm_call_cfunc_with_frame(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
 {
     VALUE val;
@@ -1768,8 +1768,10 @@ vm_call_cfunc_with_frame(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb
     VALUE block_handler = calling->block_handler;
     int argc = calling->argc;
 
-    RUBY_DTRACE_CMETHOD_ENTRY_HOOK(th, me->owner, me->def->original_id);
-    EXEC_EVENT_HOOK(th, RUBY_EVENT_C_CALL, recv, me->def->original_id, ci->mid, me->owner, Qundef);
+    if (mjit_trace_p) {
+	RUBY_DTRACE_CMETHOD_ENTRY_HOOK(th, me->owner, me->def->original_id);
+	EXEC_EVENT_HOOK(th, RUBY_EVENT_C_CALL, recv, me->def->original_id, ci->mid, me->owner, Qundef);
+    }
 
     vm_push_frame(th, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
 		  block_handler, (VALUE)me,
@@ -1787,8 +1789,10 @@ vm_call_cfunc_with_frame(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb
 
     rb_vm_pop_frame(th);
 
-    EXEC_EVENT_HOOK(th, RUBY_EVENT_C_RETURN, recv, me->def->original_id, ci->mid, me->owner, val);
-    RUBY_DTRACE_CMETHOD_RETURN_HOOK(th, me->owner, me->def->original_id);
+    if (mjit_trace_p) {
+	EXEC_EVENT_HOOK(th, RUBY_EVENT_C_RETURN, recv, me->def->original_id, ci->mid, me->owner, val);
+	RUBY_DTRACE_CMETHOD_RETURN_HOOK(th, me->owner, me->def->original_id);
+    }
 
     return val;
 }
@@ -1827,7 +1831,7 @@ vm_call_cfunc_latter(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_cal
     return val;
 }
 
-static VALUE
+VALUE
 vm_call_cfunc(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci)
 {
     VALUE val;
@@ -1870,7 +1874,7 @@ rb_vm_call_cfunc_push_frame(rb_thread_t *th)
     }
 }
 #else /* OPT_CALL_CFUNC_WITHOUT_FRAME */
-static VALUE
+inline VALUE
 vm_call_cfunc(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
 {
     CALLER_SETUP_ARG(reg_cfp, calling, ci);

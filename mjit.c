@@ -1046,12 +1046,12 @@ update_tc_from_insns(struct rb_mjit_batch_iseq *bi, struct translation_control *
     }
 }
 
-/* Return C code string representing address of ISEQ local/temporary
+/* Return C code string representing address of local/temporary
    variable with index IND.  TCP defines where values of the ISEQ
    local/temporary variables will be kept inside C function
    representing the ISEQ.  */
 static const char *
-get_op_str(char *buf, const rb_iseq_t *iseq, ptrdiff_t ind, struct translation_control *tcp) {
+get_op_str(char *buf, ptrdiff_t ind, struct translation_control *tcp) {
     if (ind < 0) {
 	if (tcp->use_temp_vars_p)
 	    sprintf(buf, "&t%ld", (long) -ind - 1);
@@ -1102,6 +1102,21 @@ generate_set_pc(int set_p, char *buf, const VALUE *pc) {
     return buf;
 }
 
+/* Output initialized static constant declaration of CI to F.  */
+static void
+output_const_ci(FILE *f, const struct rb_call_info *ci) {
+    fprintf(f, "  static const struct rb_call_info ci = {%llu, 0x%x, %d};\n",
+	    (unsigned long long) ci->mid, ci->flag, ci->orig_argc);
+}
+
+/* Output initialized static constant declaration of CC to F.  */
+static void
+output_const_cc(FILE *f, const struct rb_call_cache cc) {
+    fprintf(f, "  static const struct rb_call_cache cc = {%lu, %lu, (void *) 0x%"PRIxVALUE,
+	    (unsigned long) cc.method_state, (unsigned long) cc.class_serial, cc.me);
+    fprintf(f, ", (void *) 0x%"PRIxVALUE ", {.inc_sp = %d}};\n", (VALUE) cc.call, cc.aux.inc_sp);
+}
+
 /* Output C code implementing an iseq BI insn starting with position
    POS to file F.  Generate the code according to TCP.  */
 static int
@@ -1114,6 +1129,9 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     const char *types;
     const char *iname;
     struct insn_fun_features features;
+    struct rb_call_cache local_cc;
+    CALL_CACHE cc = NULL;
+    CALL_INFO ci = NULL;
     char buf[80];
 
     insn = code[pos];
@@ -1134,6 +1152,14 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     get_insn_fun_features(insn, &features);
     mjit_spec_p = !tcp->safe_p && features.mjit_spec_p;
     fprintf(f, "%s", generate_set_pc(TRUE, buf, &code[pos] + len));
+    if (features.call_p) {
+	/* CD is always the 1st operand.  */
+	cc = &((CALL_DATA) code[pos + 1])->call_cache;
+	ci = &((CALL_DATA) code[pos + 1])->call_info;
+	/* Remember cc can change in the interpreter thread in
+	   parallel.  TODO: Make the following atomic.  */
+	local_cc = *cc;
+    }
     if (features.special_p) {
 	switch (insn) {
 	case BIN(nop):
@@ -1144,7 +1170,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    break;
 	case BIN(get_inline_cache):
 	    fprintf(f, "  if (%s_f(cfp, %s, (lindex_t) %"PRIdVALUE " , (void *) 0x%"PRIxVALUE "))\n",
-		    iname, get_op_str(buf, iseq, code[pos + 2], tcp), code[pos + 2], code[pos + 3]);
+		    iname, get_op_str(buf, code[pos + 2], tcp), code[pos + 2], code[pos + 3]);
 	    fprintf(f, "    goto l%ld;\n", pos + len + code[pos + 1]);
 	    break;
 	case BIN(trace):
@@ -1152,11 +1178,11 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    break;
 	case BIN(temp_ret):
 	    fprintf(f, "  %s_f(th, cfp, %s, %"PRIuVALUE ", &val);\n  return val;\n",
-		    iname, get_op_str(buf, iseq, code[pos + 1], tcp), code[pos + 2]);
+		    iname, get_op_str(buf, code[pos + 1], tcp), code[pos + 2]);
 	    break;
 	case BIN(loc_ret):
 	    fprintf(f, "  %s_f(th, cfp, %s, %"PRIuVALUE ", &val);\n  return val;\n",
-		    iname, get_op_str(buf, iseq, code[pos + 1], tcp), code[pos + 2]);
+		    iname, get_op_str(buf, code[pos + 1], tcp), code[pos + 2]);
 	    break;
 	case BIN(val_ret):
 	    fprintf(f, "  %s_f(th, cfp, %"PRIuVALUE ", %"PRIuVALUE ", &val);\n  return val;\n",
@@ -1164,7 +1190,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    break;
 	case BIN(raise_except):
 	    fprintf(f, "  val = %s_f(th, cfp, %s, %"PRIuVALUE ");\n",
-		    iname, get_op_str(buf, iseq, code[pos + 1], tcp), code[pos + 2]);
+		    iname, get_op_str(buf, code[pos + 1], tcp), code[pos + 2]);
 	    fprintf(f, "  return val;\n");
 	    break;
 	case BIN(raise_except_val):
@@ -1175,7 +1201,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	case BIN(ret_to_loc):
 	case BIN(ret_to_temp):
 	    fprintf(f, "  %s_f(th, cfp, (sindex_t) %"PRIdVALUE ", %s);\n  return RUBY_Qnil;\n",
-		    iname, code[pos + 1], get_op_str(buf, iseq, code[pos + 2], tcp));
+		    iname, code[pos + 1], get_op_str(buf, code[pos + 2], tcp));
 	    break;
 	case BIN(call_block):
 	    /* Generate copying temps to the stack.  */
@@ -1184,7 +1210,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    fprintf(f, "  val = %s_f(th, cfp, (void *) 0x%"PRIxVALUE ", (sindex_t) %"PRIdVALUE ");\n",
 	            iname, code[pos + 1], code[pos + 2]);
 	    fprintf(f, "  if (mjit_call_block_end(th, cfp, val, %s)) {\n",
-	            get_op_str(buf, iseq, code[pos + 2], tcp));
+	            get_op_str(buf, code[pos + 2], tcp));
 	    fprintf(f, "    goto stop_spec;\n  }\n");
 	    if (tcp->use_temp_vars_p)
 		generate_result_on_stack(f, code, pos);
@@ -1192,16 +1218,39 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	default:
 	    break;
 	}
-    } else {
-	CALL_CACHE cc = NULL;
-	int call_ivar_obj_op = 0;
+    } else if (features.call_p && !tcp->safe_p && local_cc.call == vm_call_cfunc) {
+	int simple_p = (insn == BIN(simple_call)
+			|| insn == BIN(simple_call_self) || insn == BIN(simple_call_recv));
+	int self_p = insn == BIN(call_self) || insn == BIN(simple_call_self);
+	int call_start = code[pos + 2];
+	int recv = (insn == BIN(call_recv)
+		    ? code[pos + 4] : insn == BIN(simple_call_recv)
+		    ? code[pos + 3] : call_start);
 	
-	if (features.call_p)
-	    /* Always the 1st operand.  */
-	    cc = &((CALL_DATA) code[pos + 1])->call_cache;
+	if (local_cc.me->def->type != VM_METHOD_TYPE_CFUNC) abort();
+	if (tcp->use_temp_vars_p)
+	    /* Generate copying temps to the stack.  */
+	    generate_param_setup(f, code, pos, features.recv_p);
+	fprintf(f, " {\n");
+	output_const_ci(f, ci);
+	output_const_cc(f, local_cc);
+	fprintf(f, "  if (mjit_check_cc_attr_p(*%s, cc.method_state, cc.class_serial)) {\n",
+		self_p ? "&cfp->self" : get_op_str(buf, recv, tcp));
+	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
+	fprintf(f, "    goto stop_spec;\n  }\n");
+	fprintf(f, "  call_setup(th, cfp, &calling, &ci, &cc, %d, 0x%"PRIxVALUE ", *%s, %d, %d);\n",
+		call_start, simple_p ? (VALUE) 0 : code[pos + 3],
+		self_p ? "&cfp->self" : get_op_str(buf, recv, tcp), ! features.recv_p, simple_p);
+	fprintf(f, "  mjit_call_cfunc(th, cfp, &calling, &ci, &cc, %s);\n }\n",
+		get_op_str(buf, call_start, tcp));
+	if (tcp->use_temp_vars_p)
+	    generate_result_on_stack(f, code, pos);
+    } else {
+	int call_ivar_obj_op = 0;
+
 	if (! tcp->safe_p && features.call_p
-	    && (cc->call == vm_call_ivar || cc->call == vm_call_attrset)
-	    && cc->aux.index > 0) {
+	    && (local_cc.call == vm_call_ivar || local_cc.call == vm_call_attrset)
+	    && local_cc.aux.index > 0) {
 	    assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call) || insn == BIN(simple_call_self));
 	    call_ivar_obj_op = features.recv_p ? code[pos + 2] : code[pos + 3];
 	}
@@ -1215,10 +1264,11 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 		switch (types[i - 1]) {
 		case TS_IC:
 		    {
-			IC ic = (IC) op;
+			/* TODO: Make the following atomic.  */
+			struct iseq_inline_cache_entry ic = *(IC) op;
 			
 			fprintf(f, "  static const struct iseq_inline_cache_entry ic%"PRIxVALUE " = {%lu, 0x%"PRIxVALUE ", {.index = %lu}};\n",
-				op, (unsigned long) ic->ic_serial, (VALUE) ic->ic_cref, (unsigned long) ic->ic_value.index);
+				op, (unsigned long) ic.ic_serial, (VALUE) ic.ic_cref, (unsigned long) ic.ic_value.index);
 			break;
 		    }
 		}
@@ -1249,11 +1299,11 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 		fprintf(f, "%"PRIuVALUE, op);
 		break;
 	    case TS_LINDEX:
-		fprintf(f, "%s", get_op_str(buf, iseq, op, tcp));
+		fprintf(f, "%s", get_op_str(buf, op, tcp));
 		break;
 	    case TS_RINDEX:
 		fprintf(f, "%s, (lindex_t) %"PRIdVALUE,
-			get_op_str(buf, iseq, op, tcp), op);
+			get_op_str(buf, op, tcp), op);
 		break;
 	    case TS_SINDEX:
 		fprintf(f, "(lindex_t) %"PRIdVALUE, op);
@@ -1289,8 +1339,6 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 		fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n");
 	    else
 		fprintf(f, ")) {\n");
-	    if (mjit_spec_p)
-	        fprintf(f, "    mjit_change_iseq(cfp->iseq);\n");
 	    fprintf(f, "  %s    goto stop_spec;\n  }\n", generate_set_pc(TRUE, buf, &code[pos]));
 	    if (features.jmp_p) {
 		unsigned long dest = pos + len + code[pos + 2];
@@ -1314,34 +1362,36 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    if (call_ivar_obj_op != 0) {
 		const char *rec = (insn == BIN(simple_call_self)
 				   ? "&cfp->self"
-				   : get_op_str(buf, iseq, call_ivar_obj_op, tcp));
+				   : get_op_str(buf, call_ivar_obj_op, tcp));
 		
 		fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu) || ",
-			rec, (unsigned long long) cc->method_state,
-			(unsigned long long) cc->class_serial);
-		if (cc->call == vm_call_ivar) {
-		    fprintf(f, "mjit_call_ivar(*%s, %u, ", rec, (unsigned) cc->aux.index);
-		    fprintf(f, "%s)) {\n", get_op_str(buf, iseq, call_start, tcp));
+			rec, (unsigned long long) local_cc.method_state,
+			(unsigned long long) local_cc.class_serial);
+		if (local_cc.call == vm_call_ivar) {
+		    fprintf(f, "mjit_call_ivar(*%s, %u, ", rec, (unsigned) local_cc.aux.index);
+		    fprintf(f, "%s)) {\n", get_op_str(buf, call_start, tcp));
 		} else {
-		    fprintf(f, "mjit_call_setivar(*%s, %u, ", rec, (unsigned) cc->aux.index);
-		    fprintf(f, "*%s)) {\n", get_op_str(buf, iseq, call_start - 1, tcp));
+		    fprintf(f, "mjit_call_setivar(*%s, %u, ", rec, (unsigned) local_cc.aux.index);
+		    fprintf(f, "*%s)) {\n", get_op_str(buf, call_start - 1, tcp));
 		}
 		fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
-	    } else if (!tcp->safe_p && vm_call_iseq_setup_normal_p(cc->call)) {
-		const rb_iseq_t *iseq = rb_iseq_check(cc->me->def->body.iseq.iseqptr);
+		fprintf(f, "    goto stop_spec;\n  }\n");
+	    } else if (!tcp->safe_p && vm_call_iseq_setup_normal_p(local_cc.call)) {
+		const rb_iseq_t *iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
 		
 		fprintf(f, "  if (((CALL_CACHE) 0x%"PRIxVALUE ")->call != 0x%"PRIxVALUE ")",
-			(VALUE) cc, (VALUE) cc->call);
+			(VALUE) cc, (VALUE) local_cc.call);
 		fprintf(f, " {\n  %s    goto stop_spec;\n  }\n",
 			generate_set_pc(TRUE, buf, &code[pos]));
 		fprintf(f, "  if (mjit_call_iseq_normal(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %d, %d, %s)) {\n",
 			code[pos + 1], iseq->body->param.size, iseq->body->local_table_size,
-			get_op_str(buf, iseq, call_start, tcp));
+			get_op_str(buf, call_start, tcp));
+		fprintf(f, "    goto stop_spec;\n  }\n");
 	    } else {
 		fprintf(f, "  if (mjit_call_method(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %s)) {\n",
-			code[pos + 1], get_op_str(buf, iseq, call_start, tcp));
+			code[pos + 1], get_op_str(buf, call_start, tcp));
+		fprintf(f, "    goto cancel;\n  }\n");
 	    }
-	    fprintf(f, "    goto stop_spec;\n  }\n");
 	    if (tcp->use_temp_vars_p)
 		generate_result_on_stack(f, code, pos);
         }
@@ -1446,7 +1496,9 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	}
 	for (i = 0; i < size;)
 	    i += translate_iseq_insn(f, i, bi, &tc);
-	fprintf(f, " stop_spec:\n");
+	fprintf(f, "stop_spec:\n");
+	fprintf(f, "  mjit_change_iseq(cfp->iseq);\n");
+	fprintf(f, "cancel:\n");
 	if (tc.use_local_vars_p) {
 	    for (i = 0; i < body->local_table_size; i++)
 		fprintf(f, "  *get_loc_addr(cfp, %ld) = v%ld;\n", i + VM_ENV_DATA_SIZE, i);

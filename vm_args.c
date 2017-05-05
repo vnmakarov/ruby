@@ -736,7 +736,9 @@ argument_kw_error(rb_thread_t *th, const rb_iseq_t *iseq, const char *error, con
     raise_argument_error(th, iseq, rb_keyword_error_new(error, keys));
 }
 
-static inline void
+extern void vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calling);
+
+inline void
 vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calling)
 {
     int argc = calling->argc;
@@ -758,7 +760,9 @@ vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calli
     }
 }
 
-static inline void
+extern void vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci);
+
+inline void
 vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci)
 {
     struct rb_call_info_kw_arg *kw_arg = ((struct rb_call_data_with_kwarg *)ci)->kw_arg;
