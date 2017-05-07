@@ -1113,7 +1113,7 @@ output_const_ci(FILE *f, const struct rb_call_info *ci) {
 static void
 output_const_cc(FILE *f, const struct rb_call_cache cc) {
     fprintf(f, "  static const struct rb_call_cache cc = {%lu, %lu, (void *) 0x%"PRIxVALUE,
-	    (unsigned long) cc.method_state, (unsigned long) cc.class_serial, cc.me);
+	    (unsigned long) cc.method_state, (unsigned long) cc.class_serial, (VALUE) cc.me);
     fprintf(f, ", (void *) 0x%"PRIxVALUE ", {.inc_sp = %d}};\n", (VALUE) cc.call, cc.aux.inc_sp);
 }
 
@@ -1191,12 +1191,12 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	case BIN(raise_except):
 	    fprintf(f, "  val = %s_f(th, cfp, %s, %"PRIuVALUE ");\n",
 		    iname, get_op_str(buf, code[pos + 1], tcp), code[pos + 2]);
-	    fprintf(f, "  return val;\n");
+	    fprintf(f, "  rb_threadptr_tag_jump(th, th->state);\n");
 	    break;
 	case BIN(raise_except_val):
 	    fprintf(f, "  val = %s_f(th, cfp, 0x%"PRIxVALUE ", %"PRIuVALUE ");\n",
 		    iname, code[pos + 1], code[pos + 2]);
-	    fprintf(f, "  return val;\n");
+	    fprintf(f, "  rb_threadptr_tag_jump(th, th->state);\n");
 	    break;
 	case BIN(ret_to_loc):
 	case BIN(ret_to_temp):
@@ -1222,10 +1222,10 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	int simple_p = (insn == BIN(simple_call)
 			|| insn == BIN(simple_call_self) || insn == BIN(simple_call_recv));
 	int self_p = insn == BIN(call_self) || insn == BIN(simple_call_self);
-	int call_start = code[pos + 2];
-	int recv = (insn == BIN(call_recv)
-		    ? code[pos + 4] : insn == BIN(simple_call_recv)
-		    ? code[pos + 3] : call_start);
+	ptrdiff_t call_start = code[pos + 2];
+	ptrdiff_t recv = (insn == BIN(call_recv)
+			  ? (ptrdiff_t) code[pos + 4] : insn == BIN(simple_call_recv)
+			  ? (ptrdiff_t) code[pos + 3] : call_start);
 	
 	if (local_cc.me->def->type != VM_METHOD_TYPE_CFUNC) abort();
 	if (tcp->use_temp_vars_p)
@@ -1238,7 +1238,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 		self_p ? "&cfp->self" : get_op_str(buf, recv, tcp));
 	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	fprintf(f, "    goto stop_spec;\n  }\n");
-	fprintf(f, "  call_setup(th, cfp, &calling, &ci, &cc, %d, 0x%"PRIxVALUE ", *%s, %d, %d);\n",
+	fprintf(f, "  call_setup(th, cfp, &calling, &ci, &cc, %ld, 0x%"PRIxVALUE ", *%s, %d, %d);\n",
 		call_start, simple_p ? (VALUE) 0 : code[pos + 3],
 		self_p ? "&cfp->self" : get_op_str(buf, recv, tcp), ! features.recv_p, simple_p);
 	fprintf(f, "  mjit_call_cfunc(th, cfp, &calling, &ci, &cc, %s);\n }\n",
@@ -1477,7 +1477,6 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	if (tc.use_temp_vars_p)
 	    for (i = 0; i <= body->temp_vars_num; i++)
 		fprintf(f, "  VALUE t%lu;\n", i);
-	fprintf(f, "  cfp->bp[0] |= 0x%x;\n", VM_FRAME_FLAG_FINISH);
 	if (! b->ep_neq_bp_p)
 	    fprintf(f, "  if (cfp->bp != cfp->ep) return RUBY_Qundef;\n");
 	if (tc.use_local_vars_p) {

@@ -1009,7 +1009,7 @@ invoke_block(rb_thread_t *th, const rb_iseq_t *iseq, VALUE self, const struct rb
 		  iseq->body->iseq_encoded + opt_pc,
 		  th->cfp->sp + arg_size, iseq->body->local_table_size - arg_size,
 		  iseq->body->stack_max);
-    return vm_exec(th);
+    return vm_exec(th, FALSE);
 }
 
 static VALUE
@@ -1028,7 +1028,7 @@ invoke_bmethod(rb_thread_t *th, const rb_iseq_t *iseq, VALUE self, const struct 
 
     RUBY_DTRACE_METHOD_ENTRY_HOOK(th, me->owner, me->def->original_id);
     EXEC_EVENT_HOOK(th, RUBY_EVENT_CALL, self, me->def->original_id, me->called_id, me->owner, Qnil);
-    ret = vm_exec(th);
+    ret = vm_exec(th, FALSE);
     EXEC_EVENT_HOOK(th, RUBY_EVENT_RETURN, self, me->def->original_id, me->called_id, me->owner, ret);
     RUBY_DTRACE_METHOD_RETURN_HOOK(th, me->owner, me->def->original_id);
     return ret;
@@ -1743,23 +1743,21 @@ hook_before_rewind(rb_thread_t *th, rb_control_frame_t *cfp, int will_finish_vm_
  */
 
 VALUE
-vm_exec(rb_thread_t *th)
+vm_exec(rb_thread_t *th, int no_mjit_p)
 {
     VALUE result;
     VALUE initial = 0;
     rb_control_frame_t *enter_cfp = th->cfp;
-    int state, no_mjit_p = FALSE;
+    int state;
     struct vm_throw_data *err;
 
     TH_PUSH_TAG(th);
     _tag.retval = Qnil;
-#if 1
-    enter_cfp->bp[0] |= VM_FRAME_FLAG_FINISH;
-#endif
+    enter_cfp->ep[VM_ENV_DATA_INDEX_FLAGS] |= VM_FRAME_FLAG_FINISH;
     if ((state = EXEC_TAG()) == 0) {
       vm_loop_start:
 	th->cfp->sp = th->cfp->bp + 1 + th->cfp->iseq->body->temp_vars_num;
-	if (no_mjit_p || (result = mjit_execute_iseq(th, TRUE)) == Qundef)
+	if (no_mjit_p || (result = mjit_execute_iseq(th)) == Qundef)
 	    result = vm_exec_core(th, initial);
 	if ((state = th->state) != 0) {
 	    err = (struct vm_throw_data *)result;
@@ -1997,7 +1995,7 @@ rb_iseq_eval(const rb_iseq_t *iseq)
     rb_thread_t *th = GET_THREAD();
     VALUE val;
     vm_set_top_stack(th, iseq);
-    val = vm_exec(th);
+    val = vm_exec(th, FALSE);
     return val;
 }
 
@@ -2012,7 +2010,7 @@ rb_iseq_eval_main(const rb_iseq_t *iseq)
     VALUE val;
 
     vm_set_main_stack(th, iseq);
-    val = vm_exec(th);
+    val = vm_exec(th, FALSE);
 #if VM_INSN_STAT
     fprintf(stderr, "Execution: insns=%lu, len=%lu, average=%2.1f\n",
 	    all_executed_insns_num, all_executed_insns_len, all_executed_insns_len * 1.0 / all_executed_insns_num);

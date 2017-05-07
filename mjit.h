@@ -79,7 +79,7 @@ extern void mjit_finish(void);
 #define NUM_CALLS_TO_PRIORITY_INCREASE 500
 
 /* A forward declaration */
-extern VALUE vm_exec(rb_thread_t *th);
+extern VALUE vm_exec(rb_thread_t *th, int no_mjit_p);
 
 /* An used external.  */
 extern int vm_call_iseq_setup_normal_p(vm_call_handler h);
@@ -91,13 +91,12 @@ extern VALUE
 vm_call_cfunc(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling,
 	      const struct rb_call_info *ci, struct rb_call_cache *cc);
 
-/* Try to execute the current ISEQ of thread TH.  Make it through
-   vm_exec if IN_WRAPPER_P.  Otherwise, use JIT code if it is ready.
-   If it is not, add ISEQ to the compilation queue and return Qundef.
-   The function might increase ISEQ compilation priority by putting
-   ISEQ at the queue head.  */
+/* Try to execute the current ISEQ of thread TH.  Use JIT code if it
+   is ready.  If it is not, add ISEQ to the compilation queue and
+   return Qundef.  The function might increase ISEQ compilation
+   priority by putting ISEQ at the queue head.  */
 static inline VALUE
-mjit_execute_iseq(rb_thread_t *th, int in_wrapper_p) {
+mjit_execute_iseq(rb_thread_t *th) {
     rb_iseq_t *iseq;
     struct rb_iseq_constant_body *body;
     unsigned long n_calls;
@@ -106,8 +105,6 @@ mjit_execute_iseq(rb_thread_t *th, int in_wrapper_p) {
     
     if (! mjit_init_p)
 	return Qundef;
-    if (! in_wrapper_p)
-	return vm_exec(th);
     iseq = th->cfp->iseq;
     body = iseq->body;
     fun = body->jit_code;

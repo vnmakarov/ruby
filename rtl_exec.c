@@ -100,6 +100,18 @@ var_assign(rb_control_frame_t *cfp, VALUE *res, ptrdiff_t res_ind, VALUE v)
     }
 }
 
+/* Execute the current iseq of TH and return the result.  Try to use
+   JIT code first.  It is called only from a JIT code.  */
+static do_inline VALUE
+mjit_vm_exec(rb_thread_t *th) {
+  VALUE result;
+  
+  VM_ASSERT(in_mjit_p);
+  if ((result = mjit_execute_iseq(th)) == Qundef)
+      result = vm_exec(th, TRUE);
+  return result;
+}
+
 /* Set sp in CFP right after the last temporary variable in frame CFP
    with bp value given by BP.  That is a default stack pointer
    value.  */
@@ -121,7 +133,7 @@ call_method(rb_thread_t *th, rb_control_frame_t *cfp,
 	/* The call is finished with value VAL.  */
 	set_default_sp(cfp, RTL_GET_BP(cfp));
     else if (in_mjit_p) {
-	val = vm_exec(th);
+	val = mjit_vm_exec(th);
 	set_default_sp(cfp, RTL_GET_BP(cfp));
     }
     return val;
@@ -615,9 +627,8 @@ op1_call(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd, VALUE *recv)
 static do_inline int
 op_val_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, VALUE val) {
     if (val == Qundef) {
-	if (! in_mjit_p)
-	    return 1;
-	val = vm_exec(th);
+	VM_ASSERT(! in_mjit_p);
+	return 1;
     }
     var_assign(cfp, res, res_ind, val);
     if (! in_mjit_p)
@@ -634,7 +645,7 @@ op_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val) {
     if (val == Qundef) {
 	if (! in_mjit_p)
 	    return 1;
-	val = vm_exec(th);
+	val = mjit_vm_exec(th);
     }
     if (! in_mjit_p)
 	return 0;
@@ -1350,7 +1361,7 @@ do_bcmp(rb_thread_t *th, rb_control_frame_t *cfp,
 	return true_p ? RTEST(v) : ! RTEST(v);
     }
     if (v == Qundef) {
-	v = vm_exec(th);
+	v = mjit_vm_exec(th);
     }
     if ((RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) == 0)
 	*val = v;
@@ -3157,7 +3168,7 @@ static __attribute__ ((unused)) void
 define_class_f(rb_thread_t *th, rb_control_frame_t *cfp, ID id, ISEQ class_iseq, rb_num_t flags,
 	       VALUE *op1, VALUE *op2, sindex_t stack_top) {
     define_class(th, cfp, id, class_iseq, flags, op1, op2, stack_top);
-    *get_temp_addr(cfp, stack_top) = vm_exec(th);
+    *get_temp_addr(cfp, stack_top) = mjit_vm_exec(th);
     set_default_sp(cfp, RTL_GET_BP(cfp));
 }
 
@@ -3308,7 +3319,7 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
 static do_inline int
 mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
     if (val == Qundef) {
-	val = vm_exec(th);
+	val = mjit_vm_exec(th);
     }
     *res = val;
     if (! mjit_ep_neq_bp_p && cfp->bp != cfp->ep) {

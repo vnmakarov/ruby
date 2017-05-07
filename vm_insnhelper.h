@@ -128,8 +128,8 @@ enum vm_regan_acttype {
 /**********************************************************/
 
 #define CALL_METHOD(calling, cd) do { \
-	VALUE v = ((cd)->call_cache.call)(th, GET_CFP(), (calling), &(cd)->call_info, &(cd)->call_cache); \
-    if (v == Qundef && (v = mjit_execute_iseq(th, 0)) == Qundef) {	\
+    VALUE v = ((cd)->call_cache.call)(th, GET_CFP(), (calling), &(cd)->call_info, &(cd)->call_cache); \
+    if (v == Qundef && (v = mjit_execute_iseq(th)) == Qundef) {	\
 	RESTORE_REGS(); \
 	set_default_sp(reg_cfp, reg_cfp->bp);		\
 	NEXT_INSN(); \
@@ -251,7 +251,7 @@ extern void vm_stackoverflow(void);
 extern rb_cref_t *vm_cref_push(rb_thread_t *th, VALUE klass, const VALUE *ep, int pushed_by_eval);
 extern VALUE vm_once_exec(VALUE iseq);
 extern VALUE vm_once_clear(VALUE data);
-extern VALUE vm_exec(rb_thread_t *th);
+extern VALUE vm_exec(rb_thread_t *th, int no_mjit_p);
 
 static inline void
 vm_change_insn(rb_iseq_t *iseq, VALUE *pc, int insn_id) {

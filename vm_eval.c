@@ -172,7 +172,7 @@ vm_call0_body(rb_thread_t* th, struct rb_calling_info *calling, const struct rb_
 
 	    vm_call_iseq_setup(th, reg_cfp, calling, ci, cc);
 	    VM_ENV_FLAGS_SET(th->cfp->ep, VM_FRAME_FLAG_FINISH);
-	    return vm_exec(th); /* CHECK_INTS in this function */
+	    return vm_exec(th, FALSE); /* CHECK_INTS in this function */
 	}
       case VM_METHOD_TYPE_NOTIMPLEMENTED:
       case VM_METHOD_TYPE_CFUNC:
@@ -1365,12 +1365,12 @@ eval_string_with_cref(VALUE self, VALUE src, VALUE scope, rb_cref_t *const cref_
 
     if (file != Qundef) {
 	/* kick */
-	return vm_exec(th);
+	return vm_exec(th, FALSE);
     }
 
     TH_PUSH_TAG(th);
     if ((state = TH_EXEC_TAG()) == 0) {
-	result = vm_exec(th);
+	result = vm_exec(th, FALSE);
     }
     TH_POP_TAG();
 

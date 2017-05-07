@@ -1,3 +1,22 @@
+2017-05-06  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.h (vm_exec): Change prototype signature.
+	(mjit_execute_iseq): Remove in_wrapper arg.
+	* mjit.c (translate_iseq_insn): Use rb_threadptr_tag_jump for
+	raise insn generation.
+	(translate_batch_iseqs): Remove setting VM_FRAME_FLAG_FINISH.
+	* rtl_exec.c (mjit_vm_exec): New.
+	(call_method, op_call_end, define_class_f, mjit_call_finish): Use
+	it.
+	* vm.c (invoke_block, invoke_bmethod, rb_iseq_eval_main): Add arg
+	for vm_exec calls.
+	(vm_exec): Add new arg.  Use ep to set up VM_FRAME_FLAG_FINISH.
+	* vm_eval.c (vm_call0_body, eval_string_with_cref):  Add arg
+	for vm_exec calls.
+	* vm_insnhelper.h (CALL_METHOD): Remove last arg in
+	mjit_execute_iseq call.
+	(vm_exec): Change prototype signature.
+
 2017-05-05  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* MJIT_KEEP: Add vm_call_cfunc.
