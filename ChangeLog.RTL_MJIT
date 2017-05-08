@@ -5,6 +5,8 @@
 	* vm_exec.c (vm_exec_insn_address_table, vm_create_address_table):
 	New.
 	(vm_finish_address_table): New.
+	* vm.c (ruby_vm_destruct): Call vm_finish_address_table.
+	(Init_BareVM): Call vm_create_address_table.
 
 2017-05-06  Vladimir Makarov  <vmakarov@redhat.com>
 
