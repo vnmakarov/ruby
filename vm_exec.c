@@ -168,3 +168,29 @@ vm_exec_core(rb_thread_t *th, VALUE initial)
     }
 }
 #endif
+
+/* We use extern to have the same exemplar of the table in the
+   interpreter and JIT code.  */
+VALUE *vm_exec_insn_address_table;
+
+/* Create and set up VM insn table.  Return FALSE if the creation
+   failed.  */
+static int
+vm_create_address_table(void) {
+    size_t s = sizeof(VALUE) * VM_INSTRUCTION_SIZE;
+
+    vm_exec_insn_address_table = ruby_mimmalloc(s);
+    if (vm_exec_insn_address_table == NULL)
+	return FALSE;
+    memmove(vm_exec_insn_address_table, rb_vm_get_insns_address_table(), s);
+    return TRUE;
+}
+
+/* Free the created VM insn table.  */
+static void
+vm_finish_address_table(void) {
+    if (vm_exec_insn_address_table == NULL)
+	return;
+    ruby_mimfree(vm_exec_insn_address_table);
+    vm_exec_insn_address_table = NULL;
+}

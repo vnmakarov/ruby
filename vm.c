@@ -2192,6 +2192,7 @@ ruby_vm_destruct(rb_vm_t *vm)
 	    rb_objspace_free(objspace);
 	}
 	/* after freeing objspace, you *can't* use ruby_xfree() */
+	vm_finish_address_table();
 	ruby_mimfree(vm);
 	ruby_current_vm = 0;
     }
@@ -3110,7 +3111,7 @@ Init_BareVM(void)
     /* VM bootstrap: phase 1 */
     rb_vm_t * vm = ruby_mimmalloc(sizeof(*vm));
     rb_thread_t * th = ruby_mimmalloc(sizeof(*th));
-    if (!vm || !th) {
+    if (!vm || !th || !vm_create_address_table()) {
 	fprintf(stderr, "[FATAL] failed to allocate memory\n");
 	exit(EXIT_FAILURE);
     }

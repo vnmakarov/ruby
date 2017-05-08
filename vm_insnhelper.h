@@ -253,11 +253,13 @@ extern VALUE vm_once_exec(VALUE iseq);
 extern VALUE vm_once_clear(VALUE data);
 extern VALUE vm_exec(rb_thread_t *th, int no_mjit_p);
 
+extern VALUE *vm_exec_insn_address_table;
+
 static inline void
 vm_change_insn(rb_iseq_t *iseq, VALUE *pc, int insn_id) {
     if (mjit_init_p)
         mjit_change_iseq(iseq);
-    *pc = ((VALUE *)rb_vm_get_insns_address_table())[insn_id];
+    *pc = vm_exec_insn_address_table[insn_id];
 }
 
 #endif /* RUBY_INSNHELPER_H */

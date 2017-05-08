@@ -1,3 +1,11 @@
+2017-05-08  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* vm_insnhelper.h (vm_exec_insn_address_table): New extern.
+	(vm_change_insn): Use it.
+	* vm_exec.c (vm_exec_insn_address_table, vm_create_address_table):
+	New.
+	(vm_finish_address_table): New.
+
 2017-05-06  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.h (vm_exec): Change prototype signature.
