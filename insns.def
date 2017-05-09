@@ -451,7 +451,7 @@ length size empty_p succ not
 
 /* General and unchanging insns:  */
 DEFINE_INSN
-plus minus mult div mod ltlt aref eq ne lt gt le ge uplus uminus umult udiv umod ueq une ult ugt ule uge
+plus minus mult div mod ltlt ind eq ne lt gt le ge uplus uminus umult udiv umod uind ueq une ult ugt ule uge
 (insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
@@ -467,7 +467,7 @@ plus minus mult div mod ltlt aref eq ne lt gt le ge uplus uminus umult udiv umod
 
 /* Speculative insns:  */
 DEFINE_INSN
-iplus iminus imult idiv imod ieq ine ilt igt ile ige fplus fminus fmult fdiv fmod feq fne flt fgt fle fge
+iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige fplus fminus fmult fdiv fmod feq fne flt fgt fle fge
 (_, _, rindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
@@ -480,7 +480,7 @@ iplus iminus imult idiv imod ieq ine ilt igt ile ige fplus fminus fmult fdiv fmo
 
 /* General immediate insns:  */
 DEFINE_INSN
-plusi plusf minusi minusf multi multf divi divf modi modf ltlti arefi aref_str eqi eqf nei nef lti ltf gti gtf lei lef gei gef
+plusi plusf minusi minusf multi multf divi divf modi modf ltlti indi inds eqi eqf nei nef lti ltf gti gtf lei lef gei gef
 (insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
@@ -494,7 +494,7 @@ plusi plusf minusi minusf multi multf divi divf modi modf ltlti arefi aref_str e
 
 /* Unchanging immediate insns:  */
 DEFINE_INSN
-uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf ueqi ueqf unei unef ulti ultf ugti ugtf ulei ulef ugei ugef
+uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf uindi uinds ueqi ueqf unei unef ulti ultf ugti ugtf ulei ulef ugei ugef
 (insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
@@ -508,7 +508,7 @@ uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf ueqi ueqf un
 
 /* Speculative immediate insns:  */
 DEFINE_INSN
-iplusi iminusi imulti idivi imodi ieqi inei ilti igti ilei igei fplusf fminusf fmultf fdivf fmodf feqf fnef fltf fgtf flef fgef
+iplusi iminusi imulti idivi imodi aindi hindi hinds ieqi inei ilti igti ilei igei fplusf fminusf fmultf fdivf fmodf feqf fnef fltf fgtf flef fgef
 (_, _, rindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
@@ -518,28 +518,54 @@ iplusi iminusi imulti idivi imodi ieqi inei ilti igti ilei igei fplusf fminusf f
     }
 }
 
+/* General and unchanging insns:  */
 DEFINE_INSN
-aset
+indset uindset
 (CALL_DATA cd, lindex_t op1, lindex_t op2, lindex_t op3)
 ()
 ()
 {
-  if (aset_f(th, reg_cfp, cd, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
+  if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
       RESTORE_REGS();
       set_default_sp(reg_cfp, reg_cfp->bp);
   }
 }
 
+/* Speculative insns:  */
 DEFINE_INSN
-aset_str
-(CALL_DATA cd, lindex_t op1, VALUE str, lindex_t op3)
+aindset hindset
+(_, lindex_t op1, lindex_t op2, lindex_t op3)
 ()
 ()
 {
-  if (aset_str_f(th, reg_cfp, cd, get_var_addr(reg_cfp, op1), str, get_var_addr(reg_cfp, op3))) {
+  if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
+	ADD_PC(-5); /* Re-execute the modified insn  */
+    }
+}
+
+/* General and unchanging immediate insns:  */
+DEFINE_INSN
+indseti indsets uindseti uindsets
+(CALL_DATA cd, lindex_t op1, VALUE imm, lindex_t op3)
+()
+()
+{
+  if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3))) {
       RESTORE_REGS();
       set_default_sp(reg_cfp, reg_cfp->bp);
   }
+}
+
+/* Speculative immediate insns:  */
+DEFINE_INSN
+aindseti hindseti hindsets
+(_, lindex_t op1, VALUE imm, lindex_t op3)
+()
+()
+{
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3))) {
+	ADD_PC(-5); /* Re-execute the modified insn  */
+    }
 }
 
 DEFINE_INSN

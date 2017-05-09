@@ -4538,7 +4538,7 @@ compile_named_capture_assign(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node
 	((INSN*)last)->operands[0] = INT2LINT(ls - head_res);
 	if (((INSN*)last)->insn_id == BIN(val2loc))
 	    ((INSN*)last)->insn_id = BIN(val2temp);
-	ADD_INSN5(ret, line, aref, BIN(cont_op2),
+	ADD_INSN5(ret, line, ind, BIN(cont_op2),
 		  (VALUE) new_calldata(iseq, idAREF, 1, ls - head_res, 0, NULL, FALSE),
 		  INT2LINT(cap_res), INT2LINT(ls - global_res), INT2LINT(ls - head_res));
     }
@@ -4585,7 +4585,7 @@ get_opt_id(ID mid, int arg_num)
 	  case idDIV: return BIN(div);
 	  case idMOD: return BIN(mod);
 	  case idLTLT: return BIN(ltlt);
-	  case idAREF: return BIN(aref);
+	  case idAREF: return BIN(ind);
 	  case idASET:
 	  default: return BIN(nop);
 	}
@@ -4611,7 +4611,7 @@ make_imm_id(enum ruby_vminsn_type insn_id, int fixnum_p)
       case BIN(div): return fixnum_p ? BIN(divi) : BIN(divf);
       case BIN(mod): return fixnum_p ? BIN(modi) : BIN(modf);
       case BIN(ltlt): return fixnum_p ? BIN(ltlti) : BIN(nop);
-      case BIN(aref): return fixnum_p ? BIN(arefi) : BIN(aref_str);
+      case BIN(ind): return fixnum_p ? BIN(indi) : BIN(inds);
       default: return BIN(nop);
     }
 }
@@ -4647,9 +4647,9 @@ gen_op2(rb_iseq_t *iseq, int line, LINK_ANCHOR *ret, int opt_p, ID id,
 	       && ((((INSN *) ret->last)->insn_id == BIN(val2loc)
 		    || ((INSN *) ret->last)->insn_id == BIN(val2temp))
 		   && (FIXNUM_P(((INSN *) ret->last)->operands[1])
-		       || (new_id != BIN(aref)
+		       || (new_id != BIN(ind)
 			   && FLONUM_P(((INSN *) ret->last)->operands[1])))
-		   || (new_id == BIN(aref)
+		   || (new_id == BIN(ind)
 		       && ((INSN *) ret->last)->insn_id == BIN(str2var)))
 	       && LINT2INT(((INSN *) ret->last)->operands[0]) == ls - op) {
 	imm_id = make_imm_id(new_id, FIXNUM_P(((INSN *) ret->last)->operands[1]));
@@ -4714,7 +4714,7 @@ finish_op1_assign(rb_iseq_t *iseq, int line, LINK_ANCHOR *ret, int opt_p, int ch
 	if (check_p) {
 	    add_local_move(iseq, ret, line, ls - *result, ls - op_result);
 	}
-	ADD_INSN4(ret, line, aset,
+	ADD_INSN4(ret, line, indset,
 		  new_calldata(iseq, idASET, 2, -1 - *curr_temp_vars_num, 0, NULL, FALSE),
 		  INT2LINT(ls - ary_result), INT2LINT(ls - ind_result),  INT2LINT(ls - op_result));
 	if (result != NULL)
@@ -5320,7 +5320,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 			  INT2LINT(ls - temp_op), INT2LINT(ls - temp_op), INT2FIX(1));
 		ADD_RTL_INSNL(ret, line, bf, not_single, INT2LINT(ls - temp_op));
 		add_value_load(iseq, ret, line, ls - temp_op2, INT2FIX(0));
-		ADD_INSN5(ret, line, aref, BIN(cont_op2),
+		ADD_INSN5(ret, line, ind, BIN(cont_op2),
 			  (VALUE) new_calldata(iseq, idAREF, 1, ls - temp_op2 - 1, 0, NULL, FALSE),
 			  INT2LINT(ls - temp_op), INT2LINT(ls - res), INT2LINT(ls - temp_op2));
 		add_value_load(iseq, ret, line, ls - temp_op2, rb_cArray);
@@ -6005,7 +6005,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	}
 	if (opt_p) {
 	    setup_result_var_number(iseq, &el_result, &temp_vars_num);
-	    ADD_INSN5(ret, line, aref, BIN(cont_op2),
+	    ADD_INSN5(ret, line, ind, BIN(cont_op2),
 		      (VALUE) new_calldata(iseq, idAREF, FIX2INT(argc), -1 - temp_vars_num, flag, NULL, FALSE),
 		      INT2LINT(ls - el_result),
 		      INT2LINT(ls - ary_result), INT2LINT(ls - ind_result));
@@ -6457,7 +6457,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 
 	    node->nd_args->nd_head->nd_lit = str;
 	    CHECK(COMPILE(ret, "recv", node->nd_recv, &recv_result, &temp_vars_num));
-	    ADD_INSN5(ret, line, aref_str, BIN(cont_op2),
+	    ADD_INSN5(ret, line, inds, BIN(cont_op2),
 		      (VALUE) new_calldata(iseq, node->nd_mid, 1, -1 - *curr_temp_vars_num, 0, NULL, FALSE),
 		      INT2LINT(ls - res), INT2LINT(ls - recv_result), str);
 	    break;
@@ -7747,7 +7747,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		    iseq_add_mark_object(iseq, str);
 		    CHECK(COMPILE(ret, "recv", node->nd_recv, &arr_result, &temp_vars_num));
 		    CHECK(COMPILE(ret, "value", node->nd_args->nd_next->nd_head, &val_result, &temp_vars_num));
-		    ADD_INSN4(ret, line, aset_str,
+		    ADD_INSN4(ret, line, indsets,
 			      new_calldata(iseq, idASET, 2, -1 - temp_vars_num, 0, NULL, FALSE),
 			      INT2LINT(ls - arr_result), str,  INT2LINT(ls - val_result));
 	    } else {
@@ -7757,7 +7757,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		COMPILE(ret, "index", node->nd_args->nd_head, &ind_result, &temp_vars_num);
 		COMPILE(ret, "value", node->nd_args->nd_next->nd_head, &val_result, &temp_vars_num);
 
-		ADD_INSN4(ret, line, aset,
+		ADD_INSN4(ret, line, indset,
 			  new_calldata(iseq, idASET, 2, -1 - temp_vars_num, 0, NULL, FALSE),
 			  INT2LINT(ls - arr_result), INT2LINT(ls - ind_result),  INT2LINT(ls - val_result));
 	    }
@@ -7820,7 +7820,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		increment_temps_var(iseq, &temp_vars_num, 2); /* reserve 2 stack slots.  */
 		if (1)
 		    /* ??? Optimize memory traffic.  */
-		  ADD_INSN5(ret, line, aref, BIN(cont_op2),
+		  ADD_INSN5(ret, line, ind, BIN(cont_op2),
 			    (VALUE) new_calldata(iseq, idAREF, 1, -1 - temp_vars_num, 0, NULL, FALSE),
 			    INT2LINT(ls - val_result),
 			    INT2LINT(ls - (call_start + FIX2INT(argc) + 2)),

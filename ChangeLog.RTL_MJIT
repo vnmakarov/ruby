@@ -1,5 +1,37 @@
 2017-05-08  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* compile.c (compile_named_capture_assign, get_opt_id, gen_op2):
+	Rename aref into ind.
+	(make_imm_id): Ditto.  Rename arefi and aref_str into indi and
+	inds.
+	(finish_op1_assign): Rename aset into indset.
+	(iseq_compile_each): Rename aref, aref_str, aset, aset_str into
+	ind, inds, indset, indesets.
+	* insns.def (aref, arefi, aref_str): Rename to ind, indi, inds.
+	(uind, uindi, uinds, aind, hind, aindi, hindi, hinds): New insns.
+	(aset, aset_str): Rename to indset, indsets.
+	(indseti, uindset, uindseti, unindsets, aindset, hindset): New.
+	(aindseti, hindseti, hindsets): New.
+	* rtl_exec.c (common_ind): New.
+	(aref_f, arefi_f, aref_str_f, aset_f, aset_str_f): Rename to
+	ind_f, indi_f, inds_f, indset_f, indesets_f.  Use common_ind.
+	(uind_f, uindi_f, uinds_f, aind_f, hind_f, aindi_f, hindi_f): New
+	functions.
+	(hinds_f): Ditto.
+	(common_aset): Rename to common_indset.  Add new args fixnum_p,
+	array_insn_id, hash_insn_id.  Add speculation by BOP.  Change
+	insns if it is necessary.
+	(aset_f, aset_str_f): Rename to indset_f, indsets_f.
+	(indseti_f, uindset_f, uindseti_f, unindsets_f, aindset_f): New
+	functions.
+	(hindset_f, aindseti_f, hindseti_f, hindsets_f): Ditto.
+	* mjit.c (get_insn_fun_features): Rename aref, arefi, aref_str,
+	aset, aset_str into ind, indi, inds, indset, indesets.  Setup
+	features for uind, uindi, uinds, aind, hind, aindi, hindi, hinds,
+	indseti, aindset, hindset, aindseti, hindseti, hindsets.
+
+2017-05-08  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* vm_insnhelper.h (vm_exec_insn_address_table): New extern.
 	(vm_change_insn): Use it.
 	* vm_exec.c (vm_exec_insn_address_table, vm_create_address_table):

@@ -492,7 +492,7 @@ struct insn_fun_features {
     /* True if the first insn operand is a continuation insn (see
        comments of insns.def).  We don't pass such operands.  */
     char skip_first_p;
-    /* Call function mjit_op_end if the function returns non-zero.  */
+    /* Just go to spec section if the function returns non-zero.  */
     char op_end_p;
     /* Pass structure calling and call function mjit_call_method
        afterwards.  */
@@ -592,7 +592,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(div):
     case BIN(mod):
     case BIN(ltlt):
-    case BIN(aref):
+    case BIN(ind):
     case BIN(eq):
     case BIN(ne):
     case BIN(lt):
@@ -610,6 +610,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(modi):
     case BIN(modf):
     case BIN(ltlti):
+    case BIN(indi):
+    case BIN(inds):
     case BIN(eqi):
     case BIN(eqf):
     case BIN(nei):
@@ -658,8 +660,9 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(ugei):
     case BIN(ugef):
     case BIN(regexp_match2):
-    case BIN(arefi):
-    case BIN(aref_str):
+    case BIN(uind):
+    case BIN(uindi):
+    case BIN(uinds):
 	f->th_p = f->skip_first_p = f->op_end_p = TRUE;
 	break;
     case BIN(iplus):
@@ -667,6 +670,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(imult):
     case BIN(idiv):
     case BIN(imod):
+    case BIN(aind):
+    case BIN(hind):
     case BIN(ieq):
     case BIN(ine):
     case BIN(ilt):
@@ -689,6 +694,9 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(imulti):
     case BIN(idivi):
     case BIN(imodi):
+    case BIN(aindi):
+    case BIN(hindi):
+    case BIN(hinds):
     case BIN(ieqi):
     case BIN(inei):
     case BIN(ilti):
@@ -708,9 +716,22 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(fgef):
 	f->skip_first_p = f->speculative_p = TRUE;
 	break;
-    case BIN(aset):
-    case BIN(aset_str):
-	f->th_p = TRUE;
+    case BIN(indset):
+    case BIN(indseti):
+    case BIN(indsets):
+	f->changing_p = TRUE;
+	/* fall through: */
+    case BIN(uindset):
+    case BIN(uindseti):
+    case BIN(uindsets):
+	f->th_p = f->op_end_p = TRUE;
+	break;
+    case BIN(aindset):
+    case BIN(hindset):
+    case BIN(aindseti):
+    case BIN(hindseti):
+    case BIN(hindsets):
+	f->speculative_p = TRUE;
 	break;
     case BIN(trace):
     case BIN(goto):
@@ -741,8 +762,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(btlef):
     case BIN(btgei):
     case BIN(btgef):
-	/* fall through: */
 	f->changing_p = TRUE;
+	/* fall through: */
     case BIN(ubteq):
     case BIN(ubtne):
     case BIN(ubtlt):

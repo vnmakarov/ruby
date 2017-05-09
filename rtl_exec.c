@@ -2311,89 +2311,164 @@ op2i_fun(ltlti)
     return do_ltlt(th, cfp, cd, res, res_ind, src1, imm);
 }
 
-op2_fun(aref)
-{
-    VALUE val, *src1 = op1, src2 = *op2;
-
-    if (! SPECIAL_CONST_P(*src1)) {
-	if (RBASIC_CLASS(*src1) == rb_cArray
-	    && BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG)
-	    && FIXNUM_P(src2)) {
-	    var_assign(cfp, res, res_ind, rb_ary_entry(*src1, FIX2LONG(src2)));
+/* Common function executing an index operation of operands OP1
+   (object) and OP2 (index) in frame CFP of thread TH.  Assign the
+   result to local or temporary variable with address RES and index
+   RES_IND.  The function has a fast execution path for indexing array
+   and hash.  For the slow paths use call data CD.  If OP2_FIXNUM_P or
+   OP2_STR_P is true, it means that value OP2 is of the corresponding
+   type.  When we use a fast path, change the current insn to the
+   corresponding speculative insn ARY_INSN_ID or HASH_INSN_ID unless
+   they are nop.  Return non zero if we started a new ISEQ execution
+   (we need to update vm_exec_core regs in this case) or we need to
+   cancel the current JITed code.  */
+static do_inline int
+common_ind(rb_thread_t *th,
+	   rb_control_frame_t *cfp,
+	   CALL_DATA cd, VALUE *res, rindex_t res_ind, VALUE *op1, VALUE op2,
+	   int op2_fixnum_p, int op2_str_p, int ary_insn_id, int hash_insn_id) {
+    VALUE val;
+    
+    if (! SPECIAL_CONST_P(*op1)) {
+	if (RBASIC_CLASS(*op1) == rb_cArray
+	    && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))
+	    && (op2_fixnum_p || FIXNUM_P(op2))) {
+	    var_assign(cfp, res, res_ind, rb_ary_entry(*op1, FIX2LONG(op2)));
+	    if (ary_insn_id != BIN(nop))
+		vm_change_insn(cfp->iseq, cfp->pc - 6, ary_insn_id);
 	    return 0;
-	} else if (RBASIC_CLASS(*src1) == rb_cHash
-		   && BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)) {
+	} else if (RBASIC_CLASS(*op1) == rb_cHash
+		   && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))
+		   && (! op2_str_p || rb_hash_compare_by_id_p(*op1) == Qfalse)) {
 	    check_sp_default(cfp);
-	    var_assign(cfp, res, res_ind, rb_hash_aref(*src1, src2));
+	    var_assign(cfp, res, res_ind, rb_hash_aref(*op1, op2));
+	    if (hash_insn_id != BIN(nop))
+		vm_change_insn(cfp->iseq, cfp->pc - 6, hash_insn_id);
 	    return 0;
 	}
     }
-    val = op2_call(th, cfp, cd, src1, src2);
+    val = op2_call(th, cfp, cd, op1, (op2_str_p ? rb_str_resurrect(op2) : op2));
     return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
-op2i_fun(arefi)
+op2_fun(ind)
 {
-    VALUE val, *src1 = op1;
-
-    if (! SPECIAL_CONST_P(*src1)) {
-	if (RBASIC_CLASS(*src1) == rb_cArray
-	    && BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG)) {
-	    var_assign(cfp, res, res_ind, rb_ary_entry(*src1, FIX2LONG(imm)));
-	    return 0;
-	} else if (RBASIC_CLASS(*src1) == rb_cHash
-		   && BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)) {
-	    check_sp_default(cfp);
-	    var_assign(cfp, res, res_ind, rb_hash_aref(*src1, imm));
-	    return 0;
-	}
-    }
-    val = op2_call(th, cfp, cd, src1, imm);
-    return op_val_call_end(th, cfp, res, res_ind, val);
+    return common_ind(th, cfp, cd, res, res_ind, op1, *op2, FALSE, FALSE, BIN(aind), BIN(hind));
 }
 
-op2i_fun(aref_str) {
-    VALUE val, *src = op1, str = imm;
+op2_fun(uind)
+{
+    return common_ind(th, cfp, cd, res, res_ind, op1, *op2, FALSE, FALSE, BIN(nop), BIN(nop));
+}
 
-    if (! SPECIAL_CONST_P(*src)
-	&& RBASIC_CLASS(*src) == rb_cHash
-	&& BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)
-	&& rb_hash_compare_by_id_p(*src) == Qfalse) {
+op2i_fun(indi)
+{
+    return common_ind(th, cfp, cd, res, res_ind, op1, imm, TRUE, FALSE, BIN(aindi), BIN(hindi));
+}
+
+op2i_fun(uindi)
+{
+    return common_ind(th, cfp, cd, res, res_ind, op1, imm, TRUE, FALSE, BIN(nop), BIN(nop));
+}
+
+op2i_fun(inds)
+{
+    return common_ind(th, cfp, cd, res, res_ind, op1, imm, FALSE, TRUE, BIN(nop), BIN(hinds));
+}
+
+op2i_fun(uinds)
+{
+    return common_ind(th, cfp, cd, res, res_ind, op1, imm, FALSE, TRUE, BIN(nop), BIN(nop));
+}
+
+/* Speculative indexing insns: */
+spec_op2_fun(aind) {
+    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cArray
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))
+	&& FIXNUM_P(*op2)) {
+	var_assign(cfp, res, res_ind, rb_ary_entry(*op1, FIX2LONG(*op2)));
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 6, BIN(uind));
+    return TRUE;
+}
+
+spec_op2_fun(hind)
+{
+    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))) {
 	check_sp_default(cfp);
-	var_assign(cfp, res, res_ind, rb_hash_aref(*src, str));
-	return 0;
+	var_assign(cfp, res, res_ind, rb_hash_aref(*op1, *op2));
+	return FALSE;
     }
-    val = op2_call(th, cfp, cd, src, rb_str_resurrect(str));
-    return op_val_call_end(th, cfp, res, res_ind, val);
+    vm_change_insn(cfp->iseq, cfp->pc - 6, BIN(uind));
+    return TRUE;
 }
 
+spec_op2i_fun(aindi)
+{
+    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cArray
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))) {
+	var_assign(cfp, res, res_ind, rb_ary_entry(*op1, FIX2LONG(imm)));
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 6, BIN(uindi));
+    return TRUE;
+}
+
+spec_op2i_fun(hindi)
+{
+    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))) {
+	check_sp_default(cfp);
+	var_assign(cfp, res, res_ind, rb_hash_aref(*op1, imm));
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 6, BIN(uindi));
+    return TRUE;
+}
+
+spec_op2i_fun(hinds)
+{
+    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))
+	&& rb_hash_compare_by_id_p(*op1) == Qfalse) {
+	check_sp_default(cfp);
+	var_assign(cfp, res, res_ind, rb_hash_aref(*op1, imm));
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 6, BIN(uinds));
+    return TRUE;
+
+}
 /* Common function executing operation []= for operands OP1, IND, and
    OP3.  OP1 and OP3 are locations in frame CFP of thread TH.  The
    function has a fast execution path for operand of type array and
-   hash.  For the slow paths use call data CD.  Assign the result to
-   local or temporary variable with address RES and index RES_IND.
-   Return non zero if we started a new ISEQ execution (we need to
-   update vm_exec_core regs in this case) or we need to cancel the
-   current JITed code..  */
+   hash.  For the slow paths use call data CD.  Return non zero if we
+   started a new ISEQ execution (we need to update vm_exec_core regs
+   in this case) or we need to cancel the current JITed code.  */
 static do_inline int
-common_aset(rb_thread_t *th,
-	    rb_control_frame_t *cfp,
-	    CALL_DATA cd, VALUE *op1, VALUE ind, VALUE *op3,
-	    int str_p)
+common_indset(rb_thread_t *th, rb_control_frame_t *cfp,
+	      CALL_DATA cd, VALUE *op1, VALUE ind, VALUE *op3,
+	      int fixnum_p, int str_p, int ary_insn_id, int hash_insn_id)
 {
     VALUE val, *recv = op1, el = *op3;
 
     if (!SPECIAL_CONST_P(*recv)) {
 	if (RBASIC_CLASS(*recv) == rb_cArray
-	    && BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG)
-	    && FIXNUM_P(ind)) {
+	    && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
+	    && (fixnum_p || FIXNUM_P(ind))) {
 	    rb_ary_store(*recv, FIX2LONG(ind), el);
+	    if (ary_insn_id != BIN(nop))
+		vm_change_insn(cfp->iseq, cfp->pc - 5, ary_insn_id);
 	    return 0;
 	} else if (RBASIC_CLASS(*recv) == rb_cHash
 		   && BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)
 		   && (!str_p || rb_hash_compare_by_id_p(*recv) == Qfalse)) {
 	    check_sp_default(cfp);
 	    rb_hash_aset(*recv, ind, el);
+	    if (ary_insn_id != BIN(nop))
+		vm_change_insn(cfp->iseq, cfp->pc - 5, hash_insn_id);
 	    return 0;
 	}
     }
@@ -2402,21 +2477,101 @@ common_aset(rb_thread_t *th,
 }
     
 
-/* It is just a call of common_aset when we don't know OP2 type.  */
 static do_inline int
-aset_f(rb_thread_t *th,
-       rb_control_frame_t *cfp,
-       CALL_DATA cd, VALUE *op1, VALUE *op2, VALUE *op3) {
-    return common_aset(th, cfp, cd, op1, *op2, op3, FALSE);
+indset_f(rb_thread_t *th, rb_control_frame_t *cfp,
+	 CALL_DATA cd, VALUE *op1, VALUE *op2, VALUE *op3) {
+    return common_indset(th, cfp, cd, op1, *op2, op3, FALSE, FALSE, BIN(aindset), BIN(hindset));
 }
 
-/* It is just a call of common_aset when we know that the 2nd operand
-   is string STR.  */
 static do_inline int
-aset_str_f(rb_thread_t *th,
-	   rb_control_frame_t *cfp,
+uindset_f(rb_thread_t *th, rb_control_frame_t *cfp,
+	  CALL_DATA cd, VALUE *op1, VALUE *op2, VALUE *op3) {
+    return common_indset(th, cfp, cd, op1, *op2, op3, FALSE, FALSE, BIN(nop), BIN(nop));
+}
+
+static do_inline int
+indseti_f(rb_thread_t *th, rb_control_frame_t *cfp,
+	   CALL_DATA cd, VALUE *op1, VALUE imm, VALUE *op3) {
+    return common_indset(th, cfp, cd, op1, imm, op3, TRUE, FALSE, BIN(aindseti), BIN(hindseti));
+}
+
+static do_inline int
+uindseti_f(rb_thread_t *th, rb_control_frame_t *cfp,
+	   CALL_DATA cd, VALUE *op1, VALUE imm, VALUE *op3) {
+    return common_indset(th, cfp, cd, op1, imm, op3, TRUE, FALSE, BIN(nop), BIN(nop));
+}
+
+static do_inline int
+indsets_f(rb_thread_t *th, rb_control_frame_t *cfp,
+	  CALL_DATA cd, VALUE *op1, VALUE str, VALUE *op3) {
+    return common_indset(th, cfp, cd, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(hindsets));
+}
+
+static do_inline int
+uindsets_f(rb_thread_t *th, rb_control_frame_t *cfp,
 	   CALL_DATA cd, VALUE *op1, VALUE str, VALUE *op3) {
-    return common_aset(th, cfp, cd, op1, str, op3, TRUE);
+    return common_indset(th, cfp, cd, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(nop));
+}
+
+/* Speculative []= insns:  */
+static do_inline int
+aindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3) {
+    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cArray
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
+	&& FIXNUM_P(*op2)) {
+	rb_ary_store(*op1, FIX2LONG(*op2), *op3);
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 5, BIN(uindset));
+    return TRUE;
+}
+
+static do_inline int
+hindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3) {
+    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG))) {
+	check_sp_default(cfp);
+	rb_hash_aset(*op1, *op2, *op3);
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 5, BIN(uindset));
+    return TRUE;
+}
+
+static do_inline int
+aindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
+    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cArray
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))) {
+	rb_ary_store(*op1, FIX2LONG(imm), *op3);
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 5, BIN(uindseti));
+    return TRUE;
+}
+
+static do_inline int
+hindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
+    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG))) {
+	check_sp_default(cfp);
+	rb_hash_aset(*op1, imm, *op3);
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 5, BIN(uindseti));
+    return TRUE;
+}
+
+static do_inline int
+hindsets_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
+    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG))
+	&& rb_hash_compare_by_id_p(*op1) == Qfalse) {
+	check_sp_default(cfp);
+	rb_hash_aset(*op1, imm, *op3);
+	return FALSE;
+    }
+    vm_change_insn(cfp->iseq, cfp->pc - 5, BIN(uindsets));
+    return TRUE;
 }
 
 /* Do string (location OP) freeze.  */
