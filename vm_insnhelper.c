@@ -1765,21 +1765,18 @@ vm_method_cfunc_entry(const rb_callable_method_entry_t *me)
     return &me->def->body.cfunc;
 }
 
+/* This variant is used to generate a better JIT code.  */
 static inline VALUE
-vm_call_cfunc_with_frame(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
+vm_call_cfunc_with_frame_0(rb_thread_t *th, rb_control_frame_t *reg_cfp, VALUE recv, VALUE block_handler, int argc,
+			   ID mid, const rb_callable_method_entry_t *me)
 {
     VALUE val;
-    const rb_callable_method_entry_t *me = cc->me;
     const rb_method_cfunc_t *cfunc = vm_method_cfunc_entry(me);
     int len = cfunc->argc;
 
-    VALUE recv = calling->recv;
-    VALUE block_handler = calling->block_handler;
-    int argc = calling->argc;
-
     if (mjit_trace_p) {
 	RUBY_DTRACE_CMETHOD_ENTRY_HOOK(th, me->owner, me->def->original_id);
-	EXEC_EVENT_HOOK(th, RUBY_EVENT_C_CALL, recv, me->def->original_id, ci->mid, me->owner, Qundef);
+	EXEC_EVENT_HOOK(th, RUBY_EVENT_C_CALL, recv, me->def->original_id, mid, me->owner, Qundef);
     }
 
     vm_push_frame(th, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
@@ -1799,11 +1796,17 @@ vm_call_cfunc_with_frame(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb
     rb_vm_pop_frame(th);
 
     if (mjit_trace_p) {
-	EXEC_EVENT_HOOK(th, RUBY_EVENT_C_RETURN, recv, me->def->original_id, ci->mid, me->owner, val);
+	EXEC_EVENT_HOOK(th, RUBY_EVENT_C_RETURN, recv, me->def->original_id, mid, me->owner, val);
 	RUBY_DTRACE_CMETHOD_RETURN_HOOK(th, me->owner, me->def->original_id);
     }
 
     return val;
+}
+
+static inline VALUE
+vm_call_cfunc_with_frame(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
+{
+    return vm_call_cfunc_with_frame_0(th, reg_cfp, calling->recv, calling->block_handler, calling->argc, ci->mid, cc->me);
 }
 
 #if OPT_CALL_CFUNC_WITHOUT_FRAME
@@ -1883,6 +1886,16 @@ rb_vm_call_cfunc_push_frame(rb_thread_t *th)
     }
 }
 #else /* OPT_CALL_CFUNC_WITHOUT_FRAME */
+
+/* As vm_call_cfunc but used to generate a better JIT code. */
+inline VALUE
+vm_call_cfunc_0(rb_thread_t *th, rb_control_frame_t *reg_cfp, VALUE recv, VALUE block_handler, int argc,
+		unsigned int flag, struct rb_call_info_kw_arg **kw_arg, ID mid, const rb_callable_method_entry_t *me)
+{
+    CALLER_SETUP_ARG_0(reg_cfp, flag, argc, kw_arg);
+    return vm_call_cfunc_with_frame_0(th, reg_cfp, recv, block_handler, argc, mid, me);
+}
+
 inline VALUE
 vm_call_cfunc(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
 {

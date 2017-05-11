@@ -736,12 +736,12 @@ argument_kw_error(rb_thread_t *th, const rb_iseq_t *iseq, const char *error, con
     raise_argument_error(th, iseq, rb_keyword_error_new(error, keys));
 }
 
-extern void vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calling);
+extern int vm_caller_setup_arg_splat_0(rb_control_frame_t *cfp, int argc);
 
-inline void
-vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calling)
+/* This variant is used to generate a better JIT code.  */
+inline int
+vm_caller_setup_arg_splat_0(rb_control_frame_t *cfp, int argc)
 {
-    int argc = calling->argc;
     VALUE *argv = cfp->sp - argc;
     VALUE ary = argv[argc-1];
 
@@ -756,16 +756,25 @@ vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calli
 	for (i = 0; i < len; i++) {
 	    *cfp->sp++ = ptr[i];
 	}
-	calling->argc += i - 1;
+	argc += i - 1;
     }
+    return argc;
 }
 
-extern void vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci);
+extern void vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calling);
 
 inline void
-vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci)
+vm_caller_setup_arg_splat(rb_control_frame_t *cfp, struct rb_calling_info *calling)
 {
-    struct rb_call_info_kw_arg *kw_arg = ((struct rb_call_data_with_kwarg *)ci)->kw_arg;
+    calling->argc = vm_caller_setup_arg_splat_0(cfp, calling->argc);
+}
+
+extern int vm_caller_setup_arg_kw_0(rb_control_frame_t *cfp, int argc, struct rb_call_info_kw_arg *kw_arg);
+
+/* This variant is used to generate a better JIT code.  */
+inline int
+vm_caller_setup_arg_kw_0(rb_control_frame_t *cfp, int argc, struct rb_call_info_kw_arg *kw_arg)
+{
     const VALUE *const passed_keywords = kw_arg->keywords;
     const int kw_len = kw_arg->keyword_len;
     const VALUE h = rb_hash_new();
@@ -778,7 +787,16 @@ vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling,
     (sp-kw_len)[0] = h;
 
     cfp->sp -= kw_len - 1;
-    calling->argc -= kw_len - 1;
+    argc -= kw_len - 1;
+    return argc;
+}
+
+extern void vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci);
+
+inline void
+vm_caller_setup_arg_kw(rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci)
+{
+    calling->argc = vm_caller_setup_arg_kw_0(cfp, calling->argc, ((struct rb_call_data_with_kwarg *)ci)->kw_arg);
 }
 
 static VALUE
@@ -882,4 +900,10 @@ vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
 #define CALLER_SETUP_ARG(cfp, calling, ci) do { \
     if (UNLIKELY(IS_ARGS_SPLAT(ci))) vm_caller_setup_arg_splat((cfp), (calling)); \
     if (UNLIKELY(IS_ARGS_KEYWORD(ci))) vm_caller_setup_arg_kw((cfp), (calling), (ci)); \
+} while (0)
+
+/* As above but used to generate a better JIT code. */
+#define CALLER_SETUP_ARG_0(cfp, flag, argc, kw_arg) do {			\
+    if (UNLIKELY((flag) & VM_CALL_ARGS_SPLAT)) argc = vm_caller_setup_arg_splat_0((cfp), argc); \
+    if (UNLIKELY((flag) & VM_CALL_KWARG)) argc = vm_caller_setup_arg_kw_0((cfp), argc, *(kw_arg)); \
 } while (0)

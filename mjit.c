@@ -1123,21 +1123,6 @@ generate_set_pc(int set_p, char *buf, const VALUE *pc) {
     return buf;
 }
 
-/* Output initialized static constant declaration of CI to F.  */
-static void
-output_const_ci(FILE *f, const struct rb_call_info *ci) {
-    fprintf(f, "  static const struct rb_call_info ci = {%llu, 0x%x, %d};\n",
-	    (unsigned long long) ci->mid, ci->flag, ci->orig_argc);
-}
-
-/* Output initialized static constant declaration of CC to F.  */
-static void
-output_const_cc(FILE *f, const struct rb_call_cache cc) {
-    fprintf(f, "  static const struct rb_call_cache cc = {%lu, %lu, (void *) 0x%"PRIxVALUE,
-	    (unsigned long) cc.method_state, (unsigned long) cc.class_serial, (VALUE) cc.me);
-    fprintf(f, ", (void *) 0x%"PRIxVALUE ", {.inc_sp = %d}};\n", (VALUE) cc.call, cc.aux.inc_sp);
-}
-
 /* Output C code implementing an iseq BI insn starting with position
    POS to file F.  Generate the code according to TCP.  */
 static int
@@ -1248,16 +1233,12 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	ptrdiff_t recv_op = (insn == BIN(call_recv)
 			     ? (ptrdiff_t) code[pos + 4] : insn == BIN(simple_call_recv)
 			     ? (ptrdiff_t) code[pos + 3] : call_start);
+	VALUE block_iseq = simple_p ? 0 : code[pos + 3];
 	const char *rec;
 	
 	if (tcp->use_temp_vars_p)
 	    /* Generate copying temps to the stack.  */
 	    generate_param_setup(f, code, pos, features.recv_p);
-	if (local_cc.call == vm_call_cfunc) {
-	    fprintf(f, " {\n");
-	    output_const_ci(f, ci);
-	    output_const_cc(f, local_cc);
-	}
 	rec = (self_p ? "&cfp->self" : get_op_str(buf, recv_op, tcp));
 	fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu)) {\n",
 		rec, (unsigned long long) local_cc.method_state,
@@ -1266,38 +1247,52 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	fprintf(f, "    goto stop_spec;\n  }\n");
 	rec = (self_p ? "&cfp->self" : get_op_str(buf, recv_op, tcp));
 	if (local_cc.call == vm_call_cfunc) {
-	    fprintf(f, "  call_setup(th, cfp, &calling, &ci, %ld, 0x%"PRIxVALUE ", *%s, %d, %d);\n",
-		    call_start, simple_p ? (VALUE) 0 : code[pos + 3],
-		    rec, ! features.recv_p, simple_p);
-	    fprintf(f, "  mjit_call_cfunc(th, cfp, &calling, &ci, &cc, %s);\n }\n",
-		    get_op_str(buf, call_start, tcp));
+	    fprintf(f, "  if (mjit_call_cfunc(th, cfp, %llu, (void *) 0x%"PRIxVALUE
+		    ", %u, %d, 0x%x, (void *) 0x%"PRIxVALUE
+		    ", %ld, (void *) 0x%"PRIxVALUE ", *%s, %d, %d",
+		    (unsigned long long) ci->mid, (VALUE) local_cc.me,
+		    iseq->body->temp_vars_num, ci->orig_argc, ci->flag, (VALUE) &((struct rb_call_data_with_kwarg *)ci)->kw_arg,
+		    call_start, block_iseq, rec, !features.recv_p, simple_p);
 	} else {
-	    const rb_iseq_t *iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
-	    struct rb_iseq_constant_body *body = iseq->body;
+	    const rb_iseq_t *callee_iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
+	    struct rb_iseq_constant_body *callee_body = callee_iseq->body;
 
 	    fprintf(f, "  if (mjit_iseq_call(th, cfp, (void *) 0x%"PRIxVALUE ", (void *) 0x%"PRIxVALUE
 		    ", (void *) 0x%"PRIxVALUE ", (void *) 0x%"PRIxVALUE
 		    ", %d, %d, %d, %d, %u, %d, 0x%x, %ld, (void *) 0x%"PRIxVALUE
 		    ", *%s, %d, %d",
-		    (VALUE) local_cc.me, (VALUE) iseq, (VALUE) body, (VALUE) body->iseq_encoded,
-		    body->type, body->param.size, body->local_table_size,
-		    body->temp_vars_num, body->stack_max,
-		    ci->orig_argc, ci->flag, call_start, simple_p ? 0 : code[pos + 3],
+		    (VALUE) local_cc.me, (VALUE) callee_iseq, (VALUE) callee_body, (VALUE) callee_body->iseq_encoded,
+		    callee_body->type, callee_body->param.size, callee_body->local_table_size,
+		    iseq->body->temp_vars_num, callee_body->stack_max,
+		    ci->orig_argc, ci->flag, call_start, block_iseq,
 		    rec, !features.recv_p, simple_p);
-	    fprintf(f,  ", %s)) {\n    goto stop_spec;\n  }\n", get_op_str(buf, call_start, tcp));
 	}
+	fprintf(f,  ", %s)) {\n    goto stop_spec;\n  }\n", get_op_str(buf, call_start, tcp));
 	if (tcp->use_temp_vars_p)
 	    generate_result_on_stack(f, code, pos);
-    } else {
-	int call_ivar_obj_op = 0;
+    } else if (! tcp->safe_p && features.call_p
+	       && (local_cc.call == vm_call_ivar || local_cc.call == vm_call_attrset)
+	       && local_cc.aux.index > 0) {
+	ptrdiff_t call_start = code[pos + 2];
+	int call_ivar_obj_op = features.recv_p ? code[pos + 2] : code[pos + 3];
+	const char *rec = (insn == BIN(simple_call_self)
+			   ? "&cfp->self" : get_op_str(buf, call_ivar_obj_op, tcp));
 
-	if (! tcp->safe_p && features.call_p
-	    && (local_cc.call == vm_call_ivar || local_cc.call == vm_call_attrset)
-	    && local_cc.aux.index > 0) {
-	    assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call) || insn == BIN(simple_call_self));
-	    call_ivar_obj_op = features.recv_p ? code[pos + 2] : code[pos + 3];
+	assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call) || insn == BIN(simple_call_self));
+	fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu) || ",
+		rec, (unsigned long long) local_cc.method_state,
+		(unsigned long long) local_cc.class_serial);
+	if (local_cc.call == vm_call_ivar) {
+	    fprintf(f, "mjit_call_ivar(*%s, %u, ", rec, (unsigned) local_cc.aux.index);
+	    fprintf(f, "%s)) {\n", get_op_str(buf, call_start, tcp));
+	} else {
+	    fprintf(f, "mjit_call_setivar(*%s, %u, ", rec, (unsigned) local_cc.aux.index);
+	    fprintf(f, "*%s)) {\n", get_op_str(buf, call_start - 1, tcp));
 	}
-	if (tcp->use_temp_vars_p && features.call_p && call_ivar_obj_op == 0)
+	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
+	fprintf(f, "    goto stop_spec;\n  }\n");
+    } else {
+	if (tcp->use_temp_vars_p && features.call_p)
 	    /* Generate copying temps to the stack.  */
 	    generate_param_setup(f, code, pos, features.recv_p);
 	if (mjit_spec_p) {
@@ -1402,31 +1397,15 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	if (features.call_p) {
 	    ptrdiff_t call_start = code[pos + 2];
 	    
-	    if (call_ivar_obj_op != 0) {
-		const char *rec = (insn == BIN(simple_call_self)
-				   ? "&cfp->self"
-				   : get_op_str(buf, call_ivar_obj_op, tcp));
-		
-		fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu) || ",
-			rec, (unsigned long long) local_cc.method_state,
-			(unsigned long long) local_cc.class_serial);
-		if (local_cc.call == vm_call_ivar) {
-		    fprintf(f, "mjit_call_ivar(*%s, %u, ", rec, (unsigned) local_cc.aux.index);
-		    fprintf(f, "%s)) {\n", get_op_str(buf, call_start, tcp));
-		} else {
-		    fprintf(f, "mjit_call_setivar(*%s, %u, ", rec, (unsigned) local_cc.aux.index);
-		    fprintf(f, "*%s)) {\n", get_op_str(buf, call_start - 1, tcp));
-		}
-		fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
-		fprintf(f, "    goto stop_spec;\n  }\n");
-	    } else if (!tcp->safe_p && vm_call_iseq_setup_normal_p(local_cc.call)) {
-		const rb_iseq_t *iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
+	    if (!tcp->safe_p && vm_call_iseq_setup_normal_p(local_cc.call)) {
+		const rb_iseq_t *callee_iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
+
 		fprintf(f, "  if (((CALL_CACHE) 0x%"PRIxVALUE ")->call != 0x%"PRIxVALUE ")",
 			(VALUE) cc, (VALUE) local_cc.call);
 		fprintf(f, " {\n  %s    goto stop_spec;\n  }\n",
 			generate_set_pc(TRUE, buf, &code[pos]));
 		fprintf(f, "  if (mjit_call_iseq_normal(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %d, %d, %s)) {\n",
-			code[pos + 1], iseq->body->param.size, iseq->body->local_table_size,
+			code[pos + 1], callee_iseq->body->param.size, callee_iseq->body->local_table_size,
 			get_op_str(buf, call_start, tcp));
 		fprintf(f, "    goto stop_spec;\n  }\n");
 	    } else {

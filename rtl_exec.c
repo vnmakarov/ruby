@@ -2817,15 +2817,13 @@ call_recv_f(rb_thread_t *th, rb_control_frame_t *cfp,
     call_common(th, cfp, calling, &cd->call_info, &cd->call_cache, call_start, blockiseq, recv, TRUE, FALSE);
 }
 
-/* Called only from JIT code to finish a call insn of ISEQ with BODY,
-   TYPE and TEMP_VARS_NUM.  Pass the result through RES.  Return
-   non-zero if we need to cancel JITed code execution and don't use
-   the code anymore. */
+/* Called only from JIT code to finish a call insn.  Pass VAL through
+   RES.  Return non-zero if we need to cancel JITed code execution and
+   don't use the code anymore. */
 static do_inline int
-mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
-		      const rb_iseq_t *iseq, struct rb_iseq_constant_body *body,
-		      int type, unsigned int temp_vars_num, VALUE *res) {
-    *res = mjit_vm_exec_0(th, iseq, body, type);
+mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp,
+		 unsigned int temp_vars_num, VALUE val, VALUE *res) {
+    *res = val;
     if (! mjit_ep_neq_bp_p && cfp->bp != cfp->ep) {
         set_default_sp_0(cfp, cfp->bp, temp_vars_num);
         return TRUE;
@@ -2834,19 +2832,31 @@ mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
     return (RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) != 0;
 }
  
+/* Called only from JIT code to finish a call insn of ISEQ with BODY,
+   TYPE and TEMP_VARS_NUM.  Pass the result through RES.  Return
+   non-zero if we need to cancel JITed code execution and don't use
+   the code anymore. */
+static do_inline int
+mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
+		      const rb_iseq_t *iseq, struct rb_iseq_constant_body *body,
+		      int type, unsigned int temp_vars_num, VALUE *res) {
+    VALUE v = mjit_vm_exec_0(th, iseq, body, type);
+    return mjit_call_finish(th, cfp, temp_vars_num, v, res);
+}
+ 
 /* The function is used to implement highly speculative call of method
-   ME with ISEQ with BODY, TYPE, PARAM_SIZE, LOCAL_SIZE,
-   TEMP_VARS_NUM, and STACK_MAX.  The call has ARGC, FLAG, BLOCKISEQ,
-   and reciever RECV.  The call params starts with CALL_START
-   location.  The call is simple if SIMPLE_P.  The call should put
-   the reciever on the stack if RECV_SET_P.  Return the result through
-   RES.  To generate a better code MJIT use the function when it knows
-   the value of the ISEQ parameters.  */
+   ME with ISEQ with BODY, TYPE, PARAM_SIZE, LOCAL_SIZE, and
+   STACK_MAX.  The call has ARGC, FLAG, BLOCKISEQ, and reciever RECV.
+   The call params starts with CALL_START location.  The call is
+   simple if SIMPLE_P.  The call should put the reciever on the stack
+   if RECV_SET_P.  The caller has CALLER_TEMP_VARS_NUM temps.  Return
+   the result through RES.  To generate a better code MJIT use the
+   function when it knows the value of the ISEQ parameters.  */
 static do_inline int
 mjit_iseq_call(rb_thread_t *th, rb_control_frame_t *cfp, const rb_callable_method_entry_t *me,
 	       const rb_iseq_t *iseq, struct rb_iseq_constant_body *body, VALUE *pc,
 	       int type, int param_size, int local_size,
-	       unsigned int temp_vars_num, unsigned int stack_max,
+	       unsigned int caller_temp_vars_num, unsigned int stack_max,
 	       int argc, unsigned int flag, sindex_t call_start, ISEQ blockiseq,
 	       VALUE recv, int recv_set_p, int simple_p, VALUE *res) {
     VALUE block_handler;
@@ -2855,7 +2865,7 @@ mjit_iseq_call(rb_thread_t *th, rb_control_frame_t *cfp, const rb_callable_metho
 		 blockiseq, recv, recv_set_p, simple_p);
     vm_call_iseq_setup_normal_0(th, cfp, me, iseq, recv, argc, block_handler,
 				pc, param_size, local_size, stack_max);
-    return mjit_call_iseq_finish(th, cfp, iseq, body, type, temp_vars_num, res);
+    return mjit_call_iseq_finish(th, cfp, iseq, body, type, caller_temp_vars_num, res);
 }
 
 /* A block call given by call data CD with args in temporary variables
@@ -3541,22 +3551,13 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
 		    Qundef);
 }
 
-/* Called only from JIT code to finish a call insn.  Pass VAL through
-   RES.  Undefined VAL means calling an iseq to get the value.  Return
-   non-zero if we need to cancel JITed code execution and don't use
-   the code anymore. */
+/* As mjit_call_finish but when VAL is undefined call mjit_vm_exec. */
 static do_inline int
-mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
+mjit_general_call_finish(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
     if (val == Qundef) {
 	val = mjit_vm_exec(th);
     }
-    *res = val;
-    if (! mjit_ep_neq_bp_p && cfp->bp != cfp->ep) {
-        set_default_sp(cfp, cfp->bp);
-        return TRUE;
-    }
-    set_default_sp(cfp, RTL_GET_BP(cfp));
-    return (RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) != 0;
+    return mjit_call_finish(th, cfp, cfp->iseq->body->temp_vars_num, val, res);
 }
  
 /* Called only from JIT code to implement a call insn and pass the
@@ -3569,7 +3570,7 @@ mjit_call_method(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_inf
     CALL_CACHE cc = &cd->call_cache;
     VALUE val = (*(cc)->call)(th, cfp, calling, ci, cc);
 
-    return mjit_call_finish(th, cfp, val, res);
+    return mjit_general_call_finish(th, cfp, val, res);
 }
 
 /* Called only from JIT code to implement a call insn and pass the
@@ -3582,7 +3583,7 @@ mjit_call_iseq_normal(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_callin
     CALL_CACHE cc = &cd->call_cache;
     VALUE val = vm_call_iseq_setup_normal(th, cfp, calling, ci, cc, 0, param, local);
 
-    return mjit_call_finish(th, cfp, val, res);
+    return mjit_general_call_finish(th, cfp, val, res);
 }
 
 /* Called only from JIT code to finish a call block insn and pass the
@@ -3590,7 +3591,7 @@ mjit_call_iseq_normal(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_callin
    code execution and don't use the code anymore.  */
 static do_inline int
 mjit_call_block_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
-    return mjit_call_finish(th, cfp, val, res);
+    return mjit_general_call_finish(th, cfp, val, res);
 }
 
 /* Called only from JIT code to check call cache attributes
@@ -3629,14 +3630,26 @@ mjit_call_setivar(VALUE obj, unsigned int index, VALUE val) {
     return TRUE;
 }
 
-/* Call vm_call_cfunc with the corresponding args and return the
-   result through VAL.  The CC should be not obsolete and refers for a
-   C function. */
-static do_inline void
-mjit_call_cfunc(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
-		const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE *val) {
-    *val = vm_call_cfunc(th, cfp, calling, ci, cc);
-    set_default_sp(cfp, RTL_GET_BP(cfp));
+/* Highly speculative call of a cfunc with method identifier MID and
+   method ME.  The call has FLAG, ARGC arguments staring with
+   CALL_START, BLOCKISEQ, reciever RECV, address KW_ARG where pointer
+   to keyword arg info is (if any).  The call is simple if SIMPLE_P.
+   The call should put the reciever on the stack if RECV_SET_P.  The
+   caller has CALLER_TEMP_VARS_NUM temps.  Return the call result
+   through VAL.  */
+static do_inline int
+mjit_call_cfunc(rb_thread_t *th, rb_control_frame_t *cfp,
+		ID mid, const rb_callable_method_entry_t *me,
+		unsigned int caller_temp_vars_num,
+		int argc, unsigned int flag, struct rb_call_info_kw_arg **kw_arg,
+		sindex_t call_start, ISEQ blockiseq,
+		VALUE recv, int recv_set_p, int simple_p, VALUE *val) {
+    VALUE v, block_handler;
+    
+    call_setup_0(th, cfp, &block_handler, argc, flag, call_start,
+		 blockiseq, recv, recv_set_p, simple_p);
+    v = vm_call_cfunc_0(th, cfp, recv, block_handler, argc, flag, kw_arg, mid, me);
+    return mjit_call_finish(th, cfp, caller_temp_vars_num, v, val);
 }
 
 /* NOP insn.  */
