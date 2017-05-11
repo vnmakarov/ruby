@@ -91,53 +91,66 @@ extern VALUE
 vm_call_cfunc(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling,
 	      const struct rb_call_info *ci, struct rb_call_cache *cc);
 
-/* Try to execute the current ISEQ of thread TH.  Use JIT code if it
-   is ready.  If it is not, add ISEQ to the compilation queue and
-   return Qundef.  The function might increase ISEQ compilation
-   priority by putting ISEQ at the queue head.  */
+/* TRUE if we are collecting statistics about JIT calls.  */
+static const char mjit_profile_p;
+
+/* Try to execute the current ISEQ with BODY and TYPE in thread TH.
+   Use JIT code if it is ready.  If it is not, add ISEQ to the
+   compilation queue and return Qundef.  The function might increase
+   ISEQ compilation priority by putting ISEQ at the queue head.  */
+static inline VALUE
+mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
+		    struct rb_iseq_constant_body *body, int type) {
+    unsigned long n_calls;
+    mjit_fun_t fun;
+    VALUE v;
+    
+    fun = body->jit_code;
+    n_calls = ++body->overall_calls;
+
+    if (UNLIKELY((ptrdiff_t) fun <= (ptrdiff_t) LAST_JIT_ISEQ_FUN)) {
+	switch ((enum rb_mjit_iseq_fun) fun) {
+	case NOT_ADDED_JIT_ISEQ_FUN:
+	    if (type != ISEQ_TYPE_METHOD && type != ISEQ_TYPE_BLOCK) {
+		body->jit_code = (void *) NEVER_JIT_ISEQ_FUN;
+		return Qundef;
+	    } else {
+		body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
+		mjit_add_iseq_to_process(iseq);
+		return Qundef;
+	    }
+	    break;
+	case NEVER_JIT_ISEQ_FUN:
+	    return Qundef;
+	case NOT_READY_AOT_ISEQ_FUN:
+	    if ((ptrdiff_t) (fun = mjit_get_iseq_fun(iseq)) <= (ptrdiff_t) LAST_JIT_ISEQ_FUN)
+		return Qundef;
+	    break;
+	case NOT_READY_JIT_ISEQ_FUN:
+	    if (n_calls == NUM_CALLS_TO_PRIORITY_INCREASE)
+		mjit_increase_iseq_priority(iseq);
+	    return Qundef;
+	default: /* To avoid a warning on LAST_JIT_ISEQ_FUN */
+	    break;
+	}
+    }
+    if (mjit_profile_p)
+	body->jit_calls++;
+    v = fun(th, th->cfp);
+    return v;
+}
+
+/* See the above function.  */
 static inline VALUE
 mjit_execute_iseq(rb_thread_t *th) {
     rb_iseq_t *iseq;
     struct rb_iseq_constant_body *body;
-    unsigned long n_calls;
-    mjit_fun_t fun;
-    VALUE v;
     
     if (! mjit_init_p)
 	return Qundef;
     iseq = th->cfp->iseq;
     body = iseq->body;
-    fun = body->jit_code;
-    n_calls = ++body->overall_calls;
-
-    switch ((enum rb_mjit_iseq_fun) fun) {
-    case NOT_ADDED_JIT_ISEQ_FUN:
-	if (body->type != ISEQ_TYPE_METHOD
-	    && body->type != ISEQ_TYPE_BLOCK) {
-	    body->jit_code = (void *) NEVER_JIT_ISEQ_FUN;
-	    return Qundef;
-	} else {
-	    body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
-	    mjit_add_iseq_to_process(iseq);
-	    return Qundef;
-	}
-	break;
-    case NEVER_JIT_ISEQ_FUN:
-	return Qundef;
-    case NOT_READY_AOT_ISEQ_FUN:
-	if ((ptrdiff_t) (fun = mjit_get_iseq_fun(iseq)) <= (ptrdiff_t) LAST_JIT_ISEQ_FUN)
-	    return Qundef;
-	break;
-    case NOT_READY_JIT_ISEQ_FUN:
-	if (n_calls == NUM_CALLS_TO_PRIORITY_INCREASE)
-	    mjit_increase_iseq_priority(iseq);
-	return Qundef;
-    default: /* To avoid a warning on LAST_JIT_ISEQ_FUN */
-	break;
-    }
-    body->jit_calls++;
-    v = fun(th, th->cfp);
-    return v;
+    return mjit_execute_iseq_0(th, iseq, body, body->type);
 }
 
 /* Queue AOT compilation of ISEQ right after forming it.  */
@@ -148,8 +161,8 @@ mjit_aot_process(rb_iseq_t *iseq) {
     if (! mjit_init_p || ! mjit_opts.aot)
 	return;
 
-    if (body->type != ISEQ_TYPE_METHOD
-	&& body->type != ISEQ_TYPE_BLOCK) {
+    if (body->type != ISEQ_TYPE_METHOD && body->type != ISEQ_TYPE_BLOCK
+	&& body->type != ISEQ_TYPE_TOP && body->type != ISEQ_TYPE_MAIN) {
 	body->jit_code = (void *) NEVER_JIT_ISEQ_FUN;
     } else {
 	body->jit_code = (void *) NOT_READY_AOT_ISEQ_FUN;

@@ -822,15 +822,17 @@ refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
     return vm_call0(GET_THREAD(), obj, mid, argc, argv, me);
 }
 
-void
-vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
-			  struct rb_calling_info *calling, const struct rb_call_info *ci, rb_iseq_t *blockiseq, const int is_super)
+/* We use the function to provide constant propagation of known parameters for MJIT.  */
+static inline void
+vm_caller_setup_arg_block_0(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
+			    VALUE *block_handler, unsigned int flag, rb_iseq_t *blockiseq,
+			    const int is_super)
 {
-    if (ci->flag & VM_CALL_ARGS_BLOCKARG) {
+    if (flag & VM_CALL_ARGS_BLOCKARG) {
         VALUE block_code = *(--reg_cfp->sp);
 
 	if (NIL_P(block_code)) {
-	    calling->block_handler = VM_BLOCK_HANDLER_NONE;
+	    *block_handler = VM_BLOCK_HANDLER_NONE;
 	}
 	else {
 	    if (SYMBOL_P(block_code) && rb_method_basic_definition_p(rb_cSymbol, idTo_proc)) {
@@ -845,26 +847,33 @@ vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
 		    }
 		    block_code = func;
 		}
-		calling->block_handler = block_code;
+		*block_handler = block_code;
 	    }
 	    else {
-		calling->block_handler = vm_to_proc(block_code);
+		*block_handler = vm_to_proc(block_code);
 	    }
 	}
     }
     else if (blockiseq != NULL) { /* likely */
 	struct rb_captured_block *captured = VM_CFP_TO_CAPTURED_BLOCK(reg_cfp);
 	captured->code.iseq = blockiseq;
-	calling->block_handler = VM_BH_FROM_ISEQ_BLOCK(captured);
+	*block_handler = VM_BH_FROM_ISEQ_BLOCK(captured);
     }
     else {
 	if (is_super) {
-	    calling->block_handler = GET_BLOCK_HANDLER();
+	    *block_handler = GET_BLOCK_HANDLER();
 	}
 	else {
-	    calling->block_handler = VM_BLOCK_HANDLER_NONE;
+	    *block_handler = VM_BLOCK_HANDLER_NONE;
 	}
     }
+}
+
+void
+vm_caller_setup_arg_block(const rb_thread_t *th, rb_control_frame_t *reg_cfp,
+			  struct rb_calling_info *calling, const struct rb_call_info *ci, rb_iseq_t *blockiseq, const int is_super)
+{
+    vm_caller_setup_arg_block_0(th, reg_cfp, &calling->block_handler, ci->flag, blockiseq, is_super);
 }
 
 #define IS_ARGS_SPLAT(ci)   ((ci)->flag & VM_CALL_ARGS_SPLAT)

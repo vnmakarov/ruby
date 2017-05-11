@@ -1239,31 +1239,53 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	default:
 	    break;
 	}
-    } else if (features.call_p && !tcp->safe_p && local_cc.call == vm_call_cfunc) {
+    } else if (features.call_p && !tcp->safe_p
+	       && (local_cc.call == vm_call_cfunc || vm_call_iseq_setup_normal_p(local_cc.call))) {
 	int simple_p = (insn == BIN(simple_call)
 			|| insn == BIN(simple_call_self) || insn == BIN(simple_call_recv));
 	int self_p = insn == BIN(call_self) || insn == BIN(simple_call_self);
 	ptrdiff_t call_start = code[pos + 2];
-	ptrdiff_t recv = (insn == BIN(call_recv)
-			  ? (ptrdiff_t) code[pos + 4] : insn == BIN(simple_call_recv)
-			  ? (ptrdiff_t) code[pos + 3] : call_start);
+	ptrdiff_t recv_op = (insn == BIN(call_recv)
+			     ? (ptrdiff_t) code[pos + 4] : insn == BIN(simple_call_recv)
+			     ? (ptrdiff_t) code[pos + 3] : call_start);
+	const char *rec;
 	
-	if (local_cc.me->def->type != VM_METHOD_TYPE_CFUNC) abort();
 	if (tcp->use_temp_vars_p)
 	    /* Generate copying temps to the stack.  */
 	    generate_param_setup(f, code, pos, features.recv_p);
-	fprintf(f, " {\n");
-	output_const_ci(f, ci);
-	output_const_cc(f, local_cc);
-	fprintf(f, "  if (mjit_check_cc_attr_p(*%s, cc.method_state, cc.class_serial)) {\n",
-		self_p ? "&cfp->self" : get_op_str(buf, recv, tcp));
+	if (local_cc.call == vm_call_cfunc) {
+	    fprintf(f, " {\n");
+	    output_const_ci(f, ci);
+	    output_const_cc(f, local_cc);
+	}
+	rec = (self_p ? "&cfp->self" : get_op_str(buf, recv_op, tcp));
+	fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu)) {\n",
+		rec, (unsigned long long) local_cc.method_state,
+		(unsigned long long) local_cc.class_serial);
 	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	fprintf(f, "    goto stop_spec;\n  }\n");
-	fprintf(f, "  call_setup(th, cfp, &calling, &ci, &cc, %ld, 0x%"PRIxVALUE ", *%s, %d, %d);\n",
-		call_start, simple_p ? (VALUE) 0 : code[pos + 3],
-		self_p ? "&cfp->self" : get_op_str(buf, recv, tcp), ! features.recv_p, simple_p);
-	fprintf(f, "  mjit_call_cfunc(th, cfp, &calling, &ci, &cc, %s);\n }\n",
-		get_op_str(buf, call_start, tcp));
+	rec = (self_p ? "&cfp->self" : get_op_str(buf, recv_op, tcp));
+	if (local_cc.call == vm_call_cfunc) {
+	    fprintf(f, "  call_setup(th, cfp, &calling, &ci, %ld, 0x%"PRIxVALUE ", *%s, %d, %d);\n",
+		    call_start, simple_p ? (VALUE) 0 : code[pos + 3],
+		    rec, ! features.recv_p, simple_p);
+	    fprintf(f, "  mjit_call_cfunc(th, cfp, &calling, &ci, &cc, %s);\n }\n",
+		    get_op_str(buf, call_start, tcp));
+	} else {
+	    const rb_iseq_t *iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
+	    struct rb_iseq_constant_body *body = iseq->body;
+
+	    fprintf(f, "  if (mjit_iseq_call(th, cfp, (void *) 0x%"PRIxVALUE ", (void *) 0x%"PRIxVALUE
+		    ", (void *) 0x%"PRIxVALUE ", (void *) 0x%"PRIxVALUE
+		    ", %d, %d, %d, %d, %u, %d, 0x%x, %ld, (void *) 0x%"PRIxVALUE
+		    ", *%s, %d, %d",
+		    (VALUE) local_cc.me, (VALUE) iseq, (VALUE) body, (VALUE) body->iseq_encoded,
+		    body->type, body->param.size, body->local_table_size,
+		    body->temp_vars_num, body->stack_max,
+		    ci->orig_argc, ci->flag, call_start, simple_p ? 0 : code[pos + 3],
+		    rec, !features.recv_p, simple_p);
+	    fprintf(f,  ", %s)) {\n    goto stop_spec;\n  }\n", get_op_str(buf, call_start, tcp));
+	}
 	if (tcp->use_temp_vars_p)
 	    generate_result_on_stack(f, code, pos);
     } else {
@@ -1399,7 +1421,6 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 		fprintf(f, "    goto stop_spec;\n  }\n");
 	    } else if (!tcp->safe_p && vm_call_iseq_setup_normal_p(local_cc.call)) {
 		const rb_iseq_t *iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
-		
 		fprintf(f, "  if (((CALL_CACHE) 0x%"PRIxVALUE ")->call != 0x%"PRIxVALUE ")",
 			(VALUE) cc, (VALUE) local_cc.call);
 		fprintf(f, " {\n  %s    goto stop_spec;\n  }\n",
@@ -1453,6 +1474,7 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	    b->ep_neq_bp_p = 1;
 	    break;
 	}
+    fprintf(f, "static const char mjit_profile_p = %d;\n", mjit_opts.profile);
     fprintf(f, "static const char mjit_trace_p = %d;\n", b->spec_state.trace_p);
     fprintf(f, "static const char mjit_bop_redefined_p = %d;\n", b->spec_state.bop_redefined_p);
     fprintf(f, "static const char mjit_ep_neq_bp_p = %d;\n", b->ep_neq_bp_p);

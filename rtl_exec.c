@@ -100,8 +100,24 @@ var_assign(rb_control_frame_t *cfp, VALUE *res, ptrdiff_t res_ind, VALUE v)
     }
 }
 
-/* Execute the current iseq of TH and return the result.  Try to use
-   JIT code first.  It is called only from a JIT code.  */
+
+/* Execute the current iseq ISEQ of TH and return the result.  The
+   iseq has BODY and TYPE.  Try to use JIT code first.  It is called
+   only from a JIT code.  To generate a better code MJIT use the
+   function when it knows the value of the ISEQ parameters.  */
+static do_inline VALUE
+mjit_vm_exec_0(rb_thread_t *th, rb_iseq_t *iseq,
+	       struct rb_iseq_constant_body *body, int type) {
+  VALUE result;
+  
+  VM_ASSERT(in_mjit_p);
+  if ((result = mjit_execute_iseq_0(th, iseq, body, type)) == Qundef)
+      result = vm_exec(th, TRUE);
+  return result;
+}
+
+/* See the above function.  We use the function when the current iseq
+   is unknown or change.  */
 static do_inline VALUE
 mjit_vm_exec(rb_thread_t *th) {
   VALUE result;
@@ -112,12 +128,19 @@ mjit_vm_exec(rb_thread_t *th) {
   return result;
 }
 
-/* Set sp in CFP right after the last temporary variable in frame CFP
-   with bp value given by BP.  That is a default stack pointer
-   value.  */
+/* Set sp in CFP right after TEMP_VARS_NUM variable in frame CFP with
+   bp value given by BP.  */
+static do_inline void
+set_default_sp_0(rb_control_frame_t *cfp, VALUE *bp,
+		 unsigned int temp_vars_num) {
+    cfp->sp = bp + 1 + temp_vars_num;
+}
+
+/* Set sp in CFP right after the last temporary variable of the frame.
+   That is a default stack pointer value.  */
 static do_inline void
 set_default_sp(rb_control_frame_t *cfp, VALUE *bp) {
-    cfp->sp = bp + 1 + cfp->iseq->body->temp_vars_num;
+    set_default_sp_0(cfp, bp, cfp->iseq->body->temp_vars_num);
 }
 
 /* Call method given by CALLING, CI, and CC in the current thread TH
@@ -2664,33 +2687,43 @@ str_freeze_call_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, VALUE s
 		  ? str : rb_funcall(rb_str_resurrect(str), idFreeze, 0)));
 }
 
-/* Initiale a call of method given by CI and CC using CALLING.  The
+/* Initiate a call of method with caller ORIG_ARGC and FLAG.  The
    receiver and arguments are in temporary variables starting with
    location with index CALL_START.  If SIMPLE_P is true, a block for
    the call is not given.  Otherwise, the block is given by BLOCKISEQ.
    If RECV_SET_P is TRUE, the receiver is not on the stack and it is
    given by RECV.  Put it on the stack (a reserved location) in this
-   case.  */
+   case.  Return block (if any) of the call through BLOCK_HANDLER.  */
 static do_inline void
-call_setup(rb_thread_t *th, rb_control_frame_t *cfp,
-	   struct rb_calling_info *calling, CALL_INFO ci, CALL_CACHE cc, sindex_t call_start,
-	   ISEQ blockiseq, VALUE recv,
-	   int recv_set_p, int simple_p)
+call_setup_0(rb_thread_t *th, rb_control_frame_t *cfp,
+	     VALUE *block_handler, int orig_argc, unsigned int flag, sindex_t call_start,
+	     ISEQ blockiseq, VALUE recv, int recv_set_p, int simple_p)
 {
     VALUE *top = get_temp_addr(cfp, call_start);
 
     if (recv_set_p)
 	*top = recv;
-    cfp->sp = top + ci->orig_argc + 1;
+    cfp->sp = top + orig_argc + 1;
     if (simple_p)
-	calling->block_handler = VM_BLOCK_HANDLER_NONE;
+	*block_handler = VM_BLOCK_HANDLER_NONE;
     else {
-	if (ci->flag & VM_CALL_ARGS_BLOCKARG)
+	if (flag & VM_CALL_ARGS_BLOCKARG)
 	    cfp->sp++;
-	vm_caller_setup_arg_block(th, cfp, calling, ci, blockiseq, FALSE);
+	vm_caller_setup_arg_block_0(th, cfp, block_handler, flag, blockiseq, FALSE);
     }
+}
+
+/* Mostly the above but initiate a call of method given by CI using CALLING.  */
+static do_inline void
+call_setup(rb_thread_t *th, rb_control_frame_t *cfp,
+	   struct rb_calling_info *calling, CALL_INFO ci, sindex_t call_start,
+	   ISEQ blockiseq, VALUE recv,
+	   int recv_set_p, int simple_p)
+{
+    call_setup_0(th, cfp, &calling->block_handler, ci->orig_argc, ci->flag, call_start,
+		 blockiseq, recv, recv_set_p, simple_p);
     calling->argc = ci->orig_argc;
-    calling->recv = *top;
+    calling->recv = *get_temp_addr(cfp, call_start);
 }
 
 /* As above but also update CC (if it is obsolete) by calling
@@ -2701,7 +2734,7 @@ call_common(rb_thread_t *th, rb_control_frame_t *cfp,
 	    ISEQ blockiseq, VALUE recv,
 	    int recv_set_p, int simple_p)
 {
-    call_setup(th, cfp, calling, ci, cc, call_start, blockiseq, recv, recv_set_p, simple_p);
+    call_setup(th, cfp, calling, ci, call_start, blockiseq, recv, recv_set_p, simple_p);
     vm_search_method(ci, cc, calling->recv);
 }
 
@@ -2782,6 +2815,47 @@ call_recv_f(rb_thread_t *th, rb_control_frame_t *cfp,
     VALUE recv = *recv_op;
 
     call_common(th, cfp, calling, &cd->call_info, &cd->call_cache, call_start, blockiseq, recv, TRUE, FALSE);
+}
+
+/* Called only from JIT code to finish a call insn of ISEQ with BODY,
+   TYPE and TEMP_VARS_NUM.  Pass the result through RES.  Return
+   non-zero if we need to cancel JITed code execution and don't use
+   the code anymore. */
+static do_inline int
+mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
+		      const rb_iseq_t *iseq, struct rb_iseq_constant_body *body,
+		      int type, unsigned int temp_vars_num, VALUE *res) {
+    *res = mjit_vm_exec_0(th, iseq, body, type);
+    if (! mjit_ep_neq_bp_p && cfp->bp != cfp->ep) {
+        set_default_sp_0(cfp, cfp->bp, temp_vars_num);
+        return TRUE;
+    }
+    set_default_sp_0(cfp, RTL_GET_BP(cfp), temp_vars_num);
+    return (RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) != 0;
+}
+ 
+/* The function is used to implement highly speculative call of method
+   ME with ISEQ with BODY, TYPE, PARAM_SIZE, LOCAL_SIZE,
+   TEMP_VARS_NUM, and STACK_MAX.  The call has ARGC, FLAG, BLOCKISEQ,
+   and reciever RECV.  The call params starts with CALL_START
+   location.  The call is simple if SIMPLE_P.  The call should put
+   the reciever on the stack if RECV_SET_P.  Return the result through
+   RES.  To generate a better code MJIT use the function when it knows
+   the value of the ISEQ parameters.  */
+static do_inline int
+mjit_iseq_call(rb_thread_t *th, rb_control_frame_t *cfp, const rb_callable_method_entry_t *me,
+	       const rb_iseq_t *iseq, struct rb_iseq_constant_body *body, VALUE *pc,
+	       int type, int param_size, int local_size,
+	       unsigned int temp_vars_num, unsigned int stack_max,
+	       int argc, unsigned int flag, sindex_t call_start, ISEQ blockiseq,
+	       VALUE recv, int recv_set_p, int simple_p, VALUE *res) {
+    VALUE block_handler;
+    
+    call_setup_0(th, cfp, &block_handler, argc, flag, call_start,
+		 blockiseq, recv, recv_set_p, simple_p);
+    vm_call_iseq_setup_normal_0(th, cfp, me, iseq, recv, argc, block_handler,
+				pc, param_size, local_size, stack_max);
+    return mjit_call_iseq_finish(th, cfp, iseq, body, type, temp_vars_num, res);
 }
 
 /* A block call given by call data CD with args in temporary variables
@@ -3569,6 +3643,3 @@ mjit_call_cfunc(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info
 static do_inline void
 nop_f(rb_control_frame_t *cfp) {
 }
-
-/*  LocalWords:  vm cfunc args
- */

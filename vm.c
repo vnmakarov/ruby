@@ -324,6 +324,10 @@ static const char mjit_ep_neq_bp_p;
 
 #ifndef MJIT_HEADER
 
+/* For calls from the interpreter we assume collecting the JIT code
+   call statistics.  */
+static const char mjit_profile_p = 1;
+
 static const char mjit_trace_p = 1;
 static const char mjit_bop_redefined_p = 1;
 static const char mjit_ep_neq_bp_p = 1;

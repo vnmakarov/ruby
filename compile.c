@@ -5385,7 +5385,9 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	}
 	else if (iseq->body->type == ISEQ_TYPE_BLOCK) {
 	    int op_result, temp_vars_num;
-	    iseq->body->break_next_redo_raise_p = TRUE;
+
+	    if (iseq->body->parent_iseq != NULL)
+		iseq->body->parent_iseq->body->break_next_redo_raise_p = TRUE;
 	break_by_insn:
 	    temp_vars_num = *curr_temp_vars_num;
 	    op_result = anywhere_result;
