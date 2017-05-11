@@ -656,7 +656,7 @@ op_val_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, rindex_t r
     var_assign(cfp, res, res_ind, val);
     if (! in_mjit_p)
 	return 0;
-    if ((RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) == 0)
+    if ((cfp->ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_FLAG_CANCEL) == 0)
 	return 0;
     mjit_change_iseq(cfp->iseq);
     return 1;
@@ -672,7 +672,7 @@ op_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val) {
     }
     if (! in_mjit_p)
 	return 0;
-    if ((RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) == 0)
+    if ((cfp->ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_FLAG_CANCEL) == 0)
 	return 0;
     mjit_change_iseq(cfp->iseq);
     return 1;
@@ -1386,7 +1386,7 @@ do_bcmp(rb_thread_t *th, rb_control_frame_t *cfp,
     if (v == Qundef) {
 	v = mjit_vm_exec(th);
     }
-    if ((RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) == 0)
+    if ((cfp->ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_FLAG_CANCEL) == 0)
 	*val = v;
     else
 	*val = Qundef;
@@ -2829,7 +2829,7 @@ mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp,
         return TRUE;
     }
     set_default_sp_0(cfp, RTL_GET_BP(cfp), temp_vars_num);
-    return (RTL_GET_BP(cfp)[0] & VM_FRAME_FLAG_CANCEL) != 0;
+    return (cfp->ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_FLAG_CANCEL) != 0;
 }
  
 /* Called only from JIT code to finish a call insn of ISEQ with BODY,

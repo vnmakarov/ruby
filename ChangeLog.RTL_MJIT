@@ -1,5 +1,11 @@
 2017-05-11  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* rtl_exec.c (op_val_call_end, op_call_end, do_bcmp): Use ep and
+	VM_ENV_DATA_INDEX_FLAGS to access the flags.
+	(mjit_call_finish): Ditto.
+
+2017-05-11  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (output_const_ci, output_const_cc): Remove.
 	(translate_iseq_insn): Change cfunc call generation.  Move attr
 	access generation up to avoid a standard call generation.  Use
