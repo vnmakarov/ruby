@@ -217,6 +217,12 @@ struct rb_mjit_batch {
     double time_start;
 };
 
+/* Info about insn resulted into a mutation.  */
+struct mjit_mutation_insns {
+    enum ruby_vminsn_type insn;
+    size_t pc; /* the relative insn pc.  */
+};
+
 /* The structure describing an ISEQ in the batch.  */
 struct rb_mjit_batch_iseq {
     /* Order number of all batch ISEQs.  It is unique even for ISEQs
@@ -233,6 +239,11 @@ struct rb_mjit_batch_iseq {
     /* Number of iseq calls, number of them in JIT mode, and number of
        JIT calls with speculation failures.  */
     unsigned long overall_calls, jit_calls, failed_jit_calls;
+    /* Number of JIT code mutations (and cancellations).  */
+    int jit_mutations_num;
+    /* Array of structures describing insns which initiated mutations.
+       The array has JIT_MUTATIONS_NUM defined elements.  */
+    struct mjit_mutation_insns *mutation_insns;
 };
 
 /* Defined in the client thread before starting MJIT threads:  */
@@ -1112,6 +1123,16 @@ generate_param_setup(FILE *f, const VALUE *code, size_t pos, int recv_p) {
 	fprintf(f, "  *get_temp_addr(cfp, %d) = t%d;\n", -call_start - i, call_start + i - 1);
 }
 
+/* Return a string which is C assignment of failed_insn_pc of insn
+   with POS.  Use BUF as a string container.  */
+static const char *
+set_failed_insn_str(char *buf, size_t pos) {
+    if (! mjit_opts.profile)
+	return "";
+    sprintf(buf, "failed_insn_pc = %lu; ", pos);
+    return buf;
+}
+
 /* If SET_P is FALSE, return empty string.  Otherwise, return string
    representing C code setting cfp pc to PC.  Use BUF as the string
    container.  */
@@ -1123,6 +1144,18 @@ generate_set_pc(int set_p, char *buf, const VALUE *pc) {
     return buf;
 }
 
+/* Return number of mutations which insn with POS from BI iseq
+   caused.  */
+static int
+get_insn_mutation_num(struct rb_mjit_batch_iseq *bi, size_t pos) {
+    int i, num = 0;
+    
+    for (i = 0; i < bi->jit_mutations_num; i++)
+	if (pos == bi->mutation_insns[i].pc)
+	    num++;
+    return num;
+}
+
 /* Output C code implementing an iseq BI insn starting with position
    POS to file F.  Generate the code according to TCP.  */
 static int
@@ -1131,20 +1164,21 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     rb_iseq_t *iseq = bi->iseq;
     const VALUE *code = iseq->body->iseq_encoded;
     VALUE insn, op;
-    int len, i, mjit_spec_p;
+    int len, i, mjit_spec_p, insn_mutation_num;
     const char *types;
     const char *iname;
     struct insn_fun_features features;
     struct rb_call_cache local_cc;
     CALL_CACHE cc = NULL;
     CALL_INFO ci = NULL;
-    char buf[80];
+    char buf[150];
 
+    insn_mutation_num = get_insn_mutation_num(bi, pos);
     insn = code[pos];
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
     insn = rb_vm_insn_addr2insn((void *) insn);
 #endif
-    if (tcp->safe_p)
+    if (tcp->safe_p || insn_mutation_num != 0)
 	insn = get_safe_insn(insn);
     len = insn_len(insn);
     types = insn_op_types(insn);
@@ -1156,7 +1190,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     fprintf(f, "  jit_insns_num++;\n");
 #endif
     get_insn_fun_features(insn, &features);
-    mjit_spec_p = !tcp->safe_p && features.mjit_spec_p;
+    mjit_spec_p = !tcp->safe_p && features.mjit_spec_p && insn_mutation_num == 0;
     fprintf(f, "%s", generate_set_pc(TRUE, buf, &code[pos] + len));
     if (features.call_p) {
 	/* CD is always the 1st operand.  */
@@ -1217,14 +1251,14 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	            iname, code[pos + 1], code[pos + 2]);
 	    fprintf(f, "  if (mjit_call_block_end(th, cfp, val, %s)) {\n",
 	            get_op_str(buf, code[pos + 2], tcp));
-	    fprintf(f, "    goto stop_spec;\n  }\n");
+	    fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    if (tcp->use_temp_vars_p)
 		generate_result_on_stack(f, code, pos);
 	    break;
 	default:
 	    break;
 	}
-    } else if (features.call_p && !tcp->safe_p
+    } else if (features.call_p && !tcp->safe_p && insn_mutation_num == 0
 	       && (local_cc.call == vm_call_cfunc || vm_call_iseq_setup_normal_p(local_cc.call))) {
 	int simple_p = (insn == BIN(simple_call)
 			|| insn == BIN(simple_call_self) || insn == BIN(simple_call_recv));
@@ -1244,7 +1278,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 		rec, (unsigned long long) local_cc.method_state,
 		(unsigned long long) local_cc.class_serial);
 	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
-	fprintf(f, "    goto stop_spec;\n  }\n");
+	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	rec = (self_p ? "&cfp->self" : get_op_str(buf, recv_op, tcp));
 	if (local_cc.call == vm_call_cfunc) {
 	    fprintf(f, "  if (mjit_call_cfunc(th, cfp, %llu, (void *) 0x%"PRIxVALUE
@@ -1267,10 +1301,11 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 		    ci->orig_argc, ci->flag, call_start, block_iseq,
 		    rec, !features.recv_p, simple_p);
 	}
-	fprintf(f,  ", %s)) {\n    goto stop_spec;\n  }\n", get_op_str(buf, call_start, tcp));
+	fprintf(f, ", %s)) {\n", get_op_str(buf, call_start, tcp));
+	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	if (tcp->use_temp_vars_p)
 	    generate_result_on_stack(f, code, pos);
-    } else if (! tcp->safe_p && features.call_p
+    } else if (!tcp->safe_p && features.call_p && insn_mutation_num == 0
 	       && (local_cc.call == vm_call_ivar || local_cc.call == vm_call_attrset)
 	       && local_cc.aux.index > 0) {
 	ptrdiff_t call_start = code[pos + 2];
@@ -1290,7 +1325,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    fprintf(f, "*%s)) {\n", get_op_str(buf, call_start - 1, tcp));
 	}
 	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
-	fprintf(f, "    goto stop_spec;\n  }\n");
+	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
     } else {
 	if (tcp->use_temp_vars_p && features.call_p)
 	    /* Generate copying temps to the stack.  */
@@ -1371,13 +1406,14 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    }
 	}
 	if (features.op_end_p)
-	    fprintf(f, ")) {\n    goto stop_spec;\n  }\n");
+	    fprintf(f, ")) {\n    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	else if (features.speculative_p || mjit_spec_p) {
 	    if (features.jmp_p)
 		fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n");
 	    else
 		fprintf(f, ")) {\n");
-	    fprintf(f, "  %s    goto stop_spec;\n  }\n", generate_set_pc(TRUE, buf, &code[pos]));
+	    fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
+	    fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    if (features.jmp_p) {
 		unsigned long dest = pos + len + code[pos + 2];
 		fprintf(f, "  if (flag) goto l%ld;\n", dest);
@@ -1391,23 +1427,23 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    
 	    fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n");
 	    fprintf(f, "    if (flag)%s", generate_set_pc(TRUE, buf, &code[dest]));
-	    fprintf(f, "    goto stop_spec;\n  }\n");
+	    fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    fprintf(f, "  if (flag) goto l%lu;\n", dest);
 	}
 	if (features.call_p) {
 	    ptrdiff_t call_start = code[pos + 2];
 	    
-	    if (!tcp->safe_p && vm_call_iseq_setup_normal_p(local_cc.call)) {
+	    if (!tcp->safe_p && vm_call_iseq_setup_normal_p(local_cc.call) && insn_mutation_num == 0) {
 		const rb_iseq_t *callee_iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
 
 		fprintf(f, "  if (((CALL_CACHE) 0x%"PRIxVALUE ")->call != 0x%"PRIxVALUE ")",
 			(VALUE) cc, (VALUE) local_cc.call);
-		fprintf(f, " {\n  %s    goto stop_spec;\n  }\n",
-			generate_set_pc(TRUE, buf, &code[pos]));
+		fprintf(f, " {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
+		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 		fprintf(f, "  if (mjit_call_iseq_normal(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %d, %d, %s)) {\n",
 			code[pos + 1], callee_iseq->body->param.size, callee_iseq->body->local_table_size,
 			get_op_str(buf, call_start, tcp));
-		fprintf(f, "    goto stop_spec;\n  }\n");
+		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    } else {
 		fprintf(f, "  if (mjit_call_method(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %s)) {\n",
 			code[pos + 1], get_op_str(buf, call_start, tcp));
@@ -1449,7 +1485,7 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
     setup_global_spec_state(&b->spec_state);
     b->ep_neq_bp_p = 0;
     for (bi = b->first; bi != NULL; bi = bi->next)
-	if (bi->iseq && bi->iseq->body->jit_mutations_num >= mjit_opts.max_mutations) {
+	if (bi->iseq && bi->jit_mutations_num >= mjit_opts.max_mutations) {
 	    b->ep_neq_bp_p = 1;
 	    break;
 	}
@@ -1465,7 +1501,7 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	if (bi->iseq == NULL)
 	    continue;
 	body = bi->iseq->body;
-	tc.safe_p = body->jit_mutations_num >= mjit_opts.max_mutations;
+	tc.safe_p = bi->jit_mutations_num >= mjit_opts.max_mutations;
 	tc.use_temp_vars_p = ! body->break_next_redo_raise_p;
 	if (tc.use_temp_vars_p) {
 	    const struct iseq_catch_table *ct = body->catch_table;
@@ -1493,6 +1529,8 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	fprintf(f, "VALUE %s(rb_thread_t *th, rb_control_frame_t *cfp) {\n",
 		get_batch_iseq_fname(bi, mjit_fname_holder));
 	fprintf(f, "  struct rb_calling_info calling;\n  VALUE val; int flag;\n");
+	fprintf(f, "  static const char mutation_num = %d;\n", bi->jit_mutations_num);
+	fprintf(f, "  size_t failed_insn_pc;\n");
 	if (tc.use_local_vars_p)
 	    for (i = 0; i < body->local_table_size; i++)
 		fprintf(f, "  VALUE v%lu;\n", i);
@@ -1518,6 +1556,7 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	for (i = 0; i < size;)
 	    i += translate_iseq_insn(f, i, bi, &tc);
 	fprintf(f, "stop_spec:\n");
+	fprintf(f, "  mjit_store_failed_spec_insn(cfp->iseq, failed_insn_pc, mutation_num);\n");
 	fprintf(f, "  mjit_change_iseq(cfp->iseq);\n");
 	fprintf(f, "cancel:\n");
 	if (tc.use_local_vars_p) {
@@ -1902,6 +1941,8 @@ create_batch_iseq(rb_iseq_t *iseq) {
 	bi->label = get_string(RSTRING_PTR(iseq->body->location.label));
 	bi->overall_calls = bi->jit_calls = bi->failed_jit_calls = 0;
     }
+    bi->jit_mutations_num = 0;
+    bi->mutation_insns = xmalloc(sizeof (struct mjit_mutation_insns) * (mjit_opts.max_mutations + 1));
     return bi;
 }
 
@@ -1991,6 +2032,7 @@ finish_batches(void) {
   }
   for (bi = free_batch_iseq_list; bi != NULL; bi = bi_next) {
       bi_next = bi->next;
+      free(bi->mutation_insns);
       free(bi);
   }
   free_batch_list = NULL;
@@ -2153,13 +2195,13 @@ mjit_redo_iseq(rb_iseq_t *iseq) {
     struct rb_mjit_batch_iseq *bi = iseq->body->batch_iseq;
     struct rb_mjit_batch *b = bi->batch;
 
-    verbose("Iseq #%d (so far mutations=%d) in batch %d is canceled",
-	    bi->num, iseq->body->jit_mutations_num, b->num);
     assert(b->status == BATCH_LOADED
 	   && b->handle != NULL && b->active_iseqs_num > 0);
+    verbose("Iseq #%d (so far mutations=%d) in batch %d is canceled",
+	    bi->num, bi->jit_mutations_num, b->num);
     remove_iseq_from_batch(b, bi);
-    iseq->body->batch_iseq = NULL;
-    iseq->body->jit_mutations_num++;
+    // iseq->body->batch_iseq = NULL;
+    bi->jit_mutations_num++;
     if (b->active_iseqs_num <= 0) {
 #if 0
 	/* TODO: Implement unloading.  We need to check that we left
@@ -2206,6 +2248,19 @@ mjit_get_iseq_fun(const rb_iseq_t *iseq) {
     if (b->status == BATCH_FAILED)
 	return NULL;
     return bi->iseq->body->jit_code;
+}
+
+/* Called when an ISEQ insn with a relative PC caused MUTATION_NUM-th
+   mutation.  We just collect this info in mutation_insns array. */
+void
+mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num)  {
+    struct rb_mjit_batch_iseq *bi = iseq->body->batch_iseq;
+    VALUE insn = iseq->body->iseq_encoded[pc];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+    insn = rb_vm_insn_addr2insn((void *) insn);
+#endif
+    bi->mutation_insns[mutation_num].pc = pc;
+    bi->mutation_insns[mutation_num].insn = insn;
 }
 
 RUBY_SYMBOL_EXPORT_END
@@ -2424,9 +2479,10 @@ print_statistics(void) {
     struct rb_mjit_batch *b;
     struct rb_mjit_batch_iseq *bi;
 
-    fprintf(stderr, "Name                                          Batch Iseq  Size     Calls/JIT Calls           Spec Fails\n");
+    fprintf(stderr, "Name                                          Batch Iseq  Size     Calls/JIT Calls               Spec Fails\n");
     for (b = done_batches.head; b != NULL; b = b->next) {
 	for (bi = b->first; bi != NULL; bi = bi->next) {
+	    int i;
 	    unsigned long overall_calls
 		= (bi->iseq == NULL ? bi->overall_calls : bi->iseq->body->overall_calls);
 	    unsigned long jit_calls
@@ -2434,10 +2490,14 @@ print_statistics(void) {
 	    unsigned long failed_jit_calls
 		= (bi->iseq == NULL ? bi->jit_calls : bi->iseq->body->failed_jit_calls);
 
-	    fprintf(stderr, "%-45s %5d %4d %5lu %9lu/%-9lu (%-5.2f%%)   %9lu (%-5.2f%%)\n",
+	    fprintf(stderr, "%-45s %5d %4d %5lu %9lu/%-9lu (%-5.2f%%)   %9lu (%6.2f%%)",
 		    bi->label, b->num, bi->num, bi->iseq_size,
 		    overall_calls, jit_calls, overall_calls == 0 ? 0.0 : jit_calls * 100.0 / overall_calls,
 		    failed_jit_calls, jit_calls == 0 ? 0.0 : failed_jit_calls * 100.0 / jit_calls);
+	    /* Print insns whose failed spec variant caused mutations.  */
+	    for (i = 0; i < bi->jit_mutations_num; i++)
+		fprintf (stderr, " %s", insn_name((VALUE) bi->mutation_insns[i].insn));
+	    fprintf(stderr, "\n");
 	}
     }
 }

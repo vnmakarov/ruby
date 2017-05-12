@@ -1,3 +1,25 @@
+2017-05-12  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* vm_core.h (struct rb_iseq_constant_body): Remove
+	jit_mutations_num.
+	* mjit.h (mjit_store_failed_spec_insn): New extern.
+	* mjit.c (struct mjit_mutation_insns): New.
+	(struct rb_mjit_batch_iseq): Add jit_mutations_num and
+	mutation_insns.
+	(set_failed_insn_str, get_insn_mutation_num): New.
+	(translate_iseq_insn): Check mutation number for given insn.
+	Generate set up of failed_insn_pc for failed speculation.  Use
+	mutation number from the batch iseq.
+	(translate_batch_iseqs): Use mutation number from the batch iseq.
+	Generate definitions of failed_insn_pc and mutation_num call of
+	mjit_store_failed_spec_insn.
+	(create_batch_iseq): Allocate mutation_insns.
+	(finish_batches): Free mutation_insns.
+	(mjit_redo_iseq): Use mutation number from the batch iseq.  Use
+	the same batch iseq.
+	(mjit_store_failed_spec_insn): New.
+	(print_statistics): Print insns resulted in the mutations.
+
 2017-05-11  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* rtl_exec.c (op_val_call_end, op_call_end, do_bcmp): Use ep and

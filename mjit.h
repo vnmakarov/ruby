@@ -73,6 +73,7 @@ extern void mjit_cancel_all(void);
 extern void mjit_increase_iseq_priority(const rb_iseq_t *iseq);
 extern void mjit_redo_iseq(rb_iseq_t *iseq);
 extern void mjit_free_iseq(const rb_iseq_t *iseq);
+extern void mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num);
 extern void mjit_finish(void);
 
 /* A threshold used to move iseq to the queue head. */

@@ -416,9 +416,7 @@ struct rb_iseq_constant_body {
        JIT calls with speculation failures.  */
     long unsigned overall_calls, jit_calls, failed_jit_calls;
     struct rb_mjit_batch_iseq *batch_iseq;
-    /* Number of JIT code mutations (and cancellations).  */
-    int jit_mutations_num;
-
+    
     unsigned int stack_max; /* for stack overflow check */
 };
 
