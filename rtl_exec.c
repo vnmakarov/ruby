@@ -353,6 +353,21 @@ const_cached_val_ld_f(rb_thread_t *th, rb_control_frame_t *cfp,
     }
 }
 
+/* Speculatively assign value IC_VALUE of a const with IC_SERIAL (from
+   IC cache) and IC_CREF to local or temporary variable with location
+   RES and index RES_IND in frame CFP.  */
+static do_inline int
+mjit_const_cached_val_ld(rb_control_frame_t *cfp, rb_serial_t ic_serial, const rb_cref_t *ic_cref,
+			 VALUE ic_value, VALUE *res, rindex_t res_ind)
+{
+    check_sp_default(cfp);
+    if (ic_serial == GET_GLOBAL_CONSTANT_STATE() && ic_cref == NULL) {
+	var_assign(cfp, res, res_ind, ic_value);
+	return FALSE;
+    }
+    return TRUE;
+}
+
 /* If cache IC is valid, assign its value to local or temporary
    variable with location RES and index RES_IND in frame CFP, return
    TRUE.  Otherwise, assign Qnil and return FALSE.  */
@@ -369,6 +384,21 @@ get_inline_cache_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, IC ic)
     /* none */
     var_assign(cfp, res, res_ind, Qnil);
     return FALSE;
+}
+
+/* If IC_SERIAL and IC_REF are valid, assign IC_VALUE value to local or temporary
+   variable with location RES and index RES_IND in frame CFP, return
+   FALSE.  Otherwise, return TRUE if the speculation failed.  */
+static do_inline int
+mjit_get_inline_cache(rb_control_frame_t *cfp, rb_serial_t ic_serial, const rb_cref_t *ic_cref,
+		      VALUE ic_value, VALUE *res, rindex_t res_ind)
+{
+    check_sp_default(cfp);
+    if (ic_serial == GET_GLOBAL_CONSTANT_STATE() && ic_cref == NULL) {
+	var_assign(cfp, res, res_ind, ic_value);
+	return FALSE;
+    }
+    return TRUE;
 }
 
 /* Write value of location OP in frame CFP to cache IC.  */

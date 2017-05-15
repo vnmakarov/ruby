@@ -1147,7 +1147,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     rb_iseq_t *iseq = bi->iseq;
     const VALUE *code = iseq->body->iseq_encoded;
     VALUE insn, op;
-    int len, i, ivar_p, insn_mutation_num;
+    int len, i, ivar_p, const_p, insn_mutation_num;
     const char *types;
     const char *iname;
     struct insn_fun_features features;
@@ -1174,9 +1174,9 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     fprintf(f, "  jit_insns_num++;\n");
 #endif
     get_insn_fun_features(insn, &features);
-    ivar_p = FALSE;
+    ivar_p = const_p = FALSE;
     fprintf(f, "%s", generate_set_pc(TRUE, buf, &code[pos] + len));
-    if (features.call_p) {
+    if (features.call_p && ! features.special_p) {
 	/* CD is always the 1st operand.  */
 	cc = &((CALL_DATA) code[pos + 1])->call_cache;
 	ci = &((CALL_DATA) code[pos + 1])->call_info;
@@ -1186,6 +1186,9 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     } else if (insn == BIN(ivar2var) || insn == BIN(var2ivar) || insn == BIN(val2ivar)) {
 	ivar_p = TRUE;
 	local_ic = *(IC) (insn == BIN(ivar2var) ? code[pos + 3] : code[pos + 2]);
+    } else if (insn == BIN(const_cached_val_ld) || insn == BIN(get_inline_cache)) {
+	const_p = TRUE;
+	local_ic = *(IC) (insn == BIN(get_inline_cache) ? code[pos + 3] : code[pos + 4]);
     }
     if (features.special_p) {
 	switch (insn) {
@@ -1195,11 +1198,24 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    fprintf(f, "  ruby_vm_check_ints(th);\n");
 	    fprintf(f, "  goto l%ld;\n", pos + len + code[pos + 1]);
 	    break;
-	case BIN(get_inline_cache):
-	    fprintf(f, "  if (%s_f(cfp, %s, (lindex_t) %"PRIdVALUE " , (void *) 0x%"PRIxVALUE "))\n",
-		    iname, get_op_str(buf, code[pos + 2], tcp), code[pos + 2], code[pos + 3]);
-	    fprintf(f, "    goto l%ld;\n", pos + len + code[pos + 1]);
+	case BIN(get_inline_cache): {
+	    unsigned long dest = pos + len + code[pos + 1];
+
+	    assert(const_p);
+	    if (tcp->safe_p || insn_mutation_num != 0) {
+		fprintf(f, "  if (%s_f(cfp, %s, (lindex_t) %"PRIdVALUE " , (void *) 0x%"PRIxVALUE "))\n  ",
+			iname, get_op_str(buf, code[pos + 2], tcp), code[pos + 2], code[pos + 3]);
+	    } else {
+		fprintf(f, "  if (mjit_get_inline_cache(cfp, %llu, %llu, 0x%"PRIxVALUE ", %s, %ld",
+			(unsigned long long) local_ic.ic_serial,
+			(unsigned long long) local_ic.ic_cref, local_ic.ic_value.value,
+			get_op_str(buf, code[pos + 2], tcp), code[pos + 2]);
+		fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
+		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
+	    }
+	    fprintf(f, "  goto l%ld;\n", dest);
 	    break;
+	}
 	case BIN(trace):
 	    fprintf(f, "  %s_f(th, cfp, %"PRIdVALUE ");\n", iname, code[pos + 1]);
 	    break;
@@ -1325,6 +1341,14 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    else
 		fprintf (f, "0x%"PRIxVALUE, code[pos + 3]);
 	}
+	fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
+	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
+    } else if (!tcp->safe_p && const_p && insn_mutation_num == 0 && insn == BIN(const_cached_val_ld)) {
+	assert(insn == BIN(const_cached_val_ld));
+	fprintf(f, "  if (mjit_const_cached_val_ld(cfp, %llu, %llu, 0x%"PRIxVALUE ", %s, %ld",
+		(unsigned long long) local_ic.ic_serial,
+		(unsigned long long) local_ic.ic_cref, local_ic.ic_value.value,
+		get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
 	fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
     } else {

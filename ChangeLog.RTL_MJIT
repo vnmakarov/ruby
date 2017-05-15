@@ -1,5 +1,13 @@
 2017-05-15  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* rtl-exec.c (mjit_const_cached_val_ld, mjit_get_inline_cache):
+	New.
+	* mjit.c (translate_iseq_insn): Generate the new function calls
+	for speculative access to constants.  Don't copy cc and ci for
+	special insns.
+
+2017-05-15  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (struct insn_fun_features): Remove mjit_spec_p.
 	(get_insn_fun_features): Don't use mjit_spec_p.
 	(generate_result_on_stack): Remove.
