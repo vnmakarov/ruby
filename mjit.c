@@ -525,9 +525,6 @@ struct insn_fun_features {
     char changing_p;
     /* Flag of a speculative insn.  */
     char speculative_p;
-    /* Flag of an insn whose speculative variant can be used only in
-       JIT.  */
-    char mjit_spec_p;
 };
 
 /* Initiate S with no speculation.  */
@@ -567,7 +564,7 @@ static void
 get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     f->th_p = f->skip_first_p = f->op_end_p = f->bcmp_p = FALSE;
     f->call_p = f->recv_p = f->jmp_p = f->jmp_true_p = FALSE;
-    f->special_p = f->changing_p = f->speculative_p = f->mjit_spec_p = FALSE;
+    f->special_p = f->changing_p = f->speculative_p = FALSE;
     switch (insn) {
     case BIN(const2var):
     case BIN(const_ld_val):
@@ -901,8 +898,6 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(var2ivar):
     case BIN(val2ivar):
     case BIN(ivar2var):
-	f->mjit_spec_p = TRUE;
-	break;
     case BIN(var2var):
     case BIN(var_swap):
     case BIN(temp2temp):
@@ -1097,16 +1092,6 @@ get_op_str(char *buf, ptrdiff_t ind, struct translation_control *tcp) {
     return buf;
 }
 
-/* Output move of a call result on the stack to file F.  CODE and POS
-   correspond the call insn.  */
-static void
-generate_result_on_stack(FILE *f, const VALUE *code, size_t pos) {
-    /* Always the 2nd call insn operand.  */
-    int call_start = -(int) (ptrdiff_t) code[pos + 2];
-
-    fprintf(f, "  *get_temp_addr(cfp, %d) = t%d;\n", -call_start, call_start - 1);
-}
-
 /* Move args of a call insn in code with position POS to the MRI
    stack.  Reserve a stack slot for the call receiver if RECV_P.  */
 static void
@@ -1127,8 +1112,6 @@ generate_param_setup(FILE *f, const VALUE *code, size_t pos, int recv_p) {
    with POS.  Use BUF as a string container.  */
 static const char *
 set_failed_insn_str(char *buf, size_t pos) {
-    if (! mjit_opts.profile)
-	return "";
     sprintf(buf, "failed_insn_pc = %lu; ", pos);
     return buf;
 }
@@ -1151,7 +1134,7 @@ get_insn_mutation_num(struct rb_mjit_batch_iseq *bi, size_t pos) {
     int i, num = 0;
     
     for (i = 0; i < bi->jit_mutations_num; i++)
-	if (pos == bi->mutation_insns[i].pc)
+	if (bi->mutation_insns[i].insn != BIN(nop) && pos == bi->mutation_insns[i].pc)
 	    num++;
     return num;
 }
@@ -1164,11 +1147,12 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     rb_iseq_t *iseq = bi->iseq;
     const VALUE *code = iseq->body->iseq_encoded;
     VALUE insn, op;
-    int len, i, mjit_spec_p, insn_mutation_num;
+    int len, i, ivar_p, insn_mutation_num;
     const char *types;
     const char *iname;
     struct insn_fun_features features;
     struct rb_call_cache local_cc;
+    struct iseq_inline_cache_entry local_ic;
     CALL_CACHE cc = NULL;
     CALL_INFO ci = NULL;
     char buf[150];
@@ -1190,7 +1174,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     fprintf(f, "  jit_insns_num++;\n");
 #endif
     get_insn_fun_features(insn, &features);
-    mjit_spec_p = !tcp->safe_p && features.mjit_spec_p && insn_mutation_num == 0;
+    ivar_p = FALSE;
     fprintf(f, "%s", generate_set_pc(TRUE, buf, &code[pos] + len));
     if (features.call_p) {
 	/* CD is always the 1st operand.  */
@@ -1199,6 +1183,9 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	/* Remember cc can change in the interpreter thread in
 	   parallel.  TODO: Make the following atomic.  */
 	local_cc = *cc;
+    } else if (insn == BIN(ivar2var) || insn == BIN(var2ivar) || insn == BIN(val2ivar)) {
+	ivar_p = TRUE;
+	local_ic = *(IC) (insn == BIN(ivar2var) ? code[pos + 3] : code[pos + 2]);
     }
     if (features.special_p) {
 	switch (insn) {
@@ -1252,8 +1239,6 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    fprintf(f, "  if (mjit_call_block_end(th, cfp, val, %s)) {\n",
 	            get_op_str(buf, code[pos + 2], tcp));
 	    fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
-	    if (tcp->use_temp_vars_p)
-		generate_result_on_stack(f, code, pos);
 	    break;
 	default:
 	    break;
@@ -1303,8 +1288,6 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	}
 	fprintf(f, ", %s)) {\n", get_op_str(buf, call_start, tcp));
 	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
-	if (tcp->use_temp_vars_p)
-	    generate_result_on_stack(f, code, pos);
     } else if (!tcp->safe_p && features.call_p && insn_mutation_num == 0
 	       && (local_cc.call == vm_call_ivar || local_cc.call == vm_call_attrset)
 	       && local_cc.aux.index > 0) {
@@ -1326,34 +1309,35 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	}
 	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
+    } else if (!tcp->safe_p && ivar_p && insn_mutation_num == 0) {
+	assert(insn == BIN(ivar2var) || insn == BIN(var2ivar) || insn == BIN(val2ivar));
+	if (insn == BIN(ivar2var))
+	    fprintf(f, "  if (mjit_ivar2var(cfp, self, %llu, %llu, %s, %ld",
+		    (unsigned long long) local_ic.ic_serial,
+		    (unsigned long long) local_ic.ic_value.index,
+		    get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
+	else {
+	    fprintf(f, "  if (mjit_%s(cfp, self, %llu, %llu, ",
+		    iname, (unsigned long long) local_ic.ic_serial,
+		    (unsigned long long) local_ic.ic_value.index);
+	    if (insn == BIN(var2ivar))
+		fprintf (f, "%s", get_op_str(buf, code[pos + 3], tcp));
+	    else
+		fprintf (f, "0x%"PRIxVALUE, code[pos + 3]);
+	}
+	fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
+	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
     } else {
 	if (tcp->use_temp_vars_p && features.call_p)
 	    /* Generate copying temps to the stack.  */
 	    generate_param_setup(f, code, pos, features.recv_p);
-	if (mjit_spec_p) {
-	    fprintf(f, " {\n");
-	    for (i = (features.jmp_p ? 2 : 1) + (features.skip_first_p ? 1 : 0); i < len; i++) {
-		op = code[pos + i];
-		switch (types[i - 1]) {
-		case TS_IC:
-		    {
-			/* TODO: Make the following atomic.  */
-			struct iseq_inline_cache_entry ic = *(IC) op;
-			
-			fprintf(f, "  static const struct iseq_inline_cache_entry ic%"PRIxVALUE " = {%lu, 0x%"PRIxVALUE ", {.index = %lu}};\n",
-				op, (unsigned long) ic.ic_serial, (VALUE) ic.ic_cref, (unsigned long) ic.ic_value.index);
-			break;
-		    }
-		}
-	    }
-	}
-	if (features.jmp_p && (features.bcmp_p || features.speculative_p || mjit_spec_p))
+	if (features.jmp_p && (features.bcmp_p || features.speculative_p))
 	    fprintf(f, "  flag = ");
 	else
 	    fprintf(f, (features.jmp_p || features.op_end_p
-			|| features.speculative_p || mjit_spec_p
+			|| features.speculative_p
 			? "  if (" : "  "));
-	fprintf(f, "%s%s_f(", mjit_spec_p ? "mjit_spec_" : "", iname);
+	fprintf(f, "%s_f(", iname);
 	if (features.th_p)
 	    fprintf(f, "th, ");
 	fprintf(f, "cfp");
@@ -1382,10 +1366,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 		fprintf(f, "(lindex_t) %"PRIdVALUE, op);
 		break;
 	    case TS_IC:
-		if (mjit_spec_p)
-		    fprintf(f, "&ic%"PRIxVALUE, op);
-		else
-		    fprintf(f, "(void *) 0x%"PRIxVALUE, op);
+		fprintf(f, "(void *) 0x%"PRIxVALUE, op);
 		break;
 	    case TS_CDHASH:
 	    case TS_VALUE:
@@ -1407,7 +1388,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	}
 	if (features.op_end_p)
 	    fprintf(f, ")) {\n    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
-	else if (features.speculative_p || mjit_spec_p) {
+	else if (features.speculative_p) {
 	    if (features.jmp_p)
 		fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n");
 	    else
@@ -1449,11 +1430,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 			code[pos + 1], get_op_str(buf, call_start, tcp));
 		fprintf(f, "    goto cancel;\n  }\n");
 	    }
-	    if (tcp->use_temp_vars_p)
-		generate_result_on_stack(f, code, pos);
         }
-	if (mjit_spec_p)
-	    fprintf(f, " }\n");
     }
     return len;
 }
@@ -1531,6 +1508,7 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	fprintf(f, "  struct rb_calling_info calling;\n  VALUE val; int flag;\n");
 	fprintf(f, "  static const char mutation_num = %d;\n", bi->jit_mutations_num);
 	fprintf(f, "  size_t failed_insn_pc;\n");
+	fprintf(f, "  VALUE self = cfp->self;\n");
 	if (tc.use_local_vars_p)
 	    for (i = 0; i < body->local_table_size; i++)
 		fprintf(f, "  VALUE v%lu;\n", i);
@@ -1561,7 +1539,7 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	fprintf(f, "cancel:\n");
 	if (tc.use_local_vars_p) {
 	    for (i = 0; i < body->local_table_size; i++)
-		fprintf(f, "  *get_loc_addr(cfp, %ld) = v%ld;\n", i + VM_ENV_DATA_SIZE, i);
+		fprintf(f, "  *get_loc_addr(cfp, %ld) = v%ld;\n", i + VM_ENV_DATA_SIZE, (long) i);
 	}
 	if (tc.use_temp_vars_p) {
 	    for (i = 0; i <= body->temp_vars_num; i++)
@@ -1921,6 +1899,7 @@ init_workers(void) {
    are no free batch iseqs.  */
 static struct rb_mjit_batch_iseq *
 create_batch_iseq(rb_iseq_t *iseq) {
+    int i;
     struct rb_mjit_batch_iseq *bi;
 
     if (free_batch_iseq_list == NULL) {
@@ -1943,6 +1922,8 @@ create_batch_iseq(rb_iseq_t *iseq) {
     }
     bi->jit_mutations_num = 0;
     bi->mutation_insns = xmalloc(sizeof (struct mjit_mutation_insns) * (mjit_opts.max_mutations + 1));
+    for (i = 0; i <= mjit_opts.max_mutations; i++)
+	bi->mutation_insns[i].insn = BIN(nop);
     return bi;
 }
 
@@ -2255,7 +2236,9 @@ mjit_get_iseq_fun(const rb_iseq_t *iseq) {
 void
 mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num)  {
     struct rb_mjit_batch_iseq *bi = iseq->body->batch_iseq;
-    VALUE insn = iseq->body->iseq_encoded[pc];
+    VALUE insn;
+
+    insn = iseq->body->iseq_encoded[pc];
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
     insn = rb_vm_insn_addr2insn((void *) insn);
 #endif
@@ -2496,7 +2479,10 @@ print_statistics(void) {
 		    failed_jit_calls, jit_calls == 0 ? 0.0 : failed_jit_calls * 100.0 / jit_calls);
 	    /* Print insns whose failed spec variant caused mutations.  */
 	    for (i = 0; i < bi->jit_mutations_num; i++)
-		fprintf (stderr, " %s", insn_name((VALUE) bi->mutation_insns[i].insn));
+		if (bi->mutation_insns[i].insn == BIN(nop))
+		    fprintf (stderr, " -");
+		else
+		    fprintf (stderr, " %s", insn_name((VALUE) bi->mutation_insns[i].insn));
 	    fprintf(stderr, "\n");
 	}
     }

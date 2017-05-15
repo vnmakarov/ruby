@@ -1,3 +1,26 @@
+2017-05-15  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (struct insn_fun_features): Remove mjit_spec_p.
+	(get_insn_fun_features): Don't use mjit_spec_p.
+	(generate_result_on_stack): Remove.
+	(set_failed_insn_str): Store info independently of profile option.
+	(get_insn_mutation_num): Check on nop first.
+	(translate_iseq_insn): Remove generate_result_on_stack calls.
+	Copy ic for ivar insns.  Add speculative code for ivar insns.
+	Remove code for ic generation.
+	(translate_batch_iseqs): Generate self.
+	(create_batch_iseq): Initiate mutation_insns by nop.
+	(print_statistics): Check them.
+	* rtl_exec.c (mjit_spec_ivar2var_f): Rename to
+	mjit_ivar2var.  Change prototype.
+	(mjit_spec_val2ivar_f): Rename to mjit_val2ivar.  Change
+	prototype.
+	(mjit_spec_var2ivar_f): Rename to mjit_var2ivar.  Change
+	prototype.
+	* vm_insnhelper.c (vm_getinstancevariable_spec): Change prototype.
+	(vm_setinstancevariable_spec): Ditto.
+	* MJIT_KEEP (rb_vm_get_cref): Add.
+
 2017-05-12  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* vm_core.h (struct rb_iseq_constant_body): Remove

@@ -967,16 +967,16 @@ vm_getinstancevariable(VALUE obj, ID id, IC ic)
     return vm_getivar(obj, id, ic, 0, 0);
 }
 
-/* A speculative version of vm_getinstancevariable.  We assume the
-   variable was created and the class is still the same.  */
+/* A speculative version of ivar access.  We assume the variable was
+   created and the class is still the same.  SELF is an object with
+   the ivar with IC_SERIAL (from IC cache) and INDEX.  */
 static do_inline VALUE
-vm_getinstancevariable_spec(VALUE obj, ID id, const_IC ic)
+vm_getinstancevariable_spec(VALUE self, rb_serial_t ic_serial, size_t index)
 {
 #if USE_IC_FOR_IVAR
-    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && ic->ic_serial == RCLASS_SERIAL(RBASIC(obj)->klass))) {
-	st_index_t index = ic->ic_value.index;
-	if (LIKELY(index < ROBJECT_NUMIV(obj)))
-	    return ROBJECT_IVPTR(obj)[index];
+    if (LIKELY(RB_TYPE_P(self, T_OBJECT) && ic_serial == RCLASS_SERIAL(RBASIC(self)->klass))) {
+	if (LIKELY(index < ROBJECT_NUMIV(self)))
+	    return ROBJECT_IVPTR(self)[index];
     }
 #endif	/* USE_IC_FOR_IVAR */
     return Qundef;
@@ -988,20 +988,20 @@ vm_setinstancevariable(VALUE obj, ID id, VALUE val, IC ic)
     vm_setivar(obj, id, val, ic, 0, 0);
 }
 
-/* A speculative version of vm_setinstancevariable.  We assume the
-   variable was created and the class is still the same.  */
+/* A speculative version of assigning VAL to ivar.  We assume the
+   variable was created and the class is still the same.  SELF is an
+   object with the ivar with IC_SERIAL (from IC cache) and INDEX.  */
 static do_inline VALUE
-vm_setinstancevariable_spec(VALUE obj, ID id, VALUE val, IC ic)
+vm_setinstancevariable_spec(VALUE self, rb_serial_t ic_serial, size_t index, VALUE val)
 {
 #if USE_IC_FOR_IVAR
-    rb_check_frozen(obj);
+    rb_check_frozen(self);
 
-    if (LIKELY(RB_TYPE_P(obj, T_OBJECT) && ic->ic_serial == RCLASS_SERIAL(RBASIC(obj)->klass))) {
-	VALUE *ptr = ROBJECT_IVPTR(obj);
-	st_data_t index = ic->ic_value.index;
+    if (LIKELY(RB_TYPE_P(self, T_OBJECT) && ic_serial == RCLASS_SERIAL(RBASIC(self)->klass))) {
+	VALUE *ptr = ROBJECT_IVPTR(self);
 	
-	if (index < ROBJECT_NUMIV(obj)) {
-	    RB_OBJ_WRITE(obj, &ptr[index], val);
+	if (index < ROBJECT_NUMIV(self)) {
+	    RB_OBJ_WRITE(self, &ptr[index], val);
 	    return val; /* inline cache hit */
 	}
     }
