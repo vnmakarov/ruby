@@ -1,3 +1,9 @@
+2017-05-17  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.h (mjit_execute_iseq_0, mjit_execute_iseq): Use do_inline.
+	(mjit_change_iseq): Ditto.
+	* vm_core.h (ruby_vm_check_ints): Ditto.
+
 2017-05-15  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* rtl-exec.c (mjit_const_cached_val_ld, mjit_get_inline_cache):

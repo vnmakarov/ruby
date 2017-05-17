@@ -99,7 +99,7 @@ static const char mjit_profile_p;
    Use JIT code if it is ready.  If it is not, add ISEQ to the
    compilation queue and return Qundef.  The function might increase
    ISEQ compilation priority by putting ISEQ at the queue head.  */
-static inline VALUE
+static do_inline VALUE
 mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
 		    struct rb_iseq_constant_body *body, int type) {
     unsigned long n_calls;
@@ -142,7 +142,7 @@ mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
 }
 
 /* See the above function.  */
-static inline VALUE
+static do_inline VALUE
 mjit_execute_iseq(rb_thread_t *th) {
     rb_iseq_t *iseq;
     struct rb_iseq_constant_body *body;
@@ -173,7 +173,7 @@ mjit_aot_process(rb_iseq_t *iseq) {
 
 /* The function is called when ISEQ is changed.  It can happens as we
    have speculative insns.  */
-static inline void
+static do_inline void
 mjit_change_iseq(rb_iseq_t *iseq) {
     if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
 	iseq->body->failed_jit_calls++;
