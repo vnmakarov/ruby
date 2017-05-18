@@ -409,6 +409,8 @@ struct rb_iseq_constant_body {
     /* Non-zero for ISEQ which is a parent iseq of some other
        iseq.  */
     char parent_iseq_p;
+    /* True means RB_TYPE_P(self, T_OBJECT) is true.  */
+    char in_type_object_p;
     
     /* The following MJIT related info.  */
     void *jit_code;
@@ -1459,6 +1461,7 @@ NORETURN(void rb_bug_context(const void *, const char *fmt, ...));
 
 /* functions about thread/vm execution */
 RUBY_SYMBOL_EXPORT_BEGIN
+int rb_special_class_p(VALUE c);
 VALUE rb_iseq_eval(const rb_iseq_t *iseq);
 VALUE rb_iseq_eval_main(const rb_iseq_t *iseq);
 RUBY_SYMBOL_EXPORT_END

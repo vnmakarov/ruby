@@ -1993,6 +1993,22 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 
 /* misc */
 
+/* Return TRUE if C is a builtin class.  Actually here we could
+   consider only classes whose ivars might be a part of an object with
+   false RB_TYPE_P(self, T_OBJECT).  */
+int
+rb_special_class_p(VALUE c) {
+    return (c == rb_cBasicObject || c == rb_cObject || c == rb_cArray || c == rb_cBignum || c == rb_cBinding
+	    || c == rb_cClass || c == rb_cDir || c == rb_cData || c == rb_cFalseClass
+	    || c == rb_cEncoding || c == rb_cEnumerator || c == rb_cFile || c == rb_cFixnum
+	    || c == rb_cFloat || c == rb_cHash || c == rb_cInteger || c == rb_cIO
+	    || c == rb_cMatch || c == rb_cMethod || c == rb_cModule || c == rb_cNameErrorMesg
+	    || c == rb_cNilClass || c == rb_cNumeric || c == rb_cProc || c == rb_cRandom
+	    || c == rb_cRange || c == rb_cRational || c == rb_cComplex || c == rb_cRegexp
+	    || c == rb_cStat || c == rb_cString || c == rb_cStruct || c == rb_cSymbol || c == rb_cThread
+	    || c == rb_cTime || c == rb_cTrueClass || c == rb_cUnboundMethod);
+}
+
 VALUE
 rb_iseq_eval(const rb_iseq_t *iseq)
 {

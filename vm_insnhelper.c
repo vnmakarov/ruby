@@ -969,12 +969,13 @@ vm_getinstancevariable(VALUE obj, ID id, IC ic)
 
 /* A speculative version of ivar access.  We assume the variable was
    created and the class is still the same.  SELF is an object with
-   the ivar with IC_SERIAL (from IC cache) and INDEX.  */
+   the ivar with IC_SERIAL (from IC cache) and INDEX.  We know
+   RB_TYPE_P(self, T_OBJECT) is true that if TYPE_OBJ_P is true.  */
 static do_inline VALUE
-vm_getinstancevariable_spec(VALUE self, rb_serial_t ic_serial, size_t index)
+vm_getinstancevariable_spec(VALUE self, int type_obj_p, rb_serial_t ic_serial, size_t index)
 {
 #if USE_IC_FOR_IVAR
-    if (LIKELY(RB_TYPE_P(self, T_OBJECT) && ic_serial == RCLASS_SERIAL(RBASIC(self)->klass))) {
+    if (LIKELY((type_obj_p || RB_TYPE_P(self, T_OBJECT)) && ic_serial == RCLASS_SERIAL(RBASIC(self)->klass))) {
 	if (LIKELY(index < ROBJECT_NUMIV(self)))
 	    return ROBJECT_IVPTR(self)[index];
     }
@@ -990,14 +991,16 @@ vm_setinstancevariable(VALUE obj, ID id, VALUE val, IC ic)
 
 /* A speculative version of assigning VAL to ivar.  We assume the
    variable was created and the class is still the same.  SELF is an
-   object with the ivar with IC_SERIAL (from IC cache) and INDEX.  */
+   object with the ivar with IC_SERIAL (from IC cache) and INDEX.  We
+   know RB_TYPE_P(self, T_OBJECT) is true that if TYPE_OBJ_P is
+   true.  */
 static do_inline VALUE
-vm_setinstancevariable_spec(VALUE self, rb_serial_t ic_serial, size_t index, VALUE val)
+vm_setinstancevariable_spec(VALUE self, int type_obj_p, rb_serial_t ic_serial, size_t index, VALUE val)
 {
 #if USE_IC_FOR_IVAR
     rb_check_frozen(self);
 
-    if (LIKELY(RB_TYPE_P(self, T_OBJECT) && ic_serial == RCLASS_SERIAL(RBASIC(self)->klass))) {
+    if (LIKELY((type_obj_p || RB_TYPE_P(self, T_OBJECT)) && ic_serial == RCLASS_SERIAL(RBASIC(self)->klass))) {
 	VALUE *ptr = ROBJECT_IVPTR(self);
 	
 	if (index < ROBJECT_NUMIV(self)) {

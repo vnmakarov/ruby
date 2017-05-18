@@ -1,3 +1,16 @@
+2017-05-18  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (translate_iseq_insn): Pass in_type_object_p.
+	* rtl_exec.c (mjit_ivar2var, mjit_val2ivar, mjit_var2ivar): Add
+	arg type_obj_p.
+	(iseq2var_f): Set up in_type_object_p.
+	* vm.c (rb_special_class_p): New.
+	* vm_core.h (struct rb_iseq_constant_body): New field
+	in_type_object_p.
+	(rb_special_class_p): New prototype.
+	(vm_getinstancevariable_spec, vm_setinstancevariable_spec): Add
+	arg type_obj_p.
+
 2017-05-17  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.h (mjit_execute_iseq_0, mjit_execute_iseq): Use do_inline.

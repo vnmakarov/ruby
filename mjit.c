@@ -1328,13 +1328,13 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     } else if (!tcp->safe_p && ivar_p && insn_mutation_num == 0) {
 	assert(insn == BIN(ivar2var) || insn == BIN(var2ivar) || insn == BIN(val2ivar));
 	if (insn == BIN(ivar2var))
-	    fprintf(f, "  if (mjit_ivar2var(cfp, self, %llu, %llu, %s, %ld",
-		    (unsigned long long) local_ic.ic_serial,
+	    fprintf(f, "  if (mjit_ivar2var(cfp, self, %d, %llu, %llu, %s, %ld",
+		    iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
 		    (unsigned long long) local_ic.ic_value.index,
 		    get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
 	else {
-	    fprintf(f, "  if (mjit_%s(cfp, self, %llu, %llu, ",
-		    iname, (unsigned long long) local_ic.ic_serial,
+	    fprintf(f, "  if (mjit_%s(cfp, self, %d, %llu, %llu, ",
+		    iname, iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
 		    (unsigned long long) local_ic.ic_value.index);
 	    if (insn == BIN(var2ivar))
 		fprintf (f, "%s", get_op_str(buf, code[pos + 3], tcp));

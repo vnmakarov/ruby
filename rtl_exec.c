@@ -484,14 +484,16 @@ ivar2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, ID id, IC ic)
 
 /* Speculatively assign value of an instance variable of SELF with
    IC_SERIAL (from IC cache) and INDEX to local or temporary variable
-   with location RES and index RES_IND in frame CFP.  */
+   with location RES and index RES_IND in frame CFP.  We know
+   RB_TYPE_P(self, T_OBJECT) is true that if TYPE_OBJ_P is true.  */
 static do_inline int
-mjit_ivar2var(rb_control_frame_t *cfp, VALUE self, rb_serial_t ic_serial, size_t index, VALUE *res, rindex_t res_ind)
+mjit_ivar2var(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
+	      rb_serial_t ic_serial, size_t index, VALUE *res, rindex_t res_ind)
 {
     VALUE v;
     
     check_sp_default(cfp);
-    if ((v = vm_getinstancevariable_spec(self, ic_serial, index)) == Qundef)
+    if ((v = vm_getinstancevariable_spec(self, type_obj_p, ic_serial, index)) == Qundef)
 	return TRUE;
     var_assign(cfp, res, res_ind, v);
     return FALSE;
@@ -510,10 +512,11 @@ cvar2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, ID id)
 }
 
 /* Assign ISEQ to local or temporary variable with location RES and
-   index RES_IND in frame CFP.  */
+   index RES_IND in frame CFP.  Set up iseq in_type_object_p.  */
 static do_inline void
 iseq2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, ISEQ iseq)
 {
+    iseq->body->in_type_object_p = RB_TYPE_P(cfp->self, T_CLASS) && ! rb_special_class_p(cfp->self);
     var_assign(cfp, res, res_ind, (VALUE) iseq);
 }
 
@@ -610,12 +613,14 @@ val2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE val)
 }
 
 /* Speculatively assign value VAL to an instance variable of SELF with
-   IC_SERIAL (from IC cache) and INDEX.  */
+   IC_SERIAL (from IC cache) and INDEX.  We know RB_TYPE_P(self,
+   T_OBJECT) is true that if TYPE_OBJ_P is true.  */
 static do_inline int
-mjit_val2ivar(rb_control_frame_t *cfp, VALUE self, rb_serial_t ic_serial, size_t index, VALUE val)
+mjit_val2ivar(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
+	      rb_serial_t ic_serial, size_t index, VALUE val)
 {
     check_sp_default(cfp);
-    return vm_setinstancevariable_spec(self, ic_serial, index, val) == Qundef;
+    return vm_setinstancevariable_spec(self, type_obj_p, ic_serial, index, val) == Qundef;
 }
 
 /* As val2ivar_f but VAL_OP of CFP location of the value.  */
@@ -627,9 +632,10 @@ var2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE *val_op)
 
 /* As mjit_val2ivar the value in location VAL_OP.  */
 static do_inline int
-mjit_var2ivar(rb_control_frame_t *cfp, VALUE self, rb_serial_t ic_serial, size_t index, VALUE *val_op)
+mjit_var2ivar(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
+	      rb_serial_t ic_serial, size_t index, VALUE *val_op)
 {
-    return mjit_val2ivar(cfp, self, ic_serial, index, *val_op);
+    return mjit_val2ivar(cfp, self, type_obj_p, ic_serial, index, *val_op);
 }
 
 /* Assign value of local or temporary variable with location VAL_OP in
