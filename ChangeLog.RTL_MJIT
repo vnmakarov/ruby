@@ -1,3 +1,8 @@
+2017-05-19  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* rtl-exec.c (aind_f, aindi_f, aindset_f, aindseti_f): Speed up
+	using more speculation.
+
 2017-05-18  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (translate_iseq_insn): Pass in_type_object_p.

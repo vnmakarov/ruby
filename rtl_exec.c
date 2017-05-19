@@ -2440,11 +2440,18 @@ op2i_fun(uinds)
 
 /* Speculative indexing insns: */
 spec_op2_fun(aind) {
-    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cArray
+    VALUE ary = *op1;
+
+    if (! SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
 	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))
 	&& FIXNUM_P(*op2)) {
-	var_assign(cfp, res, res_ind, rb_ary_entry(*op1, FIX2LONG(*op2)));
-	return FALSE;
+	unsigned long len = RARRAY_LEN(ary);
+	const VALUE *ptr = RARRAY_CONST_PTR(ary);
+	unsigned long offset = FIX2ULONG(*op2);
+	if (offset < len) {
+	    var_assign(cfp, res, res_ind, ptr[offset]);
+	    return FALSE;
+	}
     }
     vm_change_insn(cfp->iseq, cfp->pc - 6, BIN(uind));
     return TRUE;
@@ -2464,10 +2471,20 @@ spec_op2_fun(hind)
 
 spec_op2i_fun(aindi)
 {
-    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cArray
+    VALUE ary = *op1;
+
+    if (! SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
 	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))) {
-	var_assign(cfp, res, res_ind, rb_ary_entry(*op1, FIX2LONG(imm)));
-	return FALSE;
+	long len = RARRAY_LEN(ary);
+	const VALUE *ptr = RARRAY_CONST_PTR(ary);
+	long offset = FIX2LONG(imm);
+
+	if (offset < 0)
+	    offset += len;
+	if (offset >= 0 && offset < len) {
+	    var_assign(cfp, res, res_ind, ptr[offset]);
+	    return FALSE;
+	}
     }
     vm_change_insn(cfp->iseq, cfp->pc - 6, BIN(uindi));
     return TRUE;
@@ -2573,11 +2590,19 @@ uindsets_f(rb_thread_t *th, rb_control_frame_t *cfp,
 /* Speculative []= insns:  */
 static do_inline int
 aindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3) {
-    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cArray
+    VALUE ary = *op1;
+
+    if (!SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
 	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
-	&& FIXNUM_P(*op2)) {
-	rb_ary_store(*op1, FIX2LONG(*op2), *op3);
-	return FALSE;
+	&& FIXNUM_P(*op2) && ! OBJ_FROZEN(ary) && FL_TEST(ary, ELTS_SHARED) == 0) {
+	unsigned long len = RARRAY_LEN(ary);
+	const VALUE *ptr = RARRAY_CONST_PTR(ary);
+	unsigned long offset = FIX2ULONG(*op2);
+
+	if (offset < len) {
+	    RARRAY_ASET(ary, offset, *op3);
+	    return FALSE;
+	}
     }
     vm_change_insn(cfp->iseq, cfp->pc - 5, BIN(uindset));
     return TRUE;
@@ -2597,10 +2622,21 @@ hindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3) {
 
 static do_inline int
 aindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
-    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cArray
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))) {
-	rb_ary_store(*op1, FIX2LONG(imm), *op3);
-	return FALSE;
+    VALUE ary = *op1;
+
+    if (!SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
+	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
+	&& ! OBJ_FROZEN(ary) && FL_TEST(ary, ELTS_SHARED) == 0) {
+	long len = RARRAY_LEN(ary);
+	const VALUE *ptr = RARRAY_CONST_PTR(ary);
+	long offset = FIX2LONG(imm);
+
+	if (offset < 0)
+	    offset += len;
+	if (offset >= 0 && offset < len) {
+	    RARRAY_ASET(ary, offset, *op3);
+	    return FALSE;
+	}
     }
     vm_change_insn(cfp->iseq, cfp->pc - 5, BIN(uindseti));
     return TRUE;
