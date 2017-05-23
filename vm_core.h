@@ -411,6 +411,8 @@ struct rb_iseq_constant_body {
     char parent_iseq_p;
     /* True means RB_TYPE_P(self, T_OBJECT) is true.  */
     char in_type_object_p;
+    /* True if we have call_c_func in the iseq.  */
+    char call_c_func_p;
     
     /* The following MJIT related info.  */
     void *jit_code;

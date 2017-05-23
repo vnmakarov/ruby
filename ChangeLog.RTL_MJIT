@@ -1,3 +1,11 @@
+2017-05-23  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* vm_core.h (struct rb_iseq_constant_body): New filed
+	call_c_func_p.
+	* mjit.h (mjit_execute_iseq_0): Never JIT iseq with call_c_func_p.
+	(mjit_aot_process): Ditto.
+	* compile.c (for_self_aref, for_self_aset): Set call_c_func_p up.
+
 2017-05-19  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* rtl-exec.c (aind_f, aindi_f, aindset_f, aindseti_f): Speed up

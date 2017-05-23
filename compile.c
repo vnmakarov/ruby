@@ -8692,6 +8692,7 @@ for_self_aref(rb_iseq_t *iseq, LINK_ANCHOR *const ret, VALUE a)
     /* reserving stack slot for param */
     if (1 > (int) iseq->body->local_iseq->body->temp_vars_num)
 	iseq->body->local_iseq->body->temp_vars_num = 1;
+    iseq->body->call_c_func_p = TRUE;
 
     add_value_load(iseq, ret, line, -1, args->arg);
     ADD_INSN2(ret, line, call_c_func, (VALUE)args->func, INT2LINT(1));
@@ -8713,6 +8714,7 @@ for_self_aset(rb_iseq_t *iseq, LINK_ANCHOR *const ret, VALUE a)
     /* reserving stack slots for params */
     if (2 > (int) iseq->body->local_iseq->body->temp_vars_num)
 	iseq->body->local_iseq->body->temp_vars_num = 2;
+    iseq->body->call_c_func_p = TRUE;
 
     add_local_move(iseq, ret, line, -1, numberof(vars) + VM_ENV_DATA_SIZE - 2);
     add_value_load(iseq, ret, line, -2, args->arg);

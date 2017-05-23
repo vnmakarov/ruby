@@ -112,7 +112,8 @@ mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
     if (UNLIKELY((ptrdiff_t) fun <= (ptrdiff_t) LAST_JIT_ISEQ_FUN)) {
 	switch ((enum rb_mjit_iseq_fun) fun) {
 	case NOT_ADDED_JIT_ISEQ_FUN:
-	    if (type != ISEQ_TYPE_METHOD && type != ISEQ_TYPE_BLOCK) {
+	    if ((type != ISEQ_TYPE_METHOD && type != ISEQ_TYPE_BLOCK)
+		|| body->call_c_func_p) {
 		body->jit_code = (void *) NEVER_JIT_ISEQ_FUN;
 		return Qundef;
 	    } else {
@@ -162,8 +163,9 @@ mjit_aot_process(rb_iseq_t *iseq) {
     if (! mjit_init_p || ! mjit_opts.aot)
 	return;
 
-    if (body->type != ISEQ_TYPE_METHOD && body->type != ISEQ_TYPE_BLOCK
-	&& body->type != ISEQ_TYPE_TOP && body->type != ISEQ_TYPE_MAIN) {
+    if ((body->type != ISEQ_TYPE_METHOD && body->type != ISEQ_TYPE_BLOCK
+	 && body->type != ISEQ_TYPE_TOP && body->type != ISEQ_TYPE_MAIN)
+	|| body->call_c_func_p) {
 	body->jit_code = (void *) NEVER_JIT_ISEQ_FUN;
     } else {
 	body->jit_code = (void *) NOT_READY_AOT_ISEQ_FUN;
