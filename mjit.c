@@ -2481,37 +2481,88 @@ mjit_init(struct mjit_options *opts) {
     verbose("Successful MJIT initialization (workers = %d)", mjit_opts.threads);
 }
 
+/* Return number of done batch iseqs.  */
+static int
+get_done_batch_iseqs_num(void) {
+    int n = 0;
+    struct rb_mjit_batch *b;
+    struct rb_mjit_batch_iseq *bi;
+    
+    for (b = done_batches.head; b != NULL; b = b->next)
+	for (bi = b->first; bi != NULL; bi = bi->next)
+	    n++;
+    return n;
+}
+
+/* Used to sort batch iseqs to put most frequently called ones first.
+   If the call numbers are equal put bigger iseqs first.  */ 
+static int
+batch_iseq_compare(const void *el1, const void *el2) {
+    const struct rb_mjit_batch_iseq *bi1 = *(struct rb_mjit_batch_iseq * const *) el1;
+    const struct rb_mjit_batch_iseq *bi2 = *(struct rb_mjit_batch_iseq * const *) el2;
+    unsigned long overall_calls1 = (bi1->iseq == NULL ? bi1->overall_calls : bi1->iseq->body->overall_calls);
+    unsigned long overall_calls2 = (bi2->iseq == NULL ? bi2->overall_calls : bi2->iseq->body->overall_calls);
+
+    if (overall_calls2 < overall_calls1) return -1;
+    if (overall_calls1 < overall_calls2) return 1;
+    return (long) bi2->iseq_size - (long) bi1->iseq_size;
+}
+
+/* Allocate and return a new array of done batch iseqs sorted
+   according criteria described in batch_iseq_compare.  The array has
+   null end marker.  */
+static struct rb_mjit_batch_iseq **
+get_sorted_batch_iseqs(void) {
+    int n, batch_iseqs_num = get_done_batch_iseqs_num();
+    struct rb_mjit_batch_iseq **batch_iseqs = xmalloc(sizeof(struct rb_mjit_batch_iseq *) * (batch_iseqs_num + 1));
+    struct rb_mjit_batch *b;
+    struct rb_mjit_batch_iseq *bi;
+    
+    if (batch_iseqs == NULL)
+	return NULL;
+    n = 0;
+    for (b = done_batches.head; b != NULL; b = b->next)
+	for (bi = b->first; bi != NULL; bi = bi->next)
+	    batch_iseqs[n++] = bi;
+    batch_iseqs[n] = NULL;
+    assert(n == batch_iseqs_num);
+    qsort(batch_iseqs, batch_iseqs_num, sizeof(struct rb_mjit_batch_iseq *), batch_iseq_compare);
+    return batch_iseqs;
+}
+
 /* Print statistics about ISEQ calls to stderr.  Statistics is printed
    only for JITed iseqs.  */
 static void
 print_statistics(void) {
-    struct rb_mjit_batch *b;
-    struct rb_mjit_batch_iseq *bi;
+    int n;
+    struct rb_mjit_batch_iseq *bi, **batch_iseqs;
+
+    if ((batch_iseqs = get_sorted_batch_iseqs()) == NULL)
+	return;
 
     fprintf(stderr, "Name                                          Batch Iseq  Size     Calls/JIT Calls               Spec Fails\n");
-    for (b = done_batches.head; b != NULL; b = b->next) {
-	for (bi = b->first; bi != NULL; bi = bi->next) {
-	    int i;
-	    unsigned long overall_calls
-		= (bi->iseq == NULL ? bi->overall_calls : bi->iseq->body->overall_calls);
-	    unsigned long jit_calls
-		= (bi->iseq == NULL ? bi->jit_calls : bi->iseq->body->jit_calls);
-	    unsigned long failed_jit_calls
-		= (bi->iseq == NULL ? bi->jit_calls : bi->iseq->body->failed_jit_calls);
-
-	    fprintf(stderr, "%-45s %5d %4d %5lu %9lu/%-9lu (%-5.2f%%)   %9lu (%6.2f%%)",
-		    bi->label, b->num, bi->num, bi->iseq_size,
-		    overall_calls, jit_calls, overall_calls == 0 ? 0.0 : jit_calls * 100.0 / overall_calls,
-		    failed_jit_calls, jit_calls == 0 ? 0.0 : failed_jit_calls * 100.0 / jit_calls);
-	    /* Print insns whose failed spec variant caused mutations.  */
-	    for (i = 0; i < bi->jit_mutations_num; i++)
-		if (bi->mutation_insns[i].insn == BIN(nop))
-		    fprintf (stderr, " -");
-		else
-		    fprintf (stderr, " %s", insn_name((VALUE) bi->mutation_insns[i].insn));
-	    fprintf(stderr, "\n");
-	}
+    for (n = 0; (bi = batch_iseqs[n]) != NULL; n++) {
+	int i;
+	unsigned long overall_calls
+	    = (bi->iseq == NULL ? bi->overall_calls : bi->iseq->body->overall_calls);
+	unsigned long jit_calls
+	    = (bi->iseq == NULL ? bi->jit_calls : bi->iseq->body->jit_calls);
+	unsigned long failed_jit_calls
+	    = (bi->iseq == NULL ? bi->jit_calls : bi->iseq->body->failed_jit_calls);
+	
+	fprintf(stderr, "%-45s %5d %4d %5lu %9lu/%-9lu (%-5.2f%%)   %9lu (%6.2f%%)",
+		bi->label, bi->batch->num, bi->num, bi->iseq_size,
+		overall_calls, jit_calls, overall_calls == 0 ? 0.0 : jit_calls * 100.0 / overall_calls,
+		failed_jit_calls, jit_calls == 0 ? 0.0 : failed_jit_calls * 100.0 / jit_calls);
+	/* Print insns whose failed spec variant caused mutations.  */
+	for (i = 0; i < bi->jit_mutations_num; i++)
+	    if (bi->mutation_insns[i].insn == BIN(nop))
+		fprintf (stderr, " -");
+	    else
+		fprintf (stderr, " %s", insn_name((VALUE) bi->mutation_insns[i].insn));
+	fprintf(stderr, "\n");
     }
+    free(batch_iseqs);
 }
 
 /* Finish the threads processing batches and creating PCH, finalize

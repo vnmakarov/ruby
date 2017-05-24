@@ -1,5 +1,11 @@
 2017-05-24  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.c (get_done_batch_iseqs_num, batch_iseq_compare): New.
+	(get_sorted_batch_iseqs): New.
+	(print_statistics): Use get_sorted_batch_iseqs.
+
+2017-05-24  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (translate_batch_iseqs): Generate set_default_sp_0 call.
 	* vm.c (vm_exec): Remove default sp setting.
 	* vm_exec.c (vm_exec_core): Call set_default_sp.
