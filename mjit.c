@@ -1758,13 +1758,13 @@ load_batch(struct rb_mjit_batch *b) {
     else if (mjit_opts.warnings || mjit_opts.verbose)
 	fprintf(stderr, "MJIT warning: failure in loading code of batch %d(%s)\n", b->num, dlerror());
     for (bi = b->first; bi != NULL; bi = bi->next) {
-	addr = (void *) NEVER_JIT_ISEQ_FUN;
+	addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
 	if (b->status == BATCH_LOADED) {
 	    fname = get_batch_iseq_fname(bi, mjit_fname_holder);
 	    addr = dlsym(b->handle, fname);
 	    if ((err_name = dlerror ()) != NULL) {
 		debug(0, "Failure (%s) in setting address of iseq %d(%s)", err_name, bi->num, fname);
-		addr = (void *) NEVER_JIT_ISEQ_FUN;
+		addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
 	    } else {
 		debug(2, "Success in setting address of iseq %d(%s)(%s) 0x%"PRIxVALUE,
 		      bi->num, fname, bi->label, addr);

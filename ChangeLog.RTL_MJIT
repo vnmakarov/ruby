@@ -1,5 +1,16 @@
 2017-05-24  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.h (NEVER_JIT_ISEQ_FUN): Remove.
+	(NUM_CALLS_TO_ADD): New.
+	(NUM_CALLS_TO_PRIORITY_INCREASE): Change to 1000.
+	(mjit_execute_iseq_0): Check n_calls to add iseq for JIT.  Remove
+	NEVER_JIT_ISEQ_FUN entry.
+	(mjit_aot_process): Remove code setting NEVER_JIT_ISEQ_FUN.
+	* mjit.c (load_batch): Use NOT_ADDED_JIT_ISEQ_FUN instead of
+	NEVER_JIT_ISEQ_FUN.
+
+2017-05-24  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (get_done_batch_iseqs_num, batch_iseq_compare): New.
 	(get_sorted_batch_iseqs): New.
 	(print_statistics): Use get_sorted_batch_iseqs.

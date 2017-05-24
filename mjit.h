@@ -11,16 +11,13 @@
 enum rb_mjit_iseq_fun {
     /* ISEQ was not queued yet for the machine code generation */
     NOT_ADDED_JIT_ISEQ_FUN = 0,
-    /* ISEQ was not queued and will be never queued for the machine code
-       generation */
-    NEVER_JIT_ISEQ_FUN = 1,
     /* ISEQ is already queued for the machine code generation but the
        code is not ready yet for the execution */
-    NOT_READY_JIT_ISEQ_FUN = 2,
+    NOT_READY_JIT_ISEQ_FUN = 1,
     /* The same as above but in AOT mode */
-    NOT_READY_AOT_ISEQ_FUN = 3,
+    NOT_READY_AOT_ISEQ_FUN = 2,
     /* End mark */
-    LAST_JIT_ISEQ_FUN = 4,
+    LAST_JIT_ISEQ_FUN = 3,
 };
 
 /* A forward declaration  */
@@ -76,8 +73,10 @@ extern void mjit_free_iseq(const rb_iseq_t *iseq);
 extern void mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num);
 extern void mjit_finish(void);
 
+/* A threshold used to add iseq to JIT. */
+#define NUM_CALLS_TO_ADD 10
 /* A threshold used to move iseq to the queue head. */
-#define NUM_CALLS_TO_PRIORITY_INCREASE 500
+#define NUM_CALLS_TO_PRIORITY_INCREASE 1000
 
 /* A forward declaration */
 extern VALUE vm_exec(rb_thread_t *th, int no_mjit_p);
@@ -112,26 +111,22 @@ mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
     if (UNLIKELY((ptrdiff_t) fun <= (ptrdiff_t) LAST_JIT_ISEQ_FUN)) {
 	switch ((enum rb_mjit_iseq_fun) fun) {
 	case NOT_ADDED_JIT_ISEQ_FUN:
-	    if ((type != ISEQ_TYPE_METHOD && type != ISEQ_TYPE_BLOCK)
-		|| body->call_c_func_p) {
-		body->jit_code = (void *) NEVER_JIT_ISEQ_FUN;
-		return Qundef;
-	    } else {
-		body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
-		mjit_add_iseq_to_process(iseq);
-		return Qundef;
+	    if (n_calls == NUM_CALLS_TO_ADD && ! mjit_opts.aot) {
+		if ((type == ISEQ_TYPE_METHOD || type == ISEQ_TYPE_BLOCK)
+		    && ! body->call_c_func_p) {
+		    body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
+		    mjit_add_iseq_to_process(iseq);
+		}
 	    }
-	    break;
-	case NEVER_JIT_ISEQ_FUN:
+	    return Qundef;
+	case NOT_READY_JIT_ISEQ_FUN:
+	    if (n_calls == NUM_CALLS_TO_PRIORITY_INCREASE)
+		mjit_increase_iseq_priority(iseq);
 	    return Qundef;
 	case NOT_READY_AOT_ISEQ_FUN:
 	    if ((ptrdiff_t) (fun = mjit_get_iseq_fun(iseq)) <= (ptrdiff_t) LAST_JIT_ISEQ_FUN)
 		return Qundef;
 	    break;
-	case NOT_READY_JIT_ISEQ_FUN:
-	    if (n_calls == NUM_CALLS_TO_PRIORITY_INCREASE)
-		mjit_increase_iseq_priority(iseq);
-	    return Qundef;
 	default: /* To avoid a warning on LAST_JIT_ISEQ_FUN */
 	    break;
 	}
@@ -163,11 +158,9 @@ mjit_aot_process(rb_iseq_t *iseq) {
     if (! mjit_init_p || ! mjit_opts.aot)
 	return;
 
-    if ((body->type != ISEQ_TYPE_METHOD && body->type != ISEQ_TYPE_BLOCK
-	 && body->type != ISEQ_TYPE_TOP && body->type != ISEQ_TYPE_MAIN)
-	|| body->call_c_func_p) {
-	body->jit_code = (void *) NEVER_JIT_ISEQ_FUN;
-    } else {
+    if ((body->type == ISEQ_TYPE_METHOD || body->type == ISEQ_TYPE_BLOCK
+	 || body->type == ISEQ_TYPE_TOP || body->type == ISEQ_TYPE_MAIN)
+	&& ! body->call_c_func_p) {
 	body->jit_code = (void *) NOT_READY_AOT_ISEQ_FUN;
 	mjit_add_iseq_to_process(iseq);
     }
