@@ -108,6 +108,7 @@ vm_exec_core(rb_thread_t *th, VALUE initial)
 #endif
     reg_cfp = th->cfp;
     reg_pc = reg_cfp->pc;
+    set_default_sp(reg_cfp, reg_cfp->bp);
 
 #if OPT_STACK_CACHING
     reg_a = initial;

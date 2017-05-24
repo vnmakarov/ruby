@@ -1,3 +1,9 @@
+2017-05-24  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (translate_batch_iseqs): Generate set_default_sp_0 call.
+	* vm.c (vm_exec): Remove default sp setting.
+	* vm_exec.c (vm_exec_core): Call set_default_sp.
+
 2017-05-23  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* vm_core.h (struct rb_iseq_constant_body): New filed

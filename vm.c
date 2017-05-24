@@ -1760,7 +1760,6 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
     enter_cfp->ep[VM_ENV_DATA_INDEX_FLAGS] |= VM_FRAME_FLAG_FINISH;
     if ((state = EXEC_TAG()) == 0) {
       vm_loop_start:
-	th->cfp->sp = th->cfp->bp + 1 + th->cfp->iseq->body->temp_vars_num;
 	if (no_mjit_p || (result = mjit_execute_iseq(th)) == Qundef)
 	    result = vm_exec_core(th, initial);
 	if ((state = th->state) != 0) {

@@ -1541,6 +1541,8 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 		fprintf(f, "  VALUE t%lu;\n", i);
 	if (! b->ep_neq_bp_p)
 	    fprintf(f, "  if (cfp->bp != cfp->ep) return RUBY_Qundef;\n");
+	fprintf(f, "  set_default_sp_0(cfp, cfp->bp, %u);\n",
+		body->temp_vars_num);
 	if (tc.use_local_vars_p) {
 	    for (i = 0; i < body->local_table_size; i++)
 		fprintf(f, "  v%ld = *get_loc_addr(cfp, %ld);\n", i, i + VM_ENV_DATA_SIZE);
