@@ -116,7 +116,9 @@ real_ms_time(void) {
 /* A copy of MJIT portion of MRI options since MJIT initialization.  We
    need them as MJIT threads still can work when the most MRI data were
    freed. */
+RUBY_SYMBOL_EXPORT_BEGIN
 struct mjit_options mjit_opts;
+RUBY_SYMBOL_EXPORT_END
 
 /* Default level of details in the debug info.  */
 static int debug_level = 3;

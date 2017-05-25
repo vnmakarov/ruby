@@ -1,3 +1,9 @@
+2017-05-25  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* MJIT_KEEP (rb_threadptr_tag_jump): Add.
+	* internal.h (rb_hash_tbl_raw): Export.
+	* mjit.c (mjit_opts): Export.
+
 2017-05-24  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.h (NEVER_JIT_ISEQ_FUN): Remove.

@@ -1096,7 +1096,9 @@ void rb_gc_resurrect(VALUE ptr);
 #define NEWOBJ_OF(obj,type,klass,flags) RB_NEWOBJ_OF(obj,type,klass,flags)
 
 /* hash.c */
+RUBY_SYMBOL_EXPORT_BEGIN
 struct st_table *rb_hash_tbl_raw(VALUE hash);
+RUBY_SYMBOL_EXPORT_END
 VALUE rb_hash_has_key(VALUE hash, VALUE key);
 VALUE rb_hash_default_value(VALUE hash, VALUE key);
 VALUE rb_hash_set_default_proc(VALUE hash, VALUE proc);
