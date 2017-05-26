@@ -1,3 +1,8 @@
+2017-05-26  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (translate_iseq_insn): Generate errinfo assignment before
+	rb_threadptr_tag_jump call.
+
 2017-05-25  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* MJIT_KEEP (rb_threadptr_tag_jump): Add.

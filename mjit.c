@@ -1236,12 +1236,12 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	case BIN(raise_except):
 	    fprintf(f, "  val = %s_f(th, cfp, %s, %"PRIuVALUE ");\n",
 		    iname, get_op_str(buf, code[pos + 1], tcp), code[pos + 2]);
-	    fprintf(f, "  rb_threadptr_tag_jump(th, th->state);\n");
+	    fprintf(f, "  th->errinfo = val; rb_threadptr_tag_jump(th, th->state);\n");
 	    break;
 	case BIN(raise_except_val):
 	    fprintf(f, "  val = %s_f(th, cfp, 0x%"PRIxVALUE ", %"PRIuVALUE ");\n",
 		    iname, code[pos + 1], code[pos + 2]);
-	    fprintf(f, "  rb_threadptr_tag_jump(th, th->state);\n");
+	    fprintf(f, "  th->errinfo = val; rb_threadptr_tag_jump(th, th->state);\n");
 	    break;
 	case BIN(ret_to_loc):
 	case BIN(ret_to_temp):
