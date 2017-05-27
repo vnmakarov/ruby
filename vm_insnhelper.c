@@ -967,12 +967,25 @@ vm_getinstancevariable(VALUE obj, ID id, IC ic)
     return vm_getivar(obj, id, ic, 0, 0);
 }
 
+/* Two speculative versions of ivar access.  We know about how ivars
+   are stored in SELF and that there is already an ivar with
+   INDEX.  */
+static do_inline VALUE
+vm_getivar_spec_big(VALUE self, size_t index) {
+  return ROBJECT(self)->as.heap.ivptr[index];
+}
+
+static do_inline VALUE
+vm_getivar_spec_small(VALUE self, size_t index) {
+  return ROBJECT(self)->as.ary[index];
+}
+
 /* A speculative version of ivar access.  We assume the variable was
    created and the class is still the same.  SELF is an object with
    the ivar with IC_SERIAL (from IC cache) and INDEX.  We know
    RB_TYPE_P(self, T_OBJECT) is true that if TYPE_OBJ_P is true.  */
 static do_inline VALUE
-vm_getinstancevariable_spec(VALUE self, int type_obj_p, rb_serial_t ic_serial, size_t index)
+vm_getivar_spec(VALUE self, int type_obj_p, rb_serial_t ic_serial, size_t index)
 {
 #if USE_IC_FOR_IVAR
     if (LIKELY((type_obj_p || RB_TYPE_P(self, T_OBJECT)) && ic_serial == RCLASS_SERIAL(RBASIC(self)->klass))) {
@@ -989,13 +1002,30 @@ vm_setinstancevariable(VALUE obj, ID id, VALUE val, IC ic)
     vm_setivar(obj, id, val, ic, 0, 0);
 }
 
+/* Two speculative versions of ivar assignment.  We know about how
+   ivars are stored in SELF and that there is already an ivar with
+   INDEX.  */
+static do_inline VALUE
+vm_setivar_spec_big(VALUE self, size_t index, VALUE val) {
+    rb_check_frozen(self);
+    RB_OBJ_WRITE(self, &ROBJECT(self)->as.heap.ivptr[index], val);
+    return val;
+}
+
+static do_inline VALUE
+vm_setivar_spec_small(VALUE self, size_t index, VALUE val) {
+    rb_check_frozen(self);
+    RB_OBJ_WRITE(self, &ROBJECT(self)->as.ary[index], val);
+    return val;
+}
+
 /* A speculative version of assigning VAL to ivar.  We assume the
    variable was created and the class is still the same.  SELF is an
    object with the ivar with IC_SERIAL (from IC cache) and INDEX.  We
    know RB_TYPE_P(self, T_OBJECT) is true that if TYPE_OBJ_P is
    true.  */
 static do_inline VALUE
-vm_setinstancevariable_spec(VALUE self, int type_obj_p, rb_serial_t ic_serial, size_t index, VALUE val)
+vm_setivar_spec(VALUE self, int type_obj_p, rb_serial_t ic_serial, size_t index, VALUE val)
 {
 #if USE_IC_FOR_IVAR
     rb_check_frozen(self);

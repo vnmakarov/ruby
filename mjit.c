@@ -212,8 +212,6 @@ struct rb_mjit_batch {
     /* The following member is used to generate a code with global
        speculation.  */
     struct global_spec_state spec_state;
-    /* The following flags reflect inequality of ep and bp.  */
-    int ep_neq_bp_p:1;
     /* The relative time when a worker started to process the
        batch.  It is used in the debug mode.  */
     double time_start;
@@ -241,6 +239,20 @@ struct rb_mjit_batch_iseq {
     /* Number of iseq calls, number of them in JIT mode, and number of
        JIT calls with speculation failures.  */
     unsigned long overall_calls, jit_calls, failed_jit_calls;
+    /* The following flag reflects speculation about equality of ep
+       and bp which we used during last iseq translation.  */
+    int ep_neq_bp_p:1;
+    /* -1 means we speculate that self has few instance variables.
+       Positive means we speculate that self has > IVAR_SPEC instance
+       variables and IVAR_SPEC > ROBJECT_EMBED_LEN_MAX.  Zero means we
+       know nothing about the number.  */
+    size_t ivar_spec;
+    /* Serial number of self for speculative translations for nonzero
+       ivar_spec. */
+    rb_serial_t ivar_serial;
+    /* True if we use C vars for temporary Ruby variables during last
+       iseq translation.  */
+    char use_temp_vars_p;
     /* Number of JIT code mutations (and cancellations).  */
     int jit_mutations_num;
     /* Array of structures describing insns which initiated mutations.
@@ -1044,37 +1056,6 @@ struct translation_control {
     char use_temp_vars_p;
 };
 
-/* Update translation parameters of TCP affecting C variable usage for
-   ISEQ given by BI.  */
-static void
-update_tc_from_insns(struct rb_mjit_batch_iseq *bi, struct translation_control *tcp) {
-    rb_iseq_t *iseq = bi->iseq;
-    size_t pos, size = bi->iseq_size;
-    const VALUE *code = iseq->body->iseq_encoded;
-    VALUE insn;
-    
-    for (pos = 0; pos < size;) {
-	insn = code[pos];
-#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
-	insn = rb_vm_insn_addr2insn((void *) insn);
-#endif
-	switch (insn) {
-	case BIN(var2var):
-	case BIN(concat_strings):
-	case BIN(to_regexp):
-	case BIN(make_array):
-	case BIN(make_hash):
-	case BIN(new_array_min):
-	case BIN(new_array_max):
-	case BIN(spread_array):
-	case BIN(define_class):
-	    tcp->use_temp_vars_p = FALSE;
-	    return;
-	}
-	pos += insn_len(insn);
-    }
-}
-
 /* Return C code string representing address of local/temporary
    variable with index IND.  TCP defines where values of the ISEQ
    local/temporary variables will be kept inside C function
@@ -1329,22 +1310,38 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
     } else if (!tcp->safe_p && ivar_p && insn_mutation_num == 0) {
 	assert(insn == BIN(ivar2var) || insn == BIN(var2ivar) || insn == BIN(val2ivar));
-	if (insn == BIN(ivar2var))
-	    fprintf(f, "  if (mjit_ivar2var(cfp, self, %d, %llu, %llu, %s, %ld",
-		    iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
-		    (unsigned long long) local_ic.ic_value.index,
-		    get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
-	else {
-	    fprintf(f, "  if (mjit_%s(cfp, self, %d, %llu, %llu, ",
-		    iname, iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
-		    (unsigned long long) local_ic.ic_value.index);
-	    if (insn == BIN(var2ivar))
-		fprintf (f, "%s", get_op_str(buf, code[pos + 3], tcp));
-	    else
-		fprintf (f, "0x%"PRIxVALUE, code[pos + 3]);
+	if (bi->ivar_spec != 0) {
+	    if (insn == BIN(ivar2var))
+		fprintf(f, "  mjit_ivar2var_no_check(cfp, self, %d, %llu, %s, %ld);\n",
+			bi->ivar_spec != (size_t) -1, (unsigned long long) local_ic.ic_value.index,
+			get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
+	    else {
+		fprintf(f, "  mjit_%s_no_check(cfp, self, %d, %llu, ",
+			iname, bi->ivar_spec != (size_t) -1, (unsigned long long) local_ic.ic_value.index);
+		if (insn == BIN(var2ivar))
+		    fprintf (f, "%s", get_op_str(buf, code[pos + 3], tcp));
+		else
+		    fprintf (f, "0x%"PRIxVALUE, code[pos + 3]);
+		fprintf (f, ");\n");
+	    }
+	} else {
+	    if (insn == BIN(ivar2var))
+		fprintf(f, "  if (mjit_ivar2var(cfp, self, %d, %llu, %llu, %s, %ld",
+			iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
+			(unsigned long long) local_ic.ic_value.index,
+			get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
+	    else {
+		fprintf(f, "  if (mjit_%s(cfp, self, %d, %llu, %llu, ",
+			iname, iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
+			(unsigned long long) local_ic.ic_value.index);
+		if (insn == BIN(var2ivar))
+		    fprintf (f, "%s", get_op_str(buf, code[pos + 3], tcp));
+		else
+		    fprintf (f, "0x%"PRIxVALUE, code[pos + 3]);
+	    }
+	    fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
+	    fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	}
-	fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
-	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
     } else if (!tcp->safe_p && const_p && insn_mutation_num == 0 && insn == BIN(const_cached_val_ld)) {
 	assert(insn == BIN(const_cached_val_ld));
 	fprintf(f, "  if (mjit_const_cached_val_ld(cfp, %llu, %llu, 0x%"PRIxVALUE ", %s, %ld",
@@ -1468,7 +1465,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 static int
 translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
     struct rb_mjit_batch_iseq *bi;
-    int fd, err;
+    int fd, err, ep_neq_bp_p;
     FILE *f = fopen(b->cfname, "w");
     char mjit_fname_holder[MAX_MJIT_FNAME_LEN];
 
@@ -1486,16 +1483,16 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
     fprintf(f, "extern unsigned long jit_insns_num;\n");
 #endif
     setup_global_spec_state(&b->spec_state);
-    b->ep_neq_bp_p = 0;
+    ep_neq_bp_p = FALSE;
     for (bi = b->first; bi != NULL; bi = bi->next)
-	if (bi->iseq && bi->jit_mutations_num >= mjit_opts.max_mutations) {
-	    b->ep_neq_bp_p = 1;
+	if (bi->ep_neq_bp_p) {
+	    ep_neq_bp_p = TRUE;
 	    break;
 	}
     fprintf(f, "static const char mjit_profile_p = %d;\n", mjit_opts.profile);
     fprintf(f, "static const char mjit_trace_p = %d;\n", b->spec_state.trace_p);
     fprintf(f, "static const char mjit_bop_redefined_p = %d;\n", b->spec_state.bop_redefined_p);
-    fprintf(f, "static const char mjit_ep_neq_bp_p = %d;\n", b->ep_neq_bp_p);
+    fprintf(f, "static const char mjit_ep_neq_bp_p = %d;\n", ep_neq_bp_p);
     for (bi = b->first; bi != NULL; bi = bi->next) {
 	struct rb_iseq_constant_body *body;
 	size_t i, size = bi->iseq_size;
@@ -1505,29 +1502,14 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	    continue;
 	body = bi->iseq->body;
 	tc.safe_p = bi->jit_mutations_num >= mjit_opts.max_mutations;
-	tc.use_temp_vars_p = ! body->break_next_redo_raise_p;
-	if (tc.use_temp_vars_p) {
-	    const struct iseq_catch_table *ct = body->catch_table;
-	    
-	    if (ct != NULL)
-		for (i = 0; i < ct->size; i++) {
-		    const struct iseq_catch_table_entry *entry = &ct->entries[i];
-		    if (entry->type != CATCH_TYPE_BREAK
-			&& entry->type != CATCH_TYPE_NEXT
-			&& entry->type != CATCH_TYPE_REDO) {
-			tc.use_temp_vars_p = FALSE;
-			break;
-		    }
-		}
-	}
+	tc.use_temp_vars_p = bi->use_temp_vars_p;
 	/* If the current iseq contains a block, we should not use C
 	   vars for local Ruby vars because a binding can be created
 	   in a block and used inside for access to a variable of the
 	   current iseq.  The current frame local vars will be saved
 	   as bp and ep equality is changed into their inequality
 	   after the binding call.  */
-	tc.use_local_vars_p = ! body->parent_iseq_p && ! b->ep_neq_bp_p && tc.use_temp_vars_p;
-	update_tc_from_insns(bi, &tc);
+	tc.use_local_vars_p = ! body->parent_iseq_p && ! ep_neq_bp_p && tc.use_temp_vars_p;
 	debug(3, "translating %d(0x%lx)", bi->num, (long unsigned) bi->iseq);
 	fprintf(f, "VALUE %s(rb_thread_t *th, rb_control_frame_t *cfp) {\n",
 		get_batch_iseq_fname(bi, mjit_fname_holder));
@@ -1541,8 +1523,15 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	if (tc.use_temp_vars_p)
 	    for (i = 0; i <= body->temp_vars_num; i++)
 		fprintf(f, "  VALUE t%lu;\n", i);
-	if (! b->ep_neq_bp_p)
-	    fprintf(f, "  if (cfp->bp != cfp->ep) return RUBY_Qundef;\n");
+	if (! ep_neq_bp_p) {
+	    fprintf(f, "  if (cfp->bp != cfp->ep) {\n");
+	    fprintf(f, "    mjit_ep_eq_bp_fail(cfp->iseq); return RUBY_Qundef;\n  }\n");
+	}
+	if (bi->ivar_spec != 0) {
+	    fprintf(f, "  if (mjit_check_self_p(self, %llu, %lu)) {\n",
+		    (unsigned long long) bi->ivar_serial, bi->ivar_spec);
+	    fprintf(f, "    mjit_ivar_spec_fail(cfp->iseq); return RUBY_Qundef;\n  }\n");
+	}
 	fprintf(f, "  set_default_sp_0(cfp, cfp->bp, %u);\n",
 		body->temp_vars_num);
 	if (tc.use_local_vars_p) {
@@ -1923,6 +1912,85 @@ init_workers(void) {
     pch_status = PCH_NOT_READY;
 }
 
+/* Update initial values of BI ivar_spec, ivar_serial, and
+   use_temp_vars_p.  */
+static void
+update_batch_iseq_info_from_insns(struct rb_mjit_batch_iseq *bi) {
+    rb_iseq_t *iseq = bi->iseq;
+    struct rb_iseq_constant_body *body = iseq->body;
+    size_t pos, ic_disp, size = bi->iseq_size;
+    rb_serial_t ivar_serial;
+    int ivar_spec_update_p;
+    size_t ivar_access_num, index, max_ivar_spec_index;
+    const VALUE *code = iseq->body->iseq_encoded;
+    VALUE insn;
+    IC ic;
+    
+    ivar_spec_update_p = TRUE;
+    ivar_serial = 0;
+    ivar_access_num = 0;
+    max_ivar_spec_index = 0;
+    for (pos = 0; pos < size;) {
+	insn = code[pos];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+	insn = rb_vm_insn_addr2insn((void *) insn);
+#endif
+	ic_disp = 2;
+	switch (insn) {
+	case BIN(var2var):
+	case BIN(concat_strings):
+	case BIN(to_regexp):
+	case BIN(make_array):
+	case BIN(make_hash):
+	case BIN(new_array_min):
+	case BIN(new_array_max):
+	case BIN(spread_array):
+	case BIN(define_class):
+	    bi->use_temp_vars_p = FALSE;
+	    break;
+	case BIN(ivar2var):
+	    ic_disp = 3;
+	case BIN(val2ivar):
+	case BIN(var2ivar):
+	    ic = (IC) code[pos + ic_disp];
+	    if (ivar_access_num == 0)
+		ivar_serial = ic->ic_serial;
+	    else if (ivar_serial != ic->ic_serial)
+		ivar_spec_update_p = FALSE;
+	    index = ic->ic_value.index;
+	    if (ivar_access_num == 0 || max_ivar_spec_index < index)
+		max_ivar_spec_index = index;
+	    ivar_access_num++;
+	    break;
+	}
+	pos += insn_len(insn);
+    }
+    if (ivar_spec_update_p && ivar_access_num > 2 && body->in_type_object_p) {
+	/* We have enough ivar accesses to make whole function
+	   speculation about them.  */
+	bi->ivar_spec = (max_ivar_spec_index >= ROBJECT_EMBED_LEN_MAX
+			 ? max_ivar_spec_index : (size_t) -1);
+	bi->ivar_serial = ivar_serial;
+    }
+    if (body->break_next_redo_raise_p)
+	bi->use_temp_vars_p = FALSE;
+    else if (bi->use_temp_vars_p) {
+	size_t i;
+	const struct iseq_catch_table *ct = body->catch_table;
+	
+	if (ct != NULL)
+	    for (i = 0; i < ct->size; i++) {
+		const struct iseq_catch_table_entry *entry = &ct->entries[i];
+		if (entry->type != CATCH_TYPE_BREAK
+		    && entry->type != CATCH_TYPE_NEXT
+		    && entry->type != CATCH_TYPE_REDO) {
+		    bi->use_temp_vars_p = FALSE;
+		    break;
+		}
+	    }
+    }
+}
+
 /* Return a free batch iseq.  It can allocate a new structure if there
    are no free batch iseqs.  */
 static struct rb_mjit_batch_iseq *
@@ -1948,10 +2016,15 @@ create_batch_iseq(rb_iseq_t *iseq) {
 	bi->label = get_string(RSTRING_PTR(iseq->body->location.label));
 	bi->overall_calls = bi->jit_calls = bi->failed_jit_calls = 0;
     }
+    bi->ep_neq_bp_p = FALSE;
+    bi->ivar_spec = 0;
+    bi->ivar_serial = 0;
+    bi->use_temp_vars_p = TRUE;
     bi->jit_mutations_num = 0;
     bi->mutation_insns = xmalloc(sizeof (struct mjit_mutation_insns) * (mjit_opts.max_mutations + 1));
     for (i = 0; i <= mjit_opts.max_mutations; i++)
 	bi->mutation_insns[i].insn = BIN(nop);
+    update_batch_iseq_info_from_insns(bi);
     return bi;
 }
 
@@ -1976,7 +2049,6 @@ create_batch(void) {
     b->next = NULL;
     b->first = b->last = NULL;
     init_global_spec_state(&b->spec_state);
-    b->ep_neq_bp_p = TRUE;
     return b;
 }
 
@@ -2272,6 +2344,26 @@ mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num)  {
 #endif
     bi->mutation_insns[mutation_num].pc = pc;
     bi->mutation_insns[mutation_num].insn = insn;
+}
+
+/* It is called when our whole function speculation about ivar
+   accesses during ISEQ execution failed.  */
+void
+mjit_ivar_spec_fail(rb_iseq_t *iseq) {
+    if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
+	iseq->body->batch_iseq->ivar_spec = 0;
+	mjit_redo_iseq(iseq);
+    }
+}
+
+/* It is called when our speculation about ep and bp equality during
+   ISEQ execution failed.  */
+void
+mjit_ep_eq_bp_fail(rb_iseq_t *iseq) {
+    if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
+	iseq->body->batch_iseq->ep_neq_bp_p = TRUE;
+	mjit_redo_iseq(iseq);
+    }
 }
 
 RUBY_SYMBOL_EXPORT_END

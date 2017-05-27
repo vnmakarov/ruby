@@ -482,6 +482,30 @@ ivar2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, ID id, IC ic)
     var_assign(cfp, res, res_ind, vm_getinstancevariable(GET_SELF(), id, ic));
 }
 
+/* Return true if our speculation IVAR_SPEC about SELF ivars fails.
+   We assume that SELF class has IC_SERIAL.  */
+static do_inline int
+mjit_check_self_p(VALUE self, rb_serial_t ic_serial, size_t ivar_spec) {
+    VM_ASSERT(RB_TYPE_P(self, T_OBJECT) && ivar_spec != 0);
+    if (ic_serial != RCLASS_SERIAL(RBASIC(self)->klass))
+	return TRUE;
+    return (ivar_spec == (size_t) -1 ? ROBJECT_NUMIV(self) != ROBJECT_EMBED_LEN_MAX : ROBJECT_NUMIV(self) <= ivar_spec);
+}
+
+/* Speculative ivar2var of SELF.  We know that SELF hash ivar with
+   INDEX and has > ROBJECT_EMBED_LEN_MAX ivars if BIG_P.  Otherwise
+   SELF has <= ROBJECT_EMBED_LEN_MAX ivars. */
+static do_inline void
+mjit_ivar2var_no_check(rb_control_frame_t *cfp, VALUE self, int big_p,
+		       size_t index, VALUE *res, rindex_t res_ind)
+{
+    VALUE v;
+    
+    check_sp_default(cfp);
+    v = (big_p ? vm_getivar_spec_big : vm_getivar_spec_small)(self, index);
+    var_assign(cfp, res, res_ind, v);
+}
+
 /* Speculatively assign value of an instance variable of SELF with
    IC_SERIAL (from IC cache) and INDEX to local or temporary variable
    with location RES and index RES_IND in frame CFP.  We know
@@ -493,7 +517,7 @@ mjit_ivar2var(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
     VALUE v;
     
     check_sp_default(cfp);
-    if ((v = vm_getinstancevariable_spec(self, type_obj_p, ic_serial, index)) == Qundef)
+    if ((v = vm_getivar_spec(self, type_obj_p, ic_serial, index)) == Qundef)
 	return TRUE;
     var_assign(cfp, res, res_ind, v);
     return FALSE;
@@ -612,6 +636,16 @@ val2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE val)
     vm_setinstancevariable(GET_SELF(), id, val, ic);
 }
 
+/* Speculative val2ivar of SELF.  We know that SELF has ivar with
+   index and has > ROBJECT_EMBED_LEN_MAX ivars if BIG_P.  Otherwise
+   SELF has <= ROBJECT_EMBED_LEN_MAX ivars. */
+static do_inline void
+mjit_val2ivar_no_check(rb_control_frame_t *cfp,
+		       VALUE self, int big_p, size_t index, VALUE val) {
+    check_sp_default(cfp);
+    (big_p ? vm_setivar_spec_big : vm_setivar_spec_small)(self, index, val);
+}
+
 /* Speculatively assign value VAL to an instance variable of SELF with
    IC_SERIAL (from IC cache) and INDEX.  We know RB_TYPE_P(self,
    T_OBJECT) is true that if TYPE_OBJ_P is true.  */
@@ -620,7 +654,7 @@ mjit_val2ivar(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
 	      rb_serial_t ic_serial, size_t index, VALUE val)
 {
     check_sp_default(cfp);
-    return vm_setinstancevariable_spec(self, type_obj_p, ic_serial, index, val) == Qundef;
+    return vm_setivar_spec(self, type_obj_p, ic_serial, index, val) == Qundef;
 }
 
 /* As val2ivar_f but VAL_OP of CFP location of the value.  */
@@ -630,7 +664,14 @@ var2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE *val_op)
     val2ivar_f(cfp, id, ic, *val_op);
 }
 
-/* As mjit_val2ivar the value in location VAL_OP.  */
+/* As mjit_val2ivar_no_check but with the value in location VAL_OP.  */
+static do_inline void
+mjit_var2ivar_no_check(rb_control_frame_t *cfp,
+		       VALUE self, int big_p, size_t index, VALUE *val_op) {
+    mjit_val2ivar_no_check(cfp, self, big_p, index, *val_op);
+}
+
+/* As mjit_val2ivar but with the value in location VAL_OP.  */
 static do_inline int
 mjit_var2ivar(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
 	      rb_serial_t ic_serial, size_t index, VALUE *val_op)
@@ -2596,7 +2637,6 @@ aindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3) {
 	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
 	&& FIXNUM_P(*op2) && ! OBJ_FROZEN(ary) && FL_TEST(ary, ELTS_SHARED) == 0) {
 	unsigned long len = RARRAY_LEN(ary);
-	const VALUE *ptr = RARRAY_CONST_PTR(ary);
 	unsigned long offset = FIX2ULONG(*op2);
 
 	if (offset < len) {
@@ -2628,7 +2668,6 @@ aindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
 	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
 	&& ! OBJ_FROZEN(ary) && FL_TEST(ary, ELTS_SHARED) == 0) {
 	long len = RARRAY_LEN(ary);
-	const VALUE *ptr = RARRAY_CONST_PTR(ary);
 	long offset = FIX2LONG(imm);
 
 	if (offset < 0)
@@ -2908,7 +2947,7 @@ mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp,
    the code anymore. */
 static do_inline int
 mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
-		      const rb_iseq_t *iseq, struct rb_iseq_constant_body *body,
+		      rb_iseq_t *iseq, struct rb_iseq_constant_body *body,
 		      int type, unsigned int temp_vars_num, VALUE *res) {
     VALUE v = mjit_vm_exec_0(th, iseq, body, type);
     return mjit_call_finish(th, cfp, temp_vars_num, v, res);
@@ -2924,7 +2963,7 @@ mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
    function when it knows the value of the ISEQ parameters.  */
 static do_inline int
 mjit_iseq_call(rb_thread_t *th, rb_control_frame_t *cfp, const rb_callable_method_entry_t *me,
-	       const rb_iseq_t *iseq, struct rb_iseq_constant_body *body, VALUE *pc,
+	       rb_iseq_t *iseq, struct rb_iseq_constant_body *body, VALUE *pc,
 	       int type, int param_size, int local_size,
 	       unsigned int caller_temp_vars_num, unsigned int stack_max,
 	       int argc, unsigned int flag, sindex_t call_start, ISEQ blockiseq,

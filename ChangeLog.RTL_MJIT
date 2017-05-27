@@ -1,3 +1,33 @@
+2017-05-27  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* rtl_exec.c (mjit_check_self_p, mjit_ivar2var_no_check): New.
+	(mjit_val2ivar_no_check, mjit_var2ivar_no_check): New.
+	(mjit_val2ivar, mjit_ivar2var): Use vm_getivar_spec,
+	vm_setivar_spec.
+	(mjit_var2ivar, aindseti_f): Remove unused var.
+	(mjit_call_iseq_finish, mjit_iseq_call): Remove cosnt from iseq
+	arg.
+	* vm_insnhelper.c (vm_getivar_spec_big, vm_getivar_spec_small):
+	New.
+	(vm_getinstancevariable_spec): Rename to vm_getivar_spec.
+	(vm_setivar_spec_big, vm_setivar_spec_small): New.
+	(vm_setinstancevariable_spec): Rename to vm_getivar_spec.
+	* mjit.c (struct rb_mjit_batch): Remove ep_neq_bp_p.
+	(struct rb_mjit_batch_iseq): Add ep_neq_bp_p, ivar_spec,
+	ivar_serial, use_temp_vars_p.
+	(update_tc_from_insns): Remove.
+	(translate_iseq_insn): Add ivar speculative access generation
+	without check.
+	(translate_batch_iseqs): Calculate ep_neq_bp_p from iseqs one.
+	Use iseq use)temp_vars_p.  Generate call mjit_ep_eq_bp_fail.
+	Check ivar_spec.
+	(update_batch_iseq_info_from_insns): New.
+	(create_batch_iseq): Initialize ep_neq_bp_p, ivar_spec,
+	ivar_serial, use_tem_vars_p.  Call
+	update_batch_iseq_info_from_insns.
+	(mjit_ivar_spec_fail, mjit_ep_eq_bp_fail): New.
+	* mjit.h (mjit_ivar_spec_fail, mjit_ep_eq_bp_fail): New protoypes.
+
 2017-05-26  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (translate_iseq_insn): Generate errinfo assignment before
