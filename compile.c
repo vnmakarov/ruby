@@ -1297,6 +1297,22 @@ iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     debugs("[compile step 5 (iseq_translate_threaded_code)] \n");
     if (!rb_iseq_translate_threaded_code(iseq)) return COMPILE_NG;
 
+    if (! iseq->body->except_p) {
+	size_t i;
+	const struct iseq_catch_table *ct = iseq->body->catch_table;
+	
+	if (ct != NULL)
+	    for (i = 0; i < ct->size; i++) {
+		const struct iseq_catch_table_entry *entry = &ct->entries[i];
+		if (entry->type != CATCH_TYPE_BREAK
+		    && entry->type != CATCH_TYPE_NEXT
+		    && entry->type != CATCH_TYPE_REDO) {
+		    iseq->body->except_p = TRUE;
+		    break;
+		}
+	    }
+    }
+    
     if (compile_debug > 1) {
 	VALUE str = rb_iseq_disasm(iseq);
 	printf("%s\n", StringValueCStr(str));
@@ -5387,7 +5403,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	    int op_result, temp_vars_num;
 
 	    if (iseq->body->parent_iseq != NULL)
-		iseq->body->parent_iseq->body->break_next_redo_raise_p = TRUE;
+		iseq->body->parent_iseq->body->except_p = TRUE;
 	break_by_insn:
 	    temp_vars_num = *curr_temp_vars_num;
 	    op_result = anywhere_result;
@@ -5413,12 +5429,12 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		level++;
 		if (ISEQ_COMPILE_DATA(ip)->redo_label != 0) {
 		    level = VM_THROW_NO_ESCAPE_FLAG;
-		    ip->body->break_next_redo_raise_p = TRUE;
+		    ip->body->except_p = TRUE;
 		    goto break_by_insn;
 		}
 		else if (ip->body->type == ISEQ_TYPE_BLOCK) {
 		    level <<= VM_THROW_LEVEL_SHIFT;
-		    ip->body->break_next_redo_raise_p = TRUE;
+		    ip->body->except_p = TRUE;
 		    goto break_by_insn;
 		}
 		else if (ip->body->type == ISEQ_TYPE_EVAL) {
@@ -5496,7 +5512,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 		ADD_INSN2(ret, line, raise_except,
 			  INT2LINT(ls - op_result),
 			  INT2FIX(level | TAG_NEXT));
-		ip->body->break_next_redo_raise_p = TRUE;
+		ip->body->except_p = TRUE;
 	    }
 	    else {
 		COMPILE_ERROR(ERROR_ARGS "Invalid next");
@@ -5553,7 +5569,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	    }
 	    if (ip != 0) {
 		ADD_INSN2(ret, line, raise_except_val, Qnil, INT2FIX(level | TAG_REDO));
-		ip->body->break_next_redo_raise_p = TRUE;
+		ip->body->except_p = TRUE;
 	    }
 	    else {
 		COMPILE_ERROR(ERROR_ARGS "Invalid redo");

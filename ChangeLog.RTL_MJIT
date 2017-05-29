@@ -1,5 +1,19 @@
 2017-05-29  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* compile.c (iseq_setup): Update iseq except_p from the catch
+	table.
+	(iseq_compile_each): Use except_p instead of
+	break_next_redo_raise_p.
+	* mjit.c (update_batch_iseq_info_from_insns): Ditto.  Remove
+	checking the catch table.
+	* rtl_exec.c (mjit_vm_exec_0, mjit_vm_exec): Use except_p.
+	* vm.c (invoke_block): Ditto.  Don't use VM_FRAME_FLAG_FINISH.
+	Call mjit_execute_iseq.
+	* vm_core.h (struct rb_iseq_constant_body): Remove
+	break_next_redo_raise_p.  Add except_p.
+
+2017-05-29  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* rtl_exec.c (case_dispatch_f): Add T_FIXNUM to switch cases.
 	* mjit.c (get_insn_fun_features): Make case_dispatch a special
 	insn.

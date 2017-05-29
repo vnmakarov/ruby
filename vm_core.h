@@ -403,9 +403,8 @@ struct rb_iseq_constant_body {
     unsigned int cd_kw_size;
     unsigned int line_info_size;
 
-    /* Non-zero for potential processing an exception for break, next,
-       or redo.  */
-    char break_next_redo_raise_p;
+    /* Non-zero for potential processing an exception.  */
+    char except_p;
     /* Non-zero for ISEQ which is a parent iseq of some other
        iseq.  */
     char parent_iseq_p;

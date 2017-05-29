@@ -2004,23 +2004,8 @@ update_batch_iseq_info_from_insns(struct rb_mjit_batch_iseq *bi) {
 			 ? max_ivar_spec_index : (size_t) -1);
 	bi->ivar_serial = ivar_serial;
     }
-    if (body->break_next_redo_raise_p)
+    if (body->except_p)
 	bi->use_temp_vars_p = FALSE;
-    else if (bi->use_temp_vars_p) {
-	size_t i;
-	const struct iseq_catch_table *ct = body->catch_table;
-	
-	if (ct != NULL)
-	    for (i = 0; i < ct->size; i++) {
-		const struct iseq_catch_table_entry *entry = &ct->entries[i];
-		if (entry->type != CATCH_TYPE_BREAK
-		    && entry->type != CATCH_TYPE_NEXT
-		    && entry->type != CATCH_TYPE_REDO) {
-		    bi->use_temp_vars_p = FALSE;
-		    break;
-		}
-	    }
-    }
 }
 
 /* Return a free batch iseq.  It can allocate a new structure if there

@@ -1000,20 +1000,26 @@ rb_binding_add_dynavars(rb_binding_t *bind, int dyncount, const ID *dynvars)
     return env->env;
 }
 
-/* C -> Ruby: block */
+/* C -> Ruby: block.  Use call of JIT code without vm_exec wrapper
+   when possible.  */
 
 static inline VALUE
 invoke_block(rb_thread_t *th, const rb_iseq_t *iseq, VALUE self, const struct rb_captured_block *captured, const rb_cref_t *cref, VALUE type, int opt_pc)
 {
-    int arg_size = iseq->body->param.size;
+    VALUE result;
+    struct rb_iseq_constant_body *body = iseq->body;
+    int except_p = body->except_p;
+    int arg_size = body->param.size;
 
-    vm_push_frame(th, iseq, type | VM_FRAME_FLAG_FINISH, self,
+    vm_push_frame(th, iseq, type, self,
 		  VM_GUARDED_PREV_EP(captured->ep),
 		  (VALUE)cref, /* cref or method */
-		  iseq->body->iseq_encoded + opt_pc,
-		  th->cfp->sp + arg_size, iseq->body->local_table_size - arg_size,
-		  iseq->body->stack_max);
-    return vm_exec(th, FALSE);
+		  body->iseq_encoded + opt_pc,
+		  th->cfp->sp + arg_size, body->local_table_size - arg_size,
+		  body->stack_max);
+    if (except_p || (result = mjit_execute_iseq(th)) == Qundef)
+	result = vm_exec(th, ! except_p);
+    return result;
 }
 
 static VALUE

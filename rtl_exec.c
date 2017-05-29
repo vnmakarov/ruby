@@ -102,17 +102,19 @@ var_assign(rb_control_frame_t *cfp, VALUE *res, ptrdiff_t res_ind, VALUE v)
 
 
 /* Execute the current iseq ISEQ of TH and return the result.  The
-   iseq has BODY and TYPE.  Try to use JIT code first.  It is called
-   only from a JIT code.  To generate a better code MJIT use the
-   function when it knows the value of the ISEQ parameters.  */
+   iseq has BODY and TYPE.  Try to use JIT code first directly if ISEQ
+   does not process exceptions.  It is called only from a JIT code.
+   To generate a better code MJIT use the function when it knows the
+   value of the ISEQ parameters.  */
 static do_inline VALUE
 mjit_vm_exec_0(rb_thread_t *th, rb_iseq_t *iseq,
 	       struct rb_iseq_constant_body *body, int type) {
   VALUE result;
+  int except_p = body->except_p;
   
   VM_ASSERT(in_mjit_p);
-  if ((result = mjit_execute_iseq_0(th, iseq, body, type)) == Qundef)
-      result = vm_exec(th, TRUE);
+  if (except_p || (result = mjit_execute_iseq_0(th, iseq, body, type)) == Qundef)
+      result = vm_exec(th, ! except_p);
   return result;
 }
 
@@ -121,10 +123,11 @@ mjit_vm_exec_0(rb_thread_t *th, rb_iseq_t *iseq,
 static do_inline VALUE
 mjit_vm_exec(rb_thread_t *th) {
   VALUE result;
+  int except_p = th->cfp->iseq->body->except_p;
   
   VM_ASSERT(in_mjit_p);
-  if ((result = mjit_execute_iseq(th)) == Qundef)
-      result = vm_exec(th, TRUE);
+  if (except_p || (result = mjit_execute_iseq(th)) == Qundef)
+      result = vm_exec(th, ! except_p);
   return result;
 }
 
