@@ -3357,6 +3357,7 @@ case_dispatch_f(rb_control_frame_t *cfp, VALUE *op,
     check_sp_default(cfp);
     switch(TYPE(key)) {
     case -1:
+    case T_FIXNUM:
     case T_FLOAT:
     case T_SYMBOL:
     case T_BIGNUM:

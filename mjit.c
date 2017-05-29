@@ -758,6 +758,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(trace):
     case BIN(goto):
     case BIN(get_inline_cache):
+    case BIN(case_dispatch):
 	f->special_p = TRUE;
 	break;
     case BIN(bt):
@@ -949,7 +950,6 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(to_string):
     case BIN(concat_strings):
     case BIN(to_regexp):
-    case BIN(case_dispatch):
     case BIN(str_freeze_call):
     case BIN(freeze_string):
 	break;
@@ -1122,6 +1122,25 @@ get_insn_mutation_num(struct rb_mjit_batch_iseq *bi, size_t pos) {
     return num;
 }
 
+/* An aditional argument to generate cases for values in case_dispatch
+   insn hash.  */
+struct case_arg {
+    /* iseq basic offset for destinations in case_dispatch  */
+    size_t offset;
+    FILE *f; /* a file where to print */
+};
+
+/* Print a case for destination VAL in case_dispatch insn.  An
+   additional info to do this is given by ARG. */
+static int
+print_case(st_data_t key, st_data_t val, st_data_t arg) {
+    struct case_arg *case_arg = (struct case_arg *) arg;
+
+    fprintf(case_arg->f, "    case %ld: goto l%ld;\n",
+	    FIX2LONG(val), case_arg->offset + FIX2LONG(val));
+    return ST_CONTINUE;
+}
+
 /* Output C code implementing an iseq BI insn starting with position
    POS to file F.  Generate the code according to TCP.  */
 static int
@@ -1202,6 +1221,19 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	case BIN(trace):
 	    fprintf(f, "  %s_f(th, cfp, %"PRIdVALUE ");\n", iname, code[pos + 1]);
 	    break;
+	case BIN(case_dispatch): {
+	    CDHASH hash = code[pos + 2];
+	    struct case_arg arg;
+	    
+	    fprintf(f, "  switch (case_dispatch_f(cfp, %s, 0x%"PRIxVALUE ", %ld)) {\n",
+		    get_op_str(buf, code[pos + 1], tcp), (VALUE) hash, code[pos + 3]);
+	    fprintf(f, "    case 0: break;\n");
+	    arg.offset = pos + len;
+	    arg.f = f;
+	    st_foreach(RHASH_TBL_RAW(hash), print_case, (st_data_t) &arg);  
+	    fprintf(f, "  }\n");
+	    break;
+	}
 	case BIN(temp_ret):
 	    fprintf(f, "  %s_f(th, cfp, %s, %"PRIuVALUE ", &val);\n  return val;\n",
 		    iname, get_op_str(buf, code[pos + 1], tcp), code[pos + 2]);

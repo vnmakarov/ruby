@@ -1,3 +1,12 @@
+2017-05-29  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* rtl_exec.c (case_dispatch_f): Add T_FIXNUM to switch cases.
+	* mjit.c (get_insn_fun_features): Make case_dispatch a special
+	insn.
+	(struct case_arg): New.
+	(print_case): New.
+	(translate_iseq_insn): Generate case_dispatch as a special insn.
+
 2017-05-27  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* rtl_exec.c (mjit_check_self_p, mjit_ivar2var_no_check): New.
@@ -64,7 +73,7 @@
 
 2017-05-23  Vladimir Makarov  <vmakarov@redhat.com>
 
-	* vm_core.h (struct rb_iseq_constant_body): New filed
+	* vm_core.h (struct rb_iseq_constant_body): New field
 	call_c_func_p.
 	* mjit.h (mjit_execute_iseq_0): Never JIT iseq with call_c_func_p.
 	(mjit_aot_process): Ditto.
