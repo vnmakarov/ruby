@@ -102,15 +102,14 @@ var_assign(rb_control_frame_t *cfp, VALUE *res, ptrdiff_t res_ind, VALUE v)
 
 
 /* Execute the current iseq ISEQ of TH and return the result.  The
-   iseq has BODY and TYPE.  Try to use JIT code first directly if ISEQ
+   iseq has BODY, TYPE, and flag EXCEPT_P.  Try to use JIT code first directly if ISEQ
    does not process exceptions.  It is called only from a JIT code.
    To generate a better code MJIT use the function when it knows the
    value of the ISEQ parameters.  */
 static do_inline VALUE
 mjit_vm_exec_0(rb_thread_t *th, rb_iseq_t *iseq,
-	       struct rb_iseq_constant_body *body, int type) {
+	       struct rb_iseq_constant_body *body, int except_p, int type) {
   VALUE result;
-  int except_p = body->except_p;
   
   VM_ASSERT(in_mjit_p);
   if (except_p || (result = mjit_execute_iseq_0(th, iseq, body, type)) == Qundef)
@@ -2945,19 +2944,19 @@ mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp,
 }
  
 /* Called only from JIT code to finish a call insn of ISEQ with BODY,
-   TYPE and TEMP_VARS_NUM.  Pass the result through RES.  Return
-   non-zero if we need to cancel JITed code execution and don't use
-   the code anymore. */
+   TYPE, EXCEPT_P, and TEMP_VARS_NUM.  Pass the result through RES.
+   Return non-zero if we need to cancel JITed code execution and don't
+   use the code anymore. */
 static do_inline int
 mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
-		      rb_iseq_t *iseq, struct rb_iseq_constant_body *body,
+		      rb_iseq_t *iseq, struct rb_iseq_constant_body *body, int except_p,
 		      int type, unsigned int temp_vars_num, VALUE *res) {
-    VALUE v = mjit_vm_exec_0(th, iseq, body, type);
+    VALUE v = mjit_vm_exec_0(th, iseq, body, except_p, type);
     return mjit_call_finish(th, cfp, temp_vars_num, v, res);
 }
  
 /* The function is used to implement highly speculative call of method
-   ME with ISEQ with BODY, TYPE, PARAM_SIZE, LOCAL_SIZE, and
+   ME with ISEQ with BODY, EXCEPT_P, TYPE, PARAM_SIZE, LOCAL_SIZE, and
    STACK_MAX.  The call has ARGC, FLAG, BLOCKISEQ, and reciever RECV.
    The call params starts with CALL_START location.  The call is
    simple if SIMPLE_P.  The call should put the reciever on the stack
@@ -2966,7 +2965,7 @@ mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
    function when it knows the value of the ISEQ parameters.  */
 static do_inline int
 mjit_iseq_call(rb_thread_t *th, rb_control_frame_t *cfp, const rb_callable_method_entry_t *me,
-	       rb_iseq_t *iseq, struct rb_iseq_constant_body *body, VALUE *pc,
+	       rb_iseq_t *iseq, struct rb_iseq_constant_body *body, int except_p, VALUE *pc,
 	       int type, int param_size, int local_size,
 	       unsigned int caller_temp_vars_num, unsigned int stack_max,
 	       int argc, unsigned int flag, sindex_t call_start, ISEQ blockiseq,
@@ -2977,7 +2976,7 @@ mjit_iseq_call(rb_thread_t *th, rb_control_frame_t *cfp, const rb_callable_metho
 		 blockiseq, recv, recv_set_p, simple_p);
     vm_call_iseq_setup_normal_0(th, cfp, me, iseq, recv, argc, block_handler,
 				pc, param_size, local_size, stack_max);
-    return mjit_call_iseq_finish(th, cfp, iseq, body, type, caller_temp_vars_num, res);
+    return mjit_call_iseq_finish(th, cfp, iseq, body, except_p, type, caller_temp_vars_num, res);
 }
 
 /* A block call given by call data CD with args in temporary variables

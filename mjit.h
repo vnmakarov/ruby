@@ -22,8 +22,13 @@ enum rb_mjit_iseq_fun {
 
 /* A forward declaration  */
 struct rb_mjit_batch_iseq;
+
 /* Flag of successful MJIT initialization and intention to use it */
+#ifndef MJIT_HEADER
 extern int mjit_init_p;
+#else
+static const int mjit_init_p = 1;
+#endif
 
 /* Make it non-zero if you want to collect and print statistics about
    execution of byte code insns and JIT generated code for the insns.

@@ -1,3 +1,12 @@
+2017-05-30  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (translate_iseq_insn): Output except_p for
+	mjit_iseq_call.
+	* mjit.h (mjit_init_p): Make constant for JIT header.
+	(mjit_vm_exec_0): Add arg except_p.
+	(mjit_call_iseq_finish): Ditto.  Pass it to mjit_vm_exec_0.
+	(mjit_iseq_call): Add arg except_p.  Pass it to mjit_call_iseq_finish.
+
 2017-05-29  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* compile.c (iseq_setup): Update iseq except_p from the catch

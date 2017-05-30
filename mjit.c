@@ -1308,10 +1308,11 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    struct rb_iseq_constant_body *callee_body = callee_iseq->body;
 
 	    fprintf(f, "  if (mjit_iseq_call(th, cfp, (void *) 0x%"PRIxVALUE ", (void *) 0x%"PRIxVALUE
-		    ", (void *) 0x%"PRIxVALUE ", (void *) 0x%"PRIxVALUE
+		    ", (void *) 0x%"PRIxVALUE ", %d, (void *) 0x%"PRIxVALUE
 		    ", %d, %d, %d, %d, %u, %d, 0x%x, %ld, (void *) 0x%"PRIxVALUE
 		    ", *%s, %d, %d",
-		    (VALUE) local_cc.me, (VALUE) callee_iseq, (VALUE) callee_body, (VALUE) callee_body->iseq_encoded,
+		    (VALUE) local_cc.me, (VALUE) callee_iseq,
+		    (VALUE) callee_body, callee_body->except_p, (VALUE) callee_body->iseq_encoded,
 		    callee_body->type, callee_body->param.size, callee_body->local_table_size,
 		    iseq->body->temp_vars_num, callee_body->stack_max,
 		    ci->orig_argc, ci->flag, call_start, block_iseq,
