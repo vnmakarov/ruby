@@ -1,3 +1,16 @@
+2017-05-31  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* MJIT-benchmarks: New directory.
+	* MJIT-benchmarks/{aread, awrite, aref, aset, bench, call}.rb: New
+	files.
+	* MJIT-benchmarks/{complex-madelbrot, const, const2}.rb: Ditto.
+	* MJIT-benchmarks/{fannk, fib, ivread, ivwrite, madelbrot}.rb:
+	Ditto.
+	* MJIT-benchmarks/{meteor, nbody, nest-ntimes, nest-while}.rb:
+	Ditto.
+	* MJIT-benchmarks/{norm, nsvb, pent, red-black, trees, while}.rb:
+	Ditto.
+
 2017-05-30  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (translate_iseq_insn): Output except_p for
