@@ -1,3 +1,7 @@
+2017-05-31  VladimirMakarov  <vmakarov@redhat.com>
+
+	* README.md: Add performance data.
+
 2017-05-31  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* MJIT-benchmarks: New directory.
