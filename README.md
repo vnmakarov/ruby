@@ -335,3 +335,207 @@
         * Prevent adversary from changing MJIT C and object files
         * Prevent adversary from changing MJIT headers
             * Use crypto hash function to check the header authenticity
+
+## Update: 31 May, 2017
+
+* MJIT is reliable enough to run some benchmarks to evaluate its
+  potential
+
+* All measurements are done on Intel 3.9GHz i3-7100 with 32GB memory
+  under x86-64 Fedora Core25
+
+* For the performance comparison I used the following implementations:
+    * v2 - Ruby MRI version 2.0
+    * base - Ruby MRI (2.5 development) version on which `rtl_mjit` branch
+      is based
+    * rtl - `rtl_mjit` branch as of 31th May **without** using JIT
+    * mjit - as above but **with** using MJIT with GCC 6.3.1 with `-O2`
+    * mjit-cl - MJIT using LLVM Clang 3.9.1 with `-O2`
+    * omr - Ruby OMR (2016-12-24 revision 57163) in JIT mode (`-Xjit`)
+    * jruby - JRruby version 9.1.8.0
+    * jruby-d - as above but with using `-Xcompile.invokedynamic=true`
+    * graal - Graal Ruby version 0.22
+
+* I used the following micro-benchmarks (se MJIT-benchmarks directory):
+    * while - while loop
+    * nest-while - nested while loops (6 levels)
+    * nest-ntimes - nested ntimes loops (6 levels)
+    * ivread - reading an instance variable (@var)
+    * ivwrite - assignment to an instance variable
+    * aread - reading an instance variable through attr_reader
+    * awrite - assignment to an instance variable through attr_writer
+    * const - reading Const
+    * const2 - reading Class::Const 
+    * call - empty method calls
+    * fib - fibonacci
+    * fannk - fannkuch
+    * nsvb - bit sieve
+    * mand - (non-complex) mandelbrot as MRI v2 does not support complex numbers
+    * meteor - meteor puzzle
+    * nbody - modeling planet orbits
+    * norm - spectral norm
+    * trees - binary trees
+    * pent - pentamino puzzle
+    * red-black - Red Black trees
+    * bench - rendering
+
+* MJIT has a very fast startup which is not true for JRuby and Graal Ruby
+    * To give a better chance to JRuby and Graal Ruby the benchmarks
+      were modified in a way that Ruby MRI v2.0 runs about 20s-70s on
+      each benchmark
+
+* Each benchmark ran 3 times and the minimal time (or minimal peak memory
+  consumption) was chosen
+    * In the tables for times I use ratio `<MRI v2.0 time>/time`.  It
+      show how the particular implementation is faster than MRI v2.0
+    * For memory I use ratio `<peak memory>/<MRI v2.0 peak memory>`
+      which shows how the particular implementation is memory hungrier
+      than MRI v2.0
+    
+* I also used optcarrot for more serious program performance
+  comparison
+    * I used **2000** frames to run optcarrot
+
+# Microbenchmark results
+
+* Wall time speedup ('wall MRI v2.0 time' / 'wall time')
+    * MJIT gives a real speedup comparable with other Ruby JITs
+    * OMR is currently the worst performance JIT
+    * In most cases, using GCC is better choice for MJIT than LLVM
+
+---
+
+|           |v2 | base  | rtl   | mjit  |mjit-cl| omr   | jruby |jruby-d| graal |
+:-----------|--:|------:|------:|------:|------:|------:|------:|------:|------:|
+while       | 1	| 1.12	| 1.84	| 44.8	| 9.33	| 1.05	| 2.25	| 2.81	| 2.37	|
+nest-while  | 1	| 1.1	| 1.68	| 2.92	| 2.85	| 1.04	| 1.39	| 2.58	| 1.65	|
+nest-ntimes | 1	| 1.05	| 1.19	| 2.3	| 2.41	| 1.06	| 0.999	| 0.971	| 2.26	|
+ivread	    | 1	| 1.15	| 1.3	| 17.5	| 10.7	| 1.12	| 2.29	| 3	| 2.29	|
+ivwrite	    | 1	| 1.18	| 1.85	| 13.8	| 6.9	| 1.14	| 2.46	| 2.97	| 1.97	|
+aread	    | 1	| 1.03	| 1.42	| 18.3	| 7.22	| 0.97	| 1.77	| 3.5	| 2.18	|
+awrite	    | 1	| 1.1	| 1.44	| 13	| 7.27	| 0.993	| 2.04	| 3.86	| 2.6	|
+const	    | 1	| 1.06	| 1.49	| 16	| 12	| 1.07	| 2.74	| 3.74	| 3.04	|
+const2	    | 1	| 1.13	| 1.37	| 15.1	| 11.9	| 1.1	| 3.1	| 3.88	| 2.45	|
+call	    | 1	| 1.13	| 1.52	| 5.13	| 4.55	| 0.899	| 2.12	| 4.91	| 2.82	|
+fib	    | 1	| 1.2	| 1.44	| 3.96	| 3.68	| 1.11	| 1.88	| 5.03	| 2.28	|
+fannk	    | 1	| 1.04	| 1.09	| 1.09	| 1.1	| 0.996	| 1.65	| 2.32	| 0.996	|
+nsvb	    | 1	| 0.997	| 0.999	| 1	| 0.981	| 0.996	| 0.726	| 0.718	| 0.572	|
+mand	    | 1	| 0.952	| 1.14	| 2.11	| 2.12	| 1.09	| 0.976	| 1.55	| 2.55	|
+meteor	    | 1	| 1.23	| 1.26	| 1.61	| 1.59	| 1.16	| 0.912	| 0.923	| 0.525	|
+nbody	    | 1	| 1.07	| 1.16	| 2.66	| 3.07	| 1.28	| 1.01	| 2.33	| 2.13	|
+norm	    | 1	| 1.14	| 1.11	| 2.49	| 2.5	| 1.15	| 0.907	| 1.43	| 1.61	|
+trees	    | 1	| 1.13	| 1.23	| 2.22	| 2.17	| 1.2	| 1.39	| 1.51	| 0.813	|
+pent	    | 1	| 1.12	| 1.24	| 1.63	| 1.6	| 1.13	| 0.608	| 0.728	| 0.364	|
+red-black   | 1	| 1	| 0.925	| 1.22	| 1.15	| 0.883	| 0.992	| 2.38	| 1.13	|
+bench	    | 1	| 1.15	| 1.17	| 1.59	| 1.66	| 1.15	| 1.27	| 2.82	| 1.76	|
+**GeoMean** | 1 | 1.1   | 1.31  | 4.24  | 3.36  | 1.07  | 1.44  | 2.21  | 1.59  |
+
+---
+
+* CPU time improvements ('CPU MRI v2.0 time' / 'CPU time')
+    * CPU time is important too for cloud (money) or mobile (battery)
+    * MJIT almost always spends less CPU than the current MRI interpreter
+    * Graal is too aggressive with compilations
+  
+---
+
+|           |v2 | base  | rtl   | mjit  |mjit-cl| omr   | jruby |jruby-d| graal |
+:-----------|--:|------:|------:|------:|------:|------:|------:|------:|------:|
+while       | 1	| 1.12	| 1.84	| 40.8	| 8.99	| 1.05	| 1.93	| 2.31	| 0.998	|
+nest-while  | 1	| 1.1	| 1.68	| 2.87	| 2.78	| 1.04	| 1.17	| 1.94	| 0.666	|
+nest-ntimes | 1	| 1.05	| 1.19	| 2.25	| 2.33	| 1.06	| 0.894	| 0.877	| 0.794	|
+ivread	    | 1	| 1.15	| 1.3	| 16.8	| 10.3	| 1.12	| 1.93	| 2.43	| 0.942	|
+ivwrite	    | 1	| 1.18	| 1.85	| 13.8	| 6.65	| 1.14	| 1.94	| 2.17	| 0.726	|
+aread	    | 1	| 1.03	| 1.42	| 17.3	| 6.98	| 0.971	| 1.5	| 2.61	| 0.835	|
+awrite	    | 1	| 1.1	| 1.44	| 12.6	| 7.04	| 0.991	| 1.74	| 2.85	| 0.987	|
+const	    | 1	| 1.06	| 1.49	| 15.8	| 11.7	| 1.07	| 2.74	| 3.48	| 1.74	|
+const2	    | 1	| 1.13	| 1.37	| 15.2	| 11.7	| 1.1	| 2.83	| 3.45	| 1.52	|
+call	    | 1	| 1.14	| 1.52	| 5.04	| 4.43	| 0.9	| 1.8	| 3.5	| 1.02	|
+fib	    | 1	| 1.2	| 1.44	| 3.91	| 3.62	| 1.11	| 1.62	| 3.56	| 0.892	|
+fannk	    | 1	| 1.04	| 1.09	| 1.08	| 1.09	| 0.997	| 1.4	| 1.77	| 0.446	|
+nsvb	    | 1	| 0.997	| 0.999	| 0.988	| 0.967	| 0.996	| 0.658	| 0.718	| 0.281	|
+mand	    | 1	| 0.953	| 1.14	| 2.02	| 2.02	| 1.09	| 0.86	| 1.3	| 0.816	|
+meteor	    | 1	| 1.23	| 1.26	| 1.3	| 1.23	| 1.16	| 0.768	| 0.727	| 0.164	|
+nbody	    | 1	| 1.07	| 1.16	| 2.5	| 2.85	| 1.28	| 0.855	| 1.72	| 0.743	|
+norm	    | 1	| 1.14	| 1.11	| 2.28	| 2.25	| 1.15	| 0.803	| 1.19	| 0.563	|
+trees	    | 1	| 1.13	| 1.23	| 2.11	| 2.04	| 1.2	| 0.995	| 1.04	| 0.264	|
+pent	    | 1	| 1.12	| 1.24	| 1.34	| 1.27	| 1.13	| 0.469	| 0.493	| 0.0977|
+red-black   | 1	| 1	| 0.925	| 0.705	| 0.651	| 0.884	| 0.685	| 1.08	| 0.334	|
+bench	    | 1	| 1.15	| 1.17	| 1.26	| 1.32	| 1.15	| 0.951	| 1.79	| 0.501	|
+**GeoMean** | 1 | 1.1   | 1.31  | 3.9   | 3.06  | 1.07  | 1.21  | 1.68  | 0.6   |
+
+---
+
+* Peak memory increase ('max resident memory' / 'max resident MRI v2.0 memory')
+    * Memory consumed by MJIT GCC or LLVM (data and code) is included
+    * JITs require much more memory than the interpreter
+    * OMR is the best between the JITs
+    * JRuby and Graal are the worst with memory consumption
+
+---
+
+|           |v2 | base  | rtl   | mjit  |mjit-cl| omr   | jruby |jruby-d| graal |
+:-----------|--:|------:|------:|------:|------:|------:|------:|------:|------:|
+while       | 1	| 0.994	| 1.07	| 4.42	| 8.46	| 2.52	| 456	| 467	| 98.6	|
+nest-while  | 1	| 0.997	| 1.07	| 4.87	| 8.57	| 2.51	| 225	| 315	| 97.5	|
+nest-ntimes | 1	| 0.999	| 1.06	| 4.6	| 8.53	| 3.27	| 167	| 167	| 106	|
+ivread	    | 1	| 1	| 1.07	| 4.49	| 8.54	| 2.53	| 470	| 470	| 103	|
+ivwrite	    | 1	| 1.02	| 1.07	| 4.53	| 8.58	| 2.56	| 337	| 404	| 106	|
+aread	    | 1	| 1	| 1.07	| 4.51	| 8.55	| 2.53	| 317	| 461	| 95.1	|
+awrite	    | 1	| 0.995	| 1.08	| 4.57	| 8.57	| 2.54	| 289	| 432	| 114	|
+const	    | 1	| 1.01	| 1.07	| 4.46	| 8.49	| 2.54	| 469	| 469	| 99.3	|
+const2	    | 1	| 1.01	| 1.06	| 4.45	| 8.53	| 2.51	| 467	| 467	| 95.2	|
+call	    | 1	| 1.01	| 1.07	| 4.76	| 8.61	| 3.34	| 240	| 454	| 102	|
+fib	    | 1	| 1.02	| 1.07	| 4.89	| 8.7	| 3.3	| 38.8	| 39.1	| 151	|
+fannk	    | 1	| 1.02	| 1.08	| 3.92	| 7.84	| 2.53	| 190	| 155	| 149	|
+nsvb	    | 1	| 1.01	| 1.08	| 5.75	| 9.01	| 3.36	| 41.5	| 41.6	| 95.3	|
+mand	    | 1	| 1	| 1.06	| 7.22	| 9.35	| 3.37	| 269	| 376	| 99.3	|
+meteor	    | 1	| 0.978	| 1.03	| 5.51	| 8.01	| 2.96	| 155	| 224	| 155	|
+nbody	    | 1	| 0.997	| 1.06	| 7.66	| 9.29	| 3.45	| 237	| 397	| 96.1	|
+norm	    | 1	| 1.03	| 1.09	| 5.25	| 8.39	| 3.2	| 242	| 338	| 146	|
+trees	    | 1	| 0.632	| 0.658	| 0.629	| 0.659	| 1.35	| 9.83	| 12	| 8.28	|
+pent	    | 1	| 0.984	| 1.03	| 6.26	| 9	| 3.19	| 112	| 141	| 148	|
+red-black   | 1	| 0.994	| 0.995	| 0.999	| 0.998	| 1.31	| 2.22	| 2.5	| 3.72	|
+bench	    | 1	| 0.983	| 1.05	| 14.9	| 12.4	| 3.55	| 159	| 222	| 144	|
+**GeoMean** | 1 | 0.981 | 1.04  | 4.45  | 6.99  | 2.7   | 148   | 181   | 85.3  |
+
+---
+
+# Optcarrot results
+
+* Graal crashes with `convert_type` exception
+* MJIT with LLVM has the best results
+* Although JRuby produces decent FPS, it requires too much CPU resources and memory
+* Optcarrot results are different from microbenchmark ones:
+    * MJIT with **LLVM** produces better wall time results than with **GCC**
+    * JRuby achieves the best result **without** `-Xcompile.invokedynamic=true`
+
+* Frames Per Second:
+
+---
+
+|           |v2   | base  | rtl   | mjit  |mjit-cl| omr   | jruby |jruby-d| graal |
+:-----------|----:|------:|------:|------:|------:|------:|------:|------:|------:|
+FPS         | 29.3| 39.4  | 35.1  | 81.6  | 90.8  | 59.2  | 86.4  | 69.9  |  -    |
+Speedup     | 1   | 1.34  | 1.20  | 2.78  | 3.10  | 2.02  | 2.95  | 2.39  |  -    |
+
+---
+
+* CPU time ('CPU MRI v2.0 time' / 'CPU time'):
+
+---
+
+|           |v2   | base  | rtl   | mjit  |mjit-cl| omr   | jruby |jruby-d| graal |
+:-----------|----:|------:|------:|------:|------:|------:|------:|------:|------:|
+Improvement | 1   | 1.31  | 1.16  | 1.44  | 1.36  | 1.13  | 0.75  | 0.79  |  -    |
+
+---
+
+* Peak Memory ('max resident memory' / 'max redsident MRI v2.0 memory'):
+
+---
+
+|           |v2   | base  | rtl   | mjit  |mjit-cl| omr   | jruby |jruby-d| graal |
+:-----------|----:|------:|------:|------:|------:|------:|------:|------:|------:|
+Speedup     | 1   | 1.00  | 1.09  | 1.15  | 1.15  | 1.41  | 9.11  | 15.16 |  -    |
+
