@@ -93,7 +93,7 @@ factor = 2             # Factor to increase/decrease number of simultaneously pr
 dot_factor = 50        # How many processed decls for a dot in a progress line
 compilations_num = 0;
 stop_pos = start_invariant.begin - 1
-cflags = "-S -DMJIT_HEADER -fsyntax-only -Werror=incompatible-pointer-types -Werror=implicit-function-declaration -Werror=implicit-int -Wfatal-errors"
+cflags = "-S -DMJIT_HEADER -fsyntax-only -Werror=implicit-function-declaration -Werror=implicit-int -Wfatal-errors"
 
 # Check initial file correctness
 check_code(cc, cflags, tfname, "initial")

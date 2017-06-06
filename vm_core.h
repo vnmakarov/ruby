@@ -664,11 +664,11 @@ struct rb_block {
 };
 
 typedef struct rb_control_frame_struct {
-    VALUE *restrict pc;		/* cfp[0] */
+    VALUE *pc;		/* cfp[0] */
     VALUE *sp;		/* cfp[1] */
     rb_iseq_t *iseq;	/* cfp[2] */
     VALUE self;			/* cfp[4] / block[0] */
-    VALUE *restrict ep, *restrict bp;	/* cfp[5] / block[1] */
+    VALUE *ep, *bp;	/* cfp[5] / block[1] */
     const void *block_code;     /* cfp[5] / block[2] */ /* iseq or ifunc */
 
 #if VM_DEBUG_BP_CHECK

@@ -1,3 +1,10 @@
+2017-06-06  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* vm-core.h (struct rb_control_frame_struct): Remove restrict for
+	pc, ep, bp.
+	* tool/minimize_mjit_header.rb (cflags): Remove
+	-Werror=incompatible-pointer-types.
+
 2017-05-31  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* MJIT-benchmarks: New directory.
