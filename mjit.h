@@ -72,7 +72,6 @@ extern void mjit_init(struct mjit_options *opts);
 extern void mjit_add_iseq_to_process(rb_iseq_t *iseq);
 extern mjit_fun_t mjit_get_iseq_fun(const rb_iseq_t *iseq);
 extern void mjit_cancel_all(void);
-extern void mjit_increase_iseq_priority(const rb_iseq_t *iseq);
 extern void mjit_redo_iseq(rb_iseq_t *iseq);
 extern void mjit_ivar_spec_fail(rb_iseq_t *iseq);
 extern void mjit_ep_eq_bp_fail(rb_iseq_t *iseq);
@@ -82,8 +81,6 @@ extern void mjit_finish(void);
 
 /* A threshold used to add iseq to JIT. */
 #define NUM_CALLS_TO_ADD 10
-/* A threshold used to move iseq to the queue head. */
-#define NUM_CALLS_TO_PRIORITY_INCREASE 1000
 
 /* A forward declaration */
 extern VALUE vm_exec(rb_thread_t *th, int no_mjit_p);
@@ -103,8 +100,7 @@ static const char mjit_profile_p;
 
 /* Try to execute the current ISEQ with BODY and TYPE in thread TH.
    Use JIT code if it is ready.  If it is not, add ISEQ to the
-   compilation queue and return Qundef.  The function might increase
-   ISEQ compilation priority by putting ISEQ at the queue head.  */
+   compilation queue and return Qundef.  */
 static do_inline VALUE
 mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
 		    struct rb_iseq_constant_body *body, int type) {
@@ -127,8 +123,6 @@ mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
 	    }
 	    return Qundef;
 	case NOT_READY_JIT_ISEQ_FUN:
-	    if (n_calls == NUM_CALLS_TO_PRIORITY_INCREASE)
-		mjit_increase_iseq_priority(iseq);
 	    return Qundef;
 	case NOT_READY_AOT_ISEQ_FUN:
 	    if ((ptrdiff_t) (fun = mjit_get_iseq_fun(iseq)) <= (ptrdiff_t) LAST_JIT_ISEQ_FUN)

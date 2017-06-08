@@ -1,3 +1,19 @@
+2017-06-08  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.h (mjit_increase_iseq_priority): Remove.
+	(NUM_CALLS_TO_PRIORITY_INCREASE): Remove.
+	(mjit_execute_iseq_0): Don't call mjit_increase_iseq_priority.
+	* mjit.c (struct rb_mjit_batch): New member high_priority_p.
+	(add_to_list): Nullify prev.
+	(get_from_list): Rewrite to choose the best batch.
+	(create_batch): Initialize high_priority_p.
+	(move_iseq_to_batch): Remove.
+	(mjit_increase_iseq_priority): Remove.
+	(increase_batch_priority): New.
+	(mjit_get_iseq_fun): Use increase_batch_priority instead of
+	mjit_increase_iseq_priority.
+	(print_statistics): Print JIT calls summary.
+
 2017-06-06  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* vm-core.h (struct rb_control_frame_struct): Remove restrict for

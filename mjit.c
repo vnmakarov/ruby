@@ -205,6 +205,8 @@ struct rb_mjit_batch {
     /* ISEQs in the batch form a doubly linked list.  The following
        members are the head and the tail of the list.  */
     struct rb_mjit_batch_iseq *first, *last;
+    /* If the flag is TRUE, we should compile the batch first.  */
+    int high_priority_p;
     /* Number of non-canceled iseqs in the batch.  */
     int active_iseqs_num;
     /* Overall byte code size of all ISEQs in the batch in VALUEs.  */
@@ -373,27 +375,11 @@ static struct rb_mjit_batch_list done_batches;
 /* The following functions are low level (ignoring thread
    synchronization) functions working with the lists.  */
 
-/* Remove and return a head batch from the head of doubly linked
-   LIST.  */
-static struct rb_mjit_batch *
-get_from_list(struct rb_mjit_batch_list *list) {
-    struct rb_mjit_batch *b;
-
-    if ((b = list->head) == NULL)
-	return NULL;
-    list->head = list->head->next;
-    if (list->head == NULL)
-	list->tail = NULL;
-    else
-	list->head->prev = NULL;
-    return b;
-}
-
 /* Add batch B to the tail of doubly linked LIST.  It should be not in
    the list before.  */
 static void
 add_to_list(struct rb_mjit_batch *b, struct rb_mjit_batch_list *list) {
-    b->next = NULL;
+    b->next = b->prev = NULL;
     if (list->head == NULL)
 	list->head = list->tail = b;
     else {
@@ -415,6 +401,36 @@ remove_from_list(struct rb_mjit_batch *b, struct rb_mjit_batch_list *list) {
 	list->tail = b->prev;
     else
 	b->next->prev = b->prev;
+}
+
+/* Remove and return the best batch from doubly linked LIST.  The best
+   is the first high priority batch or the batch whose iseqs have
+   biggest number of calls so far.  */
+static struct rb_mjit_batch *
+get_from_list(struct rb_mjit_batch_list *list) {
+    struct rb_mjit_batch *b;
+    struct rb_mjit_batch *best_b = NULL;
+    struct rb_mjit_batch_iseq *bi;
+    unsigned long calls_num, best_calls_num;
+
+    for (b = list->head; b != NULL; b = b->next) {
+	if (b->high_priority_p) {
+	    best_b = b;
+	    b->high_priority_p = FALSE;
+	    break;
+	}
+	calls_num = 0;
+	for (bi = b->first; bi != NULL; bi = bi->next)
+	    if (bi->iseq != NULL)
+		calls_num += bi->iseq->body->overall_calls;
+	if (best_b == NULL || calls_num > best_calls_num) {
+	    best_b = b;
+	    best_calls_num = calls_num;
+	}
+    }
+    if (best_b != NULL)
+	remove_from_list(best_b, list);
+    return best_b;
 }
 
 /* Print ARGS according to FORMAT to stderr.  */
@@ -2064,6 +2080,7 @@ create_batch(void) {
     b->active_iseqs_num = 0;
     b->iseqs_size = 0;
     b->cfname = b->ofname = NULL;
+    b->high_priority_p = FALSE;
     b->next = NULL;
     b->first = b->last = NULL;
     init_global_spec_state(&b->spec_state);
@@ -2187,14 +2204,6 @@ remove_iseq_from_batch(struct rb_mjit_batch *b, struct rb_mjit_batch_iseq *bi) {
 	  (long unsigned) bi->batch->iseqs_size);
 }
 
-/* Move the batch iseq BI to the batch B.  The batch iseq should
-   belong to another batch before the call.  */
-static void
-move_iseq_to_batch(struct rb_mjit_batch *b, struct rb_mjit_batch_iseq *bi) {
-    remove_iseq_from_batch(b, bi);
-    add_iseq_to_batch(b, bi);
-}
-
 /* Add the current batch to the queue.  */
 static void
 finish_forming_curr_batch(void) {
@@ -2244,49 +2253,6 @@ mjit_add_iseq_to_process(rb_iseq_t *iseq) {
     }
 }
 
-/* Increase ISEQ process priority.  It means moving the iseq to a
-   batch at the head of the queue.  As result the iseq JIT code will
-   be produced faster.  The iseq should be already in a batch.  */
-void
-mjit_increase_iseq_priority(const rb_iseq_t *iseq) {
-    int move_p = FALSE;
-    struct rb_mjit_batch *b;
-    struct rb_mjit_batch_iseq *last, *bi = iseq->body->batch_iseq;
-
-    if (!mjit_init_p)
-	return;
-    assert(bi != NULL && bi->batch != NULL);
-    b = bi->batch;
-    verbose("Increasing priority for iseq %d", bi->num);
-    CRITICAL_SECTION_START("in mjit_increase_iseq_priority");
-    if (b == curr_batch) {
-	if (batch_queue.head != NULL)
-	    move_p = TRUE;
-	else
-	    finish_forming_curr_batch();
-    } else if (b->status == BATCH_IN_QUEUE && batch_queue.head != b) {
-	assert(batch_queue.head != NULL);
-	move_p = TRUE;
-    }
-    if (move_p) {
-	/* Move to the head batch: */
-	last = batch_queue.head->last;
-	move_iseq_to_batch(batch_queue.head, bi);
-	if (last != NULL)
-	    move_iseq_to_batch(b, last);
-	if (b->first == NULL) {
-	    remove_from_list(b, &batch_queue);
-	    free_batch(b);
-	}
-    }
-    debug(3, "Sending wakeup signal to workers in mjit_increase_iseq_priority");
-    if (pthread_cond_broadcast(&mjit_worker_wakeup) != 0) {
-	fprintf(stderr, "Cannot send wakeup signal to workers in mjit_increase_iseq_priority: time - %.3f ms\n",
-		relative_ms_time());
-    }
-    CRITICAL_SECTION_FINISH("in mjit_increase_iseq_priority");
-}
-
 /* Redo ISEQ.  It means canceling the current JIT code and adding ISEQ
    to the queue for processing again.  */
 void
@@ -2323,6 +2289,24 @@ mjit_redo_iseq(rb_iseq_t *iseq) {
     mjit_add_iseq_to_process(iseq);
 }
 
+/* Increase batch B priority.  Finish the current batch if
+   necessary.  */
+static void
+increase_batch_priority(struct rb_mjit_batch *b) {
+    verbose("Increasing priority for batch %d", b->num);
+    CRITICAL_SECTION_START("in increase_batch_priority");
+    b->high_priority_p = TRUE;
+    if (b == curr_batch) {
+	finish_forming_curr_batch();
+    }
+    debug(3, "Sending wakeup signal to workers in increase_batch_priority");
+    if (pthread_cond_broadcast(&mjit_worker_wakeup) != 0) {
+	fprintf(stderr, "Cannot send wakeup signal to workers in increase_batch_priority: time - %.3f ms\n",
+		relative_ms_time());
+    }
+    CRITICAL_SECTION_FINISH("in increase_batch_priority");
+}
+
 /* Wait for finishing ISEQ generation.  To decrease the wait, increase
    ISEQ priority.  Return the code address, NULL in a failure
    case.  */
@@ -2334,9 +2318,9 @@ mjit_get_iseq_fun(const rb_iseq_t *iseq) {
 
     if (!mjit_init_p)
 	return NULL;
-    mjit_increase_iseq_priority(iseq);
     bi = iseq->body->batch_iseq;
     b = bi->batch;
+    increase_batch_priority(b);
     CRITICAL_SECTION_START("in mjit_add_iseq_to_process for a client wakeup");
     while ((status = b->status) != BATCH_LOADED && status != BATCH_FAILED) {
 	debug(3, "Waiting wakeup from a worker in mjit_add_iseq_to_process");
@@ -2648,6 +2632,8 @@ static void
 print_statistics(void) {
     int n;
     struct rb_mjit_batch_iseq *bi, **batch_iseqs;
+    unsigned long long all_calls = 0;
+    unsigned long long all_jit_calls = 0;
 
     if ((batch_iseqs = get_sorted_batch_iseqs()) == NULL)
 	return;
@@ -2662,6 +2648,8 @@ print_statistics(void) {
 	unsigned long failed_jit_calls
 	    = (bi->iseq == NULL ? bi->jit_calls : bi->iseq->body->failed_jit_calls);
 	
+	all_calls += overall_calls;
+	all_jit_calls += jit_calls;
 	fprintf(stderr, "%-45s %5d %4d %5lu %9lu/%-9lu (%-5.2f%%)   %9lu (%6.2f%%)",
 		bi->label, bi->batch->num, bi->num, bi->iseq_size,
 		overall_calls, jit_calls, overall_calls == 0 ? 0.0 : jit_calls * 100.0 / overall_calls,
@@ -2674,6 +2662,8 @@ print_statistics(void) {
 		fprintf (stderr, " %s", insn_name((VALUE) bi->mutation_insns[i].insn));
 	fprintf(stderr, "\n");
     }
+    fprintf(stderr, "Calls summary (calls / JIT calls): %9llu/%-9llu (%-5.2f%%)\n",
+	    all_calls, all_jit_calls, all_calls == 0 ? 0.0 : all_jit_calls * 100.0 / all_calls);
     free(batch_iseqs);
 }
 
