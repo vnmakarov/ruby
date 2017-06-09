@@ -82,6 +82,10 @@ extern void mjit_finish(void);
 /* A threshold used to add iseq to JIT. */
 #define NUM_CALLS_TO_ADD 10
 
+/* A threshold used to reject long iseqs from JITting as such iseqs
+   takes too much time to be compiled.  */
+#define JIT_ISEQ_SIZE_THRESHOLD 1000
+
 /* A forward declaration */
 extern VALUE vm_exec(rb_thread_t *th, int no_mjit_p);
 
@@ -116,7 +120,8 @@ mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
 	case NOT_ADDED_JIT_ISEQ_FUN:
 	    if (n_calls == NUM_CALLS_TO_ADD && ! mjit_opts.aot) {
 		if ((type == ISEQ_TYPE_METHOD || type == ISEQ_TYPE_BLOCK)
-		    && ! body->call_c_func_p) {
+		    && ! body->call_c_func_p
+		    && body->iseq_size < JIT_ISEQ_SIZE_THRESHOLD) {
 		    body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
 		    mjit_add_iseq_to_process(iseq);
 		}
@@ -161,7 +166,7 @@ mjit_aot_process(rb_iseq_t *iseq) {
 
     if ((body->type == ISEQ_TYPE_METHOD || body->type == ISEQ_TYPE_BLOCK
 	 || body->type == ISEQ_TYPE_TOP || body->type == ISEQ_TYPE_MAIN)
-	&& ! body->call_c_func_p) {
+	&& ! body->call_c_func_p && body->iseq_size < JIT_ISEQ_SIZE_THRESHOLD) {
 	body->jit_code = (void *) NOT_READY_AOT_ISEQ_FUN;
 	mjit_add_iseq_to_process(iseq);
     }

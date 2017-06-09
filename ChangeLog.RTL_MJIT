@@ -1,3 +1,8 @@
+2017-06-09  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.h (JIT_ISEQ_SIZE_THRESHOLD): New.
+	(mjit_execute_iseq_0, mjit_aot_process): Use it.
+
 2017-06-08  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.h (mjit_increase_iseq_priority): Remove.
