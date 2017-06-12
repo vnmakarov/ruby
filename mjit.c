@@ -1193,7 +1193,9 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 #endif
     get_insn_fun_features(insn, &features);
     ivar_p = const_p = FALSE;
-    fprintf(f, "%s", generate_set_pc(TRUE, buf, &code[pos] + len));
+    if (! features.speculative_p
+	&& (insn != BIN(trace) || bi->batch->spec_state.trace_p))
+	fprintf(f, "%s", generate_set_pc(TRUE, buf, &code[pos] + len));
     if (features.call_p && ! features.special_p) {
 	/* CD is always the 1st operand.  */
 	cc = &((CALL_DATA) code[pos + 1])->call_cache;
@@ -1462,10 +1464,11 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    fprintf(f, ")) {\n    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	else if (features.speculative_p) {
 	    if (features.jmp_p)
-		fprintf(f, ", &val);\n  if (val == RUBY_Qundef) {\n");
+		fprintf(f, ", &val, &new_insn);\n  if (val == RUBY_Qundef) {\n");
 	    else
-		fprintf(f, ")) {\n");
+		fprintf(f, ", &new_insn)) {\n");
 	    fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
+	    fprintf(f, "    vm_change_insn(cfp->iseq, (void *) 0x%"PRIxVALUE ", new_insn);\n", &code[pos]);
 	    fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    if (features.jmp_p) {
 		unsigned long dest = pos + len + code[pos + 2];
@@ -1563,6 +1566,7 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	fprintf(f, "VALUE %s(rb_thread_t *th, rb_control_frame_t *cfp) {\n",
 		get_batch_iseq_fname(bi, mjit_fname_holder));
 	fprintf(f, "  struct rb_calling_info calling;\n  VALUE val; int flag;\n");
+	fprintf(f, "  enum ruby_vminsn_type new_insn;\n");
 	fprintf(f, "  static const char mutation_num = %d;\n", bi->jit_mutations_num);
 	fprintf(f, "  size_t failed_insn_pc;\n");
 	fprintf(f, "  VALUE self = cfp->self;\n");

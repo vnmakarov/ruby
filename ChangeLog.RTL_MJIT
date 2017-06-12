@@ -1,5 +1,33 @@
 2017-06-12  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* rtl_exec.c (iplus, ...): Get new_insn and change the insn if
+	necessary.
+	(iplusi, ...): Ditto.
+	(aindset, ...): Ditto.
+	(aindseti, ...): Ditto.
+	(ibteq, ...): Ditto.
+	(fbteq, ...): Ditto.
+	(ibteqi, ...): Ditto.
+	(fbteqf, ...): Ditto.
+	* rtl_exec.c (do_spec_fix_cmp, do_spec_flo_cmp, spec_fix_cmp_op):
+	New param new_insn.
+	(spec_flo_cmp_op, spec_fix_cmp_imm_op, spec_flo_cmp_imm_op):
+	Ditto.
+	(spec_bcmp_finish, do_spec_flo_bcmp, spec_fix_bcmp_op): Ditto.
+	(spec_flo_bcmp_op, spec_fix_bcmp_imm_op, do_spec_fix_arithm):
+	Ditto.
+	(do_spec_flo_arithm, spec_fix_arithm_op, spec_flo_arithm_op):
+	Ditto.
+	(spec_fix_arithm_imm_op, spec_flo_arithm_imm_op, aind, hind):
+	Ditto.
+	(aindi, hindi, hinds, aindset_f, hindset_f, aindseti_f): Ditto.
+	(hindseti_f, hindsets_f): Ditto.
+	* mjit.c (translate_iseq_insn): Don't generate setting pc for
+	speculative insns.  Generate vm_change_insn calls.
+	(translate_batch_iseqs): Generate declarations of new_insn.
+
+2017-06-12  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* rtl_exec.c (aind_f, hind_f, aindi_f, hindi_f, hinds_f): Use
 	LIKELY.
 	(aindset_f, hindset_f, aindseti_f, hindesti_f, hindsets_f): Ditto.

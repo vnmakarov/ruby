@@ -472,9 +472,13 @@ iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige fplus fminus fmul
 ()
 ()
 {
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2))) {
-	/* Speculation was wrong.  Re-execute the modified insn.  */
+    enum ruby_vminsn_type new_insn;
+    
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res,
+					 get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &new_insn)) {
+	/* Speculation was wrong.  Change and re-execute the insn.  */
 	ADD_PC(-6);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }
 
@@ -513,8 +517,12 @@ iplusi iminusi imulti idivi imodi aindi hindi hinds ieqi inei ilti igti ilei ige
 ()
 ()
 {
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm)) {
-	ADD_PC(-6); /* Re-execute the modified insn  */
+    enum ruby_vminsn_type new_insn;
+    
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &new_insn)) {
+	/* Change and re-execute the insn.  */
+	ADD_PC(-6);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }
 
@@ -538,8 +546,12 @@ aindset hindset
 ()
 ()
 {
-  if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
-	ADD_PC(-5); /* Re-execute the modified insn  */
+    enum ruby_vminsn_type new_insn;
+    
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3), &new_insn)) {
+	/* Change and re-execute the insn.  */
+	ADD_PC(-5);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }
 
@@ -563,8 +575,11 @@ aindseti hindseti hindsets
 ()
 ()
 {
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3))) {
-	ADD_PC(-5); /* Re-execute the modified insn  */
+    enum ruby_vminsn_type new_insn;
+    
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3), &new_insn)) {
+	ADD_PC(-5);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }
 
@@ -665,10 +680,14 @@ ibteq ibfeq ibtne ibfne ibtlt ibflt ibtgt ibfgt ibtle ibfle ibtge ibfge
 ()
 {
     VALUE val;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
+    enum ruby_vminsn_type new_insn;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res,
+						 get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val, &new_insn);
 
     if (val == Qundef) {
-	ADD_PC(-7); /* Re-execute the modified insn  */
+	/* Change and re-execute the insn.  */
+	ADD_PC(-7);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
     else if (jmp_p)
 	JUMP(dst);
@@ -682,10 +701,14 @@ fbteq fbfeq fbtne fbfne fbtlt fbflt fbtgt fbfgt fbtle fbfle fbtge fbfge
 ()
 {
     VALUE val;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
+    enum ruby_vminsn_type new_insn;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res,
+						 get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val, &new_insn);
 
     if (val == Qundef) {
-	ADD_PC(-7); /* Re-execute the modified insn  */
+	/* Change and re-execute the insn.  */
+	ADD_PC(-7);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
     else if (jmp_p)
 	JUMP(dst);
@@ -734,10 +757,13 @@ ibteqi ibfeqi ibtnei ibfnei ibtlti ibflti ibtgti ibfgti ibtlei ibflei ibtgei ibf
 ()
 {
     VALUE val;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val);
+    enum ruby_vminsn_type new_insn;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val, &new_insn);
 
     if (val == Qundef) {
-	ADD_PC(-7); /* Re-execute the modified insn  */
+	/* Change and re-execute the insn.  */
+	ADD_PC(-7);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
     else if (jmp_p)
 	JUMP(dst);
@@ -751,10 +777,13 @@ fbteqf fbfeqf fbtnef fbfnef fbtltf fbfltf fbtgtf fbfgtf fbtlef fbflef fbtgef fbf
 ()
 {
     VALUE val;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val);
+    enum ruby_vminsn_type new_insn;
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val, &new_insn);
 
     if (val == Qundef) {
-	ADD_PC(-7); /* Re-execute the modified insn  */
+	/* Change and re-execute the insn.  */
+	ADD_PC(-7);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
     else if (jmp_p)
 	JUMP(dst);
