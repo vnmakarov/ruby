@@ -80,7 +80,7 @@ extern void mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation
 extern void mjit_finish(void);
 
 /* A threshold used to add iseq to JIT. */
-#define NUM_CALLS_TO_ADD 10
+#define NUM_CALLS_TO_ADD 5
 
 /* A threshold used to reject long iseqs from JITting as such iseqs
    takes too much time to be compiled.  */

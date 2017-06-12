@@ -1,3 +1,7 @@
+2017-06-12  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.h (NUM_CALLS_TO_ADD): Make it 5.
+
 2017-06-09  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.h (JIT_ISEQ_SIZE_THRESHOLD): New.
