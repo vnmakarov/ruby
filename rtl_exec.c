@@ -2485,9 +2485,9 @@ op2i_fun(uinds)
 spec_op2_fun(aind) {
     VALUE ary = *op1;
 
-    if (! SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))
-	&& FIXNUM_P(*op2)) {
+    if (LIKELY(! SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))
+	       && FIXNUM_P(*op2))) {
 	unsigned long len = RARRAY_LEN(ary);
 	const VALUE *ptr = RARRAY_CONST_PTR(ary);
 	unsigned long offset = FIX2ULONG(*op2);
@@ -2502,8 +2502,8 @@ spec_op2_fun(aind) {
 
 spec_op2_fun(hind)
 {
-    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))) {
+    if (LIKELY(! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)))) {
 	check_sp_default(cfp);
 	var_assign(cfp, res, res_ind, rb_hash_aref(*op1, *op2));
 	return FALSE;
@@ -2516,8 +2516,8 @@ spec_op2i_fun(aindi)
 {
     VALUE ary = *op1;
 
-    if (! SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))) {
+    if (LIKELY(! SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG)))) {
 	long len = RARRAY_LEN(ary);
 	const VALUE *ptr = RARRAY_CONST_PTR(ary);
 	long offset = FIX2LONG(imm);
@@ -2535,8 +2535,8 @@ spec_op2i_fun(aindi)
 
 spec_op2i_fun(hindi)
 {
-    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))) {
+    if (LIKELY(! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG)))) {
 	check_sp_default(cfp);
 	var_assign(cfp, res, res_ind, rb_hash_aref(*op1, imm));
 	return FALSE;
@@ -2547,9 +2547,9 @@ spec_op2i_fun(hindi)
 
 spec_op2i_fun(hinds)
 {
-    if (! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))
-	&& rb_hash_compare_by_id_p(*op1) == Qfalse) {
+    if (LIKELY(! SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))
+	       && rb_hash_compare_by_id_p(*op1) == Qfalse)) {
 	check_sp_default(cfp);
 	var_assign(cfp, res, res_ind, rb_hash_aref(*op1, imm));
 	return FALSE;
@@ -2635,9 +2635,9 @@ static do_inline int
 aindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3) {
     VALUE ary = *op1;
 
-    if (!SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
-	&& FIXNUM_P(*op2) && ! OBJ_FROZEN(ary) && FL_TEST(ary, ELTS_SHARED) == 0) {
+    if (LIKELY(!SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
+	       && FIXNUM_P(*op2) && ! OBJ_FROZEN(ary) && FL_TEST(ary, ELTS_SHARED) == 0)) {
 	unsigned long len = RARRAY_LEN(ary);
 	unsigned long offset = FIX2ULONG(*op2);
 
@@ -2652,8 +2652,8 @@ aindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3) {
 
 static do_inline int
 hindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3) {
-    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG))) {
+    if (LIKELY(!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)))) {
 	check_sp_default(cfp);
 	rb_hash_aset(*op1, *op2, *op3);
 	return FALSE;
@@ -2666,9 +2666,9 @@ static do_inline int
 aindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
     VALUE ary = *op1;
 
-    if (!SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
-	&& ! OBJ_FROZEN(ary) && FL_TEST(ary, ELTS_SHARED) == 0) {
+    if (LIKELY(!SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
+	       && ! OBJ_FROZEN(ary) && FL_TEST(ary, ELTS_SHARED) == 0)) {
 	long len = RARRAY_LEN(ary);
 	long offset = FIX2LONG(imm);
 
@@ -2685,8 +2685,8 @@ aindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
 
 static do_inline int
 hindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
-    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG))) {
+    if (LIKELY(!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)))) {
 	check_sp_default(cfp);
 	rb_hash_aset(*op1, imm, *op3);
 	return FALSE;
@@ -2697,9 +2697,9 @@ hindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
 
 static do_inline int
 hindsets_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3) {
-    if (!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
-	&& (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG))
-	&& rb_hash_compare_by_id_p(*op1) == Qfalse) {
+    if (LIKELY(!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
+	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG))
+	       && rb_hash_compare_by_id_p(*op1) == Qfalse)) {
 	check_sp_default(cfp);
 	rb_hash_aset(*op1, imm, *op3);
 	return FALSE;
