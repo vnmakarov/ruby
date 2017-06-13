@@ -664,6 +664,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(gef):
 	f->changing_p = TRUE;
 	/* fall through: */
+    case BIN(unot):
     case BIN(uplus):
     case BIN(uminus):
     case BIN(umult):
@@ -703,6 +704,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(uinds):
 	f->th_p = f->skip_first_p = f->op_end_p = TRUE;
 	break;
+    case BIN(spec_not):
     case BIN(iplus):
     case BIN(iminus):
     case BIN(imult):
@@ -987,6 +989,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
 static VALUE
 get_safe_insn(VALUE insn) {
     switch (insn) {
+    case BIN(not): case BIN(spec_not): return BIN(unot);
     case BIN(plus): case BIN(iplus): case BIN(fplus): return BIN(uplus);
     case BIN(minus): case BIN(iminus): case BIN(fminus): return BIN(uminus);
     case BIN(mult): case BIN(imult): case BIN(fmult): return BIN(umult);

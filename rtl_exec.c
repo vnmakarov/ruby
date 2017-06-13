@@ -857,24 +857,72 @@ op1_fun(succ) {
     return op_val_call_end(th, cfp, res, res_ind, val);
 }
 
-/* Function but for insn not with a fast path for pre-defined method
-   not.  */
-op1_fun(not) {
+/* Common function executing not and unot insns with one operand OP
+   and result RES with index RES_IND in frame CFP of thread TH.  The
+   function has a fast execution path for method rb_obj_not.  For the
+   slow paths use call data CD.  If OFFSET is non-zero and we use a
+   fast path, change the current insn at OFFSET to the corresponding
+   speculative insn.  Return non-zero if we started a new ISEQ
+   execution (we need to update vm_exec_core regs in this case) or we
+   need to cancel the current JITed code.  */
+static do_inline int
+common_not(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd,
+	   VALUE *res, rindex_t res_ind, VALUE *op, int offset) {
     VALUE val;
-    VALUE *src = op;
+    VALUE src = *op;
     CALL_INFO ci = &cd->call_info;
     CALL_CACHE cc = &cd->call_cache;
     extern VALUE rb_obj_not(VALUE obj);
 
-    vm_search_method(ci, cc, *src);
-
+    vm_search_method(ci, cc, src);
     if (check_cfunc(cc->me, rb_obj_not)) {
-	val = RTEST(*src) ? Qfalse : Qtrue;
+	if (offset != 0)
+	    vm_change_insn(cfp->iseq, cfp->pc - offset, BIN(spec_not));
+	val = RTEST(src) ? Qfalse : Qtrue;
 	var_assign(cfp, res, res_ind, val);
 	return 0;
     }
-    val = op1_call(th, cfp, cd, src);
+    val = op1_call(th, cfp, cd, op);
     return op_val_call_end(th, cfp, res, res_ind, val);
+}
+    
+op1_fun(not) {
+    return common_not(th, cfp, cd, res, res_ind, op, 5);
+}
+
+op1_fun(unot) {
+    return common_not(th, cfp, cd, res, res_ind, op, 0);
+}
+
+/* Check call cache attributes METHOD_STATE and CLASS_SERIAL for
+   object OBJ.  Return non-zero if they are obsolete.  */
+static do_inline int
+check_cc_attr_p(VALUE obj, rb_serial_t method_state, rb_serial_t class_serial) {
+    return GET_GLOBAL_METHOD_STATE() != method_state || RCLASS_SERIAL(CLASS_OF(obj)) != class_serial;
+}
+
+/* Do speculative insn not assuming we use rb_obj_not, assign the
+   result to local or temporary variable in frame CFP with location
+   RES and index RES_IND, and return FALSE.  If the speculation was
+   wrong, set up NEW_INSN to unot and return TRUE.  In later case, the
+   modified insn should be re-executed.  */
+static do_inline int
+spec_not_f(rb_control_frame_t *cfp, CALL_DATA cd, VALUE *res, rindex_t res_ind,
+	   VALUE *op, enum ruby_vminsn_type *new_insn) {
+    VALUE val, src = *op;
+    CALL_INFO ci = &cd->call_info;
+    CALL_CACHE cc = &cd->call_cache;
+    
+    if (UNLIKELY(check_cc_attr_p(src, cc->method_state, cc->class_serial))) {
+	vm_search_method(ci, cc, src);
+	if (! check_cfunc(cc->me, rb_obj_not)) {
+	    *new_insn = BIN(unot);
+	    return TRUE;
+	}
+    }
+    val = RTEST(src) ? Qfalse : Qtrue;
+    var_assign(cfp, res, res_ind, val);
+    return FALSE;
 }
 
 /* Call method given by CD of object RECV with arg OP2 in the current
@@ -1286,7 +1334,8 @@ spec_flo_cmp_op(rb_control_frame_t *cfp,
 			   uinsn, new_insn);
 }
 
-/* Header of a function executing 2 operand insn NAME with unknown type of OP2.  */
+/* Header of a function executing two operand speculative insn NAME
+   with unknown type of OP2.  */
 #define spec_op2_fun(name) static do_inline int				\
                            name ## _f(rb_control_frame_t *cfp,				\
 				      VALUE *res, rindex_t res_ind, VALUE *op1, VALUE *op2, \
@@ -3739,12 +3788,11 @@ mjit_call_block_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *
     return mjit_general_call_finish(th, cfp, val, res);
 }
 
-/* Called only from JIT code to check call cache attributes
-   METHOD_STATE and CLASS_SERIAL for object OBJ.  Return non-zero if
-   they are obsolete.  */
+/* Called only from JIT code.  See check_cc_attr_p for more
+   comments. */
 static do_inline int
 mjit_check_cc_attr_p(VALUE obj, rb_serial_t method_state, rb_serial_t class_serial) {
-    return GET_GLOBAL_METHOD_STATE() != method_state || RCLASS_SERIAL(CLASS_OF(obj)) != class_serial;
+    return check_cc_attr_p(obj, method_state, class_serial);
 }
 
 /* Called only from JIT code to get ivar value with INDEX from the

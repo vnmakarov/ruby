@@ -1,3 +1,15 @@
+2017-06-13  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def (unot, spec_not): New insns.
+	* rtl_exec.c (common_not): New.
+	(not_f): Use it.
+	(unot_f): New.
+	(check_cc_attr_p): New.
+	(mjit_check_cc_attr_p): Use it.
+	(spec_not_f): New.
+	* mjit.c (get_insn_fun_features): Process unot and spec_not.
+	(get_safe_insn): Process not and spec_not.
+
 2017-06-12  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* rtl_exec.c (iplus, ...): Get new_insn and change the insn if

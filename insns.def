@@ -435,7 +435,7 @@ cont_op2
 }
 
 DEFINE_INSN
-length size empty_p succ not
+length size empty_p succ not unot
 (insn_t _, CALL_DATA cd, rindex_t res, lindex_t op)
 ()
 ()
@@ -446,6 +446,22 @@ length size empty_p succ not
 	th->cfp[1].pc -= 4;
 	RESTORE_REGS();
 	set_default_sp(reg_cfp, reg_cfp->bp);
+    }
+}
+
+/* Speculative not insn:  */
+DEFINE_INSN
+spec_not
+(_, CALL_DATA cd, rindex_t res, lindex_t op)
+()
+()
+{
+    enum ruby_vminsn_type new_insn;
+    
+    if (spec_not_f(reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op), &new_insn)) {
+	/* Speculation was wrong.  Change and re-execute the insn.  */
+	ADD_PC(-5);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }
 
