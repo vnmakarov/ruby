@@ -1,3 +1,8 @@
+2017-06-15  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* MJIT-benchmarks/compare.rb: New.
+	* MJIT-benchmarks/sieve.rb: New.
+
 2017-06-13  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def (unot, spec_not): New insns.
