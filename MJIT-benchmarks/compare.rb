@@ -27,7 +27,7 @@ tests = ARGV[0].split
 
 commands = ARGV[1..-1].map do |e|
   if e =~ /:/
-    e.split(/:/)
+    e.split(/:/, 2)
   else
     [e, e]
   end
@@ -49,11 +49,9 @@ tests.each do |test|
   base = 0
   commands.each_index do |ci|
     command = commands[ci]
-    min_elapsed = 0.0
-    min_cpu = 0.0
-    min_peak = 0.0
+    min_elapsed = min_cpu = min_peak = 0.0
     N.times do |i|
-      IO.popen({"OMR_JIT_OPTIONS" => "-Xjit"}, ["/usr/bin/time", *command[1].split, test], :err => [:child, :out]) do |io|
+      IO.popen({"OMR_JIT_OPTIONS" => "-Xjit"}, ["/usr/bin/time", *command[1].split, *test], :err => [:child, :out]) do |io|
         result = io.read
         if md = /(\d+.\d+)user\s+\d+.\d+system\s+(\d+):(\d+.\d+)elapsed.+\(.+\s+(\d+)maxresident\)/.match(result)
           cpu = result[md.begin(1)...md.end(1)].to_f
@@ -81,13 +79,9 @@ tests.each do |test|
 end
 
 def print_geomean(n, product, power, mt, mc)
-  print "Geomean.".ljust(mt, " ")
+  print "GeoMean.".ljust(mt, " ")
   n.times do |i|
-    if product[i] == 0.0
-      print " | ", "-".ljust(mc, " ")
-    else
-      print " | ", (product[i] ** power).round(2).to_s.ljust(mc, " ")
-    end
+    print " | ", (product[i] == 0.0 ? "-" : (product[i] ** power).round(2).to_s).ljust(mc, " ")
   end
   print " |\n"
 end
@@ -108,11 +102,8 @@ print_geomean(commands.length, product, 1.0 / tests.length, mt, mc)
       factor = 0.0
       if base == "-" || e[i] == "-"
         print "-".ljust(mc, " ")
-      elsif i == 0
-        factor = base / e[i]
-        print factor.round(2).to_s.ljust(mc, " ")
       else
-        factor = (e[i] + 0.0) / base
+        factor = (i == 0 ? base / e[i] : (e[i] + 0.0) / base)
         print factor.round(2).to_s.ljust(mc, " ")
       end
       product[ci] *= factor
