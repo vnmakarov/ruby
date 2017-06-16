@@ -1,5 +1,9 @@
 2017-06-15  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* README.md: Update benchmark data.
+
+2017-06-15  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* MJIT-benchmarks/compare.rb: Split by only first ':'.  Simplify
 	the code.
 	* MJIT-benchmarks/optcarrot-compare.rb: New.
