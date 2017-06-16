@@ -1,3 +1,7 @@
+2017-06-16  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* README.md: Some text corrections in benchmarking section.
+
 2017-06-15  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* README.md: Update benchmark data.

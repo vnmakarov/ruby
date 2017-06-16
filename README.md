@@ -396,7 +396,8 @@
     
 * I also used optcarrot for more serious program performance
   comparison
-    * I used **2000** frames to run optcarrot
+    * I used **default** frames number (180) and **2000** frames to run
+      optcarrot
 
 # Microbenchmark results
 
@@ -439,7 +440,8 @@ bench               | 1.0       | 1.16      | 1.18      | 1.54      | 1.57      
 * CPU time improvements ('CPU MRI v2.0 time' / 'CPU time')
     * CPU time is important too for cloud (money) or mobile (battery)
     * MJIT almost always spends less CPU than the current MRI interpreter
-    * Graal is too aggressive with compilations
+    * Graal is too aggressive with compilations and almost always needs
+      more CPU work than MRI interpreter
   
 ---
 
@@ -548,7 +550,7 @@ Speedup  | 1.0       | 1.32      | 1.2       | 1.49      | 1.51      | 1.15     
 :--------|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|----------:|
 Peak Mem | 1.0       | 1.0       | 1.1       | 1.16      | 1.16      | 1.41      | 10.05     | 16.56     | -         |
 
-## Default number of frames
+## Default number of frames (180 frames)
 
 * Frames Per Second (Speedup = FPS / 'MRI v2.0 FPS'):
 
