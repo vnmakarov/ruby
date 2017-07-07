@@ -1,5 +1,10 @@
 2017-07-07  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* vm_core.h (RUBY_VM_THREAD_VM_STACK_SIZE): Double it.
+	(RUBY_VM_THREAD_MACHINE_STACK_SIZE): Ditto.
+
+2017-07-07  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* README.md: Underline that MJIT can works only on few small
 	programs.
 
