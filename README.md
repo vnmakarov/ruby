@@ -260,8 +260,8 @@
 
 ## MJIT status
 
-* It is on very early stages of the development and only ready for
-  usage of few small and simple Ruby programs
+* **It is on very early stages of the development and only ready for
+  usage of few small and simple Ruby programs**
     * `make test` has no issues
     * The compilation of small ISEQ takes about 50-70 ms on modern
       x86-64 CPUs
