@@ -1642,7 +1642,7 @@ start_process(const char *path, char *const argv[]) {
 	  fprintf(stderr, " %s", arg);
       fprintf(stderr, ": time - %.3f ms\n", relative_ms_time());
   }
-  if ((pid = fork()) == 0) {
+  if ((pid = vfork()) == 0) {
       if (mjit_opts.verbose) {
 	  /* CC can be started in a thread using a file which has been
 	     already removed while MJIT is finishing.  Discard the
@@ -1650,9 +1650,14 @@ start_process(const char *path, char *const argv[]) {
 	  FILE *f = fopen("/dev/null", "w");
 
 	  dup2(fileno(f), STDERR_FILENO);
+	  dup2(fileno(f), STDOUT_FILENO);
       }
       pid = execvp(path, argv); /* Pid will be negative on an error */
+      /* Even if we successfully found CC to compile PCH we still can
+	 fail with loading the CC in very rare cases for some reasons.
+	 Stop the forked process in this case.  */
       debug(1, "Error in execvp: %s", path);
+      _exit(1);
   }
   return pid;
 }

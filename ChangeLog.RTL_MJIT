@@ -1,3 +1,8 @@
+2017-07-17  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (start_process): Use vfork instead of fork.  Redirect
+	stdout to /dev/null.  Exit on exec failure.
+
 2017-07-07  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* vm_core.h (RUBY_VM_THREAD_VM_STACK_SIZE): Double it.
