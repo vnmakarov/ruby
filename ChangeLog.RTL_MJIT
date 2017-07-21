@@ -1,5 +1,9 @@
 2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* comile.c (iseq_compile_each): Setup parent except_p for return.
+
+2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (ruby_vm_global_method_state): New extern.
 	(ruby_vm_global_constant_state): Ditto.
 	(struct case_arg): New field last_dst.

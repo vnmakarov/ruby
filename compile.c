@@ -6905,6 +6905,10 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 			      INT2FIX(TAG_RETURN));
 		    if (result != NULL)
 			*result = ret_result;
+		    if (parent_iseq != NULL)
+			/* Return from a block is processed as an
+			   exception.  */
+			parent_iseq->body->except_p = TRUE;
 		}
 	    }
 	}
