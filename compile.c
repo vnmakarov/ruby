@@ -7222,6 +7222,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	ADD_INSN3(ret, line, run_once,
 		  INT2LINT(ls - setup_result_var_number(iseq, result, curr_temp_vars_num)),
 		  block_iseq, INT2FIX(ic_index));
+	iseq->body->call_c_func_p = TRUE;
 	break;
       }
       case NODE_ARGSCAT:{
@@ -7695,6 +7696,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE * node, int popp
 	ADD_INSN3(ret, line, run_once,
 		  INT2LINT(ls - setup_result_var_number(iseq, result, curr_temp_vars_num)),
 		  once_iseq, INT2FIX(is_index));
+	iseq->body->call_c_func_p = TRUE;
 	break;
       }
       case NODE_KW_ARG:

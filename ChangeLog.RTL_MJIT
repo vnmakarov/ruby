@@ -1,3 +1,9 @@
+2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* compile.c (iseq_compile_each): Set up call_c_func_p for
+	rune_once.
+	* mjit.c (get_insn_fun_features): Remove case for run_once.
+
 2017-07-17  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (start_process): Use vfork instead of fork.  Redirect

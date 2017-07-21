@@ -601,7 +601,6 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(const_cached_val_ld):
     case BIN(special2var):
     case BIN(var2special):
-    case BIN(run_once):
     case BIN(define_class):
     case BIN(defined_p):
     case BIN(val_defined_p):
