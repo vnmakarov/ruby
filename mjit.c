@@ -147,7 +147,7 @@ static pthread_t client_pid;
 
     The diagram shows the possible status transitions:
 
-    NOT_FORMED -> IN_QUEUE -> IN_EXECUTION -> FAILED
+    NOT_FORMED -> IN_QUEUE -> IN_GENERATION -> FAILED
                      ^             |            ^
                      |             |            |   load_batch
                      |             |            |
@@ -166,7 +166,7 @@ enum batch_status {
     /* The batch is being processed by a MJIT worker (C code
        generation, the C code compilation, and the object code
        load). */
-    BATCH_IN_EXECUTION,
+    BATCH_IN_GENERATION,
     /* Batch compilation or its load failed.  */
     BATCH_FAILED,
     /* Batch compilation successfully finished.  */
@@ -180,8 +180,8 @@ enum batch_status {
 struct global_spec_state {
     /* The following flags reflect presence of tracing and basic
        operation redefinitions.  */
-    int trace_p:1;
-    int bop_redefined_p:1;
+    unsigned int trace_p:1;
+    unsigned int bop_redefined_p:1;
 };
 
 /* The batch structure.  */
@@ -189,13 +189,13 @@ struct rb_mjit_batch {
     int num; /* batch order number */
     enum batch_status status;
     /* Name of the C code file of the batch ISEQs.  Defined for status
-       BATCH_IN_EXECUTION.  */
+       BATCH_IN_GENERATION.  */
     char *cfname;
     /* Name of the object file of the batch ISEQs.  Defined for status
-       BATCH_IN_EXECUTION and BATCH_SUCCESS.  */
+       BATCH_IN_GENERATION and BATCH_SUCCESS.  */
     char *ofname;
     /* PID of C compiler processing the batch.  Defined for status
-       BATCH_IN_EXECUTION. */
+       BATCH_IN_GENERATION. */
     pid_t pid;
     /* Bathes in the queue are linked with the following members.  */
     struct rb_mjit_batch *next, *prev;
@@ -357,6 +357,12 @@ static pthread_cond_t mjit_client_wakeup;
 /* A thread conditional to wake up a worker if there we have something
    to add or we need to stop MJIT engine.  */
 static pthread_cond_t mjit_worker_wakeup;
+/* A thread conditional to wake up workers if at the end of GC.  */
+static pthread_cond_t mjit_gc_wakeup;
+/* True when GC is working.  */
+static int in_gc;
+/* Number of batches being currently translated.  */
+static int batches_in_translation;
 
 /* Doubly linked list of batches.  */
 struct rb_mjit_batch_list {
@@ -471,13 +477,13 @@ debug(int level, const char *format, ...) {
     va_end(args);
 }
 
-/* Start a critical section.  Use message MSG to print debug info.  */
+/* Start a critical section.  Use message MSG to print debug info at
+   LEVEL.  */
 static inline void
-CRITICAL_SECTION_START(const char *msg) {
+CRITICAL_SECTION_START(int level, const char *msg) {
     int err_code;
 
-
-    debug(3, "Locking %s", msg);
+    debug(level, "Locking %s", msg);
     if ((err_code = pthread_mutex_lock(&mjit_engine_mutex)) != 0) {
 	fprintf(stderr, "%sCannot lock MJIT mutex %s: time - %.3f ms\n",
 		pthread_self() == client_pid ? "" : "++", msg,
@@ -485,14 +491,15 @@ CRITICAL_SECTION_START(const char *msg) {
 	fprintf(stderr, "%serror: %s\n",
 		pthread_self() == client_pid ? "" : "++", strerror(err_code));
     }
-    debug(3, "Locked %s", msg);
+    debug(level, "Locked %s", msg);
 }
 
-/* Finish the current critical section.  */
+/* Finish the current critical section.  Use message MSG to print
+   debug info at LEVEL. */
 static inline void
-CRITICAL_SECTION_FINISH(const char *msg) {
+CRITICAL_SECTION_FINISH(int level, const char *msg) {
+    debug(level, "Unlocked %s", msg);
     pthread_mutex_unlock(&mjit_engine_mutex);
-    debug(3, "Unlocked %s", msg);
 }
 
 /* XXX_COMMONN_ARGS define the command line arguments of XXX C
@@ -1544,8 +1551,8 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	    break;
 	}
     fprintf(f, "static const char mjit_profile_p = %d;\n", mjit_opts.profile);
-    fprintf(f, "static const char mjit_trace_p = %d;\n", b->spec_state.trace_p);
-    fprintf(f, "static const char mjit_bop_redefined_p = %d;\n", b->spec_state.bop_redefined_p);
+    fprintf(f, "static const char mjit_trace_p = %u;\n", b->spec_state.trace_p);
+    fprintf(f, "static const char mjit_bop_redefined_p = %u;\n", b->spec_state.bop_redefined_p);
     fprintf(f, "static const char mjit_ep_neq_bp_p = %d;\n", ep_neq_bp_p);
     for (bi = b->first; bi != NULL; bi = bi->next) {
 	struct rb_iseq_constant_body *body;
@@ -1607,7 +1614,7 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 	    i += translate_iseq_insn(f, i, bi, &tc);
 	fprintf(f, "stop_spec:\n");
 	fprintf(f, "  mjit_store_failed_spec_insn(cfp->iseq, failed_insn_pc, mutation_num);\n");
-	fprintf(f, "  mjit_change_iseq(cfp->iseq);\n");
+	fprintf(f, "  mjit_change_iseq(cfp->iseq, 1);\n");
 	fprintf(f, "cancel:\n");
 	if (tc.use_local_vars_p) {
 	    for (i = 0; i < body->local_table_size; i++)
@@ -1707,7 +1714,7 @@ make_pch(void *arg) {
 	ok_p = exit_code == 0;
     }
     free(args);
-    CRITICAL_SECTION_START("in make_pch");
+    CRITICAL_SECTION_START(3, "in make_pch");
     if (ok_p) {
 	verbose("Precompiled header was succesfully created");
 	pch_status = PCH_SUCCESS;
@@ -1721,7 +1728,7 @@ make_pch(void *arg) {
 	fprintf(stderr, "++Cannot send client wakeup signal in make_pch: time - %.3f ms\n",
 		relative_ms_time());
     }
-    CRITICAL_SECTION_FINISH("in make_pch");
+    CRITICAL_SECTION_FINISH(3, "in make_pch");
     return NULL;
 }
 
@@ -1731,12 +1738,13 @@ make_pch(void *arg) {
    case.  */
 static int
 start_batch(struct rb_mjit_batch *b) {
+    int fail_p;
     pid_t pid;
     static const char *input[] = {NULL, NULL};
     static const char *output[] = {"-o",  NULL, NULL};
     char **args;
 
-    verbose("Starting batch %d execution", b->num);
+    verbose("Starting batch %d compilation", b->num);
     if ((b->cfname = get_uniq_fname(b->num, "_mjit", ".c")) == NULL) {
 	b->status = BATCH_FAILED;
 	return FALSE;
@@ -1748,7 +1756,24 @@ start_batch(struct rb_mjit_batch *b) {
     }
     if (mjit_opts.debug)
 	b->time_start = real_ms_time();
-    if (translate_batch_iseqs(b, mjit_opts.llvm ? NULL : header_fname)) {
+    CRITICAL_SECTION_START(3, "in worker to wait GC finish");
+    while (in_gc) {
+	debug(3, "Waiting wakeup from GC");
+	pthread_cond_wait(&mjit_gc_wakeup, &mjit_engine_mutex);
+    }
+    batches_in_translation++;
+    CRITICAL_SECTION_FINISH(3, "in worker to wait GC finish");
+    fail_p = translate_batch_iseqs(b, mjit_opts.llvm ? NULL : header_fname);
+    CRITICAL_SECTION_START(3, "in worker to wakeup client for GC");
+    batches_in_translation--;
+    debug(3, "Sending wakeup signal to client in a mjit-worker for GC");
+    if (pthread_cond_signal(&mjit_client_wakeup) != 0) {
+	fprintf(stderr, "+++Cannot send wakeup signal to client in mjit-worker: time - %.3f ms\n",
+		relative_ms_time());
+    }
+    CRITICAL_SECTION_FINISH(3, "in worker to wakeup client for GC");
+
+    if (fail_p) {
 	pid = -1;
     } else {
 	input[0] = b->cfname;
@@ -1769,7 +1794,7 @@ start_batch(struct rb_mjit_batch *b) {
 	}
     }
     if (pid < 0) {
-        debug(1, "Failed starting batch %d execution", b->num);
+        debug(1, "Failed starting batch %d compilation", b->num);
 	b->status = BATCH_FAILED;
 	if (! mjit_opts.save_temps) {
 	    remove(b->cfname);
@@ -1779,7 +1804,7 @@ start_batch(struct rb_mjit_batch *b) {
 	}
 	return FALSE;
     } else {
-	debug(2, "Success in starting batch %d execution", b->num);
+	debug(2, "Success in starting batch %d compilation", b->num);
 	b->pid = pid;
 	return TRUE;
     }
@@ -1801,9 +1826,9 @@ load_batch(struct rb_mjit_batch *b) {
 	remove(b->ofname);
 	free(b->ofname); b->ofname = NULL;
     }
-    CRITICAL_SECTION_START("in load_batch to load the batch");
+    CRITICAL_SECTION_START(3, "in load_batch to load the batch");
     b->status = b->handle == NULL ? BATCH_FAILED : BATCH_LOADED;
-    CRITICAL_SECTION_FINISH("in load_batch to load the batch");
+    CRITICAL_SECTION_FINISH(3, "in load_batch to load the batch");
     if (b->handle != NULL)
 	verbose("Success in loading code of batch %d",	b->num);
     else if (mjit_opts.warnings || mjit_opts.verbose)
@@ -1822,11 +1847,11 @@ load_batch(struct rb_mjit_batch *b) {
 	    }
 	}
 	/* TODO: Do we need a critical section here.  */
-	CRITICAL_SECTION_START("in load_batch to setup MJIT code");
+	CRITICAL_SECTION_START(3, "in load_batch to setup MJIT code");
 	if (bi->iseq != NULL) {
 	    bi->iseq->body->jit_code = addr;
 	}
-	CRITICAL_SECTION_FINISH("in load_batch to setup MJIT code");
+	CRITICAL_SECTION_FINISH(3, "in load_batch to setup MJIT code");
     }
 }
 
@@ -1851,25 +1876,25 @@ worker(void *arg) {
 	fprintf(stderr, "+++Cannot enable cancelation in worker: time - %.3f ms\n",
 		relative_ms_time());
     }
-    CRITICAL_SECTION_START("in worker to wakeup from pch");
+    CRITICAL_SECTION_START(3, "in worker to wakeup from pch");
     while (pch_status == PCH_NOT_READY) {
 	debug(3, "Waiting wakeup from make_pch");
 	pthread_cond_wait(&mjit_pch_wakeup, &mjit_engine_mutex);
     }
-    CRITICAL_SECTION_FINISH("in worker to wakeup from pch");
+    CRITICAL_SECTION_FINISH(3, "in worker to wakeup from pch");
     if (pch_status == PCH_FAILED) {
 	mjit_init_p = FALSE;
-	CRITICAL_SECTION_START("in worker to update finished_workers");
+	CRITICAL_SECTION_START(3, "in worker to update finished_workers");
 	finished_workers++;
-	CRITICAL_SECTION_FINISH("in worker to update finished_workers");
 	debug(3, "Sending wakeup signal to client in a mjit-worker");
 	if (pthread_cond_signal(&mjit_client_wakeup) != 0) {
 	    fprintf(stderr, "+++Cannot send wakeup signal to client in mjit-worker: time - %.3f ms\n",
 		    relative_ms_time());
 	}
+	CRITICAL_SECTION_FINISH(3, "in worker to update finished_workers");
 	return NULL;
     }
-    CRITICAL_SECTION_START("in worker to start the batch");
+    CRITICAL_SECTION_START(3, "in worker to start the batch");
     for (;;) {
 	int stat, exit_code;
 	struct rb_mjit_batch *b;
@@ -1880,8 +1905,8 @@ worker(void *arg) {
 	}
 	b = get_from_list(&batch_queue);
 	if (b != NULL)
-	  b->status = BATCH_IN_EXECUTION;
-	CRITICAL_SECTION_FINISH("in worker to start the batch");
+	    b->status = BATCH_IN_GENERATION;
+	CRITICAL_SECTION_FINISH(3, "in worker to start the batch");
 	if (b != NULL) {
 	    start_batch(b);
 	    waitpid(b->pid, &stat, 0);
@@ -1889,14 +1914,14 @@ worker(void *arg) {
 	    if (WIFEXITED(stat)) {
 		exit_code = WEXITSTATUS(stat);
 	    }
-	    CRITICAL_SECTION_START("in worker to setup status");
+	    CRITICAL_SECTION_START(3, "in worker to setup status");
 	    b->status = exit_code != 0 ? BATCH_FAILED : BATCH_SUCCESS;
 	    if (exit_code == 0)
-		verbose("Success in compilation of batch %d");
+		verbose("Success in compilation of batch %d", b->num);
 	    else if (mjit_opts.warnings || mjit_opts.verbose)
 		fprintf(stderr, "MJIT warning: failure in compilation of batch %d\n", b->num);
 	    add_to_list(b, &done_batches);
-	    CRITICAL_SECTION_FINISH("in worker to setup status");
+	    CRITICAL_SECTION_FINISH(3, "in worker to setup status");
 	    if (! mjit_opts.save_temps) {
 		remove(b->cfname);
 		free(b->cfname); b->cfname = NULL;
@@ -1905,7 +1930,7 @@ worker(void *arg) {
 		struct global_spec_state curr_state;
 		int recompile_p;
 		
-		CRITICAL_SECTION_START("in worker to check global speculation status");
+		CRITICAL_SECTION_START(3, "in worker to check global speculation status");
 		setup_global_spec_state(&curr_state);
 		recompile_p = ! valid_global_spec_state_p(&b->spec_state, &curr_state);
 		if (recompile_p) {
@@ -1914,12 +1939,13 @@ worker(void *arg) {
 		    b->status = BATCH_IN_QUEUE;
 		    verbose("Global speculation changed -- put batch %d back into the queue", b->num);
 		}
-		CRITICAL_SECTION_FINISH("in worker to check global speculation status");
+		CRITICAL_SECTION_FINISH(3, "in worker to check global speculation status");
 		if (! recompile_p) {
 		    debug(2, "Start loading batch %d", b->num);
 		    load_batch(b);
 		}
 	    }
+	    CRITICAL_SECTION_START(3, "in worker for a worker wakeup");
 	    debug(3, "Sending wakeup signal to client in a mjit-worker");
 	    if (pthread_cond_signal(&mjit_client_wakeup) != 0) {
 		fprintf(stderr, "+++Cannot send wakeup signal to client in mjit-worker: time - %.3f ms\n",
@@ -1927,13 +1953,14 @@ worker(void *arg) {
 	    }
 	} else {
 	    debug(3, "Waiting wakeup from client");
-	    CRITICAL_SECTION_START("in worker for a worker wakeup");
-	    while (batch_queue.head == NULL && ! finish_workers_p)
+	    CRITICAL_SECTION_START(3, "in worker for a worker wakeup");
+	    while (batch_queue.head == NULL && ! finish_workers_p) {
 		pthread_cond_wait(&mjit_worker_wakeup, &mjit_engine_mutex);
-	    debug(3, "Getting wakeup from client");
+		debug(3, "Getting wakeup from client");
+	    }
 	}
     }
-    CRITICAL_SECTION_FINISH("in worker to finish");
+    CRITICAL_SECTION_FINISH(3, "in worker to finish");
     debug(1, "Finishing worker");
     return NULL;
 }
@@ -2253,31 +2280,38 @@ mjit_add_iseq_to_process(rb_iseq_t *iseq) {
 	return;
     add_iseq_to_batch(curr_batch, bi);
     if (quick_response_p || curr_batch->iseqs_size > MAX_BATCH_ISEQ_SIZE) {
-	CRITICAL_SECTION_START("in add_iseq_to_process");
+	CRITICAL_SECTION_START(3, "in add_iseq_to_process");
 	finish_forming_curr_batch();
 	debug(3, "Sending wakeup signal to workers in mjit_add_iseq_to_process");
 	if (pthread_cond_broadcast(&mjit_worker_wakeup) != 0) {
 	    fprintf(stderr, "Cannot send wakeup signal to workers in add_iseq_to_process: time - %.3f ms\n",
 		    relative_ms_time());
 	}
-	CRITICAL_SECTION_FINISH("in add_iseq_to_process");
+	CRITICAL_SECTION_FINISH(3, "in add_iseq_to_process");
     }
 }
 
 /* Redo ISEQ.  It means canceling the current JIT code and adding ISEQ
-   to the queue for processing again.  */
+   to the queue for processing again.  SPEC_FAIL_P flags that iseq is
+   canceling because of a particular insn speculation failed.  */
 void
-mjit_redo_iseq(rb_iseq_t *iseq) {
+mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p) {
     struct rb_mjit_batch_iseq *bi = iseq->body->batch_iseq;
     struct rb_mjit_batch *b = bi->batch;
 
-    assert(b->status == BATCH_LOADED
-	   && b->handle != NULL && b->active_iseqs_num > 0);
+    verbose("Start redoing iseq #%d in batch %d", bi->num, b->num);
+    CRITICAL_SECTION_START(3, "in redo iseq");
+    if (b->status != BATCH_LOADED || bi->jit_mutations_num >= mjit_opts.max_mutations) {
+      CRITICAL_SECTION_FINISH(3, "in redo iseq");
+      return;
+    }
+    assert(b->handle != NULL && b->active_iseqs_num > 0);
     verbose("Iseq #%d (so far mutations=%d) in batch %d is canceled",
 	    bi->num, bi->jit_mutations_num, b->num);
     remove_iseq_from_batch(b, bi);
     // iseq->body->batch_iseq = NULL;
-    bi->jit_mutations_num++;
+    if (spec_fail_p)
+	bi->jit_mutations_num++;
     if (b->active_iseqs_num <= 0) {
 #if 0
 	/* TODO: Implement unloading.  We need to check that we left
@@ -2288,11 +2322,10 @@ mjit_redo_iseq(rb_iseq_t *iseq) {
 #endif
 	verbose("Code of batch %d is removed", b->num);
 	assert(b->first == NULL);
-	CRITICAL_SECTION_START("in removing a done batch");
 	remove_from_list(b, &done_batches);
-	CRITICAL_SECTION_FINISH("in removing a done batch");
 	free_batch(b);
     }
+    CRITICAL_SECTION_FINISH(3, "in redo iseq 2");
     iseq->body->jit_code
 	= (void *) (ptrdiff_t) (mjit_opts.aot
 				? NOT_READY_AOT_ISEQ_FUN
@@ -2305,7 +2338,7 @@ mjit_redo_iseq(rb_iseq_t *iseq) {
 static void
 increase_batch_priority(struct rb_mjit_batch *b) {
     verbose("Increasing priority for batch %d", b->num);
-    CRITICAL_SECTION_START("in increase_batch_priority");
+    CRITICAL_SECTION_START(3, "in increase_batch_priority");
     b->high_priority_p = TRUE;
     if (b == curr_batch) {
 	finish_forming_curr_batch();
@@ -2315,7 +2348,7 @@ increase_batch_priority(struct rb_mjit_batch *b) {
 	fprintf(stderr, "Cannot send wakeup signal to workers in increase_batch_priority: time - %.3f ms\n",
 		relative_ms_time());
     }
-    CRITICAL_SECTION_FINISH("in increase_batch_priority");
+    CRITICAL_SECTION_FINISH(3, "in increase_batch_priority");
 }
 
 /* Wait for finishing ISEQ generation.  To decrease the wait, increase
@@ -2332,13 +2365,13 @@ mjit_get_iseq_fun(const rb_iseq_t *iseq) {
     bi = iseq->body->batch_iseq;
     b = bi->batch;
     increase_batch_priority(b);
-    CRITICAL_SECTION_START("in mjit_add_iseq_to_process for a client wakeup");
+    CRITICAL_SECTION_START(3, "in mjit_add_iseq_to_process for a client wakeup");
     while ((status = b->status) != BATCH_LOADED && status != BATCH_FAILED) {
 	debug(3, "Waiting wakeup from a worker in mjit_add_iseq_to_process");
 	pthread_cond_wait(&mjit_client_wakeup, &mjit_engine_mutex);
 	debug(3, "Getting wakeup from a worker in mjit_add_iseq_to_process");
     }
-    CRITICAL_SECTION_FINISH("in mjit_add_iseq_to_process for a client wakeup");
+    CRITICAL_SECTION_FINISH(3, "in mjit_add_iseq_to_process for a client wakeup");
     if (b->status == BATCH_FAILED)
 	return NULL;
     return bi->iseq->body->jit_code;
@@ -2365,7 +2398,7 @@ void
 mjit_ivar_spec_fail(rb_iseq_t *iseq) {
     if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
 	iseq->body->batch_iseq->ivar_spec = 0;
-	mjit_redo_iseq(iseq);
+	mjit_redo_iseq(iseq, FALSE);
     }
 }
 
@@ -2375,7 +2408,7 @@ void
 mjit_ep_eq_bp_fail(rb_iseq_t *iseq) {
     if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
 	iseq->body->batch_iseq->ep_neq_bp_p = TRUE;
-	mjit_redo_iseq(iseq);
+	mjit_redo_iseq(iseq, FALSE);
     }
 }
 
@@ -2386,12 +2419,23 @@ RUBY_SYMBOL_EXPORT_END
 void
 mjit_free_iseq(const rb_iseq_t *iseq) {
     struct rb_mjit_batch_iseq *bi;
-
+    struct rb_mjit_batch *b;
+    
     if (!mjit_init_p || (bi = iseq->body->batch_iseq) == NULL)
 	return;
-    CRITICAL_SECTION_START("to clear iseq in mjit_free_iseq");
+    CRITICAL_SECTION_START(3, "to clear iseq in mjit_free_iseq");
     bi->iseq = NULL;
-    CRITICAL_SECTION_FINISH("to clear iseq in mjit_free_iseq");
+    if (quick_response_p) {
+	if ((b = bi->batch)->status == BATCH_IN_QUEUE) {
+	    remove_from_list(b, &batch_queue);
+	    add_to_list(b, &done_batches);
+	} else if (b->status == BATCH_LOADED) {
+	    fprintf(stderr, "Unloading batch %d\n", b->num);
+	    dlclose(b->handle);
+	}
+	b->status = BATCH_FAILED;
+    }
+    CRITICAL_SECTION_FINISH(3, "to clear iseq in mjit_free_iseq");
     if (mjit_opts.debug || mjit_opts.profile) {
 	bi->overall_calls = iseq->body->overall_calls;
 	bi->jit_calls = iseq->body->jit_calls;
@@ -2412,6 +2456,7 @@ mjit_cancel_all(void)
     rb_thread_t *th = 0;
     struct global_spec_state curr_state;
     struct rb_mjit_batch *b, *next;
+    struct rb_mjit_batch_iseq *bi;
 
     if (!mjit_init_p)
 	return;
@@ -2423,7 +2468,7 @@ mjit_cancel_all(void)
 	      fp->bp[0] |= VM_FRAME_FLAG_CANCEL;
 	  }
     }
-    CRITICAL_SECTION_START("mjit_cancel_all");
+    CRITICAL_SECTION_START(3, "mjit_cancel_all");
     verbose("Cancel all wrongly speculative JIT code");
     setup_global_spec_state(&curr_state);
     for (b = done_batches.head; b != NULL; b = next) {
@@ -2438,6 +2483,9 @@ mjit_cancel_all(void)
 	    verbose("Global speculation changed -- recompiling batch %d", b->num);
 	    remove_from_list(b, &done_batches);
 	    add_to_list(b, &batch_queue);
+	    for (bi = b->first; bi != NULL; bi = bi->next)
+		if (bi->iseq != NULL)
+		    bi->iseq->body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
 	    b->status = BATCH_IN_QUEUE;
 	}
     }
@@ -2446,8 +2494,43 @@ mjit_cancel_all(void)
         fprintf(stderr, "Cannot send wakeup signal to workers in mjit_cancel_all: time - %.3f ms\n",
 		relative_ms_time());
     }
-    CRITICAL_SECTION_FINISH("mjit_cancel_all");
+    CRITICAL_SECTION_FINISH(3, "mjit_cancel_all");
 }
+
+/* Wait until workers don't compile any iseq.  It is called at the
+   start of GC.  */
+void
+mjit_gc_start(void) {
+    if (!mjit_init_p)
+	return;
+    debug(4, "mjit_gc_start");
+    CRITICAL_SECTION_START(4, "mjit_gc_start");
+    while (batches_in_translation != 0) {
+	debug(4, "Waiting wakeup from a worker for GC");
+	pthread_cond_wait(&mjit_client_wakeup, &mjit_engine_mutex);
+	debug(4, "Getting wakeup from a worker for GC");
+    }
+    in_gc = TRUE;
+    CRITICAL_SECTION_FINISH(4, "mjit_gc_start");
+}
+
+/* Send a signal to workers to continue iseq compilations.  It is
+   called at the end of GC.  */
+void
+mjit_gc_finish(void) {
+    if (!mjit_init_p)
+	return;
+    debug(4, "mjit_gc_finish");
+    CRITICAL_SECTION_START(4, "mjit_gc_finish");
+    in_gc = FALSE;
+    debug(4, "Sending wakeup signal to workers after GC");
+    if (pthread_cond_broadcast(&mjit_gc_wakeup) != 0) {
+        fprintf(stderr, "Cannot send wakeup signal to workers in mjit_gc_finish: time - %.3f ms\n",
+		relative_ms_time());
+    }
+    CRITICAL_SECTION_FINISH(4, "mjit_gc_finish");
+}
+
 
 /* A name of the header file included in any C file generated by MJIT for iseqs.  */
 #define RUBY_MJIT_HEADER_FNAME ("rb_mjit_min_header-" RUBY_VERSION ".h")
@@ -2479,6 +2562,8 @@ mjit_init(struct mjit_options *opts) {
     const char *path;
     FILE *f;
 
+    in_gc = FALSE;
+    batches_in_translation = 0;
     mjit_opts = *opts;
     if (mjit_opts.threads <= 0)
 	mjit_opts.threads = DEFAULT_WORKERS_NUM;
@@ -2542,30 +2627,36 @@ mjit_init(struct mjit_options *opts) {
 	init_state = 2;
 	if (pthread_cond_init(&mjit_worker_wakeup, NULL) == 0) {
 	    init_state = 3;
-	    if (pthread_attr_init(&attr) == 0
-		&& pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM) == 0
-		&& pthread_create(&pch_pid, &attr, make_pch, NULL) == 0) {
-		int i;
-
-		/* Use the detached threads not to fiddle with major code
-		   processing SICHLD.  */
-		pthread_detach(pch_pid);
+	    if (pthread_cond_init(&mjit_gc_wakeup, NULL) == 0) {
 		init_state = 4;
-		for (i = 0; i < mjit_opts.threads; i++) {
-		    if (pthread_create(&pid, &attr, worker, NULL) != 0)
-			break;
-		    worker_pids[workers_num++] = pid;
-		    pthread_detach(pid);
-		}
-		if (i == mjit_opts.threads)
+		if (pthread_attr_init(&attr) == 0
+		    && pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM) == 0
+		    && pthread_create(&pch_pid, &attr, make_pch, NULL) == 0) {
+		    int i;
+		    
+		    /* Use the detached threads not to fiddle with major code
+		       processing SICHLD.  */
+		    pthread_detach(pch_pid);
 		    init_state = 5;
+		    for (i = 0; i < mjit_opts.threads; i++) {
+			if (pthread_create(&pid, &attr, worker, NULL) != 0)
+			    break;
+			worker_pids[workers_num++] = pid;
+			pthread_detach(pid);
+		    }
+		    if (i == mjit_opts.threads)
+			init_state = 6;
+		}
 	    }
 	}
       }
     }
     switch (init_state) {
-    case 4:
+    case 5:
 	mjit_init_p = TRUE;
+	/* Fall through: */
+    case 4:
+	pthread_cond_destroy(&mjit_gc_wakeup);
 	/* Fall through: */
     case 3:
 	pthread_cond_destroy(&mjit_worker_wakeup);
@@ -2692,26 +2783,27 @@ mjit_finish(void) {
        threads can produce temp files.  And even if the temp files are
        removed, the used C compiler still complaint about their
        absence.  So wait for a clean finish of the threads.  */
-    CRITICAL_SECTION_START("in mjit_finish to wakeup from pch");
+    CRITICAL_SECTION_START(3, "in mjit_finish to wakeup from pch");
     while (pch_status == PCH_NOT_READY) {
 	debug(3, "Waiting wakeup from make_pch");
 	pthread_cond_wait(&mjit_pch_wakeup, &mjit_engine_mutex);
     }
-    CRITICAL_SECTION_FINISH("in mjit_finish to wakeup from pch");
+    CRITICAL_SECTION_FINISH(3, "in mjit_finish to wakeup from pch");
     finish_workers_p = TRUE;
     while (finished_workers < workers_num) {
 	debug(3, "Sending cancel signal to workers");
-	CRITICAL_SECTION_START("in mjit_finish");
+	CRITICAL_SECTION_START(3, "in mjit_finish");
 	if (pthread_cond_broadcast(&mjit_worker_wakeup) != 0) {
 	    fprintf(stderr, "Cannot send wakeup signal to workers in mjit_finish: time - %.3f ms\n",
 		    relative_ms_time());
 	}
-	CRITICAL_SECTION_FINISH("in mjit_finish");
+	CRITICAL_SECTION_FINISH(3, "in mjit_finish");
     }
     pthread_mutex_destroy(&mjit_engine_mutex);
     pthread_cond_destroy(&mjit_pch_wakeup);
     pthread_cond_destroy(&mjit_client_wakeup);
     pthread_cond_destroy(&mjit_worker_wakeup);
+    pthread_cond_destroy(&mjit_gc_wakeup);
     if (! mjit_opts.save_temps)
 	remove(pch_fname);
     if (mjit_opts.profile)

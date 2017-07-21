@@ -72,11 +72,13 @@ extern void mjit_init(struct mjit_options *opts);
 extern void mjit_add_iseq_to_process(rb_iseq_t *iseq);
 extern mjit_fun_t mjit_get_iseq_fun(const rb_iseq_t *iseq);
 extern void mjit_cancel_all(void);
-extern void mjit_redo_iseq(rb_iseq_t *iseq);
+extern void mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p);
 extern void mjit_ivar_spec_fail(rb_iseq_t *iseq);
 extern void mjit_ep_eq_bp_fail(rb_iseq_t *iseq);
 extern void mjit_free_iseq(const rb_iseq_t *iseq);
 extern void mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num);
+extern void mjit_gc_start(void);
+extern void mjit_gc_finish(void);
 extern void mjit_finish(void);
 
 /* A threshold used to add iseq to JIT. */
@@ -172,12 +174,14 @@ mjit_aot_process(rb_iseq_t *iseq) {
     }
 }
 
-/* The function is called when ISEQ is changed.  It can happens as we
-   have speculative insns.  */
+/* The function is called when ISEQ is changed.  SPEC_FAIL_P flags
+   that it happens becuase of failure in speculation of a particular
+   insn..  */
 static do_inline void
-mjit_change_iseq(rb_iseq_t *iseq) {
+mjit_change_iseq(rb_iseq_t *iseq, int spec_fail_p) {
     if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
-	iseq->body->failed_jit_calls++;
-	mjit_redo_iseq(iseq);
+	if (spec_fail_p)
+	    iseq->body->failed_jit_calls++;
+	mjit_redo_iseq(iseq, spec_fail_p);
     }
 }

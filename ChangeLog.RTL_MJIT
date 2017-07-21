@@ -1,5 +1,43 @@
 2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* common.mk (gc.o): Add dependence on mjit.h.
+	* gc.c: Include mjit.c.
+	(gc_enter): Call mjit_gc_start.
+	(gc_exit): Call mjit_gc_finish.
+	* mjit.h (mjit_redo_iseq): Add an arg.
+	(mjit_gc_start, mjit_gc_finish): New externs.
+	(mjit_change_iseq): Add an arg.  Pass the arg to mjit_redo_iseq.
+	Increment failed_jit_calls depending on it.
+	* mjit.c: Rename IN_EXECUTION to IN_GENERATION.
+	(struct global_spec_state): Make trace_p and bop_redefined_p
+	unsigned.
+	(mjit_gc_wakeup, in_gc, batches_in_translation): New.
+	(CRITICAL_SECTION_START, CRITICAL_SECTION_FINISH): Add debug
+	level.  Pass 3 for every call.
+	(translate_batch_iseqs): Change print format for trace_p and
+	bop_redefined_p.
+	(start_batch): Wait gc finish before translation.  Pass signal
+	after the translation.
+	(worker): Rearrange CRITICAL_SECTION_FINISH.  Add missed arg for
+	verbose call.  Add missed CRITICAL_SECTION_START.
+	(mjit_redo_iseq): Add arg.  Increase mutation number depending on
+	it.  Rearrange critical section.
+	(mjit_ivar_spec_fail): Pass new arg to mjit_redo_iseq.
+	(mjit_free_iseq): Unload batch.  Rearrange
+	CRITICAL_SECTION_FINISH.
+	(mjit_cancel_all, mjit_ep_eq_bp_fail): Set up jit_code for
+	canceled iseqs.
+	(mjit_gc_start, mjit_gc_finish): New.
+	(mjit_init): Reset in_gc and batches_in_translation.  Create
+	mjit_gc_wakeup.
+	(mjit_finish): Destroy mjit_gc_wakeup.
+	* rtl_exec.c (op_val_call_end, op_call_end): Pass new arg to
+	mjit_change_iseq.
+	* vm_insnhelper.h (vm_change_insn): Call mjit_change_iseq only
+	when the insn is really changing.  Pass new arg.
+
+2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* compile.c (iseq_compile_each): Set up call_c_func_p for
 	rune_once.
 	* mjit.c (get_insn_fun_features): Remove case for run_once.

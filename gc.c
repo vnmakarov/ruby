@@ -33,6 +33,7 @@
 #include <setjmp.h>
 #include <sys/types.h>
 #include "ruby_assert.h"
+#include "mjit.h"
 
 #undef rb_data_object_wrap
 
@@ -6403,7 +6404,7 @@ gc_rest(rb_objspace_t *objspace)
     int sweeping = is_lazy_sweeping(heap_eden);
 
     if (marking || sweeping) {
-	gc_enter(objspace, "gc_rest");
+        gc_enter(objspace, "gc_rest");
 
 	if (RGENGC_CHECK_MODE >= 2) gc_verify_internal_consistency(Qnil);
 
@@ -6511,6 +6512,8 @@ gc_enter(rb_objspace_t *objspace, const char *event)
     if (RGENGC_CHECK_MODE) assert(during_gc == 0);
     if (RGENGC_CHECK_MODE >= 3) gc_verify_internal_consistency(Qnil);
 
+    mjit_gc_start();
+
     during_gc = TRUE;
     gc_report(1, objspace, "gc_entr: %s [%s]\n", event, gc_current_status(objspace));
     gc_record(objspace, 0, event);
@@ -6526,6 +6529,8 @@ gc_exit(rb_objspace_t *objspace, const char *event)
     gc_record(objspace, 1, event);
     gc_report(1, objspace, "gc_exit: %s [%s]\n", event, gc_current_status(objspace));
     during_gc = FALSE;
+
+    mjit_gc_finish();
 }
 
 static void *

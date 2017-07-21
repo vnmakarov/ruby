@@ -735,7 +735,7 @@ op_val_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, rindex_t r
 	return 0;
     if ((cfp->ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_FLAG_CANCEL) == 0)
 	return 0;
-    mjit_change_iseq(cfp->iseq);
+    mjit_change_iseq(cfp->iseq, TRUE);
     return 1;
 }
 
@@ -751,7 +751,7 @@ op_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val) {
 	return 0;
     if ((cfp->ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_FLAG_CANCEL) == 0)
 	return 0;
-    mjit_change_iseq(cfp->iseq);
+    mjit_change_iseq(cfp->iseq, TRUE);
     return 1;
 }
 
