@@ -97,6 +97,9 @@
 #include "mjit.h"
 #include "version.h"
 
+extern rb_serial_t ruby_vm_global_method_state;
+extern rb_serial_t ruby_vm_global_constant_state;
+
 /* Numbers of the interpreted insns and JIT executed insns when
    MJIT_INSN_STATISTICS is non-zero.  */
 unsigned long byte_code_insns_num;
@@ -1150,6 +1153,7 @@ get_insn_mutation_num(struct rb_mjit_batch_iseq *bi, size_t pos) {
 /* An aditional argument to generate cases for values in case_dispatch
    insn hash.  */
 struct case_arg {
+    long last_dst; /* last printed dst  */
     /* iseq basic offset for destinations in case_dispatch  */
     size_t offset;
     FILE *f; /* a file where to print */
@@ -1160,9 +1164,13 @@ struct case_arg {
 static int
 print_case(st_data_t key, st_data_t val, st_data_t arg) {
     struct case_arg *case_arg = (struct case_arg *) arg;
+    long dst = FIX2LONG(val);
 
-    fprintf(case_arg->f, "    case %ld: goto l%ld;\n",
-	    FIX2LONG(val), case_arg->offset + FIX2LONG(val));
+    if (dst != case_arg->last_dst) {
+	fprintf(case_arg->f, "    case %ld: goto l%ld;\n",
+		dst, case_arg->offset + FIX2LONG(val));
+	case_arg->last_dst = dst;
+    }
     return ST_CONTINUE;
 }
 
@@ -1183,7 +1191,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
     CALL_CACHE cc = NULL;
     CALL_INFO ci = NULL;
     char buf[150];
-
+    
     insn_mutation_num = get_insn_mutation_num(bi, pos);
     insn = code[pos];
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
@@ -1231,7 +1239,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    unsigned long dest = pos + len + code[pos + 1];
 
 	    assert(const_p);
-	    if (tcp->safe_p || insn_mutation_num != 0) {
+	    if (tcp->safe_p || insn_mutation_num != 0
+		|| local_ic.ic_serial != ruby_vm_global_constant_state) {
 		fprintf(f, "  if (%s_f(cfp, %s, (lindex_t) %"PRIdVALUE " , (void *) 0x%"PRIxVALUE "))\n  ",
 			iname, get_op_str(buf, code[pos + 2], tcp), code[pos + 2], code[pos + 3]);
 	    } else {
@@ -1255,6 +1264,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    fprintf(f, "  switch (case_dispatch_f(cfp, %s, 0x%"PRIxVALUE ", %ld)) {\n",
 		    get_op_str(buf, code[pos + 1], tcp), (VALUE) hash, code[pos + 3]);
 	    fprintf(f, "    case 0: break;\n");
+	    arg.last_dst = 0;
 	    arg.offset = pos + len;
 	    arg.f = f;
 	    st_foreach(RHASH_TBL_RAW(hash), print_case, (st_data_t) &arg);  
@@ -1302,7 +1312,9 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    break;
 	}
     } else if (features.call_p && !tcp->safe_p && insn_mutation_num == 0
-	       && (local_cc.call == vm_call_cfunc || vm_call_iseq_setup_normal_p(local_cc.call))) {
+	       && ruby_vm_global_method_state == local_cc.method_state
+	       && (local_cc.call == vm_call_cfunc
+		   || vm_call_iseq_setup_normal_p(local_cc.call))) {
 	int simple_p = (insn == BIN(simple_call)
 			|| insn == BIN(simple_call_self) || insn == BIN(simple_call_recv));
 	int self_p = insn == BIN(call_self) || insn == BIN(simple_call_self);
@@ -1348,14 +1360,14 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	fprintf(f, ", %s)) {\n", get_op_str(buf, call_start, tcp));
 	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
     } else if (!tcp->safe_p && features.call_p && insn_mutation_num == 0
+	       && ruby_vm_global_method_state == local_cc.method_state
 	       && (local_cc.call == vm_call_ivar || local_cc.call == vm_call_attrset)
 	       && local_cc.aux.index > 0) {
 	ptrdiff_t call_start = code[pos + 2];
 	int call_ivar_obj_op = features.recv_p ? code[pos + 2] : code[pos + 3];
 	const char *rec = (insn == BIN(simple_call_self)
 			   ? "&cfp->self" : get_op_str(buf, call_ivar_obj_op, tcp));
-
-	assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call) || insn == BIN(simple_call_self));
+	assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call) || insn == BIN(simple_call_self) || insn == BIN(call_super));
 	fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu) || ",
 		rec, (unsigned long long) local_cc.method_state,
 		(unsigned long long) local_cc.class_serial);
@@ -1402,7 +1414,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	    fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	}
-    } else if (!tcp->safe_p && const_p && insn_mutation_num == 0 && insn == BIN(const_cached_val_ld)) {
+    } else if (!tcp->safe_p && const_p && insn_mutation_num == 0 && insn == BIN(const_cached_val_ld)
+	       && local_ic.ic_serial == ruby_vm_global_constant_state) {
 	assert(insn == BIN(const_cached_val_ld));
 	fprintf(f, "  if (mjit_const_cached_val_ld(cfp, %llu, %llu, 0x%"PRIxVALUE ", %s, %ld",
 		(unsigned long long) local_ic.ic_serial,
@@ -1477,7 +1490,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	    else
 		fprintf(f, ", &new_insn)) {\n");
 	    fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
-	    fprintf(f, "    vm_change_insn(cfp->iseq, (void *) 0x%"PRIxVALUE ", new_insn);\n", &code[pos]);
+	    fprintf(f, "    vm_change_insn(cfp->iseq, (void *) 0x%"PRIxVALUE ", new_insn);\n",
+		    (VALUE) &code[pos]);
 	    fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    if (features.jmp_p) {
 		unsigned long dest = pos + len + code[pos + 2];
@@ -1498,11 +1512,13 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	if (features.call_p) {
 	    ptrdiff_t call_start = code[pos + 2];
 	    
-	    if (!tcp->safe_p && vm_call_iseq_setup_normal_p(local_cc.call) && insn_mutation_num == 0) {
+	    if (!tcp->safe_p && ruby_vm_global_method_state == local_cc.method_state
+		&& vm_call_iseq_setup_normal_p(local_cc.call) && insn_mutation_num == 0) {
 		const rb_iseq_t *callee_iseq = rb_iseq_check(local_cc.me->def->body.iseq.iseqptr);
 
-		fprintf(f, "  if (((CALL_CACHE) 0x%"PRIxVALUE ")->call != 0x%"PRIxVALUE ")",
-			(VALUE) cc, (VALUE) local_cc.call);
+		fprintf(f, "  if (mjit_check_cc_attr_p(calling.recv, %llu, %llu))",
+			(long long unsigned) local_cc.method_state,
+			(long long unsigned) local_cc.class_serial);
 		fprintf(f, " {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
 		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 		fprintf(f, "  if (mjit_call_iseq_normal(th, cfp, &calling, (void *) 0x%"PRIxVALUE ", %d, %d, %s)) {\n",

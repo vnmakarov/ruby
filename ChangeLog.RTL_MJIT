@@ -1,5 +1,16 @@
 2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.c (ruby_vm_global_method_state): New extern.
+	(ruby_vm_global_constant_state): Ditto.
+	(struct case_arg): New field last_dst.
+	(print_case): Use it.
+	(translate_iseq_insn): Reset the field.  Check
+	ruby_vm_global_constant_state and ruby_vm_global_constant_state
+	for speculative insns.  Add call_super in assert for speculative
+	calls.  Generate mjit_check_cc_attr_p for iseq calls.
+
+2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* rtl_exec.c (const_cached_val_ld_f, set_inline_cache_f): Use
 	atomic.  Make atomic a last assignment.
 	(val_ret_f): Skip frame if necessary.
