@@ -349,8 +349,8 @@ const_cached_val_ld_f(rb_thread_t *th, rb_control_frame_t *cfp,
 	var_assign(cfp, res, res_ind, v);
 	VM_ASSERT(ic->ic_value.value != Qundef);
 	ic->ic_value.value = v;
-	ic->ic_serial = GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count;
 	ic->ic_cref = vm_get_const_key_cref(GET_EP());
+	VM_ATOMIC_SET(ic->ic_serial, GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count);
 	ruby_vm_const_missing_count = 0;
     }
 }
@@ -412,8 +412,8 @@ set_inline_cache_f(rb_control_frame_t *cfp, VALUE *op, IC ic)
     check_sp_default(cfp);
     VM_ASSERT(ic->ic_value.value != Qundef);
     ic->ic_value.value = val;
-    ic->ic_serial = GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count;
     ic->ic_cref = vm_get_const_key_cref(cfp->ep);
+    VM_ATOMIC_SET(ic->ic_serial, GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count);
     ruby_vm_const_missing_count = 0;
 }
 
@@ -3686,12 +3686,21 @@ ret_trace(rb_thread_t *th, rb_control_frame_t *cfp, rb_event_flag_t flag, VALUE 
    VAL.  Trace event NF.  Return a flag to finish vm_exec_core.  */
 static do_inline int
 val_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE v, rb_num_t nf, VALUE *val) {
+    int ret_p;
+    
     cfp->sp = RTL_GET_BP(cfp) + 1;
     ret_trace(th, cfp, (rb_event_flag_t) nf, v);
 
     RUBY_VM_CHECK_INTS(th);
 
-    if (! vm_pop_frame(th, cfp, cfp->ep)) {
+    ret_p = vm_pop_frame(th, cfp, cfp->ep);
+    if (! in_mjit_p && ! ret_p && (cfp = th->cfp)->iseq == 0) {
+	/* An exception can result into C function frame when JIT code
+	   is used -- skip the frame.  */
+	ret_p = vm_pop_frame(th, cfp, cfp->ep);
+    }
+    VM_ASSERT(in_mjit_p || ret_p || th->cfp->iseq);
+    if (! ret_p) {
 	*val = v;
 	return 0;
     } else {

@@ -902,7 +902,7 @@ vm_getivar(VALUE obj, ID id, IC ic, struct rb_call_cache *cc, int is_attr)
 		    }
 		    if (!is_attr) {
 			ic->ic_value.index = index;
-			ic->ic_serial = RCLASS_SERIAL(RBASIC(obj)->klass);
+			VM_ATOMIC_SET(ic->ic_serial, RCLASS_SERIAL(RBASIC(obj)->klass));
 		    }
 		    else { /* call_info */
 			cc->aux.index = (int)index + 1;
@@ -945,7 +945,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, IC ic, struct rb_call_cache *cc, int is_
 	    if (iv_index_tbl && st_lookup(iv_index_tbl, (st_data_t)id, &index)) {
 		if (!is_attr) {
 		    ic->ic_value.index = index;
-		    ic->ic_serial = RCLASS_SERIAL(klass);
+		    VM_ATOMIC_SET(ic->ic_serial, RCLASS_SERIAL(klass));
 		}
 		else if (index >= INT_MAX) {
 		    rb_raise(rb_eArgError, "too many instance variables");
@@ -972,12 +972,26 @@ vm_getinstancevariable(VALUE obj, ID id, IC ic)
    INDEX.  */
 static do_inline VALUE
 vm_getivar_spec_big(VALUE self, size_t index) {
-  return ROBJECT(self)->as.heap.ivptr[index];
+    VALUE val;
+    
+    VM_ASSERT(RB_TYPE_P(self, T_OBJECT)
+	      && (RBASIC(self)->flags & ROBJECT_EMBED)
+	      && index < ROBJECT_NUMIV(self));
+    val = ROBJECT(self)->as.heap.ivptr[index];
+    VM_ASSERT(val != Qundef);
+    return val;
 }
 
 static do_inline VALUE
 vm_getivar_spec_small(VALUE self, size_t index) {
-  return ROBJECT(self)->as.ary[index];
+    VALUE val;
+    
+    VM_ASSERT(RB_TYPE_P(self, T_OBJECT)
+	      && !(RBASIC(self)->flags & ROBJECT_EMBED)
+	      && index < ROBJECT_NUMIV(self));
+    val = ROBJECT(self)->as.ary[index];
+    VM_ASSERT(val != Qundef);
+    return val;
 }
 
 /* A speculative version of ivar access.  We assume the variable was
@@ -1008,6 +1022,9 @@ vm_setinstancevariable(VALUE obj, ID id, VALUE val, IC ic)
 static do_inline VALUE
 vm_setivar_spec_big(VALUE self, size_t index, VALUE val) {
     rb_check_frozen(self);
+    VM_ASSERT(RB_TYPE_P(self, T_OBJECT)
+	      && !(RBASIC(self)->flags & ROBJECT_EMBED)
+	      && index < ROBJECT_NUMIV(self));
     RB_OBJ_WRITE(self, &ROBJECT(self)->as.heap.ivptr[index], val);
     return val;
 }
@@ -1015,6 +1032,9 @@ vm_setivar_spec_big(VALUE self, size_t index, VALUE val) {
 static do_inline VALUE
 vm_setivar_spec_small(VALUE self, size_t index, VALUE val) {
     rb_check_frozen(self);
+    VM_ASSERT(RB_TYPE_P(self, T_OBJECT)
+	      && (RBASIC(self)->flags & ROBJECT_EMBED)
+	      && index < ROBJECT_NUMIV(self));
     RB_OBJ_WRITE(self, &ROBJECT(self)->as.ary[index], val);
     return val;
 }
@@ -1295,8 +1315,8 @@ vm_search_method(const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE 
     VM_ASSERT(callable_method_entry_p(cc->me));
     cc->call = vm_call_general;
 #if OPT_INLINE_METHOD_CACHE
-    cc->method_state = GET_GLOBAL_METHOD_STATE();
-    cc->class_serial = RCLASS_SERIAL(klass);
+    VM_ATOMIC_SET(cc->method_state, GET_GLOBAL_METHOD_STATE());
+    VM_ATOMIC_SET(cc->class_serial, RCLASS_SERIAL(klass));
 #endif
 }
 
@@ -1364,9 +1384,9 @@ rb_equal_opt(VALUE obj1, VALUE obj2)
     struct rb_call_cache cc;
 
     ci.mid = idEq;
-    cc.method_state = 0;
-    cc.class_serial = 0;
-    cc.me = NULL;
+    VM_ATOMIC_SET(cc.me, NULL);
+    VM_ATOMIC_SET(cc.method_state, 0);
+    VM_ATOMIC_SET(cc.class_serial, 0);
     return opt_eq_func(obj1, obj2, &ci, &cc);
 }
 
@@ -1997,11 +2017,7 @@ vm_call_opt_send(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling
     int i;
     VALUE sym;
     struct rb_call_info *ci;
-#if RTL_INSNS
     struct rb_call_data_with_kwarg cd_entry;
-#else
-    struct rb_call_info_with_kwarg ci_entry;
-#endif
     struct rb_call_cache cc_entry, *cc;
 
     CALLER_SETUP_ARG(reg_cfp, calling, orig_ci);
@@ -2014,23 +2030,13 @@ vm_call_opt_send(rb_thread_t *th, rb_control_frame_t *reg_cfp, struct rb_calling
 
     /* setup new ci */
     if (orig_ci->flag & VM_CALL_KWARG) {
-#if RTL_INSNS
 	ci = (struct rb_call_info *)&cd_entry;
 	cd_entry.call_info = ((struct rb_call_data_with_kwarg *)orig_ci)->call_info;
 	cd_entry.kw_arg = ((struct rb_call_data_with_kwarg *)orig_ci)->kw_arg;
-#else
-	ci = (struct rb_call_info *)&ci_entry;
-	ci_entry = *(struct rb_call_info_with_kwarg *)orig_ci;
-#endif
     }
     else {
-#if RTL_INSNS
 	ci = &cd_entry.call_info;
 	cd_entry.call_info = *orig_ci;
-#else
-	ci = &ci_entry.ci;
-	ci_entry.ci = *orig_ci;
-#endif
     }
     ci->flag = ci->flag & ~VM_CALL_KWARG; /* TODO: delegate kw_arg without making a Hash object */
 

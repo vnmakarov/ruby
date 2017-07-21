@@ -176,7 +176,7 @@ mjit_aot_process(rb_iseq_t *iseq) {
 
 /* The function is called when ISEQ is changed.  SPEC_FAIL_P flags
    that it happens becuase of failure in speculation of a particular
-   insn..  */
+   insn.  */
 static do_inline void
 mjit_change_iseq(rb_iseq_t *iseq, int spec_fail_p) {
     if (iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {

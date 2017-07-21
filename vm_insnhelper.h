@@ -179,11 +179,14 @@ enum vm_regan_acttype {
 #define USE_IC_FOR_SPECIALIZED_METHOD 1
 #endif
 
-#define NEXT_CLASS_SERIAL() (++ruby_vm_class_serial)
+#define VM_ATOMIC_SET(var, val) ATOMIC_SET(var, val)
+#define VM_ATOMIC_INC(var) ATOMIC_INC(var)
+
+#define NEXT_CLASS_SERIAL() (VM_ATOMIC_INC(ruby_vm_class_serial), ruby_vm_class_serial)
 #define GET_GLOBAL_METHOD_STATE() (ruby_vm_global_method_state)
-#define INC_GLOBAL_METHOD_STATE() (++ruby_vm_global_method_state)
+#define INC_GLOBAL_METHOD_STATE() (VM_ATOMIC_INC(ruby_vm_global_method_state))
 #define GET_GLOBAL_CONSTANT_STATE() (ruby_vm_global_constant_state)
-#define INC_GLOBAL_CONSTANT_STATE() (++ruby_vm_global_constant_state)
+#define INC_GLOBAL_CONSTANT_STATE() (VM_ATOMIC_INC(ruby_vm_global_constant_state))
 
 extern VALUE make_no_method_exception(VALUE exc, VALUE format, VALUE obj,
 				      int argc, const VALUE *argv, int priv);

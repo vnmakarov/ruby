@@ -732,8 +732,8 @@ method_entry_get_without_cache(VALUE klass, ID id,
 	if (OPT_GLOBAL_METHOD_CACHE) {
 	    struct cache_entry *ent;
 	    ent = GLOBAL_METHOD_CACHE(klass, id);
-	    ent->class_serial = RCLASS_SERIAL(klass);
-	    ent->method_state = GET_GLOBAL_METHOD_STATE();
+	    VM_ATOMIC_SET(ent->class_serial, RCLASS_SERIAL(klass));
+	    VM_ATOMIC_SET(ent->method_state, GET_GLOBAL_METHOD_STATE());
 	    ent->defined_class = defined_class;
 	    ent->mid = id;
 

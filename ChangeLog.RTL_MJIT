@@ -1,5 +1,19 @@
 2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* rtl_exec.c (const_cached_val_ld_f, set_inline_cache_f): Use
+	atomic.  Make atomic a last assignment.
+	(val_ret_f): Skip frame if necessary.
+	* vm_insnhelper.c (vm_getivar): Use atomic.
+	(vm_getivar_spec_big, vm_getivar_spec_small): Add asserts.
+	(vm_setivar_spec_big, vm_setivar_spec_small): Ditto.
+	(vm_search_method): Use atomic.
+	* vm_insnhelper.h (VM_ATOMIC_SET, VM_ATOMIC_INC): New macros.
+	(NEXT_CLASS_SERIAL, INC_GLOBAL_METHOD_STATE): Use the new macros.
+	(INC_GLOBAL_CONSTANT_STATE): Ditto.
+	* vm_method.c (method_entry_get_without_cache): Use VM_ATOMIC_SET.
+
+2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* common.mk (gc.o): Add dependence on mjit.h.
 	* gc.c: Include mjit.c.
 	(gc_enter): Call mjit_gc_start.
