@@ -1,6 +1,30 @@
+2017-08-02  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (struct rb_mjit_batch): Remove first, last, and
+	active_iseqs_num.  Add batch_iseq.
+	(struct rb_mjit_batch_iseq): Remove prev, next.
+	(get_from_list): Assume one batch iseq.
+	(translate_batch_iseqs): Ditto.
+	(load_batch): Ditto.  Don't use RTLD_GLOBAL.
+	(create_batch_iseq): Use field batch as a link for free batch
+	iseqs.
+	(create_batch): Remove active_iseqs_num initialization.
+	(free_batch_iseqs): Remove.
+	(free_batch): Assume one batch iseq.
+	(add_iseq_to_batch, remove_iseq_from_batch): Ditto.  Remove
+	active_iseqs_num update.
+	(finish_batches): Use field batch to link free batch iseqs.
+	(quick_response_p, MAX_BATCH_ISEQ_SIZE): Remove.
+	(mjit_add_iseq_to_process): Always finish forming the current
+	batch.
+	(mjit_redo_iseq): Don't check active_iseqs_num.
+	(mjit_cancel_all): Use ep instead of bp.  Assume one batch iseq.
+	(get_done_batch_iseqs_num): Assume one batch iseq.
+	(get_sorted_batch_iseqs): Ditto.
+
 2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
 
-	* comile.c (iseq_compile_each): Setup parent except_p for return.
+	* compile.c (iseq_compile_each): Setup parent except_p for return.
 
 2017-07-21  Vladimir Makarov  <vmakarov@redhat.com>
 

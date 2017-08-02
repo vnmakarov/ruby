@@ -205,13 +205,10 @@ struct rb_mjit_batch {
     /* Dlopen handle of the loaded object file.  Defined for status
        BATCH_LOADED.  */
     void *handle;
-    /* ISEQs in the batch form a doubly linked list.  The following
-       members are the head and the tail of the list.  */
-    struct rb_mjit_batch_iseq *first, *last;
+    /* ISEQ in the batch.  We have at most one batch iseq.  */
+    struct rb_mjit_batch_iseq *batch_iseq;
     /* If the flag is TRUE, we should compile the batch first.  */
     int high_priority_p;
-    /* Number of non-canceled iseqs in the batch.  */
-    int active_iseqs_num;
     /* Overall byte code size of all ISEQs in the batch in VALUEs.  */
     size_t iseqs_size;
     /* The following member is used to generate a code with global
@@ -237,8 +234,6 @@ struct rb_mjit_batch_iseq {
     /* The ISEQ byte code size in VALUEs.  */
     size_t iseq_size;
     struct rb_mjit_batch *batch;
-    /* The previous and the next ISEQ in the batch.  */
-    struct rb_mjit_batch_iseq *prev, *next;
     /* The fields used for profiling only:  */
     char *label; /* Name of the ISEQ */
     /* Number of iseq calls, number of them in JIT mode, and number of
@@ -429,9 +424,10 @@ get_from_list(struct rb_mjit_batch_list *list) {
 	    break;
 	}
 	calls_num = 0;
-	for (bi = b->first; bi != NULL; bi = bi->next)
-	    if (bi->iseq != NULL)
-		calls_num += bi->iseq->body->overall_calls;
+	bi = b->batch_iseq;
+	assert(bi != NULL);
+	if (bi->iseq != NULL)
+	    calls_num += bi->iseq->body->overall_calls;
 	if (best_b == NULL || calls_num > best_calls_num) {
 	    best_b = b;
 	    best_calls_num = calls_num;
@@ -1311,7 +1307,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_batch_iseq *bi,
 	default:
 	    break;
 	}
-    } else if (features.call_p && !tcp->safe_p && insn_mutation_num == 0
+    } else if (!tcp->safe_p && features.call_p && insn_mutation_num == 0
 	       && ruby_vm_global_method_state == local_cc.method_state
 	       && (local_cc.call == vm_call_cfunc
 		   || vm_call_iseq_setup_normal_p(local_cc.call))) {
@@ -1561,23 +1557,21 @@ translate_batch_iseqs(struct rb_mjit_batch *b, const char *include_fname) {
 #endif
     setup_global_spec_state(&b->spec_state);
     ep_neq_bp_p = FALSE;
-    for (bi = b->first; bi != NULL; bi = bi->next)
-	if (bi->ep_neq_bp_p) {
-	    ep_neq_bp_p = TRUE;
-	    break;
-	}
+    bi = b->batch_iseq;
+    assert (bi != NULL);
+    if (bi->ep_neq_bp_p) {
+	ep_neq_bp_p = TRUE;
+    }
     fprintf(f, "static const char mjit_profile_p = %d;\n", mjit_opts.profile);
     fprintf(f, "static const char mjit_trace_p = %u;\n", b->spec_state.trace_p);
     fprintf(f, "static const char mjit_bop_redefined_p = %u;\n", b->spec_state.bop_redefined_p);
     fprintf(f, "static const char mjit_ep_neq_bp_p = %d;\n", ep_neq_bp_p);
-    for (bi = b->first; bi != NULL; bi = bi->next) {
+    if (bi->iseq != NULL) {
 	struct rb_iseq_constant_body *body;
 	size_t i, size = bi->iseq_size;
 	struct translation_control tc;
 	
-	if (bi->iseq == NULL)
-	    continue;
-	body = bi->iseq->body;
+       	body = bi->iseq->body;
 	tc.safe_p = bi->jit_mutations_num >= mjit_opts.max_mutations;
 	tc.use_temp_vars_p = bi->use_temp_vars_p;
 	/* If the current iseq contains a block, we should not use C
@@ -1837,7 +1831,7 @@ load_batch(struct rb_mjit_batch *b) {
     const char *fname, *err_name;
 
     assert(b->status == BATCH_SUCCESS);
-    b->handle = dlopen(b->ofname, RTLD_NOW | RTLD_GLOBAL);
+    b->handle = dlopen(b->ofname, RTLD_NOW);
     if (! mjit_opts.save_temps) {
 	remove(b->ofname);
 	free(b->ofname); b->ofname = NULL;
@@ -1849,26 +1843,26 @@ load_batch(struct rb_mjit_batch *b) {
 	verbose("Success in loading code of batch %d",	b->num);
     else if (mjit_opts.warnings || mjit_opts.verbose)
 	fprintf(stderr, "MJIT warning: failure in loading code of batch %d(%s)\n", b->num, dlerror());
-    for (bi = b->first; bi != NULL; bi = bi->next) {
-	addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
-	if (b->status == BATCH_LOADED) {
-	    fname = get_batch_iseq_fname(bi, mjit_fname_holder);
-	    addr = dlsym(b->handle, fname);
-	    if ((err_name = dlerror ()) != NULL) {
-		debug(0, "Failure (%s) in setting address of iseq %d(%s)", err_name, bi->num, fname);
-		addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
-	    } else {
-		debug(2, "Success in setting address of iseq %d(%s)(%s) 0x%"PRIxVALUE,
-		      bi->num, fname, bi->label, addr);
-	    }
+    bi = b->batch_iseq;
+    assert(bi != NULL);
+    addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
+    if (b->status == BATCH_LOADED) {
+	fname = get_batch_iseq_fname(bi, mjit_fname_holder);
+	addr = dlsym(b->handle, fname);
+	if ((err_name = dlerror ()) != NULL) {
+	    debug(0, "Failure (%s) in setting address of iseq %d(%s)", err_name, bi->num, fname);
+	    addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
+	} else {
+	    debug(2, "Success in setting address of iseq %d(%s)(%s) 0x%"PRIxVALUE,
+		  bi->num, fname, bi->label, addr);
 	}
-	/* TODO: Do we need a critical section here.  */
-	CRITICAL_SECTION_START(3, "in load_batch to setup MJIT code");
-	if (bi->iseq != NULL) {
-	    bi->iseq->body->jit_code = addr;
-	}
-	CRITICAL_SECTION_FINISH(3, "in load_batch to setup MJIT code");
     }
+    /* TODO: Do we need a critical section here.  */
+    CRITICAL_SECTION_START(3, "in load_batch to setup MJIT code");
+    if (bi->iseq != NULL) {
+	bi->iseq->body->jit_code = addr;
+    }
+    CRITICAL_SECTION_FINISH(3, "in load_batch to setup MJIT code");
 }
 
 /* Maximum number of worker threads.  As worker can process only one
@@ -2092,7 +2086,7 @@ create_batch_iseq(rb_iseq_t *iseq) {
 	    return NULL;
     } else {
 	bi = free_batch_iseq_list;
-	free_batch_iseq_list = free_batch_iseq_list->next;
+	free_batch_iseq_list = (struct rb_mjit_batch_iseq *) free_batch_iseq_list->batch;
     }
     bi->num = curr_mjit_iseq_num++;
     bi->iseq = iseq;
@@ -2131,12 +2125,11 @@ create_batch(void) {
     }
     b->status = BATCH_NOT_FORMED;
     b->num = curr_batch_num++;
-    b->active_iseqs_num = 0;
     b->iseqs_size = 0;
     b->cfname = b->ofname = NULL;
     b->high_priority_p = FALSE;
     b->next = NULL;
-    b->first = b->last = NULL;
+    b->batch_iseq = NULL;
     init_global_spec_state(&b->spec_state);
     return b;
 }
@@ -2148,19 +2141,8 @@ free_batch_iseq(struct rb_mjit_batch_iseq *bi) {
 	free(bi->label);
 	bi->label = NULL;
     }
-    bi->next = free_batch_iseq_list;
+    bi->batch = (struct rb_mjit_batch *) free_batch_iseq_list;
     free_batch_iseq_list = bi;
-}
-
-/* Mark all batch iseqs from LIST as free.  */
-static void
-free_batch_iseqs(struct rb_mjit_batch_iseq *list) {
-    struct rb_mjit_batch_iseq *bi, *bi_next;
-
-    for (bi = list; bi != NULL; bi = bi_next) {
-	bi_next = bi->next;
-	free_batch_iseq(bi);
-    }
 }
 
 /* Mark the batch B as free.  The function markes the batch iseqs as
@@ -2174,7 +2156,8 @@ free_batch(struct rb_mjit_batch *b) {
 	free(b->ofname);
 	b->ofname = NULL;
     }
-    free_batch_iseqs(b->first);
+    if (b->batch_iseq != NULL)
+	free_batch_iseq(b->batch_iseq);
     b->next = free_batch_list;
     free_batch_list = b;
 }
@@ -2201,7 +2184,7 @@ finish_batches(void) {
       free(b);
   }
   for (bi = free_batch_iseq_list; bi != NULL; bi = bi_next) {
-      bi_next = bi->next;
+      bi_next = (struct rb_mjit_batch_iseq *) bi->batch;
       free(bi->mutation_insns);
       free(bi);
   }
@@ -2222,37 +2205,21 @@ finish_workers(void){
 /* Add the batch iseq BI to the batch B.  */
 static void
 add_iseq_to_batch(struct rb_mjit_batch *b, struct rb_mjit_batch_iseq *bi) {
-    bi->next = b->first;
-    bi->prev = NULL;
+    assert(b->batch_iseq == NULL);
     bi->batch = b;
-    if (b->first != NULL)
-	b->first->prev = bi;
-    else
-	b->last = bi;
-    b->first = bi;
+    b->batch_iseq = bi;
     b->iseqs_size += bi->iseq_size;
-    b->active_iseqs_num++;
     debug(1, "iseq %d is added to batch %d (size %lu)",
 	  bi->num, b->num, (long unsigned) b->iseqs_size);
 }
+
 /* Remove the batch iseq BI to the batch B.  The batch iseq should
    belong to another batch before the call.  */
 static void
 remove_iseq_from_batch(struct rb_mjit_batch *b, struct rb_mjit_batch_iseq *bi) {
-    struct rb_mjit_batch_iseq *prev, *next;
-
-    prev = bi->prev;
-    next = bi->next;
-    if (prev != NULL)
-	prev->next = next;
-    else
-	bi->batch->first = next;
-    if (next != NULL)
-	next->prev = prev;
-    else
-	bi->batch->last = prev;
+    assert(b->batch_iseq == bi);
+    b->batch_iseq = NULL;
     bi->batch->iseqs_size -= bi->iseq_size;
-    bi->batch->active_iseqs_num--;
     debug(2, "iseq %d is removed from batch %d (size = %lu)",
 	  bi->num, bi->batch->num,
 	  (long unsigned) bi->batch->iseqs_size);
@@ -2270,18 +2237,9 @@ finish_forming_curr_batch(void) {
     curr_batch = NULL;
 }
 
-/* If it is true any batch will contain at most one batch iseq.  */
-static const int quick_response_p = TRUE;
-
-/* When the following variable is FALSE, the batch becomes formed and
-   added to the queue if overall size of its iseqs becomes bigger the
-   macro value.  */
-#define MAX_BATCH_ISEQ_SIZE 1000
-
 RUBY_SYMBOL_EXPORT_BEGIN
 /* Add ISEQ to be JITed in parallel with the current thread.  Add it
-   to the current batch.  Add the current batch to the queue if
-   QUICK_RESPONSE_P or the current batch becomes big.  */
+   to the current batch.  Add the current batch to the queue.  */
 void
 mjit_add_iseq_to_process(rb_iseq_t *iseq) {
     struct rb_mjit_batch_iseq *bi;
@@ -2295,16 +2253,14 @@ mjit_add_iseq_to_process(rb_iseq_t *iseq) {
 	&& (bi = create_batch_iseq(iseq)) == NULL)
 	return;
     add_iseq_to_batch(curr_batch, bi);
-    if (quick_response_p || curr_batch->iseqs_size > MAX_BATCH_ISEQ_SIZE) {
-	CRITICAL_SECTION_START(3, "in add_iseq_to_process");
-	finish_forming_curr_batch();
-	debug(3, "Sending wakeup signal to workers in mjit_add_iseq_to_process");
-	if (pthread_cond_broadcast(&mjit_worker_wakeup) != 0) {
-	    fprintf(stderr, "Cannot send wakeup signal to workers in add_iseq_to_process: time - %.3f ms\n",
-		    relative_ms_time());
-	}
-	CRITICAL_SECTION_FINISH(3, "in add_iseq_to_process");
+    CRITICAL_SECTION_START(3, "in add_iseq_to_process");
+    finish_forming_curr_batch();
+    debug(3, "Sending wakeup signal to workers in mjit_add_iseq_to_process");
+    if (pthread_cond_broadcast(&mjit_worker_wakeup) != 0) {
+      fprintf(stderr, "Cannot send wakeup signal to workers in add_iseq_to_process: time - %.3f ms\n",
+	      relative_ms_time());
     }
+    CRITICAL_SECTION_FINISH(3, "in add_iseq_to_process");
 }
 
 /* Redo ISEQ.  It means canceling the current JIT code and adding ISEQ
@@ -2321,26 +2277,24 @@ mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p) {
       CRITICAL_SECTION_FINISH(3, "in redo iseq");
       return;
     }
-    assert(b->handle != NULL && b->active_iseqs_num > 0);
+    assert(b->handle != NULL);
     verbose("Iseq #%d (so far mutations=%d) in batch %d is canceled",
 	    bi->num, bi->jit_mutations_num, b->num);
     remove_iseq_from_batch(b, bi);
     // iseq->body->batch_iseq = NULL;
     if (spec_fail_p)
 	bi->jit_mutations_num++;
-    if (b->active_iseqs_num <= 0) {
 #if 0
-	/* TODO: Implement unloading.  We need to check that we left
-	   all generated JIT code (remember about cancellation during
-	   recursive calls).  */
-	dlclose(b->handle);
-	b->handle = NULL;
+    /* TODO: Implement unloading.  We need to check that we left all
+       generated JIT code (remember about cancellation during
+       recursive calls).  */
+    dlclose(b->handle);
+    b->handle = NULL;
 #endif
-	verbose("Code of batch %d is removed", b->num);
-	assert(b->first == NULL);
-	remove_from_list(b, &done_batches);
-	free_batch(b);
-    }
+    verbose("Code of batch %d is removed", b->num);
+    assert(b->batch_iseq == NULL);
+    remove_from_list(b, &done_batches);
+    free_batch(b);
     CRITICAL_SECTION_FINISH(3, "in redo iseq 2");
     iseq->body->jit_code
 	= (void *) (ptrdiff_t) (mjit_opts.aot
@@ -2441,16 +2395,14 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
 	return;
     CRITICAL_SECTION_START(3, "to clear iseq in mjit_free_iseq");
     bi->iseq = NULL;
-    if (quick_response_p) {
-	if ((b = bi->batch)->status == BATCH_IN_QUEUE) {
-	    remove_from_list(b, &batch_queue);
-	    add_to_list(b, &done_batches);
-	} else if (b->status == BATCH_LOADED) {
-	    fprintf(stderr, "Unloading batch %d\n", b->num);
-	    dlclose(b->handle);
-	}
-	b->status = BATCH_FAILED;
+    if ((b = bi->batch)->status == BATCH_IN_QUEUE) {
+	remove_from_list(b, &batch_queue);
+	add_to_list(b, &done_batches);
+    } else if (b->status == BATCH_LOADED) {
+	fprintf(stderr, "Unloading batch %d\n", b->num);
+	dlclose(b->handle);
     }
+    b->status = BATCH_FAILED;
     CRITICAL_SECTION_FINISH(3, "to clear iseq in mjit_free_iseq");
     if (mjit_opts.debug || mjit_opts.profile) {
 	bi->overall_calls = iseq->body->overall_calls;
@@ -2481,7 +2433,7 @@ mjit_cancel_all(void)
 	for(fp = th->cfp; fp < limit_cfp; fp = RUBY_VM_PREVIOUS_CONTROL_FRAME(fp))
 	  if ((iseq = fp->iseq) != NULL && imemo_type((VALUE) iseq) == imemo_iseq
 	      && iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
-	      fp->bp[0] |= VM_FRAME_FLAG_CANCEL;
+	      fp->ep[0] |= VM_FRAME_FLAG_CANCEL;
 	  }
     }
     CRITICAL_SECTION_START(3, "mjit_cancel_all");
@@ -2499,9 +2451,10 @@ mjit_cancel_all(void)
 	    verbose("Global speculation changed -- recompiling batch %d", b->num);
 	    remove_from_list(b, &done_batches);
 	    add_to_list(b, &batch_queue);
-	    for (bi = b->first; bi != NULL; bi = bi->next)
-		if (bi->iseq != NULL)
-		    bi->iseq->body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
+	    bi = b->batch_iseq;
+	    assert(bi != NULL);
+	    if (bi->iseq != NULL)
+		bi->iseq->body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
 	    b->status = BATCH_IN_QUEUE;
 	}
     }
@@ -2703,7 +2656,7 @@ get_done_batch_iseqs_num(void) {
     struct rb_mjit_batch_iseq *bi;
     
     for (b = done_batches.head; b != NULL; b = b->next)
-	for (bi = b->first; bi != NULL; bi = bi->next)
+	if (b->batch_iseq != NULL)
 	    n++;
     return n;
 }
@@ -2736,7 +2689,7 @@ get_sorted_batch_iseqs(void) {
 	return NULL;
     n = 0;
     for (b = done_batches.head; b != NULL; b = b->next)
-	for (bi = b->first; bi != NULL; bi = bi->next)
+	if ((bi = b->batch_iseq) != NULL)
 	    batch_iseqs[n++] = bi;
     batch_iseqs[n] = NULL;
     assert(n == batch_iseqs_num);
