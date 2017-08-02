@@ -418,7 +418,7 @@ struct rb_iseq_constant_body {
     /* Number of iseq calls, number of them in JIT mode, and number of
        JIT calls with speculation failures.  */
     long unsigned overall_calls, jit_calls, failed_jit_calls;
-    struct rb_mjit_batch_iseq *batch_iseq;
+    struct rb_mjit_unit_iseq *unit_iseq;
     
     unsigned int stack_max; /* for stack overflow check */
 };

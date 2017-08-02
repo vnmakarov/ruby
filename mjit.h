@@ -21,7 +21,7 @@ enum rb_mjit_iseq_fun {
 };
 
 /* A forward declaration  */
-struct rb_mjit_batch_iseq;
+struct rb_mjit_unit_iseq;
 
 /* Flag of successful MJIT initialization and intention to use it */
 #ifndef MJIT_HEADER

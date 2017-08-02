@@ -1,5 +1,43 @@
 2017-08-02  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* vm-core.h (struct rb_iseq_constant_body): Rename batch_iseq to
+	unit_iseq.
+	* mjit.h (rb_mjit_batch_iseq): Rename to rb_mjit_unit_iseq.
+	* mjit.c: Change comments assuming unit instead of batch and one
+	iseq for unit.
+	(batch_status): Rename to unit_status.
+	(BATCH_NOT_FORMED, BATCH_IN_QUEUE, BATCH_IN_GENERATION): Rename to
+	UNIT_NOT_FORMED, UNIT_IN_QUEUE, UNIT_IN_GENERATION.
+	(UNIT_FAILED, UNIT_SUCCESS): Rename to UNIT_FAILED, UNIT_SUCCESS.
+	(struct rb_mjit_batch): Rename to rb_mjit_unit.  Rename field
+	batch_iseq to unit_iseq.  Rename iseqs_size to iseq_size.
+	(struct rb_mjit_batch_iseq): Rename to rb_mjit_unit_iseq.  Rename
+	field batch to unit.
+	(get_batch_iseq_fname): Rename to get_unit_iseq_fname.
+	(batches_in_translation): Rename to units_in_translation.
+	(rb_mjit_batch_list): Rename to rb_mjit_unit_list.
+	(batch_queue): Rename to unit_queue.
+	(done_batches): Rename to done_units.
+	(translate_batch_iseqs): Rename to translate_batch_iseq.
+	(start_batch): Rename to start_unit.
+	(load_batch): Rename to load_unit.
+	(free_batch_list, free_batch_iseq_list, curr_batch): Rename to
+	free_unit_list, free_unit_iseq_list, curr_unit.
+	(curr_batch_num): Rename to curr_unit_num.
+	(update_batch_iseq_info_from_insns): Rename to
+	update_unit_iseq_info_from_insns.
+	(create_batch_iseq, create_batch): Rename to create_unit_iseq,
+	create_unit.
+	(free_batch_iseq, finish_batches, remove_iseq_from_batch): Rename
+	to free_unit_iseq, finish_units, remove_iseq_from_unit.
+	(finish_forming_curr_batch, increase_batch_priority): Rename to
+	finish_forming_curr_unit, increase_unit_priority.
+	(get_done_batch_iseqs_num, batch_iseq_compare): Rename to
+	get_done_unit_iseqs_num, unit_iseq_compare.
+	(get_sorted_batch_iseqs): Rename to get_sorted_unit_iseqs.
+
+2017-08-02  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (struct rb_mjit_batch): Remove first, last, and
 	active_iseqs_num.  Add batch_iseq.
 	(struct rb_mjit_batch_iseq): Remove prev, next.
