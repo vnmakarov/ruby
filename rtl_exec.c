@@ -3339,7 +3339,7 @@ check_match_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind,
 
     check_sp_default(cfp);
     val = Qfalse;
-    VM_ASSERT((int) result < 0);
+    VM_ASSERT((long) res_ind < 0);
     if (flag & VM_CHECKMATCH_ARRAY) {
 	long i;
 	for (i = 0; i < RARRAY_LEN(pattern); i++) {
@@ -3369,7 +3369,7 @@ bt_match_f(rb_thread_t *th, rb_control_frame_t *cfp,
 
     check_sp_default(cfp);
     val = Qfalse;
-    VM_ASSERT((int) result < 0);
+    VM_ASSERT((long) res_ind < 0);
     if (flag & VM_CHECKMATCH_ARRAY) {
 	int i;
 	for (i = 0; i < RARRAY_LEN(pattern); i++) {

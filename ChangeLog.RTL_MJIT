@@ -1,3 +1,7 @@
+2017-08-03  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* rtl_exec.c (check_match_f, bt_match_f): Use res_ind in VM_ASSERT.
+
 2017-08-02  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (mjit_free_iseq): Remove printing into stderr.
