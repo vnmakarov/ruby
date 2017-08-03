@@ -1,5 +1,9 @@
 2017-08-02  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.c (mjit_free_iseq): Remove printing into stderr.
+
+2017-08-02  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* vm-core.h (struct rb_iseq_constant_body): Rename batch_iseq to
 	unit_iseq.
 	* mjit.h (rb_mjit_batch_iseq): Rename to rb_mjit_unit_iseq.

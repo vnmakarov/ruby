@@ -2397,7 +2397,6 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
 	remove_from_list(u, &unit_queue);
 	add_to_list(u, &done_units);
     } else if (u->status == UNIT_LOADED) {
-	fprintf(stderr, "Unloading unit %d\n", u->num);
 	dlclose(u->handle);
     }
     u->status = UNIT_FAILED;
