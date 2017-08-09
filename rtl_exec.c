@@ -2018,7 +2018,7 @@ arithmf(double_num_mod) {return float_num_mult(op1, op2);}
    use a fast path, change the current insn to the corresponding
    speculative insn FIX_INSN_ID or FLO_INSN_ID.  Return non zero if we
    started a new ISEQ execution (we need to update vm_exec_core regs
-   in this case) or we need to cancel the current JITed code..  */
+   in this case) or we need to cancel the current JITed code.  */
 static do_inline int
 do_arithm(rb_thread_t *th,
 	  rb_control_frame_t *cfp,
@@ -3739,8 +3739,9 @@ finish_ret(rb_control_frame_t *cfp, VALUE val) {
     cfp->sp = RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num;
 }
 
-/* Non-return trace execution.  */
-static do_inline void
+/* Execute trace insn.  It is for non-return traces.  Return TRUE if
+   our speculation about equality of EP and BP has changed.  */
+static do_inline int
 trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
     rb_event_flag_t flag = (rb_event_flag_t)nf;
     rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
@@ -3748,10 +3749,11 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
     if (! mjit_trace_p)
 	/* We are speculating in JITed code that there is no
 	   tracing.  */
-	return;
+	return FALSE;
     call_dtrace_hook(th);
     EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
 		    Qundef);
+    return ! mjit_ep_neq_bp_p && cfp->ep != cfp->bp;
 }
 
 /* As mjit_call_finish but when VAL is undefined call mjit_vm_exec. */

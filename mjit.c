@@ -1249,7 +1249,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	    break;
 	}
 	case BIN(trace):
-	    fprintf(f, "  %s_f(th, cfp, %"PRIdVALUE ");\n", iname, code[pos + 1]);
+	    fprintf(f, "  if (%s_f(th, cfp, %"PRIdVALUE ")) goto cancel;\n", iname, code[pos + 1]);
 	    break;
 	case BIN(case_dispatch): {
 	    CDHASH hash = code[pos + 2];

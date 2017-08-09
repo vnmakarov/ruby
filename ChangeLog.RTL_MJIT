@@ -1,6 +1,14 @@
+2017-08-09  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (translate_iseq_insn): Check trace_f return in a
+	generated code.
+	* rtl_exec.c (trace_f): Return a flag if speculation about
+	equality of bp and ep changed.
+
 2017-08-03  Vladimir Makarov  <vmakarov@redhat.com>
 
-	* rtl_exec.c (check_match_f, bt_match_f): Use res_ind in VM_ASSERT.
+	* rtl_exec.c (check_match_f, bt_match_f): Use res_ind in
+	VM_ASSERT.
 
 2017-08-02  Vladimir Makarov  <vmakarov@redhat.com>
 
