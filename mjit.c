@@ -2668,14 +2668,14 @@ get_done_unit_iseqs_num(void) {
    If the call numbers are equal put bigger iseqs first.  */ 
 static int
 unit_iseq_compare(const void *el1, const void *el2) {
-    const struct rb_mjit_unit_iseq *bi1 = *(struct rb_mjit_unit_iseq * const *) el1;
-    const struct rb_mjit_unit_iseq *bi2 = *(struct rb_mjit_unit_iseq * const *) el2;
-    unsigned long overall_calls1 = (bi1->iseq == NULL ? bi1->overall_calls : bi1->iseq->body->overall_calls);
-    unsigned long overall_calls2 = (bi2->iseq == NULL ? bi2->overall_calls : bi2->iseq->body->overall_calls);
+    const struct rb_mjit_unit_iseq *ui1 = *(struct rb_mjit_unit_iseq * const *) el1;
+    const struct rb_mjit_unit_iseq *ui2 = *(struct rb_mjit_unit_iseq * const *) el2;
+    unsigned long overall_calls1 = (ui1->iseq == NULL ? ui1->overall_calls : ui1->iseq->body->overall_calls);
+    unsigned long overall_calls2 = (ui2->iseq == NULL ? ui2->overall_calls : ui2->iseq->body->overall_calls);
 
     if (overall_calls2 < overall_calls1) return -1;
     if (overall_calls1 < overall_calls2) return 1;
-    return (long) bi2->iseq_size - (long) bi1->iseq_size;
+    return (long) ui2->iseq_size - (long) ui1->iseq_size;
 }
 
 /* Allocate and return a new array of done unit iseqs sorted

@@ -1,3 +1,7 @@
+2017-08-24  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (unit_iseq_compare): Rename bi into ui.
+
 2017-08-23  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (struct rb_mjit_unit_list): New field length.
