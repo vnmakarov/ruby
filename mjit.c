@@ -360,6 +360,7 @@ static int units_in_translation;
 /* Doubly linked list of units.  */
 struct rb_mjit_unit_list {
     struct rb_mjit_unit *head, *tail;
+    int length; /* the list length */
 };
 
 /* The unit queue.  The client and MJIT threads work on the queue.
@@ -374,6 +375,13 @@ static struct rb_mjit_unit_list done_units;
 /* The following functions are low level (ignoring thread
    synchronization) functions working with the lists.  */
 
+/* Initiate LIST.  */
+static void
+init_list(struct rb_mjit_unit_list *list) {
+    list->tail = list->head = NULL;
+    list->length = 0;
+}
+
 /* Add unit U to the tail of doubly linked LIST.  It should be not in
    the list before.  */
 static void
@@ -386,6 +394,7 @@ add_to_list(struct rb_mjit_unit *u, struct rb_mjit_unit_list *list) {
 	u->prev = list->tail;
 	list->tail = u;
     }
+    list->length++;
 }
 
 /* Remove unit U from the doubly linked LIST.  It should be in the
@@ -400,6 +409,7 @@ remove_from_list(struct rb_mjit_unit *u, struct rb_mjit_unit_list *list) {
 	list->tail = u->prev;
     else
 	u->next->prev = u->prev;
+    list->length--;
 }
 
 /* Remove and return the best unit from doubly linked LIST.  The best
@@ -1997,8 +2007,8 @@ init_workers(void) {
     free_unit_list = NULL;
     free_unit_iseq_list = NULL;
     curr_mjit_iseq_num = 0;
-    done_units.head = done_units.tail = NULL;
-    unit_queue.head = unit_queue.tail = NULL;
+    init_list(&unit_queue);
+    init_list(&done_units);
     curr_unit = NULL;
     curr_unit_num = 0;
     pch_status = PCH_NOT_READY;
@@ -2647,7 +2657,6 @@ static int
 get_done_unit_iseqs_num(void) {
     int n = 0;
     struct rb_mjit_unit *u;
-    struct rb_mjit_unit_iseq *ui;
     
     for (u = done_units.head; u != NULL; u = u->next)
 	if (u->unit_iseq != NULL)

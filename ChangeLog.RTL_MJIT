@@ -1,5 +1,13 @@
 2017-08-23  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.c (struct rb_mjit_unit_list): New field length.
+	(init_list): New function.
+	(add_to_list, remove_from_list): Update the length.
+	(init_workers): Use init_list.
+	(get_done_unit_iseqs_num): Remove ui.
+
+2017-08-23  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (get_uniq_fname): Change file name.  Use always the same
 	format.
 
