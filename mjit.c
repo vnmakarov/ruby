@@ -325,10 +325,7 @@ static char *
 get_uniq_fname(unsigned long id, const char *prefix, const char *suffix) {
     char str[70];
 
-    if (id == 0)
-	sprintf(str, "/tmp/%sp%lu%s", prefix, (unsigned long) getpid(), suffix);
-    else
-	sprintf(str, "/tmp/%sp%lub%lu%s", prefix, (unsigned long) getpid(), id, suffix);
+    sprintf(str, "/tmp/%sp%luu%lu%s", prefix, (unsigned long) getpid(), id, suffix);
     return get_string(str);
 }
 
