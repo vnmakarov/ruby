@@ -1,3 +1,21 @@
+2017-08-25  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (done_units): Rename to active_units.
+	(obsolete_units): New.
+	(load_unit): Rewrite.
+	(worker): Use discard_unit.  Rearrange critical sections.
+	(init_workers): Initialize obsolete_units.
+	(create_unit): Initialize handle.
+	(free_unit): Call dlclose.
+	(finish_workers): Free obsolete units.
+	(create_iseq_unit, discard_unit): New.
+	(mjit_add_iseq_to_process): Use create_iseq_unit, put the unit
+	into obsolete unit list.
+	(mjit_redo_iseq): Ditto.
+	(mjit_free_iseq): Use discard_unit.
+	(mjit_cancel_all): Put old unit into obsolete unit list.  Use
+	create_iseq_unit for new unit.
+
 2017-08-24  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (struct rb_mjit_unit_iseq): New field next.

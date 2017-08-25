@@ -199,7 +199,7 @@ struct rb_mjit_unit {
     /* PID of C compiler processing the unit.  Defined for status
        UNIT_IN_GENERATION. */
     pid_t pid;
-    /* Bathes in the queue are linked with the following members.  */
+    /* Units in lists are linked with the following members.  */
     struct rb_mjit_unit *next, *prev;
     /* Dlopen handle of the loaded object file.  Defined for status
        UNIT_LOADED.  */
@@ -370,10 +370,17 @@ struct rb_mjit_unit_list {
    So code using the following variable should be synced.  */
 static struct rb_mjit_unit_list unit_queue;
 
-/* The client and MJIT threads work on the list of done units
+/* The client and MJIT threads work on the list of active units
    (doubly linked list).  So code using the following variable should
-   be synced.  */
-static struct rb_mjit_unit_list done_units;
+   be synced.  All units with status UNIT_LOADED are in this list.
+   They have also non-null handles.  */
+static struct rb_mjit_unit_list active_units;
+
+/* The client and MJIT threads work on the list of obsolete units
+   (doubly linked list).  So code using the following variable should
+   be synced.  All units in this list have status UNIT_FAILED.  They
+   have also non-null handles.  */
+static struct rb_mjit_unit_list obsolete_units;
 
 /* The following functions are low level (ignoring thread
    synchronization) functions working with the lists.  */
@@ -1828,6 +1835,8 @@ start_unit(struct rb_mjit_unit *u) {
     }
 }
 
+static void discard_unit(struct rb_mjit_unit *u);
+
 /* The function should be called after successul creation of the
    object file for iseq of unit U.  The function loads the object
    file.  */
@@ -1837,37 +1846,53 @@ load_unit(struct rb_mjit_unit *u) {
     void *addr;
     char mjit_fname_holder[MAX_MJIT_FNAME_LEN];
     const char *fname, *err_name;
+    void *handle;
 
     assert(u->status == UNIT_SUCCESS);
-    u->handle = dlopen(u->ofname, RTLD_NOW);
-    if (! mjit_opts.save_temps) {
-	remove(u->ofname);
-	free(u->ofname); u->ofname = NULL;
+    handle = dlopen(u->ofname, RTLD_NOW);
+    if (mjit_opts.save_temps) {
+	CRITICAL_SECTION_START(3, "in load_unit to setup MJIT code");
+    } else {
+	const char *ofname = u->ofname;
+	
+	if (ofname != NULL)
+	    remove(ofname);
+	CRITICAL_SECTION_START(3, "in load_unit to setup MJIT code");
+	if (u->ofname != NULL)
+	    free(u->ofname);
+	u->ofname = NULL;
     }
-    CRITICAL_SECTION_START(3, "in load_unit to load the unit");
-    u->status = u->handle == NULL ? UNIT_FAILED : UNIT_LOADED;
-    CRITICAL_SECTION_FINISH(3, "in load_unit to load the unit");
-    if (u->handle != NULL)
+    if (handle != NULL)
 	verbose("Success in loading code of unit %d",	u->num);
     else if (mjit_opts.warnings || mjit_opts.verbose)
 	fprintf(stderr, "MJIT warning: failure in loading code of unit %d(%s)\n", u->num, dlerror());
     ui = u->unit_iseq;
-    assert(ui != NULL);
-    addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
-    if (u->status == UNIT_LOADED) {
-	fname = get_unit_iseq_fname(ui, mjit_fname_holder);
-	addr = dlsym(u->handle, fname);
-	if ((err_name = dlerror ()) != NULL) {
-	    debug(0, "Failure (%s) in setting address of iseq %d(%s)", err_name, ui->num, fname);
+    if (ui->iseq == NULL) {
+	/* Garbage collected */
+	assert(ui == NULL);
+	if (handle != NULL)
+	    dlclose(handle);
+    } else {
+	assert(ui != NULL);
+	u->handle = handle;
+	if (handle == NULL) {
 	    addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
+	    discard_unit(u);
 	} else {
-	    debug(2, "Success in setting address of iseq %d(%s)(%s) 0x%"PRIxVALUE,
-		  ui->num, fname, ui->label, addr);
+	    fname = get_unit_iseq_fname(ui, mjit_fname_holder);
+	    addr = dlsym(handle, fname);
+	    if ((err_name = dlerror ()) != NULL) {
+		debug(0, "Failure (%s) in setting address of iseq %d(%s)", err_name, ui->num, fname);
+		addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
+		add_to_list(u, &obsolete_units);
+		u->status = UNIT_FAILED;
+	    } else {
+		debug(2, "Success in setting address of iseq %d(%s)(%s) 0x%"PRIxVALUE,
+		      ui->num, fname, ui->label, addr);
+		add_to_list(u, &active_units);
+		u->status = UNIT_LOADED;
+	    }
 	}
-    }
-    /* TODO: Do we need a critical section here.  */
-    CRITICAL_SECTION_START(3, "in load_unit to setup MJIT code");
-    if (ui->iseq != NULL) {
 	ui->iseq->body->jit_code = addr;
     }
     CRITICAL_SECTION_FINISH(3, "in load_unit to setup MJIT code");
@@ -1938,32 +1963,32 @@ worker(void *arg) {
 		verbose("Success in compilation of unit %d", u->num);
 	    else if (mjit_opts.warnings || mjit_opts.verbose)
 		fprintf(stderr, "MJIT warning: failure in compilation of unit %d\n", u->num);
-	    add_to_list(u, &done_units);
 	    CRITICAL_SECTION_FINISH(3, "in worker to setup status");
 	    if (! mjit_opts.save_temps) {
 		remove(u->cfname);
 		free(u->cfname); u->cfname = NULL;
 	    }
-	    if (exit_code == 0) {
+	    CRITICAL_SECTION_START(3, "in worker to check global speculation status");
+	    if (exit_code != 0) {
+		discard_unit(u);
+	    } else {
 		struct global_spec_state curr_state;
 		int recompile_p;
 		
-		CRITICAL_SECTION_START(3, "in worker to check global speculation status");
 		setup_global_spec_state(&curr_state);
 		recompile_p = ! valid_global_spec_state_p(&u->spec_state, &curr_state);
 		if (recompile_p) {
-		    remove_from_list(u, &done_units);
 		    add_to_list(u, &unit_queue);
 		    u->status = UNIT_IN_QUEUE;
 		    verbose("Global speculation changed -- put unit %d back into the queue", u->num);
 		}
-		CRITICAL_SECTION_FINISH(3, "in worker to check global speculation status");
 		if (! recompile_p) {
+		    CRITICAL_SECTION_FINISH(3, "in worker to check global speculation status");
 		    debug(2, "Start loading unit %d", u->num);
 		    load_unit(u);
+		    CRITICAL_SECTION_START(3, "in worker for a worker wakeup");
 		}
 	    }
-	    CRITICAL_SECTION_START(3, "in worker for a worker wakeup");
 	    debug(3, "Sending wakeup signal to client in a mjit-worker");
 	    if (pthread_cond_signal(&mjit_client_wakeup) != 0) {
 		fprintf(stderr, "+++Cannot send wakeup signal to client in mjit-worker: time - %.3f ms\n",
@@ -2011,7 +2036,8 @@ init_workers(void) {
     unit_iseq_list = NULL;
     curr_unit_iseq_num = 0;
     init_list(&unit_queue);
-    init_list(&done_units);
+    init_list(&active_units);
+    init_list(&obsolete_units);
     curr_unit = NULL;
     curr_unit_num = 0;
     pch_status = PCH_NOT_READY;
@@ -2132,6 +2158,7 @@ create_unit(void) {
     u->num = curr_unit_num++;
     u->iseq_size = 0;
     u->cfname = u->ofname = NULL;
+    u->handle = NULL;
     u->high_priority_p = FALSE;
     u->next = NULL;
     u->unit_iseq = NULL;
@@ -2139,10 +2166,13 @@ create_unit(void) {
     return u;
 }
 
-/* Mark the unit U as free.  The function markes the unit iseq as
-   free first.  */
+/* Mark the unit U free.  */
 static void
 free_unit(struct rb_mjit_unit *u) {
+    if (u->handle != NULL) {
+	dlclose(u->handle);
+	u->handle = NULL;
+    }
     if (u->status == UNIT_SUCCESS && ! mjit_opts.save_temps) {
 	remove(u->ofname);
     }
@@ -2188,7 +2218,8 @@ finish_units(void) {
 /* Free memory allocated for all units and unit iseqs.  */
 static void
 finish_workers(void){
-    free_units(done_units.head);
+    free_units(obsolete_units.head);
+    free_units(active_units.head);
     free_units(unit_queue.head);
     if (curr_unit != NULL)
 	free_unit(curr_unit);
@@ -2230,22 +2261,40 @@ finish_forming_curr_unit(void) {
     curr_unit = NULL;
 }
 
-RUBY_SYMBOL_EXPORT_BEGIN
-/* Add ISEQ to be JITed in parallel with the current thread.  Add it
-   to the current unit.  Add the current unit to the queue.  */
-void
-mjit_add_iseq_to_process(rb_iseq_t *iseq) {
+/* Create unit and iseq unit for ISEQ.  Reuse the iseq unit if it
+   already exists.  */
+static void
+create_iseq_unit(rb_iseq_t *iseq) {
     struct rb_mjit_unit_iseq *ui;
-
-    if (!mjit_init_p)
-	return;
-    verbose("Adding iseq");
+    
     if (curr_unit == NULL && (curr_unit = create_unit()) == NULL)
 	return;
     if ((ui = iseq->body->unit_iseq) == NULL
 	&& (ui = create_unit_iseq(iseq)) == NULL)
 	return;
     add_iseq_to_unit(curr_unit, ui);
+}
+
+/* Detach the iseq unit from unit U and free the unit.  */
+static void
+discard_unit(struct rb_mjit_unit *u) {
+    struct rb_mjit_unit_iseq *ui = u->unit_iseq;
+
+    assert(ui->unit == u);
+    remove_iseq_from_unit(u, ui);
+    free_unit(u);
+}
+
+
+RUBY_SYMBOL_EXPORT_BEGIN
+/* Add ISEQ to be JITed in parallel with the current thread.  Add it
+   to the current unit.  Add the current unit to the queue.  */
+void
+mjit_add_iseq_to_process(rb_iseq_t *iseq) {
+    if (!mjit_init_p)
+	return;
+    verbose("Adding iseq");
+    create_iseq_unit(iseq);
     CRITICAL_SECTION_START(3, "in add_iseq_to_process");
     finish_forming_curr_unit();
     debug(3, "Sending wakeup signal to workers in mjit_add_iseq_to_process");
@@ -2274,13 +2323,13 @@ mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p) {
     verbose("Iseq #%d (so far mutations=%d) in unit %d is canceled",
 	    ui->num, ui->jit_mutations_num, u->num);
     remove_iseq_from_unit(u, ui);
-    // iseq->body->unit_iseq = NULL;
     if (spec_fail_p)
 	ui->jit_mutations_num++;
     verbose("Code of unit %d is removed", u->num);
     assert(u->unit_iseq == NULL);
-    remove_from_list(u, &done_units);
-    free_unit(u);
+    remove_from_list(u, &active_units);
+    add_to_list(u, &obsolete_units);
+    u->status = UNIT_FAILED;
     CRITICAL_SECTION_FINISH(3, "in redo iseq 2");
     iseq->body->jit_code
 	= (void *) (ptrdiff_t) (mjit_opts.aot
@@ -2371,7 +2420,7 @@ mjit_ep_eq_bp_fail(rb_iseq_t *iseq) {
 RUBY_SYMBOL_EXPORT_END
 
 /* Iseqs can be garbage collected.  This function should call when it
-   happens.  It removes iseq from any unit.  */
+   happens.  It removes unit iseq from the unit.  */
 void
 mjit_free_iseq(const rb_iseq_t *iseq) {
     struct rb_mjit_unit_iseq *ui;
@@ -2383,12 +2432,10 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
     ui->iseq = NULL;
     if ((u = ui->unit)->status == UNIT_IN_QUEUE) {
 	remove_from_list(u, &unit_queue);
-	add_to_list(u, &done_units);
     } else if (u->status == UNIT_LOADED) {
-	dlclose(u->handle);
-	u->handle = NULL;
+	remove_from_list(u, &active_units);
     }
-    u->status = UNIT_FAILED;
+    discard_unit(u);
     CRITICAL_SECTION_FINISH(3, "to clear iseq in mjit_free_iseq");
     if (mjit_opts.debug || mjit_opts.profile) {
 	ui->overall_calls = iseq->body->overall_calls;
@@ -2425,23 +2472,21 @@ mjit_cancel_all(void)
     CRITICAL_SECTION_START(3, "mjit_cancel_all");
     verbose("Cancel all wrongly speculative JIT code");
     setup_global_spec_state(&curr_state);
-    for (u = done_units.head; u != NULL; u = next) {
+    for (u = active_units.head; u != NULL; u = next) {
 	next = u->next;
 	if (u->status == UNIT_LOADED
 	    && ! valid_global_spec_state_p(&u->spec_state, &curr_state)) {
-#if 0
-	    verbose("Global speculation changed -- unload code of unit", u->num);
-	    dlclose(u->handle);
-	    u->handle = NULL;
-#endif
 	    verbose("Global speculation changed -- recompiling unit %d", u->num);
-	    remove_from_list(u, &done_units);
-	    add_to_list(u, &unit_queue);
 	    ui = u->unit_iseq;
 	    assert(ui != NULL);
-	    if (ui->iseq != NULL)
-		ui->iseq->body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
-	    u->status = UNIT_IN_QUEUE;
+	    remove_iseq_from_unit(u, ui);
+	    remove_from_list(u, &active_units);
+	    add_to_list(u, &obsolete_units);
+	    u->status = UNIT_FAILED;
+	    assert(ui->iseq != NULL);
+	    ui->iseq->body->jit_code = (void *) NOT_READY_JIT_ISEQ_FUN;
+	    create_iseq_unit(ui->iseq);
+	    finish_forming_curr_unit();
 	}
     }
     debug(3, "Sending wakeup signal to workers in mjit_cancel_all");
