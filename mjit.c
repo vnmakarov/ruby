@@ -224,7 +224,8 @@ struct mjit_mutation_insns {
     size_t pc; /* the relative insn pc.  */
 };
 
-/* The structure describing an ISEQ in the unit.  */
+/* The structure describing an ISEQ in the unit.  We create at most
+   one such structure for a particular iseq.  */
 struct rb_mjit_unit_iseq {
     /* Unique order number of unit ISEQ.  */
     int num;
@@ -232,11 +233,10 @@ struct rb_mjit_unit_iseq {
     /* The ISEQ byte code size in VALUEs.  */
     size_t iseq_size;
     struct rb_mjit_unit *unit;
+    /* All unit iseqs are chained by the following field.  */
+    struct rb_mjit_unit_iseq *next;
     /* The fields used for profiling only:  */
     char *label; /* Name of the ISEQ */
-    /* Number of iseq calls, number of them in JIT mode, and number of
-       JIT calls with speculation failures.  */
-    unsigned long overall_calls, jit_calls, failed_jit_calls;
     /* The following flag reflects speculation about equality of ep
        and bp which we used during last iseq translation.  */
     int ep_neq_bp_p:1;
@@ -256,6 +256,9 @@ struct rb_mjit_unit_iseq {
     /* Array of structures describing insns which initiated mutations.
        The array has JIT_MUTATIONS_NUM defined elements.  */
     struct mjit_mutation_insns *mutation_insns;
+    /* Number of iseq calls, number of them in JIT mode, and number of
+       JIT calls with speculation failures.  */
+    unsigned long overall_calls, jit_calls, failed_jit_calls;
 };
 
 /* Defined in the client thread before starting MJIT threads:  */
@@ -1991,10 +1994,10 @@ static pthread_t worker_pids[MAX_WORKERS_NUM];
 
 /* Singly linked list of allocated but marked free unit structures.  */
 static struct rb_mjit_unit *free_unit_list;
-/* Singly linked list of allocated but marked free unit iseq structures.  */
-static struct rb_mjit_unit_iseq *free_unit_iseq_list;
+/* Singly linked list of all allocated but unit iseq structures.  */
+static struct rb_mjit_unit_iseq *unit_iseq_list;
 /* The number of so far processed ISEQs.  */
-static int curr_mjit_iseq_num;
+static int curr_unit_iseq_num;
 /* The unit currently being formed.  */
 static struct rb_mjit_unit *curr_unit;
 /* The number of so far created units.  */
@@ -2005,8 +2008,8 @@ static void
 init_workers(void) {
     workers_num = 0;
     free_unit_list = NULL;
-    free_unit_iseq_list = NULL;
-    curr_mjit_iseq_num = 0;
+    unit_iseq_list = NULL;
+    curr_unit_iseq_num = 0;
     init_list(&unit_queue);
     init_list(&done_units);
     curr_unit = NULL;
@@ -2085,18 +2088,15 @@ create_unit_iseq(rb_iseq_t *iseq) {
     int i;
     struct rb_mjit_unit_iseq *ui;
 
-    if (free_unit_iseq_list == NULL) {
-	ui = xmalloc(sizeof(struct rb_mjit_unit_iseq));
-	if (ui == NULL)
-	    return NULL;
-    } else {
-	ui = free_unit_iseq_list;
-	free_unit_iseq_list = (struct rb_mjit_unit_iseq *) free_unit_iseq_list->unit;
-    }
-    ui->num = curr_mjit_iseq_num++;
+    ui = xmalloc(sizeof(struct rb_mjit_unit_iseq));
+    if (ui == NULL)
+	return NULL;
+    ui->num = curr_unit_iseq_num++;
     ui->iseq = iseq;
     iseq->body->unit_iseq = ui;
     ui->unit = NULL;
+    ui->next = unit_iseq_list;
+    unit_iseq_list = ui;
     ui->iseq_size = iseq->body->iseq_size;
     ui->label = NULL;
     if (mjit_opts.debug || mjit_opts.profile) {
@@ -2139,17 +2139,6 @@ create_unit(void) {
     return u;
 }
 
-/* Mark unit iseq UI as free.  */
-static void
-free_unit_iseq(struct rb_mjit_unit_iseq *ui) {
-    if (ui->label != NULL) {
-	free(ui->label);
-	ui->label = NULL;
-    }
-    ui->unit = (struct rb_mjit_unit *) free_unit_iseq_list;
-    free_unit_iseq_list = ui;
-}
-
 /* Mark the unit U as free.  The function markes the unit iseq as
    free first.  */
 static void
@@ -2161,8 +2150,7 @@ free_unit(struct rb_mjit_unit *u) {
 	free(u->ofname);
 	u->ofname = NULL;
     }
-    if (u->unit_iseq != NULL)
-	free_unit_iseq(u->unit_iseq);
+    u->unit_iseq = NULL;
     u->next = free_unit_list;
     free_unit_list = u;
 }
@@ -2188,13 +2176,13 @@ finish_units(void) {
       next = u->next;
       free(u);
   }
-  for (ui = free_unit_iseq_list; ui != NULL; ui = ui_next) {
-      ui_next = (struct rb_mjit_unit_iseq *) ui->unit;
+  for (ui = unit_iseq_list; ui != NULL; ui = ui_next) {
+      ui_next = ui->next;
       free(ui->mutation_insns);
       free(ui);
   }
   free_unit_list = NULL;
-  free_unit_iseq_list = NULL;
+  unit_iseq_list = NULL;
 }
 
 /* Free memory allocated for all units and unit iseqs.  */
@@ -2289,13 +2277,6 @@ mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p) {
     // iseq->body->unit_iseq = NULL;
     if (spec_fail_p)
 	ui->jit_mutations_num++;
-#if 0
-    /* TODO: Implement unloading.  We need to check that we left all
-       generated JIT code (remember about cancellation during
-       recursive calls).  */
-    dlclose(u->handle);
-    u->handle = NULL;
-#endif
     verbose("Code of unit %d is removed", u->num);
     assert(u->unit_iseq == NULL);
     remove_from_list(u, &done_units);
@@ -2405,6 +2386,7 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
 	add_to_list(u, &done_units);
     } else if (u->status == UNIT_LOADED) {
 	dlclose(u->handle);
+	u->handle = NULL;
     }
     u->status = UNIT_FAILED;
     CRITICAL_SECTION_FINISH(3, "to clear iseq in mjit_free_iseq");
@@ -2652,15 +2634,14 @@ mjit_init(struct mjit_options *opts) {
     verbose("Successful MJIT initialization (workers = %d)", mjit_opts.threads);
 }
 
-/* Return number of done unit iseqs.  */
+/* Return number of all unit iseqs.  */
 static int
-get_done_unit_iseqs_num(void) {
+get_unit_iseqs_num(void) {
     int n = 0;
-    struct rb_mjit_unit *u;
+    struct rb_mjit_unit_iseq *ui;
     
-    for (u = done_units.head; u != NULL; u = u->next)
-	if (u->unit_iseq != NULL)
-	    n++;
+    for (ui = unit_iseq_list; ui != NULL; ui = ui->next)
+	n++;
     return n;
 }
 
@@ -2683,17 +2664,15 @@ unit_iseq_compare(const void *el1, const void *el2) {
    null end marker.  */
 static struct rb_mjit_unit_iseq **
 get_sorted_unit_iseqs(void) {
-    int n, unit_iseqs_num = get_done_unit_iseqs_num();
+    int n, unit_iseqs_num = get_unit_iseqs_num();
     struct rb_mjit_unit_iseq **unit_iseqs = xmalloc(sizeof(struct rb_mjit_unit_iseq *) * (unit_iseqs_num + 1));
-    struct rb_mjit_unit *u;
     struct rb_mjit_unit_iseq *ui;
     
     if (unit_iseqs == NULL)
 	return NULL;
     n = 0;
-    for (u = done_units.head; u != NULL; u = u->next)
-	if ((ui = u->unit_iseq) != NULL)
-	    unit_iseqs[n++] = ui;
+    for (ui = unit_iseq_list; ui != NULL; ui = ui->next)
+	unit_iseqs[n++] = ui;
     unit_iseqs[n] = NULL;
     assert(n == unit_iseqs_num);
     qsort(unit_iseqs, unit_iseqs_num, sizeof(struct rb_mjit_unit_iseq *), unit_iseq_compare);

@@ -1,5 +1,20 @@
 2017-08-24  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.c (struct rb_mjit_unit_iseq): New field next.
+	(free_unit_iseq_list): Remove.
+	(unit_iseq_list): New.
+	(curr_mjit_iseq_num): Rename to curr_unit_iseq_num.
+	(create_unit_iseq): Always allocate.  Initialize next.
+	(free_unit_iseq): Remove.
+	(free_unit): Remove free_unit_iseq call.  Set up unit_iseq.
+	(finish_units): Free unit iseqs.
+	(mjit_redo_iseq): Reset handle.
+	(get_done_unit_iseqs_num): Rename to get_unit_iseqs_num.  Use
+	unit_iseq_list.
+	(get_sorted_unit_iseqs): Use unit_iseq_list.
+
+2017-08-24  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (unit_iseq_compare): Rename bi into ui.
 
 2017-08-23  Vladimir Makarov  <vmakarov@redhat.com>
