@@ -78,9 +78,7 @@
    might mess with ruby code dealing with signals.  Also as SIGCHLD
    signal can be delivered to non-main thread, the stack might have a
    constraint.  So the correct version of code based on SIGCHLD and
-   WNOHANG waitpid would be very complicated.
-
-   TODO: ISEQ JIT code unloading.  */
+   WNOHANG waitpid would be very complicated.  */
 
 #include <stdlib.h>
 #include <unistd.h>
@@ -94,6 +92,7 @@
 #include "insns.inc"
 #include "insns_info.inc"
 #include "mjit.h"
+#include "vm_insnhelper.h"
 #include "version.h"
 
 extern rb_serial_t ruby_vm_global_method_state;
@@ -207,7 +206,7 @@ struct rb_mjit_unit {
     /* ISEQ in the unit.  We have at most one unit iseq.  */
     struct rb_mjit_unit_iseq *unit_iseq;
     /* If the flag is TRUE, we should compile the unit first.  */
-    int high_priority_p;
+    char high_priority_p;
     /* Overall byte code size of ISEQ in the unit in VALUEs.  */
     size_t iseq_size;
     /* The following member is used to generate a code with global
@@ -237,9 +236,6 @@ struct rb_mjit_unit_iseq {
     struct rb_mjit_unit_iseq *next;
     /* The fields used for profiling only:  */
     char *label; /* Name of the ISEQ */
-    /* The following flag reflects speculation about equality of ep
-       and bp which we used during last iseq translation.  */
-    int ep_neq_bp_p:1;
     /* -1 means we speculate that self has few instance variables.
        Positive means we speculate that self has > IVAR_SPEC instance
        variables and IVAR_SPEC > ROBJECT_EMBED_LEN_MAX.  Zero means we
@@ -251,14 +247,18 @@ struct rb_mjit_unit_iseq {
     /* True if we use C vars for temporary Ruby variables during last
        iseq translation.  */
     char use_temp_vars_p;
+    char used_code_p;
+    /* The following flag reflects speculation about equality of ep
+       and bp which we used during last iseq translation.  */
+    char ep_neq_bp_p;
     /* Number of JIT code mutations (and cancellations).  */
     int jit_mutations_num;
     /* Array of structures describing insns which initiated mutations.
        The array has JIT_MUTATIONS_NUM defined elements.  */
     struct mjit_mutation_insns *mutation_insns;
-    /* Number of iseq calls, number of them in JIT mode, and number of
-       JIT calls with speculation failures.  */
-    unsigned long overall_calls, jit_calls, failed_jit_calls;
+    /* See the corresponding fields in iseq_constant_body.  The values
+       are saved for GCed iseqs.  */
+    unsigned long resume_calls, stop_calls, jit_calls, failed_jit_calls;
 };
 
 /* Defined in the client thread before starting MJIT threads:  */
@@ -442,7 +442,7 @@ get_from_list(struct rb_mjit_unit_list *list) {
 	ui = u->unit_iseq;
 	assert(ui != NULL);
 	if (ui->iseq != NULL)
-	    calls_num += ui->iseq->body->overall_calls;
+	    calls_num += ui->iseq->body->resume_calls + ui->iseq->body->stop_calls;
 	if (best_u == NULL || calls_num > best_calls_num) {
 	    best_u = u;
 	    best_calls_num = calls_num;
@@ -1869,7 +1869,6 @@ load_unit(struct rb_mjit_unit *u) {
     ui = u->unit_iseq;
     if (ui->iseq == NULL) {
 	/* Garbage collected */
-	assert(ui == NULL);
 	if (handle != NULL)
 	    dlclose(handle);
     } else {
@@ -1893,7 +1892,8 @@ load_unit(struct rb_mjit_unit *u) {
 		u->status = UNIT_LOADED;
 	    }
 	}
-	ui->iseq->body->jit_code = addr;
+	/* Usage of jit_code might be not in a critical section.  */
+	VM_ATOMIC_SET(ui->iseq->body->jit_code, addr);
     }
     CRITICAL_SECTION_FINISH(3, "in load_unit to setup MJIT code");
 }
@@ -2125,14 +2125,15 @@ create_unit_iseq(rb_iseq_t *iseq) {
     unit_iseq_list = ui;
     ui->iseq_size = iseq->body->iseq_size;
     ui->label = NULL;
-    if (mjit_opts.debug || mjit_opts.profile) {
+    if (1||mjit_opts.debug || mjit_opts.profile) {
 	ui->label = get_string(RSTRING_PTR(iseq->body->location.label));
-	ui->overall_calls = ui->jit_calls = ui->failed_jit_calls = 0;
+	ui->resume_calls = ui->stop_calls = ui->jit_calls = ui->failed_jit_calls = 0;
     }
     ui->ep_neq_bp_p = FALSE;
     ui->ivar_spec = 0;
     ui->ivar_serial = 0;
     ui->use_temp_vars_p = TRUE;
+    ui->used_code_p = FALSE;
     ui->jit_mutations_num = 0;
     ui->mutation_insns = xmalloc(sizeof (struct mjit_mutation_insns) * (mjit_opts.max_mutations + 1));
     for (i = 0; i <= mjit_opts.max_mutations; i++)
@@ -2166,9 +2167,11 @@ create_unit(void) {
     return u;
 }
 
-/* Mark the unit U free.  */
+/* Mark the unit U free.  Unload the JITted code.  Remove the object
+   file if it exists.  */
 static void
 free_unit(struct rb_mjit_unit *u) {
+    verbose("Removing unit %d", u->num);
     if (u->handle != NULL) {
 	dlclose(u->handle);
 	u->handle = NULL;
@@ -2180,7 +2183,6 @@ free_unit(struct rb_mjit_unit *u) {
 	free(u->ofname);
 	u->ofname = NULL;
     }
-    u->unit_iseq = NULL;
     u->next = free_unit_list;
     free_unit_list = u;
 }
@@ -2237,16 +2239,13 @@ add_iseq_to_unit(struct rb_mjit_unit *u, struct rb_mjit_unit_iseq *ui) {
 	  ui->num, u->num, (long unsigned) u->iseq_size);
 }
 
-/* Remove the unit iseq UI to the unit U.  The unit iseq should
-   belong to another unit before the call.  */
 static void
-remove_iseq_from_unit(struct rb_mjit_unit *u, struct rb_mjit_unit_iseq *ui) {
-    assert(u->unit_iseq == ui);
-    u->unit_iseq = NULL;
-    ui->unit->iseq_size -= ui->iseq_size;
-    debug(2, "iseq %d is removed from unit %d (size = %lu)",
-	  ui->num, ui->unit->num,
-	  (long unsigned) ui->unit->iseq_size);
+finish_forming_unit(struct rb_mjit_unit *u) {
+    assert(u != NULL);
+    add_to_list(u, &unit_queue);
+    u->status = UNIT_IN_QUEUE;
+    debug(2, "Finish forming unit %d (size = %lu)",
+	  u->num, (long unsigned) u->iseq_size);
 }
 
 /* Add the current unit to the queue.  */
@@ -2254,10 +2253,7 @@ static void
 finish_forming_curr_unit(void) {
     if (curr_unit == NULL)
 	return;
-    add_to_list(curr_unit, &unit_queue);
-    curr_unit->status = UNIT_IN_QUEUE;
-    debug(2, "Finish forming unit %d (size = %lu)",
-	  curr_unit->num, (long unsigned) curr_unit->iseq_size);
+    finish_forming_unit(curr_unit);
     curr_unit = NULL;
 }
 
@@ -2281,14 +2277,198 @@ discard_unit(struct rb_mjit_unit *u) {
     struct rb_mjit_unit_iseq *ui = u->unit_iseq;
 
     assert(ui->unit == u);
-    remove_iseq_from_unit(u, ui);
+    ui->unit = NULL;
     free_unit(u);
 }
 
 
+/* MJIT info related to an existing continutaion.  */
+struct mjit_cont {
+    rb_thread_t *th; /* continuation thread */
+    struct mjit_cont *prev, *next; /* used to form lists */
+};
+
+/* Double linked list of registered continuations.  */
+struct mjit_cont *first_cont;
+/* List of unused mjit_cont structures.  */
+struct mjit_cont *free_conts;
+
+/* Initiate continuation info in MJIT.  */
+static void
+init_conts(void) {
+    free_conts = first_cont = NULL;
+}
+
+/* Create and return continuation info in MJIT.  Include it to the
+   continuation list.  TH is the continuation thread.  */
+static struct mjit_cont *
+create_cont(rb_thread_t *th) {
+    struct mjit_cont *cont;
+    
+    if (free_conts != NULL) {
+	cont = free_conts;
+	free_conts = free_conts->next;
+    } else {
+	cont = xmalloc(sizeof(struct mjit_cont));
+	/* ??? Switch off JITting if there is no memory  */
+    }
+    cont->th = th;
+    if (first_cont == NULL) {
+	cont->next = cont->prev = NULL;
+    } else {
+	cont->prev = NULL;
+	cont->next = first_cont;
+	first_cont->prev = cont;
+    }
+    first_cont = cont;
+    return cont;
+}
+
+/* Remove continuation info CONT from the continuation list.  Include
+   it into the free list.  */
+static void
+free_cont(struct mjit_cont *cont) {
+    if (cont == first_cont) {
+	first_cont = cont->next;
+	if (first_cont != NULL)
+	    first_cont->prev = NULL;
+    } else {
+	cont->prev->next = cont->next;
+	if (cont->next != NULL)
+	    cont->next->prev = cont->prev;
+    }
+    cont->next = free_conts;
+    free_conts = cont;
+}
+
+/* Finish work with continuation info (free all continuation
+   structures).  */
+static void
+finish_conts(void) {
+    struct mjit_cont *cont, *next;
+    
+    for (cont = first_cont; cont != NULL; cont = next) {
+	next = cont->next;
+	free_cont(cont);
+    }
+    for (cont = free_conts; cont != NULL; cont = next) {
+	next = cont->next;
+	free(cont);
+    }
+}
+
+/* Maximum permitted number of units with a JIT code loaded in
+   memory.  */
+#define MAX_LOADED_UNITS 1000
+
+/* Clear used_code_p field for unit iseqs of units in LIST.  */
+static void
+mark_unit_iseqs(struct rb_mjit_unit_list *list) {
+    struct rb_mjit_unit *u;
+    
+    for (u = list->head; u != NULL; u = u->next) {
+	assert(u->handle != NULL && u->unit_iseq != NULL);
+	u->unit_iseq->used_code_p = FALSE;
+    }
+}
+
+/* Set up field used_code_p for unit iseqs whose iseq on the stack of
+   thread TH.  */
+static void
+mark_thread_unit_iseqs(rb_thread_t *th) { 
+    rb_iseq_t *iseq;
+    rb_control_frame_t *fp;
+    struct rb_mjit_unit_iseq *ui;
+    rb_control_frame_t *last_cfp = th->cfp;
+    rb_control_frame_t *start_cfp;
+    ptrdiff_t i, size;
+
+    if (th->stack == NULL)
+	return;
+    start_cfp = RUBY_VM_END_CONTROL_FRAME(th);
+    size = start_cfp - last_cfp;
+    for (i = 0, fp = start_cfp - 1; i < size; i++, fp = RUBY_VM_NEXT_CONTROL_FRAME(fp))
+	if (fp->pc && (iseq = fp->iseq) != NULL
+	    && imemo_type((VALUE) iseq) == imemo_iseq
+	    && (ui = iseq->body->unit_iseq) != NULL) {
+	    ui->used_code_p = TRUE;
+	}
+}
+
+/* Unload JIT code of some units to satisfy the maximum permitted
+   number of units with a loaded code.  */
+static void
+unload_units(void) {
+    rb_vm_t *vm = GET_THREAD()->vm;
+    rb_thread_t *th = 0;
+    struct rb_mjit_unit *u, *next, *best_u;
+    struct rb_mjit_unit_iseq *ui, *best_ui;
+    unsigned long overall_calls, best_overall_calls;
+    struct mjit_cont *cont;
+    
+    verbose("Too many JIT code -- unloading some active units");
+    list_for_each(&vm->living_threads, th, vmlt_node) {
+	mark_thread_unit_iseqs(th);
+    }
+    for (cont = first_cont; cont != NULL; cont = cont->next) {
+	mark_thread_unit_iseqs(cont->th);
+    }
+    for (u = obsolete_units.head; u != NULL; u = next) {
+	next = u->next;
+	assert(u->unit_iseq != NULL && u->unit_iseq->unit != u);
+	/* We can not just remove obsolete unit code.  Although it
+	   will be never used, it might be still on the stack.  For
+	   example, obsolete code might be still on the stack for
+	   previous recursive calls.  */
+	if (u->unit_iseq->used_code_p)
+	    continue;
+	verbose("Unloading obsolete unit %d(%s)\n", u->num, u->unit_iseq->label);
+	remove_from_list(u, &obsolete_units);
+	/* ??? provide more parallelism */
+	free_unit(u);
+    }
+    for (; active_units.length + obsolete_units.length > MAX_LOADED_UNITS;) {
+	best_u = NULL;
+	best_ui = NULL;
+	for (u = active_units.head; u != NULL; u = u->next) {
+	    ui = u->unit_iseq;
+	    assert(ui != NULL && ui->iseq != NULL && ui->unit == u && u->handle != NULL);
+	    overall_calls = ui->iseq->body->resume_calls + ui->iseq->body->stop_calls;
+	    if (ui->used_code_p
+		|| (best_u != NULL && best_overall_calls < overall_calls))
+		continue;
+	    best_u = u;
+	    best_ui = ui;
+	    best_overall_calls = overall_calls;
+	}
+	if (best_u == NULL)
+	    return;
+	verbose("Unloading unit %d(%s) (calls=%lu)",
+		best_u->num, best_ui->label, best_overall_calls);
+	assert(best_ui->iseq != NULL);
+	best_ui->iseq->body->jit_code
+	    = (void *) (ptrdiff_t) (mjit_opts.aot
+				    ? NOT_READY_AOT_ISEQ_FUN
+				    : NOT_READY_JIT_ISEQ_FUN);
+	best_ui->iseq->body->stop_calls += best_ui->iseq->body->resume_calls;
+	best_ui->iseq->body->resume_calls = 0;
+	remove_from_list(best_u, &active_units);
+	if (! mjit_opts.aot) {
+	    discard_unit(best_u);
+	} else {
+	    assert(best_u->handle != NULL);
+	    /* ??? provide more parallelism */
+	    dlclose(best_u->handle);
+	    best_u->handle = NULL;
+	    finish_forming_unit(best_u);
+	}
+    }
+}
+
 RUBY_SYMBOL_EXPORT_BEGIN
 /* Add ISEQ to be JITed in parallel with the current thread.  Add it
-   to the current unit.  Add the current unit to the queue.  */
+   to the current unit.  Add the current unit to the queue.  Unload
+   some units if there are too many of them.  */
 void
 mjit_add_iseq_to_process(rb_iseq_t *iseq) {
     if (!mjit_init_p)
@@ -2297,6 +2477,12 @@ mjit_add_iseq_to_process(rb_iseq_t *iseq) {
     create_iseq_unit(iseq);
     CRITICAL_SECTION_START(3, "in add_iseq_to_process");
     finish_forming_curr_unit();
+    if (active_units.length + obsolete_units.length >= MAX_LOADED_UNITS) {
+	/* Unload some units.  */
+	mark_unit_iseqs(&obsolete_units);
+	mark_unit_iseqs(&active_units);
+	unload_units();
+    }
     debug(3, "Sending wakeup signal to workers in mjit_add_iseq_to_process");
     if (pthread_cond_broadcast(&mjit_worker_wakeup) != 0) {
       fprintf(stderr, "Cannot send wakeup signal to workers in add_iseq_to_process: time - %.3f ms\n",
@@ -2322,19 +2508,17 @@ mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p) {
     assert(u->handle != NULL);
     verbose("Iseq #%d (so far mutations=%d) in unit %d is canceled",
 	    ui->num, ui->jit_mutations_num, u->num);
-    remove_iseq_from_unit(u, ui);
     if (spec_fail_p)
 	ui->jit_mutations_num++;
     verbose("Code of unit %d is removed", u->num);
-    assert(u->unit_iseq == NULL);
     remove_from_list(u, &active_units);
     add_to_list(u, &obsolete_units);
     u->status = UNIT_FAILED;
-    CRITICAL_SECTION_FINISH(3, "in redo iseq 2");
     iseq->body->jit_code
 	= (void *) (ptrdiff_t) (mjit_opts.aot
 				? NOT_READY_AOT_ISEQ_FUN
 				: NOT_READY_JIT_ISEQ_FUN);
+    CRITICAL_SECTION_FINISH(3, "in redo iseq 2");
     mjit_add_iseq_to_process(iseq);
 }
 
@@ -2429,8 +2613,14 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
     if (!mjit_init_p || (ui = iseq->body->unit_iseq) == NULL)
 	return;
     CRITICAL_SECTION_START(3, "to clear iseq in mjit_free_iseq");
+    u = ui->unit;
+    if (u == NULL) {
+	/* Was obsoleted */
+	CRITICAL_SECTION_FINISH(3, "to clear iseq in mjit_free_iseq");
+	return;
+    }
     ui->iseq = NULL;
-    if ((u = ui->unit)->status == UNIT_IN_QUEUE) {
+    if (u->status == UNIT_IN_QUEUE) {
 	remove_from_list(u, &unit_queue);
     } else if (u->status == UNIT_LOADED) {
 	remove_from_list(u, &active_units);
@@ -2438,7 +2628,8 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
     discard_unit(u);
     CRITICAL_SECTION_FINISH(3, "to clear iseq in mjit_free_iseq");
     if (mjit_opts.debug || mjit_opts.profile) {
-	ui->overall_calls = iseq->body->overall_calls;
+	ui->resume_calls = iseq->body->resume_calls;
+	ui->stop_calls = iseq->body->stop_calls;
 	ui->jit_calls = iseq->body->jit_calls;
 	ui->failed_jit_calls = iseq->body->failed_jit_calls;
     }
@@ -2469,6 +2660,7 @@ mjit_cancel_all(void)
 	      fp->ep[0] |= VM_FRAME_FLAG_CANCEL;
 	  }
     }
+    /* ??? Process conts too.  */
     CRITICAL_SECTION_START(3, "mjit_cancel_all");
     verbose("Cancel all wrongly speculative JIT code");
     setup_global_spec_state(&curr_state);
@@ -2479,7 +2671,6 @@ mjit_cancel_all(void)
 	    verbose("Global speculation changed -- recompiling unit %d", u->num);
 	    ui = u->unit_iseq;
 	    assert(ui != NULL);
-	    remove_iseq_from_unit(u, ui);
 	    remove_from_list(u, &active_units);
 	    add_to_list(u, &obsolete_units);
 	    u->status = UNIT_FAILED;
@@ -2531,6 +2722,18 @@ mjit_gc_finish(void) {
     CRITICAL_SECTION_FINISH(4, "mjit_gc_finish");
 }
 
+/* Register a new continuation with thread TH.  Return MJIT info about
+   the continuation.  */
+struct mjit_cont *
+mjit_cont_new(rb_thread_t *th) {
+    return create_cont(th);
+}
+
+/* Unregister continuation CONT.  */
+void
+mjit_cont_free(struct mjit_cont *cont) {
+    free_cont(cont);
+}
 
 /* A name of the header file included in any C file generated by MJIT for iseqs.  */
 #define RUBY_MJIT_HEADER_FNAME ("rb_mjit_min_header-" RUBY_VERSION ".h")
@@ -2618,6 +2821,7 @@ mjit_init(struct mjit_options *opts) {
 	free(cc_path); cc_path = NULL;
 	return;
     }
+    init_conts();
     init_workers();
     pthread_mutex_init(&mjit_engine_mutex, NULL);
     init_state = 0;
@@ -2696,8 +2900,12 @@ static int
 unit_iseq_compare(const void *el1, const void *el2) {
     const struct rb_mjit_unit_iseq *ui1 = *(struct rb_mjit_unit_iseq * const *) el1;
     const struct rb_mjit_unit_iseq *ui2 = *(struct rb_mjit_unit_iseq * const *) el2;
-    unsigned long overall_calls1 = (ui1->iseq == NULL ? ui1->overall_calls : ui1->iseq->body->overall_calls);
-    unsigned long overall_calls2 = (ui2->iseq == NULL ? ui2->overall_calls : ui2->iseq->body->overall_calls);
+    unsigned long overall_calls1 = (ui1->iseq == NULL
+				    ? ui1->resume_calls + ui1->stop_calls
+				    : ui1->iseq->body->resume_calls + ui1->iseq->body->stop_calls);
+    unsigned long overall_calls2 = (ui2->iseq == NULL
+				    ? ui2->resume_calls + ui2->stop_calls
+				    : ui2->iseq->body->resume_calls + ui2->iseq->body->stop_calls);
 
     if (overall_calls2 < overall_calls1) return -1;
     if (overall_calls1 < overall_calls2) return 1;
@@ -2740,7 +2948,9 @@ print_statistics(void) {
     for (n = 0; (ui = unit_iseqs[n]) != NULL; n++) {
 	int i;
 	unsigned long overall_calls
-	    = (ui->iseq == NULL ? ui->overall_calls : ui->iseq->body->overall_calls);
+	    = (ui->iseq == NULL
+	       ? ui->resume_calls + ui->stop_calls
+	       : ui->iseq->body->resume_calls + ui->iseq->body->stop_calls);
 	unsigned long jit_calls
 	    = (ui->iseq == NULL ? ui->jit_calls : ui->iseq->body->jit_calls);
 	unsigned long failed_jit_calls
@@ -2814,6 +3024,7 @@ mjit_finish(void) {
     free(cc_path); cc_path = NULL;
     free(pch_fname); pch_fname = NULL;
     finish_workers();
+    finish_conts();
     mjit_init_p = FALSE;
     verbose("Successful MJIT finish");
 }

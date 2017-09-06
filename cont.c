@@ -13,6 +13,7 @@
 #include "vm_core.h"
 #include "gc.h"
 #include "eval_intern.h"
+#include "mjit.h"
 
 /* FIBER_USE_NATIVE enables Fiber performance improvement using system
  * dependent method such as make/setcontext on POSIX system or
@@ -104,6 +105,8 @@ typedef struct rb_context_struct {
     rb_jmpbuf_t jmpbuf;
     rb_ensure_entry_t *ensure_array;
     rb_ensure_list_t *ensure_list;
+    /* Pointer to MJIT info about the continuation.  */
+    struct mjit_cont *mjit_cont;
 } rb_context_t;
 
 enum fiber_status {
@@ -264,6 +267,7 @@ cont_free(void *ptr)
 #endif
 	RUBY_FREE_UNLESS_NULL(cont->vm_stack);
 
+	mjit_cont_free(cont->mjit_cont);
 	/* free rb_cont_t or rb_fiber_t */
 	ruby_xfree(ptr);
     }
@@ -453,6 +457,7 @@ cont_init(rb_context_t *cont, rb_thread_t *th)
     cont->saved_thread.local_storage = 0;
     cont->saved_thread.local_storage_recursive_hash = Qnil;
     cont->saved_thread.local_storage_recursive_hash_for_trace = Qnil;
+    cont->mjit_cont = mjit_cont_new(&cont->saved_thread);
 }
 
 static rb_context_t *

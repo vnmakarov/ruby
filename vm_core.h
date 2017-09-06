@@ -415,9 +415,14 @@ struct rb_iseq_constant_body {
     
     /* The following MJIT related info.  */
     void *jit_code;
-    /* Number of iseq calls, number of them in JIT mode, and number of
-       JIT calls with speculation failures.  */
-    long unsigned overall_calls, jit_calls, failed_jit_calls;
+    /* Number of iseq calls since the last unload of a JITted code and
+       number of all calls before the last unload of the code.  Their
+       sum is the overall number of iseq calls.  */
+    long unsigned resume_calls, stop_calls;
+    /* Number of call of JITted code and number of JITted code calls
+       with speculation failures.  */
+    long unsigned jit_calls, failed_jit_calls;
+
     struct rb_mjit_unit_iseq *unit_iseq;
     
     unsigned int stack_max; /* for stack overflow check */

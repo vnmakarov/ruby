@@ -1,3 +1,41 @@
+2017-09-06  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* vm_core.h (overall_calls): Change onto resume_calls and
+	stop_calls.
+	* mjit.h (mjit_cont_new, mjit_cont_free): New externs.
+	(mjit_execute_iseq_0): Use resume_calls instead of overall_calls.
+	* cont.c: Include mjit.h.
+	(struct rb_context_struct): New field mjit_cont.
+	(cont_free): Call mjit_cont_free.
+	(cont_init): Call mjit_cont_new and set up mjit_cont field.
+	* common.mk (cont.o): Add dependence on mjit.h.
+	(mjit.o): Add dependence on vm_insnhelper.h.
+	* mjit.c: Remove unload TODO.  Include vm_insnhelper.h.
+	(struct rb_mjit_unit): Use char for high_priority_p and
+	ep_neq_bp_p.  New field used_code_p.  Change overall_calls onto
+	resume_calls and stop_calls.
+	(get_from_list): Use resume_calls and stop_calls.
+	(load_unit): Remove assert.  Use atomic.
+	(create_unit_iseq): Use resume_calls and stop_calls.  Initialize
+	used_code_p.
+	(free_unit): Add print log.  Do not clear unit_iseq.
+	(remove_iseq_from_unit): Remove.
+	(struct mjit_cont): New,
+	(free_conts, first_cont): New.
+	(init_conts, create_cont, free_cont, finish_conts): New.
+	(MAX_LOADED_UNITS): New.
+	(mark_unit_iseqs, mark_thread_unit_iseqs, unload_units): New.
+	(mjit_add_iseq_to_process): Add unloading.
+	(mjit_redo_iseq): Remove assert.  Extend a critical section.
+	Remove remove_iseq_from_unit call.
+	(mjit_free_iseq): Use resume_calls and stop_calls.
+	(mjit_cancel_all): Remove remove_iseq_from_unit call.
+	(mjit_cont_new, mjit_cont_free): New functions.
+	(mjit_init): Call init_conts.
+	(unit_iseq_compare, print_statistics): Use resume_calls and
+	stop_calls.
+	(mjit_finish): Call finish_conts.
+
 2017-08-25  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (done_units): Rename to active_units.

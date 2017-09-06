@@ -1321,9 +1321,9 @@ compile.$(OBJEXT): {$(VPATH)}intern.h
 compile.$(OBJEXT): {$(VPATH)}internal.h
 compile.$(OBJEXT): {$(VPATH)}io.h
 compile.$(OBJEXT): {$(VPATH)}iseq.h
-compile.$(OBJEXT): {$(VPATH)}mjit.h
 compile.$(OBJEXT): {$(VPATH)}method.h
 compile.$(OBJEXT): {$(VPATH)}missing.h
+compile.$(OBJEXT): {$(VPATH)}mjit.h
 compile.$(OBJEXT): {$(VPATH)}node.h
 compile.$(OBJEXT): {$(VPATH)}oniguruma.h
 compile.$(OBJEXT): {$(VPATH)}opt_sc.inc
@@ -1372,6 +1372,7 @@ cont.$(OBJEXT): {$(VPATH)}internal.h
 cont.$(OBJEXT): {$(VPATH)}io.h
 cont.$(OBJEXT): {$(VPATH)}method.h
 cont.$(OBJEXT): {$(VPATH)}missing.h
+cont.$(OBJEXT): {$(VPATH)}mjit.h
 cont.$(OBJEXT): {$(VPATH)}node.h
 cont.$(OBJEXT): {$(VPATH)}oniguruma.h
 cont.$(OBJEXT): {$(VPATH)}ruby_assert.h
@@ -1590,9 +1591,9 @@ eval.$(OBJEXT): {$(VPATH)}intern.h
 eval.$(OBJEXT): {$(VPATH)}internal.h
 eval.$(OBJEXT): {$(VPATH)}io.h
 eval.$(OBJEXT): {$(VPATH)}iseq.h
-eval.$(OBJEXT): {$(VPATH)}mjit.h
 eval.$(OBJEXT): {$(VPATH)}method.h
 eval.$(OBJEXT): {$(VPATH)}missing.h
+eval.$(OBJEXT): {$(VPATH)}mjit.h
 eval.$(OBJEXT): {$(VPATH)}node.h
 eval.$(OBJEXT): {$(VPATH)}oniguruma.h
 eval.$(OBJEXT): {$(VPATH)}probes.dmyh
@@ -1646,9 +1647,9 @@ gc.$(OBJEXT): {$(VPATH)}id_table.h
 gc.$(OBJEXT): {$(VPATH)}intern.h
 gc.$(OBJEXT): {$(VPATH)}internal.h
 gc.$(OBJEXT): {$(VPATH)}io.h
-gc.$(OBJEXT): {$(VPATH)}mjit.h
 gc.$(OBJEXT): {$(VPATH)}method.h
 gc.$(OBJEXT): {$(VPATH)}missing.h
+gc.$(OBJEXT): {$(VPATH)}mjit.h
 gc.$(OBJEXT): {$(VPATH)}node.h
 gc.$(OBJEXT): {$(VPATH)}oniguruma.h
 gc.$(OBJEXT): {$(VPATH)}probes.dmyh
@@ -1779,9 +1780,9 @@ iseq.$(OBJEXT): {$(VPATH)}internal.h
 iseq.$(OBJEXT): {$(VPATH)}io.h
 iseq.$(OBJEXT): {$(VPATH)}iseq.c
 iseq.$(OBJEXT): {$(VPATH)}iseq.h
-iseq.$(OBJEXT): {$(VPATH)}mjit.h
 iseq.$(OBJEXT): {$(VPATH)}method.h
 iseq.$(OBJEXT): {$(VPATH)}missing.h
+iseq.$(OBJEXT): {$(VPATH)}mjit.h
 iseq.$(OBJEXT): {$(VPATH)}node.h
 iseq.$(OBJEXT): {$(VPATH)}node_name.inc
 iseq.$(OBJEXT): {$(VPATH)}oniguruma.h
@@ -1815,9 +1816,9 @@ mjit.$(OBJEXT): {$(VPATH)}internal.h
 mjit.$(OBJEXT): {$(VPATH)}io.h
 mjit.$(OBJEXT): {$(VPATH)}iseq.h
 mjit.$(OBJEXT): {$(VPATH)}mjit.c
-mjit.$(OBJEXT): {$(VPATH)}mjit.h
 mjit.$(OBJEXT): {$(VPATH)}method.h
 mjit.$(OBJEXT): {$(VPATH)}missing.h
+mjit.$(OBJEXT): {$(VPATH)}mjit.h
 mjit.$(OBJEXT): {$(VPATH)}node.h
 mjit.$(OBJEXT): {$(VPATH)}oniguruma.h
 mjit.$(OBJEXT): {$(VPATH)}ruby_assert.h
@@ -1828,6 +1829,7 @@ mjit.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
 mjit.$(OBJEXT): {$(VPATH)}thread_native.h
 mjit.$(OBJEXT): {$(VPATH)}vm_core.h
 mjit.$(OBJEXT): {$(VPATH)}vm_debug.h
+mjit.$(OBJEXT): {$(VPATH)}vm_insnhelper.h
 mjit.$(OBJEXT): {$(VPATH)}vm_opts.h
 load.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 load.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
@@ -2273,9 +2275,9 @@ ruby.$(OBJEXT): {$(VPATH)}id.h
 ruby.$(OBJEXT): {$(VPATH)}intern.h
 ruby.$(OBJEXT): {$(VPATH)}internal.h
 ruby.$(OBJEXT): {$(VPATH)}io.h
-ruby.$(OBJEXT): {$(VPATH)}mjit.h
 ruby.$(OBJEXT): {$(VPATH)}method.h
 ruby.$(OBJEXT): {$(VPATH)}missing.h
+ruby.$(OBJEXT): {$(VPATH)}mjit.h
 ruby.$(OBJEXT): {$(VPATH)}node.h
 ruby.$(OBJEXT): {$(VPATH)}oniguruma.h
 ruby.$(OBJEXT): {$(VPATH)}ruby.c
@@ -2607,9 +2609,9 @@ vm.$(OBJEXT): {$(VPATH)}intern.h
 vm.$(OBJEXT): {$(VPATH)}internal.h
 vm.$(OBJEXT): {$(VPATH)}io.h
 vm.$(OBJEXT): {$(VPATH)}iseq.h
-vm.$(OBJEXT): {$(VPATH)}mjit.h
 vm.$(OBJEXT): {$(VPATH)}method.h
 vm.$(OBJEXT): {$(VPATH)}missing.h
+vm.$(OBJEXT): {$(VPATH)}mjit.h
 vm.$(OBJEXT): {$(VPATH)}node.h
 vm.$(OBJEXT): {$(VPATH)}oniguruma.h
 vm.$(OBJEXT): {$(VPATH)}probes.dmyh
@@ -2712,9 +2714,9 @@ vm_trace.$(OBJEXT): {$(VPATH)}id.h
 vm_trace.$(OBJEXT): {$(VPATH)}intern.h
 vm_trace.$(OBJEXT): {$(VPATH)}internal.h
 vm_trace.$(OBJEXT): {$(VPATH)}io.h
-vm.trace.$(OBJEXT): {$(VPATH)}mjit.h
 vm_trace.$(OBJEXT): {$(VPATH)}method.h
 vm_trace.$(OBJEXT): {$(VPATH)}missing.h
+vm.trace.$(OBJEXT): {$(VPATH)}mjit.h
 vm_trace.$(OBJEXT): {$(VPATH)}node.h
 vm_trace.$(OBJEXT): {$(VPATH)}oniguruma.h
 vm_trace.$(OBJEXT): {$(VPATH)}ruby_assert.h

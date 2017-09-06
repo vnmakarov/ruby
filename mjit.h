@@ -79,6 +79,8 @@ extern void mjit_free_iseq(const rb_iseq_t *iseq);
 extern void mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num);
 extern void mjit_gc_start(void);
 extern void mjit_gc_finish(void);
+extern struct mjit_cont *mjit_cont_new(rb_thread_t *th);
+extern void mjit_cont_free(struct mjit_cont *cont);
 extern void mjit_finish(void);
 
 /* A threshold used to add iseq to JIT. */
@@ -115,7 +117,7 @@ mjit_execute_iseq_0(rb_thread_t *th, rb_iseq_t *iseq,
     VALUE v;
     
     fun = body->jit_code;
-    n_calls = ++body->overall_calls;
+    n_calls = ++body->resume_calls;
 
     if (UNLIKELY((ptrdiff_t) fun <= (ptrdiff_t) LAST_JIT_ISEQ_FUN)) {
 	switch ((enum rb_mjit_iseq_fun) fun) {
