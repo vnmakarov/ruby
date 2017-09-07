@@ -1,5 +1,12 @@
 2017-09-07  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.c (mark_thread_unit_iseqs): Use end_marker_cfp instead of
+	start_cfp.
+	(cancel_thread_frames): New.
+	(mjit_cancel_all): Use it.  Cancel continuation frames too.
+
+2017-09-07  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (stop_mjit_generation_p): New.
 	(create_cont): Setup stop_mjit_generation_p.
 	(mjit_add_iseq_to_process): Check it.

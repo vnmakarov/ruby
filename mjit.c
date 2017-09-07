@@ -2386,14 +2386,14 @@ mark_thread_unit_iseqs(rb_thread_t *th) {
     rb_control_frame_t *fp;
     struct rb_mjit_unit_iseq *ui;
     rb_control_frame_t *last_cfp = th->cfp;
-    rb_control_frame_t *start_cfp;
+    rb_control_frame_t *end_marker_cfp;
     ptrdiff_t i, size;
 
     if (th->stack == NULL)
 	return;
-    start_cfp = RUBY_VM_END_CONTROL_FRAME(th);
-    size = start_cfp - last_cfp;
-    for (i = 0, fp = start_cfp - 1; i < size; i++, fp = RUBY_VM_NEXT_CONTROL_FRAME(fp))
+    end_marker_cfp = RUBY_VM_END_CONTROL_FRAME(th);
+    size = end_marker_cfp - last_cfp;
+    for (i = 0, fp = end_marker_cfp - 1; i < size; i++, fp = RUBY_VM_NEXT_CONTROL_FRAME(fp))
 	if (fp->pc && (iseq = fp->iseq) != NULL
 	    && imemo_type((VALUE) iseq) == imemo_iseq
 	    && (ui = iseq->body->unit_iseq) != NULL) {
@@ -2647,6 +2647,26 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
     }
 }
 
+/* Mark all frames of thread TH as canceled.  */
+static void
+cancel_thread_frames(rb_thread_t *th) {
+    rb_iseq_t *iseq;
+    rb_control_frame_t *fp;
+    rb_control_frame_t *last_cfp = th->cfp;
+    rb_control_frame_t *end_marker_cfp;
+    ptrdiff_t i, size;
+
+    if (th->stack == NULL)
+	return;
+    end_marker_cfp = RUBY_VM_END_CONTROL_FRAME(th);
+    size = end_marker_cfp - last_cfp;
+    for (i = 0, fp = end_marker_cfp - 1; i < size; i++, fp = RUBY_VM_NEXT_CONTROL_FRAME(fp))
+	if (fp->pc && (iseq = fp->iseq) != NULL && imemo_type((VALUE) iseq) == imemo_iseq
+	    && iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
+	    fp->ep[0] |= VM_FRAME_FLAG_CANCEL;
+	}
+}
+
 /* Mark all JIT code being executed for cancellation.  Redo JIT code
    with invalid speculation. It happens when a global speculation
    fails.  For example, a basic operation is redefined or tracing
@@ -2654,26 +2674,21 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
 void
 mjit_cancel_all(void)
 {
-    rb_iseq_t *iseq;
-    rb_control_frame_t *fp;
     rb_vm_t *vm = GET_THREAD()->vm;
     rb_thread_t *th = 0;
     struct global_spec_state curr_state;
     struct rb_mjit_unit *u, *next;
     struct rb_mjit_unit_iseq *ui;
+    struct mjit_cont *cont;
 
     if (!mjit_init_p)
 	return;
     list_for_each(&vm->living_threads, th, vmlt_node) {
-	rb_control_frame_t *limit_cfp = (void *)(th->stack + th->stack_size);
-	
-	for(fp = th->cfp; fp < limit_cfp; fp = RUBY_VM_PREVIOUS_CONTROL_FRAME(fp))
-	  if ((iseq = fp->iseq) != NULL && imemo_type((VALUE) iseq) == imemo_iseq
-	      && iseq->body->jit_code >= (void *) LAST_JIT_ISEQ_FUN) {
-	      fp->ep[0] |= VM_FRAME_FLAG_CANCEL;
-	  }
+	cancel_thread_frames(th);
     }
-    /* ??? Process conts too.  */
+    for (cont = first_cont; cont != NULL; cont = cont->next) {
+	cancel_thread_frames(cont->th);
+    }
     CRITICAL_SECTION_START(3, "mjit_cancel_all");
     verbose("Cancel all wrongly speculative JIT code");
     setup_global_spec_state(&curr_state);
