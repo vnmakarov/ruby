@@ -61,6 +61,9 @@ struct mjit_options {
     int threads;
     /* Number of max mutations of iseq JIT code.  */
     int max_mutations;
+    /* Maximal permitted number of iseq JIT codes in a MJIT memory
+       cache.  */
+    int max_cache_size;
 };
 
 extern struct mjit_options mjit_opts;

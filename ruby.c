@@ -266,6 +266,7 @@ usage(const char *name, int help)
 	M("d",     ", debug",          "Enable MJIT debuging (very slow)"),
 	M("t=num", ", threads=num",    "Use given number of MJIT threads"),
 	M("m=num", ", mutations=num",  "Maximum number of permitted iseq mutations"),
+	M("c=num", ", cache=num",      "Maximum number of JIT codes in a cache"),
     };
     int i;
     const int num = numberof(usage_msg) - (help ? 1 : 0);
@@ -941,6 +942,10 @@ setup_mjit_options(const char *s, struct mjit_options *mjit_opt) {
 	mjit_opt->max_mutations = atoi(s + 3);
     } else if (strncmp(s, ":mutations=", 11) == 0) {
 	mjit_opt->max_mutations = atoi(s + 11);
+    } else if (strncmp(s, ":c=", 3) == 0) {
+	mjit_opt->max_cache_size = atoi(s + 3);
+    } else if (strncmp(s, ":cache=", 7) == 0) {
+	mjit_opt->max_cache_size = atoi(s + 7);
     } else {
 	rb_raise(rb_eRuntimeError,
 		 "invalid MJIT option `%s' (--help will show valid MJIT options)", s + 1);

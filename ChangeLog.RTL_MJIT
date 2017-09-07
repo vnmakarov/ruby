@@ -1,3 +1,14 @@
+2017-09-07  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.h (struct mjit_options): New field max_cache_size.
+	* ruby.c (usage): Describe new cache options.
+	(setup_mjit_options): Process them.
+	* mjit.c (MAX_LOADED_UNITS): Remove.
+	(DEFAULT_CACHE_SIZE, MIN_CACHE_SIZE): New macros.
+	(unload_units, mjit_add_iseq_to_process): Use max_cache_size
+	instead of MAX_LOADED_UNITS.
+	(mjit_init): Set up max_cache_size.
+
 2017-09-06  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* vm_core.h (overall_calls): Change onto resume_calls and

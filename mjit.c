@@ -2357,9 +2357,11 @@ finish_conts(void) {
     }
 }
 
-/* Maximum permitted number of units with a JIT code loaded in
+/* Default permitted number of units with a JIT code kept in
    memory.  */
-#define MAX_LOADED_UNITS 1000
+#define DEFAULT_CACHE_SIZE 1000
+/* Minimum value for JIT cache size.  */
+#define MIN_CACHE_SIZE 10
 
 /* Clear used_code_p field for unit iseqs of units in LIST.  */
 static void
@@ -2427,7 +2429,7 @@ unload_units(void) {
 	/* ??? provide more parallelism */
 	free_unit(u);
     }
-    for (; active_units.length + obsolete_units.length > MAX_LOADED_UNITS;) {
+    for (; active_units.length + obsolete_units.length > mjit_opts.max_cache_size;) {
 	best_u = NULL;
 	best_ui = NULL;
 	for (u = active_units.head; u != NULL; u = u->next) {
@@ -2477,7 +2479,7 @@ mjit_add_iseq_to_process(rb_iseq_t *iseq) {
     create_iseq_unit(iseq);
     CRITICAL_SECTION_START(3, "in add_iseq_to_process");
     finish_forming_curr_unit();
-    if (active_units.length + obsolete_units.length >= MAX_LOADED_UNITS) {
+    if (active_units.length + obsolete_units.length >= mjit_opts.max_cache_size) {
 	/* Unload some units.  */
 	mark_unit_iseqs(&obsolete_units);
 	mark_unit_iseqs(&active_units);
@@ -2774,6 +2776,10 @@ mjit_init(struct mjit_options *opts) {
 	mjit_opts.threads = MAX_WORKERS_NUM;
     if (mjit_opts.max_mutations <= 0)
 	mjit_opts.max_mutations = DEFAULT_MUTATIONS_NUM;
+    if (mjit_opts.max_cache_size <= 0)
+	mjit_opts.max_cache_size = DEFAULT_CACHE_SIZE;
+    if (mjit_opts.max_cache_size < MIN_CACHE_SIZE)
+	mjit_opts.max_cache_size = MIN_CACHE_SIZE;
     mjit_time_start = real_ms_time();
     client_pid = pthread_self();
     if (mjit_init_p)
