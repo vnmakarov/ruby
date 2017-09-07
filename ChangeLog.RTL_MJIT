@@ -1,5 +1,14 @@
 2017-09-07  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.c (stop_mjit_generation_p): New.
+	(create_cont): Setup stop_mjit_generation_p.
+	(mjit_add_iseq_to_process): Check it.
+	(mjit_get_iseq_fun): Ditto.  Set up jit_code for AOT.
+	(mjit_cont_free): Check stop_mjit_generation_p.
+	(mjit_init): Initiate stop_mjit_generation_p.
+
+2017-09-07  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.h (struct mjit_options): New field max_cache_size.
 	* ruby.c (usage): Describe new cache options.
 	(setup_mjit_options): Process them.
