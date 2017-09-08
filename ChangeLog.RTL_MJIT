@@ -1,5 +1,24 @@
 2017-09-08  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* ruby.c (usage, setup_mjit_options): Make verbose parameterized.
+	* mjit.h (struct mjit_options): Make verbose of type int.
+	* mjit.c (MJIT_CHECK_LISTS): New macro.
+	(check_list): New.
+	(init_list, remove_from_list, get_from_list): Call check_list.
+	(verbose): Add arg level.  Use verbose option parameter.
+	(start_process): Print if verbose >= 2.
+	(make_pch, start_unit, load_unit, worker, free_unit): Call verbose
+	with level arg.
+	(unload_units): Ditto.  Remove 1/10 of active units.
+	(create_unit_iseq): Remove '1||'.
+	(mjit_add_iseq_to_process): Check unit_iseq creation success.
+	Call verbose with level arg.
+	(mjit_redo_iseq, increase_unit_priority, mjit_cancel_all)
+	(mjit_cont_free, mjit_init, mjit_finish): Call verbose with level
+	arg.
+
+2017-09-08  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* README.md: Remove note about ISEQ unloading implementation for
 	TODO list.
 

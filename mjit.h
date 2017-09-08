@@ -43,9 +43,6 @@ struct mjit_options {
     /* Flag of collecting and printing info about ISEQ execution as a
        byte code and as JIT generated code.  */
     char profile;
-    /* Flag of printing info about MJIT work including ISEQ compiling and
-       loading their machine code.  */
-    char verbose;
     /* Flag to use LLVM Clang instead of default GCC for MJIT . */
     char llvm;
     /* Save temporary files after MRI finish.  The temporary files
@@ -57,6 +54,9 @@ struct mjit_options {
     /* Use debug mode.  It can be very slow as no optimizations are
        used.  */
     char debug;
+    /* Force printing info about MJIT work of level VERBOSE or
+       less.  */
+    int verbose;
     /* Number of threads processing MJIT queue.  */
     int threads;
     /* Number of max mutations of iseq JIT code.  */

@@ -390,6 +390,33 @@ static struct rb_mjit_unit_list obsolete_units;
 /* The following functions are low level (ignoring thread
    synchronization) functions working with the lists.  */
 
+/* Make non-zero to check consistency of MJIT lists.  */
+#define MJIT_CHECK_LISTS 0
+
+#if MJIT_CHECK_LISTS
+
+/* Check double linked LIST consistency.  */
+static void
+check_list(struct rb_mjit_unit_list *list) {
+    if (list->head == NULL)
+	assert(list->tail == NULL);
+    else {
+	struct rb_mjit_unit *u, *pu;
+
+	assert(list->tail != NULL);
+	assert(list->head->prev == NULL);
+	assert(list->tail->next == NULL);
+	for (pu = NULL, u = list->head; u != NULL; pu = u, u = u->next) {
+	    assert(u->prev == pu);
+	}
+	for (u = NULL, pu = list->tail; pu != NULL; u = pu, pu = pu->prev) {
+	    assert(pu->next == u);
+	}
+    }
+}
+
+#endif
+
 /* Initiate LIST.  */
 static void
 init_list(struct rb_mjit_unit_list *list) {
@@ -410,6 +437,9 @@ add_to_list(struct rb_mjit_unit *u, struct rb_mjit_unit_list *list) {
 	list->tail = u;
     }
     list->length++;
+#if MJIT_CHECK_LISTS
+    check_list(list);
+#endif
 }
 
 /* Remove unit U from the doubly linked LIST.  It should be in the
@@ -425,6 +455,9 @@ remove_from_list(struct rb_mjit_unit *u, struct rb_mjit_unit_list *list) {
     else
 	u->next->prev = u->prev;
     list->length--;
+#if MJIT_CHECK_LISTS
+    check_list(list);
+#endif
 }
 
 /* Remove and return the best unit from doubly linked LIST.  The best
@@ -437,6 +470,9 @@ get_from_list(struct rb_mjit_unit_list *list) {
     struct rb_mjit_unit_iseq *ui;
     unsigned long calls_num, best_calls_num;
 
+#if MJIT_CHECK_LISTS
+    check_list(list);
+#endif
     for (u = list->head; u != NULL; u = u->next) {
 	if (u->high_priority_p) {
 	    best_u = u;
@@ -471,13 +507,13 @@ va_list_log(const char *format, va_list args) {
 }
 
 /* Print the arguments according to FORMAT to stderr only if MJIT
-   verbose option is on.  */
+   verbose option value is more or equal to LEVEL.  */
 static void
-verbose(const char *format, ...) {
+verbose(int level, const char *format, ...) {
     va_list args;
 
     va_start(args, format);
-    if (mjit_opts.verbose)
+    if (mjit_opts.verbose >= level)
 	va_list_log(format, args);
     va_end(args);
 }
@@ -1669,7 +1705,7 @@ static pid_t
 start_process(const char *path, char *const argv[]) {
   pid_t pid;
 
-  if (mjit_opts.verbose) {
+  if (mjit_opts.verbose >= 2) {
       int i;
       const char *arg;
 
@@ -1716,7 +1752,7 @@ make_pch(void *arg) {
 	fprintf(stderr, "+++Cannot enable cancelation in pch-thread: time - %.3f ms\n",
 		relative_ms_time());
     }
-    verbose("Creating precompiled header");
+    verbose(2, "Creating precompiled header");
     input[0] = header_fname;
     output[1] = pch_fname;
     if (mjit_opts.llvm)
@@ -1746,7 +1782,7 @@ make_pch(void *arg) {
     free(args);
     CRITICAL_SECTION_START(3, "in make_pch");
     if (ok_p) {
-	verbose("Precompiled header was succesfully created");
+	verbose(1, "Precompiled header was succesfully created");
 	pch_status = PCH_SUCCESS;
     } else {
 	if (mjit_opts.warnings || mjit_opts.verbose)
@@ -1774,7 +1810,7 @@ start_unit(struct rb_mjit_unit *u) {
     static const char *output[] = {"-o",  NULL, NULL};
     char **args;
 
-    verbose("Starting unit %d compilation", u->num);
+    verbose(3, "Starting unit %d compilation", u->num);
     if ((u->cfname = get_uniq_fname(u->num, "_mjit", ".c")) == NULL) {
 	u->status = UNIT_FAILED;
 	return FALSE;
@@ -1868,7 +1904,7 @@ load_unit(struct rb_mjit_unit *u) {
 	u->ofname = NULL;
     }
     if (handle != NULL)
-	verbose("Success in loading code of unit %d",	u->num);
+	verbose(2, "Success in loading code of unit %d",	u->num);
     else if (mjit_opts.warnings || mjit_opts.verbose)
 	fprintf(stderr, "MJIT warning: failure in loading code of unit %d(%s)\n", u->num, dlerror());
     ui = u->unit_iseq;
@@ -1965,7 +2001,7 @@ worker(void *arg) {
 	    CRITICAL_SECTION_START(3, "in worker to setup status");
 	    u->status = exit_code != 0 ? UNIT_FAILED : UNIT_SUCCESS;
 	    if (exit_code == 0)
-		verbose("Success in compilation of unit %d", u->num);
+		verbose(3, "Success in compilation of unit %d", u->num);
 	    else if (mjit_opts.warnings || mjit_opts.verbose)
 		fprintf(stderr, "MJIT warning: failure in compilation of unit %d\n", u->num);
 	    CRITICAL_SECTION_FINISH(3, "in worker to setup status");
@@ -1985,9 +2021,8 @@ worker(void *arg) {
 		if (recompile_p) {
 		    add_to_list(u, &unit_queue);
 		    u->status = UNIT_IN_QUEUE;
-		    verbose("Global speculation changed -- put unit %d back into the queue", u->num);
-		}
-		if (! recompile_p) {
+		    verbose(3, "Global speculation changed -- put unit %d back into the queue", u->num);
+		} else {
 		    CRITICAL_SECTION_FINISH(3, "in worker to check global speculation status");
 		    debug(2, "Start loading unit %d", u->num);
 		    load_unit(u);
@@ -2130,7 +2165,7 @@ create_unit_iseq(rb_iseq_t *iseq) {
     unit_iseq_list = ui;
     ui->iseq_size = iseq->body->iseq_size;
     ui->label = NULL;
-    if (1||mjit_opts.debug || mjit_opts.profile) {
+    if (mjit_opts.debug || mjit_opts.profile) {
 	ui->label = get_string(RSTRING_PTR(iseq->body->location.label));
 	ui->resume_calls = ui->stop_calls = ui->jit_calls = ui->failed_jit_calls = 0;
     }
@@ -2177,7 +2212,7 @@ create_unit(void) {
    file if it exists.  */
 static void
 free_unit(struct rb_mjit_unit *u) {
-    verbose("Removing unit %d", u->num);
+    verbose(3, "Removing unit %d", u->num);
     if (u->handle != NULL) {
 	dlclose(u->handle);
 	u->handle = NULL;
@@ -2415,8 +2450,8 @@ unload_units(void) {
     struct rb_mjit_unit_iseq *ui, *best_ui;
     unsigned long overall_calls, best_overall_calls;
     struct mjit_cont *cont;
+    int n, units_num = active_units.length + obsolete_units.length;
     
-    verbose("Too many JIT code -- unloading some active units");
     list_for_each(&vm->living_threads, th, vmlt_node) {
 	mark_thread_unit_iseqs(th);
     }
@@ -2432,12 +2467,14 @@ unload_units(void) {
 	   previous recursive calls.  */
 	if (u->unit_iseq->used_code_p)
 	    continue;
-	verbose("Unloading obsolete unit %d(%s)\n", u->num, u->unit_iseq->label);
+	verbose(2, "Unloading obsolete unit %d(%s)\n", u->num, u->unit_iseq->label);
 	remove_from_list(u, &obsolete_units);
 	/* ??? provide more parallelism */
 	free_unit(u);
     }
-    for (; active_units.length + obsolete_units.length > mjit_opts.max_cache_size;) {
+    /* Remove 1/10 units more to decrease unloading calls.  */
+    n = active_units.length / 10;
+    for (; active_units.length + obsolete_units.length > mjit_opts.max_cache_size - n;) {
 	best_u = NULL;
 	best_ui = NULL;
 	for (u = active_units.head; u != NULL; u = u->next) {
@@ -2452,8 +2489,8 @@ unload_units(void) {
 	    best_overall_calls = overall_calls;
 	}
 	if (best_u == NULL)
-	    return;
-	verbose("Unloading unit %d(%s) (calls=%lu)",
+	    break;
+	verbose(2, "Unloading unit %d(%s) (calls=%lu)",
 		best_u->num, best_ui->label, best_overall_calls);
 	assert(best_ui->iseq != NULL);
 	best_ui->iseq->body->jit_code
@@ -2473,6 +2510,8 @@ unload_units(void) {
 	    finish_forming_unit(best_u);
 	}
     }
+    verbose(1, "Too many JIT code -- %d units unloaded",
+	    units_num - (active_units.length + obsolete_units.length));
 }
 
 RUBY_SYMBOL_EXPORT_BEGIN
@@ -2481,10 +2520,15 @@ RUBY_SYMBOL_EXPORT_BEGIN
    some units if there are too many of them.  */
 void
 mjit_add_iseq_to_process(rb_iseq_t *iseq) {
+    struct rb_mjit_unit_iseq *ui;
+    
     if (!mjit_init_p || stop_mjit_generation_p)
 	return;
-    verbose("Adding iseq");
     create_iseq_unit(iseq);
+    if ((ui = iseq->body->unit_iseq) == NULL)
+	/* Failure in creating the unit iseq.  */
+	return;
+    verbose(2, "Adding iseq %s", ui->label);
     CRITICAL_SECTION_START(3, "in add_iseq_to_process");
     finish_forming_curr_unit();
     if (active_units.length + obsolete_units.length >= mjit_opts.max_cache_size) {
@@ -2509,18 +2553,18 @@ mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p) {
     struct rb_mjit_unit_iseq *ui = iseq->body->unit_iseq;
     struct rb_mjit_unit *u = ui->unit;
 
-    verbose("Start redoing iseq #%d in unit %d", ui->num, u->num);
+    verbose(2, "Start redoing iseq #%d in unit %d", ui->num, u->num);
     CRITICAL_SECTION_START(3, "in redo iseq");
     if (u->status != UNIT_LOADED || ui->jit_mutations_num >= mjit_opts.max_mutations) {
       CRITICAL_SECTION_FINISH(3, "in redo iseq");
       return;
     }
     assert(u->handle != NULL);
-    verbose("Iseq #%d (so far mutations=%d) in unit %d is canceled",
+    verbose(3, "Iseq #%d (so far mutations=%d) in unit %d is canceled",
 	    ui->num, ui->jit_mutations_num, u->num);
     if (spec_fail_p)
 	ui->jit_mutations_num++;
-    verbose("Code of unit %d is removed", u->num);
+    verbose(3, "Code of unit %d is removed", u->num);
     remove_from_list(u, &active_units);
     add_to_list(u, &obsolete_units);
     u->status = UNIT_FAILED;
@@ -2536,7 +2580,7 @@ mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p) {
    necessary.  */
 static void
 increase_unit_priority(struct rb_mjit_unit *u) {
-    verbose("Increasing priority for unit %d", u->num);
+    verbose(3, "Increasing priority for unit %d", u->num);
     CRITICAL_SECTION_START(3, "in increase_unit_priority");
     u->high_priority_p = TRUE;
     if (u == curr_unit) {
@@ -2697,13 +2741,13 @@ mjit_cancel_all(void)
 	cancel_thread_frames(cont->th);
     }
     CRITICAL_SECTION_START(3, "mjit_cancel_all");
-    verbose("Cancel all wrongly speculative JIT code");
+    verbose(1, "Cancel all wrongly speculative JIT code");
     setup_global_spec_state(&curr_state);
     for (u = active_units.head; u != NULL; u = next) {
 	next = u->next;
 	if (u->status == UNIT_LOADED
 	    && ! valid_global_spec_state_p(&u->spec_state, &curr_state)) {
-	    verbose("Global speculation changed -- recompiling unit %d", u->num);
+	    verbose(2, "Global speculation changed -- recompiling unit %d", u->num);
 	    ui = u->unit_iseq;
 	    assert(ui != NULL);
 	    remove_from_list(u, &active_units);
@@ -2784,9 +2828,9 @@ mjit_cont_free(struct mjit_cont *cont) {
 /* This is called after each fork in the child in to switch off MJIT
    engine in the child as it does not inherit MJIT threads.  */
 static void child_after_fork(void) {
-  verbose("Switching off MJIT in a forked child");
-  mjit_init_p = FALSE;
-  /* TODO: Should we initiate MJIT in the forked Ruby.  */
+    verbose(3, "Switching off MJIT in a forked child");
+    mjit_init_p = FALSE;
+    /* TODO: Should we initiate MJIT in the forked Ruby.  */
 }
 
 /* Initialize MJIT.  Start a thread creating the precompiled
@@ -2917,11 +2961,11 @@ mjit_init(struct mjit_options *opts) {
 	free(cc_path); cc_path = NULL;
 	free(pch_fname); pch_fname = NULL;
 	pthread_mutex_destroy(&mjit_engine_mutex);
-	verbose("Failure in MJIT initialization");
+	verbose(1, "Failure in MJIT initialization");
 	return;
     }
     mjit_init_p = TRUE;
-    verbose("Successful MJIT initialization (workers = %d)", mjit_opts.threads);
+    verbose(1, "Successful MJIT initialization (workers = %d)", mjit_opts.threads);
 }
 
 /* Return number of all unit iseqs.  */
@@ -3067,5 +3111,5 @@ mjit_finish(void) {
     finish_workers();
     finish_conts();
     mjit_init_p = FALSE;
-    verbose("Successful MJIT finish");
+    verbose(1, "Successful MJIT finish");
 }
