@@ -315,8 +315,6 @@
              * May be pass more detail info through C compiler profile
                info format in the future
         
-    * Implement ISEQ JIT code unloading in the case ISEQ cancellation
-    
     * Tuning MJIT for faster compilation and less waiting time
     
     * Implementing **On Stack Replacement** (OSR)

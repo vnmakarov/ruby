@@ -1,5 +1,10 @@
 2017-09-08  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* README.md: Remove note about ISEQ unloading implementation for
+	TODO list.
+
+2017-09-08  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (struct rb_mjit_unit): New field freed_p.
 	(worker): Discard unit if freed_p.
 	(create_unit): Initiate freed_p.
