@@ -1,3 +1,11 @@
+2017-09-08  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (struct rb_mjit_unit): New field freed_p.
+	(worker): Discard unit if freed_p.
+	(create_unit): Initiate freed_p.
+	(mjit_free_iseq): Set up freed_p if in generation status.  Do not
+	discard it.
+
 2017-09-07  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (mark_thread_unit_iseqs): Use end_marker_cfp instead of

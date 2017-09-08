@@ -207,6 +207,9 @@ struct rb_mjit_unit {
     struct rb_mjit_unit_iseq *unit_iseq;
     /* If the flag is TRUE, we should compile the unit first.  */
     char high_priority_p;
+    /* If the flag is TRUE, the corresponding iseq was freed during
+       compilation.  */
+    char freed_p;
     /* Overall byte code size of ISEQ in the unit in VALUEs.  */
     size_t iseq_size;
     /* The following member is used to generate a code with global
@@ -1971,7 +1974,7 @@ worker(void *arg) {
 		free(u->cfname); u->cfname = NULL;
 	    }
 	    CRITICAL_SECTION_START(3, "in worker to check global speculation status");
-	    if (exit_code != 0) {
+	    if (exit_code != 0 || u->freed_p) {
 		discard_unit(u);
 	    } else {
 		struct global_spec_state curr_state;
@@ -2163,6 +2166,7 @@ create_unit(void) {
     u->cfname = u->ofname = NULL;
     u->handle = NULL;
     u->high_priority_p = FALSE;
+    u->freed_p = FALSE;
     u->next = NULL;
     u->unit_iseq = NULL;
     init_global_spec_state(&u->spec_state);
@@ -2636,8 +2640,11 @@ mjit_free_iseq(const rb_iseq_t *iseq) {
 	remove_from_list(u, &unit_queue);
     } else if (u->status == UNIT_LOADED) {
 	remove_from_list(u, &active_units);
+    } else if (u->status == UNIT_IN_GENERATION) {
+	u->freed_p = TRUE;
     }
-    discard_unit(u);
+    if (u->status != UNIT_IN_GENERATION)
+	discard_unit(u);
     CRITICAL_SECTION_FINISH(3, "to clear iseq in mjit_free_iseq");
     if (mjit_opts.debug || mjit_opts.profile) {
 	ui->resume_calls = iseq->body->resume_calls;
