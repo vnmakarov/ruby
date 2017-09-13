@@ -1,3 +1,8 @@
+2017-09-13  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (increase_unit_priority): Move verbose into a critical
+	region.
+
 2017-09-08  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* ruby.c (usage, setup_mjit_options): Make verbose parameterized.

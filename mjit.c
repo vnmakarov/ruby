@@ -2580,8 +2580,8 @@ mjit_redo_iseq(rb_iseq_t *iseq, int spec_fail_p) {
    necessary.  */
 static void
 increase_unit_priority(struct rb_mjit_unit *u) {
-    verbose(3, "Increasing priority for unit %d", u->num);
     CRITICAL_SECTION_START(3, "in increase_unit_priority");
+    verbose(3, "Increasing priority for unit %d", u->num);
     u->high_priority_p = TRUE;
     if (u == curr_unit) {
 	finish_forming_curr_unit();
