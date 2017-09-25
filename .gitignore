@@ -182,3 +182,6 @@ y.tab.c
 # /win32/
 /win32/*.ico
 /win32/.time
+rb_mjit_header.h
+rb_mjit_import.h
+rb_mjit_min_header-*.h

@@ -1416,7 +1416,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	       && (local_cc.call == vm_call_ivar || local_cc.call == vm_call_attrset)
 	       && local_cc.aux.index > 0) {
 	ptrdiff_t call_start = code[pos + 2];
-	int call_ivar_obj_op = features.recv_p ? code[pos + 2] : code[pos + 3];
+	long call_ivar_obj_op = features.recv_p ? code[pos + 2] : code[pos + 3];
 	const char *rec = (insn == BIN(simple_call_self)
 			   ? "&cfp->self" : get_op_str(buf, call_ivar_obj_op, tcp));
 	assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call) || insn == BIN(simple_call_self) || insn == BIN(call_super));
@@ -2638,7 +2638,7 @@ mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num)  {
     insn = rb_vm_insn_addr2insn((void *) insn);
 #endif
     ui->mutation_insns[mutation_num].pc = pc;
-    ui->mutation_insns[mutation_num].insn = insn;
+    ui->mutation_insns[mutation_num].insn = (enum ruby_vminsn_type)insn;
 }
 
 /* It is called when our whole function speculation about ivar
@@ -2994,7 +2994,7 @@ unit_iseq_compare(const void *el1, const void *el2) {
 
     if (overall_calls2 < overall_calls1) return -1;
     if (overall_calls1 < overall_calls2) return 1;
-    return (long) ui2->iseq_size - (long) ui1->iseq_size;
+    return (int)((long) ui2->iseq_size - (long) ui1->iseq_size);
 }
 
 /* Allocate and return a new array of done unit iseqs sorted
