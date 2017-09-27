@@ -126,7 +126,7 @@ vm_ep_in_heap_p_(const rb_thread_t *th, const VALUE *ep)
     }
 }
 
-static inline int
+inline int
 rb_vm_ep_in_heap_p(const VALUE *ep)
 {
     return vm_ep_in_heap_p_(GET_THREAD(), ep);

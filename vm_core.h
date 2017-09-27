@@ -148,7 +148,7 @@
 #endif /* OPT_CALL_THREADED_CODE */
 
 typedef unsigned long rb_num_t;
-typedef unsigned long lindex_t;
+typedef size_t lindex_t;
 
 enum ruby_tag_type {
     RUBY_TAG_RETURN	= 0x1,

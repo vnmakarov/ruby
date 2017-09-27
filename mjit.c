@@ -80,12 +80,21 @@
    constraint.  So the correct version of code based on SIGCHLD and
    WNOHANG waitpid would be very complicated.  */
 
-#include <stdlib.h>
-#include <unistd.h>
-#include <stdarg.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <windows.h>
+
+#else
+
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <dlfcn.h>
+#endif
+
+#include <stdlib.h>
+#include <unistd.h>
+#include <stdarg.h>
+#include <pthread.h>
 #include "internal.h"
 #include "vm_core.h"
 #include "iseq.h"
@@ -94,6 +103,21 @@
 #include "mjit.h"
 #include "vm_insnhelper.h"
 #include "version.h"
+
+#ifdef _WIN32
+#define dlopen(name,flag) ((void*)LoadLibrary(name))
+#define dlerror() strerror(rb_w32_map_errno(GetLastError()))
+#define dlsym(handle,name) ((void*)GetProcAddress((handle),(name)))
+#define dlclose(handle) (CloseHandle(handle))
+#define RTLD_LAZY -1
+#define RTLD_NOW  -1
+#define RTLD_GLOBAL -1
+
+#define waitpid(pid,stat_loc,options) (WaitForSingleObject((pid), INFINITE), GetExitCodeProcess((pid), (stat_loc)))
+#define WIFEXITED(S) ((S) != STILL_ACTIVE)
+#define WEXITSTATUS(S) (S)
+#define WIFSIGNALED(S) (0)
+#endif
 
 extern rb_serial_t ruby_vm_global_method_state;
 extern rb_serial_t ruby_vm_global_constant_state;
@@ -271,6 +295,10 @@ static char *cc_path;
 static char *header_fname;
 /* Name of the precompiled header file.  */
 static char *pch_fname;
+/* Linker option to enable libruby in the build directory.  */
+static char *libruby_build;
+/* Linker option to enable libruby in the directory after install.  */
+static char *libruby_installed;
 
 /* Return length of NULL-terminated array ARGS excluding the NULL
    marker.  */
@@ -330,8 +358,11 @@ get_string(const char *str) {
 static char *
 get_uniq_fname(unsigned long id, const char *prefix, const char *suffix) {
     char str[70];
+    char *tmp = getenv("TMP");
+    if( tmp == NULL )
+	tmp = "/tmp";
 
-    sprintf(str, "/tmp/%sp%luu%lu%s", prefix, (unsigned long) getpid(), id, suffix);
+    sprintf(str, "%s/%sp%luu%lu%s", tmp, prefix, (unsigned long) getpid(), id, suffix);
     return get_string(str);
 }
 
@@ -1604,10 +1635,23 @@ translate_unit_iseq(struct rb_mjit_unit *u, const char *include_fname) {
 	const char *s;
 
 	fprintf(f, "#include \"");
-	for (s = pch_fname; strcmp(s, ".gch") != 0; s++)
-	    fprintf(f, "%c", *s);
+	for (s = pch_fname; strcmp(s, ".gch") != 0; s++) {
+	    char c = *s;
+	    switch(c) {
+		case '\\':
+		case '"':
+		    fprintf(f, "\\%c", c);
+		    break;
+		default:
+		    fprintf(f, "%c", c);
+	    }
+	}
 	fprintf(f, "\"\n");
     }
+#ifdef _WIN32
+    fprintf(f, "void _pei386_runtime_relocator(void){}\n");
+    fprintf(f, "int __stdcall DllMainCRTStartup(void* hinstDLL, unsigned int fdwReason, void* lpvReserved) { return 1; }\n");
+#endif
 #if MJIT_INSN_STATISTICS
     fprintf(f, "extern unsigned long jit_insns_num;\n");
 #endif
@@ -1702,7 +1746,7 @@ translate_unit_iseq(struct rb_mjit_unit *u, const char *include_fname) {
 /* Start an OS process of executable PATH with arguments ARGV.  Return
    PID of the process.  */
 static pid_t
-start_process(const char *path, char *const argv[]) {
+start_process(const char *path, const char *const argv[]) {
   pid_t pid;
 
   if (mjit_opts.verbose >= 2) {
@@ -1714,6 +1758,9 @@ start_process(const char *path, char *const argv[]) {
 	  fprintf(stderr, " %s", arg);
       fprintf(stderr, ": time - %.3f ms\n", relative_ms_time());
   }
+#ifdef _WIN32
+    pid = spawnvp(_P_NOWAIT, path, argv);
+#else
   if ((pid = vfork()) == 0) {
       if (mjit_opts.verbose) {
 	  /* CC can be started in a thread using a file which has been
@@ -1731,6 +1778,7 @@ start_process(const char *path, char *const argv[]) {
       debug(1, "Error in execvp: %s", path);
       _exit(1);
   }
+#endif
   return pid;
 }
 
@@ -1808,6 +1856,14 @@ start_unit(struct rb_mjit_unit *u) {
     pid_t pid;
     static const char *input[] = {NULL, NULL};
     static const char *output[] = {"-o",  NULL, NULL};
+    char *libs[] = {
+#ifdef _WIN32
+	/* Link to ruby.dll.a, because Windows DLLs don't allow unresolved symbols. */
+	libruby_installed,
+	libruby_build,
+	LIBRUBYARG_SHARED,
+#endif
+	NULL};
     char **args;
 
     verbose(3, "Starting unit %d compilation", u->num);
@@ -1846,11 +1902,11 @@ start_unit(struct rb_mjit_unit *u) {
 	output[1] = u->ofname;
 	if (mjit_opts.llvm) {
 	    LLVM_USE_PCH_ARGS[1] = pch_fname;
-	    args = form_args(4, (mjit_opts.debug ? LLVM_COMMON_ARGS_DEBUG : LLVM_COMMON_ARGS),
-			     LLVM_USE_PCH_ARGS, input, output);
+	    args = form_args(5, (mjit_opts.debug ? LLVM_COMMON_ARGS_DEBUG : LLVM_COMMON_ARGS),
+			     LLVM_USE_PCH_ARGS, input, output, libs);
 	} else {
-	    args = form_args(4, (mjit_opts.debug ? GCC_COMMON_ARGS_DEBUG : GCC_COMMON_ARGS),
-			     GCC_USE_PCH_ARGS, input, output);
+	    args = form_args(5, (mjit_opts.debug ? GCC_COMMON_ARGS_DEBUG : GCC_COMMON_ARGS),
+			     GCC_USE_PCH_ARGS, input, output, libs);
 	}
 	if (args == NULL)
 	    pid = -1;
@@ -1921,8 +1977,8 @@ load_unit(struct rb_mjit_unit *u) {
 	} else {
 	    fname = get_unit_iseq_fname(ui, mjit_fname_holder);
 	    addr = dlsym(handle, fname);
-	    if ((err_name = dlerror ()) != NULL) {
-		debug(0, "Failure (%s) in setting address of iseq %d(%s)", err_name, ui->num, fname);
+	    if (addr == NULL) {
+		debug(0, "Failure (%s) in setting address of iseq %d(%s)", dlerror(), ui->num, fname);
 		addr = (void *) NOT_ADDED_JIT_ISEQ_FUN;
 		add_to_list(u, &obsolete_units);
 		u->status = UNIT_FAILED;
@@ -2844,6 +2900,8 @@ mjit_init(struct mjit_options *opts) {
     pthread_t pid;
     const char *path;
     FILE *f;
+    VALUE basedir_val;
+    char *basedir;
 
     stop_mjit_generation_p = FALSE;
     in_gc = FALSE;
@@ -2867,26 +2925,44 @@ mjit_init(struct mjit_options *opts) {
     debug(2, "Start initializing MJIT");
     finish_workers_p = FALSE;
     finished_workers = 0;
-    header_fname = xmalloc(strlen(BUILD_DIR) + 2 + strlen(RUBY_MJIT_HEADER_FNAME));
+
+    basedir_val = rb_const_get(rb_cObject, rb_intern_const("TMP_RUBY_PREFIX"));
+    basedir = StringValueCStr(basedir_val);
+    header_fname = xmalloc(strlen(basedir) + 1 + strlen(RUBY_MJIT_HEADER_FNAME) + 1);
     if (header_fname == NULL)
 	return;
-    strcpy(header_fname, BUILD_DIR);
-    strcat(header_fname, "/");
+    strcpy(header_fname, basedir);
+    if (strlen(header_fname) > 0)
+	strcat(header_fname, "/");
     strcat(header_fname, RUBY_MJIT_HEADER_FNAME);
     if ((f = fopen(header_fname, "r")) == NULL) {
 	free(header_fname);
-	header_fname = xmalloc(strlen(DEST_INCDIR) + 2 + strlen(RUBY_MJIT_HEADER_FNAME));
+	header_fname = xmalloc(strlen(basedir) + 1 + strlen(DEST_INCDIR) + 1 + strlen(RUBY_MJIT_HEADER_FNAME) + 1);
 	if (header_fname == NULL)
 	    return;
-	strcpy(header_fname, DEST_INCDIR);
+	strcpy(header_fname, basedir);
+	strcat(header_fname, "/");
+	strcat(header_fname, DEST_INCDIR);
 	strcat(header_fname, "/");
 	strcat(header_fname, RUBY_MJIT_HEADER_FNAME);
 	if ((f = fopen(header_fname, "r")) == NULL) {
+	    if (mjit_opts.warnings || mjit_opts.verbose)
+		fprintf(stderr, "MJIT warning: MJIT header file not found: %s\n", header_fname);
 	    free(header_fname); header_fname = NULL;
 	    return;
 	}
     }
     fclose(f);
+
+#ifdef _WIN32
+    libruby_build = xmalloc(2 + strlen(basedir) + 1);
+    strcpy(libruby_build, "-L");
+    strcat(libruby_build, basedir);
+    libruby_installed = xmalloc(2 + strlen(basedir) + 4 + 1);
+    strcpy(libruby_installed, "-L");
+    strcat(libruby_installed, basedir);
+    strcat(libruby_installed, "/lib");
+#endif
 #ifdef __MACH__
     if (! mjit_opts.llvm) {
 	if (mjit_opts.warnings || mjit_opts.verbose)

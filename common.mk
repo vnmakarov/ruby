@@ -879,7 +879,7 @@ rb_mjit_header.h: PHONY probes.h
 	
 rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h: rb_mjit_header.h $(srcdir)/MJIT_KEEP $(srcdir)/tool/mjit_header.rb $(srcdir)/tool/minimize_mjit_header.rb
 	@$(ECHO) building $@
-	$(Q)$(exec) egrep -v '^#|^$$' rb_mjit_header.h | $(BASERUBY) -I$(srcdir)/tool $(srcdir)/tool/minimize_mjit_header.rb $(CC) $(srcdir)/MJIT_KEEP > $@.new && mv $@.new $@
+	$(Q)$(exec) egrep -v '^#[^p]|^$$' rb_mjit_header.h | $(BASERUBY) -I$(srcdir)/tool $(srcdir)/tool/minimize_mjit_header.rb $(CC) $(srcdir)/MJIT_KEEP > $@.new && mv $@.new $@
 
 rb_mjit_import.h: rb_mjit_min_header-$(RUBY_PROGRAM_VERSION).h $(srcdir)/tool/mjit_header.rb $(srcdir)/tool/extract_mjit_header_externs.rb
 	$(Q)$(exec) cat $< | $(BASERUBY) -I$(srcdir)/tool $(srcdir)/tool/extract_mjit_header_externs.rb > $@.new && mv $@.new $@

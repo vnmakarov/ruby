@@ -198,7 +198,7 @@ r_value(VALUE value)
 #define USE_SELF_LD 0
 
 /* Different macros to convert to/from lindex_t.  */
-#define INT2LINT(x) ((long) (x))
+#define INT2LINT(x) ((ssize_t) (x))
 #define LINT2INT(x) ((int) (x))
 #define FIXNUM2LINT(x) ((int) (x))
 

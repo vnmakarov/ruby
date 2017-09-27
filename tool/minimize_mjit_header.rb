@@ -63,7 +63,7 @@ def check_code(cc, cflags, tfname, prefix)
   File.open(tfname, "w") do |test|
     test.puts $code
   end
-  if !system("#{cc} #{cflags} #{tfname} 2>/dev/null")
+  if !system("#{cc} #{cflags} #{tfname} 2>#{File::NULL}")
     STDERR.puts "error in #{prefix} header file:"
     STDERR.puts " Try '#{cc} #{cflags} #{tfname}'"
     exit 1
@@ -97,7 +97,6 @@ cflags = "-S -DMJIT_HEADER -fsyntax-only -Werror=implicit-function-declaration -
 
 # Check initial file correctness
 check_code(cc, cflags, tfname, "initial")
-
 while true
   pos_range = 0..-1
   n = factor # We try to remove N decls at once to speed up the process
@@ -116,7 +115,7 @@ while true
       end
     end
     before = all_decls_num / dot_factor
-    if keep_p || !system("#{cc} #{cflags} #{tfname} 2>/dev/null")
+    if keep_p || !system("#{cc} #{cflags} #{tfname} 2>#{File::NULL}")
       if n != 1
         n /= factor; # Fail: decrease searched decls number
       else

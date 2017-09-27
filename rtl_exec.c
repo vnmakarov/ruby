@@ -550,7 +550,7 @@ iseq2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, ISEQ iseq)
    frame CFP to an upper level local variable with index IDX in a
    frame with LEVEL (0 is CFP).  */
 static do_inline void
-var2uploc_f(rb_control_frame_t *cfp, rb_num_t idx, VALUE *from, rb_num_t level)
+var2uploc_f(rb_control_frame_t *cfp, sindex_t idx, VALUE *from, rb_num_t level)
 {
     VALUE *ep = cfp->ep;
     int i, lev = (int)level;
@@ -563,7 +563,7 @@ var2uploc_f(rb_control_frame_t *cfp, rb_num_t idx, VALUE *from, rb_num_t level)
 /* Assign value VAL to an upper level local variable with index IDX in
    a frame with LEVEL (0 is CFP).  */
 static do_inline void
-val2uploc_f(rb_control_frame_t *cfp, rb_num_t idx, VALUE val, rb_num_t level)
+val2uploc_f(rb_control_frame_t *cfp, sindex_t idx, VALUE val, rb_num_t level)
 {
     VALUE *ep = cfp->ep;
     int i, lev = (int)level;
@@ -577,7 +577,7 @@ val2uploc_f(rb_control_frame_t *cfp, rb_num_t idx, VALUE val, rb_num_t level)
    local variable with index IDX in previous frame and return from the
    current frame.  */
 static do_inline void
-ret_to_loc_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t idx, VALUE *from)
+ret_to_loc_f(rb_thread_t *th, rb_control_frame_t *cfp, sindex_t idx, VALUE *from)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_EP, GET_CFP */
     VALUE *ep = cfp->ep;
@@ -592,7 +592,7 @@ ret_to_loc_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t idx, VALUE *from
 /* Analogous to ret_to_local_f but assign the value to a temporary
    variable.  */
 static do_inline void
-ret_to_temp_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t idx, VALUE *from)
+ret_to_temp_f(rb_thread_t *th, rb_control_frame_t *cfp, sindex_t idx, VALUE *from)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_EP, GET_CFP */
     rb_control_frame_t *prev_cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
