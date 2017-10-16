@@ -80,6 +80,16 @@ rb_iseq_free(rb_iseq_t *iseq)
 	    ruby_xfree((void *)iseq->body->local_table);
 	    ruby_xfree((void *)iseq->body->is_entries);
 
+	    if (iseq->body->ci_entries) {
+		unsigned int i;
+		struct rb_call_info_with_kwarg *ci_kw_entries = (struct rb_call_info_with_kwarg *)&iseq->body->ci_entries[iseq->body->ci_size];
+		for (i=0; i<iseq->body->ci_kw_size; i++) {
+		    const struct rb_call_info_kw_arg *kw_arg = ci_kw_entries[i].kw_arg;
+		    ruby_xfree((void *)kw_arg);
+		}
+		ruby_xfree(iseq->body->ci_entries);
+		ruby_xfree(iseq->body->cc_entries);
+ 	    }
 	    if (iseq->body->cd_entries) {
 		unsigned int i;
 		struct rb_call_data_with_kwarg *cd_kw_entries = (struct rb_call_data_with_kwarg *)&iseq->body->cd_entries[iseq->body->cd_size];
@@ -157,6 +167,7 @@ iseq_memsize(const rb_iseq_t *iseq)
     /* TODO: should we count original_iseq? */
 
     if (body) {
+	struct rb_call_info_with_kwarg *ci_kw_entries = (struct rb_call_info_with_kwarg *)&body->ci_entries[body->ci_size];
 	struct rb_call_data_with_kwarg *cd_kw_entries = (struct rb_call_data_with_kwarg *)&body->cd_entries[body->cd_size];
 
 	size += sizeof(struct rb_iseq_constant_body);
@@ -172,9 +183,29 @@ iseq_memsize(const rb_iseq_t *iseq)
 	/* body->is_entries */
 	size += body->is_size * sizeof(union iseq_inline_storage_entry);
 
+	/* body->ci_entries */
+	size += body->ci_size * sizeof(struct rb_call_info);
+	size += body->ci_kw_size * sizeof(struct rb_call_info_with_kwarg);
+
+	/* body->cc_entries */
+	size += body->ci_size * sizeof(struct rb_call_cache);
+	size += body->ci_kw_size * sizeof(struct rb_call_cache);
+
 	/* body->cd_entries */
 	size += body->cd_size * sizeof(struct rb_call_data);
 	size += body->cd_kw_size * sizeof(struct rb_call_data_with_kwarg);
+
+	if (ci_kw_entries) {
+	    unsigned int i;
+
+	    for (i = 0; i < body->ci_kw_size; i++) {
+		const struct rb_call_info_kw_arg *kw_arg = ci_kw_entries[i].kw_arg;
+
+		if (kw_arg) {
+		    size += rb_call_info_kw_arg_bytes(kw_arg->keyword_len);
+		}
+	    }
+	}
 
 	if (cd_kw_entries) {
 	    unsigned int i;
@@ -482,11 +513,6 @@ rb_iseq_new_with_opt(NODE *node, VALUE name, VALUE path, VALUE absolute_path,
     cleanup_iseq_build(iseq);
 
     iseq = iseq_translate(iseq);
-#if 0
-    /* It might be a dead method which can be garbage collected */
-    if (iseq->body->type == ISEQ_TYPE_METHOD || iseq->body->type == ISEQ_TYPE_BLOCK)
-      mjit_add_iseq_to_process(iseq);
-#endif
     return iseq;
 }
 
@@ -1276,11 +1302,32 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	ret = rb_sprintf("%"PRIuVALUE, op);
 	break;
 
+      case TS_LINDEX:{
+	if (insn == BIN(getlocal) || insn == BIN(setlocal)) {
+	    if (pnop) {
+		const rb_iseq_t *diseq = iseq;
+		VALUE level = *pnop, i;
+		ID lid;
+		for (i = 0; i < level; i++) {
+		    diseq = diseq->body->parent_iseq;
+		}
+		lid = diseq->body->local_table[diseq->body->local_table_size +
+					       VM_ENV_DATA_SIZE - 1 - op];
+		ret = id_to_name(lid, INT2FIX('*'));
+	    }
+	    else {
+		ret = rb_sprintf("%"PRIuVALUE, op);
+	    }
+	}
+	else {
+	    ret = rb_inspect(INT2FIX(op));
+	}
+	break;
+      }
       case TS_INSN:
 	ret = rb_str_new2(insn_name(op));
 	break;
 
-      case TS_LINDEX:
       case TS_SINDEX:
       case TS_RINDEX: {
 	ret = rb_inspect(INT2FIX(op));
@@ -1325,7 +1372,37 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	break;
 
       case TS_CALLINFO:
-	  /* TS_CALLINFO is not be used for RTL insns.  */
+	{
+	    struct rb_call_info *ci = (struct rb_call_info *)op;
+	    VALUE ary = rb_ary_new();
+
+	    if (ci->mid) {
+		rb_ary_push(ary, rb_sprintf("mid:%"PRIsVALUE, rb_id2str(ci->mid)));
+	    }
+
+	    rb_ary_push(ary, rb_sprintf("argc:%d", ci->orig_argc));
+
+	    if (ci->flag & VM_CALL_KWARG) {
+		struct rb_call_info_kw_arg *kw_args = ((struct rb_call_info_with_kwarg *)ci)->kw_arg;
+		VALUE kw_ary = rb_ary_new_from_values(kw_args->keyword_len, kw_args->keywords);
+		rb_ary_push(ary, rb_sprintf("kw:[%"PRIsVALUE"]", rb_ary_join(kw_ary, rb_str_new2(","))));
+	    }
+
+	    if (ci->flag) {
+		VALUE flags = rb_ary_new();
+		if (ci->flag & VM_CALL_ARGS_SPLAT) rb_ary_push(flags, rb_str_new2("ARGS_SPLAT"));
+		if (ci->flag & VM_CALL_ARGS_BLOCKARG) rb_ary_push(flags, rb_str_new2("ARGS_BLOCKARG"));
+		if (ci->flag & VM_CALL_FCALL) rb_ary_push(flags, rb_str_new2("FCALL"));
+		if (ci->flag & VM_CALL_VCALL) rb_ary_push(flags, rb_str_new2("VCALL"));
+		if (ci->flag & VM_CALL_TAILCALL) rb_ary_push(flags, rb_str_new2("TAILCALL"));
+		if (ci->flag & VM_CALL_SUPER) rb_ary_push(flags, rb_str_new2("SUPER"));
+		if (ci->flag & VM_CALL_KWARG) rb_ary_push(flags, rb_str_new2("KWARG"));
+		if (ci->flag & VM_CALL_OPT_SEND) rb_ary_push(flags, rb_str_new2("SNED")); /* maybe not reachable */
+		if (ci->flag & VM_CALL_ARGS_SIMPLE) rb_ary_push(flags, rb_str_new2("ARGS_SIMPLE")); /* maybe not reachable */
+		rb_ary_push(ary, rb_ary_join(flags, rb_str_new2("|")));
+	    }
+	    ret = rb_sprintf("<callinfo!%"PRIsVALUE">", rb_ary_join(ary, rb_str_new2(", ")));
+	}
 	break;
 
       case TS_CALLDATA:
@@ -1365,7 +1442,7 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	break;
 
       case TS_CALLCACHE:
-	/* TS_CALLCACHE is not be used for RTL insns.  */
+	ret = rb_str_new2("<callcache>");
 	break;
 
       case TS_CDHASH:
@@ -1976,10 +2053,33 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 		}
 		break;
 	      case TS_CALLINFO:
-		/* TS_CALLINFO is not be used for RTL insns.  */
+		{
+		    struct rb_call_info *ci = (struct rb_call_info *)*seq;
+		    VALUE e = rb_hash_new();
+		    int orig_argc = ci->orig_argc;
+
+		    rb_hash_aset(e, ID2SYM(rb_intern("mid")), ci->mid ? ID2SYM(ci->mid) : Qnil);
+		    rb_hash_aset(e, ID2SYM(rb_intern("flag")), UINT2NUM(ci->flag));
+
+		    if (ci->flag & VM_CALL_KWARG) {
+			struct rb_call_info_with_kwarg *ci_kw = (struct rb_call_info_with_kwarg *)ci;
+			int i;
+			VALUE kw = rb_ary_new2((long)ci_kw->kw_arg->keyword_len);
+
+			orig_argc -= ci_kw->kw_arg->keyword_len;
+			for (i = 0; i < ci_kw->kw_arg->keyword_len; i++) {
+			    rb_ary_push(kw, ci_kw->kw_arg->keywords[i]);
+			}
+			rb_hash_aset(e, ID2SYM(rb_intern("kw_arg")), kw);
+		    }
+
+		    rb_hash_aset(e, ID2SYM(rb_intern("orig_argc")),
+				 INT2FIX(orig_argc));
+		    rb_ary_push(ary, e);
+	        }
 		break;
 	      case TS_CALLCACHE:
-		/* TS_CALLCACHE is not be used for RTL insns.  */
+		rb_ary_push(ary, Qfalse);
 		break;
 	      case TS_CALLDATA:
 		{

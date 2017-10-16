@@ -389,6 +389,12 @@ struct rb_iseq_constant_body {
     struct rb_iseq_struct *local_iseq; /* local_iseq->flip_cnt can be modified */
 
     union iseq_inline_storage_entry *is_entries;
+    struct rb_call_info *ci_entries; /* struct rb_call_info ci_entries[ci_size];
+				      * struct rb_call_info_with_kwarg cikw_entries[ci_kw_size];
+				      * So that:
+				      * struct rb_call_info_with_kwarg *cikw_entries = &body->ci_entries[ci_size];
+				      */
+    struct rb_call_cache *cc_entries; /* size is ci_size = ci_kw_size */
     struct rb_call_data *cd_entries; /* struct rb_call_data cd_entries[cd_size];
 				      * struct rb_call_data_with_kwarg cikw_entries[cd_kw_size];
 				      * So that:
@@ -399,6 +405,8 @@ struct rb_iseq_constant_body {
 
     unsigned int local_table_size;
     unsigned int is_size;
+    unsigned int ci_size;
+    unsigned int ci_kw_size;
     unsigned int cd_size;
     unsigned int cd_kw_size;
     unsigned int line_info_size;

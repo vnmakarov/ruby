@@ -127,7 +127,18 @@ enum vm_regan_acttype {
 /* deal with control flow 2: method/iterator              */
 /**********************************************************/
 
-#define CALL_METHOD(calling, cd) do { \
+#define CALL_METHOD(calling, ci, cc) do { \
+    VALUE v = (*(cc)->call)(th, GET_CFP(), (calling), (ci), (cc)); \
+    if (v == Qundef) { \
+	RESTORE_REGS(); \
+	NEXT_INSN(); \
+    } \
+    else { \
+	val = v; \
+    } \
+} while (0)
+
+#define RTL_CALL_METHOD(calling, cd) do { \
     VALUE v = ((cd)->call_cache.call)(th, GET_CFP(), (calling), &(cd)->call_info, &(cd)->call_cache); \
     if (v == Qundef && (v = mjit_execute_iseq(th)) == Qundef) {	\
 	RESTORE_REGS(); \
@@ -178,6 +189,14 @@ enum vm_regan_acttype {
 #ifndef USE_IC_FOR_SPECIALIZED_METHOD
 #define USE_IC_FOR_SPECIALIZED_METHOD 1
 #endif
+
+#define CALL_SIMPLE_METHOD(recv_) do { \
+    struct rb_calling_info calling; \
+    calling.block_handler = VM_BLOCK_HANDLER_NONE; \
+    calling.argc = ci->orig_argc; \
+    vm_search_method(ci, cc, calling.recv = (recv_)); \
+    CALL_METHOD(&calling, ci, cc); \
+} while (0)
 
 #define VM_ATOMIC_SET(var, val) ATOMIC_SET(var, val)
 #define VM_ATOMIC_INC(var) ATOMIC_INC(var)

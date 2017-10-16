@@ -1,3 +1,19 @@
+2017-10-16  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* compile.c: Restore base version.
+	* insns.def: Restore stack insns.  Use RTL versions of nop and
+	trace.  Rename CALL_METHOD to RTL_CALL_METHOD.
+	* iseq.c (rb_iseq_free, iseq_memsize): Process ci_[kw_]entries.
+	(rb_insn_operand_intern): Restore base code for CALL_INFO,
+	CALL_CACHE, and TS_LINDEX.
+	(rb_insn_operand_intern, iseq_data_to_ary): Restore code for
+	CALL_INFO and CALL_CACHE.
+	* iseq.h (struct iseq_compile_data): Restore ci_[kw_]index.
+	* vm_core.h (struct rb_iseq_constant_body): Restore ci_entries,
+	cc_entries and ci_[kw_]size.
+	* vm_insnhelper.h (CALL_METHOD): Rename to RTL_CALL_METHOD.
+	Restore CALL_SIMPLE_METHOD.
+
 2017-09-13  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (increase_unit_priority): Move verbose into a critical
