@@ -31,7 +31,7 @@ static const int insn_stack_push_num_info[] = {
 
 #ifdef USE_INSN_STACK_INCREASE
 static int
-insn_stack_increase(int depth, int insn, VALUE *opes)
+insn_stack_increase(int depth, int insn, int num_p, VALUE *opes)
 {
   switch(insn){
 <%= stack_increase %>

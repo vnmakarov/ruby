@@ -996,6 +996,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(var_swap):
     case BIN(temp2temp):
     case BIN(temp_swap):
+    case BIN(temp_reverse):
     case BIN(loc2loc):
     case BIN(loc2temp):
     case BIN(temp2loc):
@@ -1232,7 +1233,7 @@ static int
 translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 		    struct translation_control *tcp) {
     rb_iseq_t *iseq = ui->iseq;
-    const VALUE *code = iseq->body->iseq_encoded;
+    const VALUE *code = iseq->body->rtl_encoded;
     VALUE insn, op;
     int len, i, ivar_p, const_p, insn_mutation_num;
     const char *types;
@@ -1403,7 +1404,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 		    ", %d, %d, %d, %d, %u, %d, 0x%x, %ld, (void *) 0x%"PRIxVALUE
 		    ", *%s, %d, %d",
 		    (VALUE) local_cc.me, (VALUE) callee_iseq,
-		    (VALUE) callee_body, callee_body->except_p, (VALUE) callee_body->iseq_encoded,
+		    (VALUE) callee_body, callee_body->except_p, (VALUE) callee_body->rtl_encoded,
 		    callee_body->type, callee_body->param.size, callee_body->local_table_size,
 		    iseq->body->temp_vars_num, callee_body->stack_max,
 		    ci->orig_argc, ci->flag, call_start, block_iseq,
@@ -1504,6 +1505,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 		fprintf(f, "%"PRIuVALUE, op);
 		break;
 	    case TS_LINDEX:
+	    case TS_VINDEX:
 		fprintf(f, "%s", get_op_str(buf, op, tcp));
 		break;
 	    case TS_RINDEX:
@@ -1669,7 +1671,7 @@ translate_unit_iseq(struct rb_mjit_unit *u, const char *include_fname) {
 	if (body->param.flags.has_opt) {
 	  int n;
 
-	  fprintf(f, "  switch (cfp->pc - cfp->iseq->body->iseq_encoded) {\n");
+	  fprintf(f, "  switch (cfp->pc - cfp->iseq->body->rtl_encoded) {\n");
 	  for (n = 1; n <= body->param.opt_num; n++) {
 	    fprintf(f, "  case %d: goto l%d;\n", (int) body->param.opt_table[n],
 		    (int) body->param.opt_table[n]);
@@ -2093,7 +2095,7 @@ update_unit_iseq_info_from_insns(struct rb_mjit_unit_iseq *ui) {
     rb_serial_t ivar_serial;
     int ivar_spec_update_p;
     size_t ivar_access_num, index, max_ivar_spec_index;
-    const VALUE *code = iseq->body->iseq_encoded;
+    const VALUE *code = iseq->body->rtl_encoded;
     VALUE insn;
     IC ic;
     
@@ -2109,6 +2111,7 @@ update_unit_iseq_info_from_insns(struct rb_mjit_unit_iseq *ui) {
 	ic_disp = 2;
 	switch (insn) {
 	case BIN(var2var):
+	case BIN(temp_reverse):
 	case BIN(concat_strings):
 	case BIN(to_regexp):
 	case BIN(make_array):
@@ -2163,7 +2166,7 @@ create_unit_iseq(rb_iseq_t *iseq) {
     ui->unit = NULL;
     ui->next = unit_iseq_list;
     unit_iseq_list = ui;
-    ui->iseq_size = iseq->body->iseq_size;
+    ui->iseq_size = iseq->body->rtl_size;
     ui->label = NULL;
     if (mjit_opts.debug || mjit_opts.profile) {
 	ui->label = get_string(RSTRING_PTR(iseq->body->location.label));
@@ -2633,7 +2636,7 @@ mjit_store_failed_spec_insn(rb_iseq_t *iseq, size_t pc, int mutation_num)  {
     struct rb_mjit_unit_iseq *ui = iseq->body->unit_iseq;
     VALUE insn;
 
-    insn = iseq->body->iseq_encoded[pc];
+    insn = iseq->body->rtl_encoded[pc];
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
     insn = rb_vm_insn_addr2insn((void *) insn);
 #endif

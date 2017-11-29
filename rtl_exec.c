@@ -229,6 +229,22 @@ temp_swap_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2)
     *v2 = t;
 }
 
+/* Reverse N values in CFP frame temporary variables starting with
+   START.  */
+static do_inline void
+temp_reverse_f(rb_control_frame_t *cfp, rb_num_t n, VALUE *start)
+{
+    VALUE t, *end = start + n - 1;
+    
+    while (start < end) {
+	t = *start;
+	*start = *end;
+	*end = t;
+	start++;
+	end--;
+    }
+}
+
 /* Assign value of CFP frame local variable OP to another local
    variable RES with index RES_IND.  */
 static do_inline void
@@ -3589,7 +3605,7 @@ define_class(rb_thread_t *th, rb_control_frame_t *cfp, ID id, ISEQ class_iseq, r
     vm_push_frame(th, class_iseq, VM_FRAME_MAGIC_CLASS | VM_ENV_FLAG_LOCAL, klass,
 	          GET_BLOCK_HANDLER(),
 	          (VALUE)vm_cref_push(th, klass, NULL, FALSE),
-	          class_iseq->body->iseq_encoded, GET_SP(),
+	          class_iseq->body->rtl_encoded, GET_SP(),
 		  class_iseq->body->local_table_size,
 		  class_iseq->body->stack_max);
 

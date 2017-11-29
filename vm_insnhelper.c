@@ -1123,9 +1123,9 @@ vm_throw_start(rb_thread_t *const th, rb_control_frame_t *const reg_cfp, enum ru
 
 	    while (escape_cfp < eocfp) {
 		if (escape_cfp->ep == ep) {
-		    const VALUE epc = escape_cfp->pc - escape_cfp->iseq->body->iseq_encoded;
+		    const VALUE epc = escape_cfp->pc - escape_cfp->iseq->body->rtl_encoded;
 		    const rb_iseq_t * const iseq = escape_cfp->iseq;
-		    const struct iseq_catch_table * const ct = iseq->body->catch_table;
+		    const struct iseq_catch_table * const ct = iseq->body->rtl_catch_table;
 		    const int ct_size = ct->size;
 		    int i;
 
@@ -1599,7 +1599,7 @@ vm_call_iseq_setup_normal(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_ca
     const rb_callable_method_entry_t *me = cc->me;
     const rb_iseq_t *iseq = def_iseq_ptr(me->def);
     return vm_call_iseq_setup_normal_0(th, cfp, me, iseq, calling->recv, calling->argc, calling->block_handler,
-				       iseq->body->iseq_encoded + opt_pc, param_size, local_size,
+				       iseq->body->rtl_encoded + opt_pc, param_size, local_size,
 				       iseq->body->stack_max);
 }
 
@@ -1643,7 +1643,7 @@ vm_call_iseq_setup_tailcall(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_
 
     vm_push_frame(th, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL | finish_flag,
 		  calling->recv, calling->block_handler, (VALUE)me,
-		  iseq->body->iseq_encoded + opt_pc, sp,
+		  iseq->body->rtl_encoded + opt_pc, sp,
 		  iseq->body->local_table_size - iseq->body->param.size,
 		  iseq->body->stack_max);
 
@@ -2683,7 +2683,7 @@ vm_invoke_iseq_block(rb_thread_t *th, rb_control_frame_t *reg_cfp,
 		  is_lambda ? VM_FRAME_MAGIC_LAMBDA : VM_FRAME_MAGIC_BLOCK,
 		  captured->self,
 		  VM_GUARDED_PREV_EP(captured->ep), 0,
-		  iseq->body->iseq_encoded + opt_pc,
+		  iseq->body->rtl_encoded + opt_pc,
 		  rsp + arg_size,
 		  iseq->body->local_table_size - arg_size, iseq->body->stack_max);
 

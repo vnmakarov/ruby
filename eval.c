@@ -56,6 +56,8 @@ ruby_setup(void)
     Init_heap();
     Init_vm_objects();
 
+    rtl_gen_init();
+
     PUSH_TAG();
     if ((state = EXEC_TAG()) == 0) {
 	rb_call_inits();
@@ -228,6 +230,7 @@ ruby_cleanup(volatile int ex)
     TH_POP_TAG();
     rb_thread_stop_timer_thread();
     ruby_vm_destruct(GET_VM());
+    rtl_gen_finish();
     if (state) ruby_default_signal(state);
 
     return sysex;

@@ -102,7 +102,7 @@ control_frame_dump(rb_thread_t *th, rb_control_frame_t *cfp)
 	    line = -1;
 	}
 	else {
-	    pc = cfp->pc - cfp->iseq->body->iseq_encoded;
+	    pc = cfp->pc - cfp->iseq->body->rtl_encoded;
 	    iseq_name = RSTRING_PTR(cfp->iseq->body->location.label);
 	    line = rb_vm_get_sourceline(cfp);
 	    if (line) {
@@ -315,7 +315,7 @@ rb_vmdebug_debug_print_register(rb_thread_t *th)
     ptrdiff_t cfpi;
 
     if (VM_FRAME_RUBYFRAME_P(cfp)) {
-	pc = cfp->pc - cfp->iseq->body->iseq_encoded;
+	pc = cfp->pc - cfp->iseq->body->rtl_encoded;
     }
 
     if (ep < 0 || (size_t)ep > th->stack_size) {
@@ -341,7 +341,7 @@ rb_vmdebug_debug_print_pre(rb_thread_t *th, rb_control_frame_t *cfp, const VALUE
     const rb_iseq_t *iseq = cfp->iseq;
 
     if (iseq != 0) {
-	ptrdiff_t pc = _pc - iseq->body->iseq_encoded;
+	ptrdiff_t pc = _pc - iseq->body->rtl_encoded;
 	int i;
 
 	for (i=0; i<(int)VM_CFP_CNT(th, cfp); i++) {
@@ -354,7 +354,7 @@ rb_vmdebug_debug_print_pre(rb_thread_t *th, rb_control_frame_t *cfp, const VALUE
 	if (pc >= 0) {
 	    const VALUE *iseq_original = rb_iseq_original_iseq((rb_iseq_t *)iseq);
 
-	    rb_iseq_disasm_insn(0, iseq_original, (size_t)pc, iseq, 0);
+	    rb_iseq_disasm_rtl_insn(0, iseq_original, (size_t)pc, iseq, 0);
 	}
     }
 

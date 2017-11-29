@@ -682,12 +682,20 @@ rb_iseq_translate_threaded_code(rb_iseq_t *iseq)
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
     const void * const *table = rb_vm_get_insns_address_table();
     unsigned int i;
-    VALUE *encoded = (VALUE *)iseq->body->iseq_encoded;
-
-    for (i = 0; i < iseq->body->iseq_size; /* */ ) {
-	int insn = (int)iseq->body->iseq_encoded[i];
+    VALUE *encoded = (iseq_rtl_p ? (VALUE *)iseq->body->rtl_encoded : (VALUE *)iseq->body->iseq_encoded);
+    size_t size = (iseq_rtl_p ? iseq->body->rtl_size : iseq->body->iseq_size);
+    
+    for (i = 0; i < size; /* */ ) {
+	int insn = (int)encoded[i];
 	int len = insn_len(insn);
 	encoded[i] = (VALUE)table[insn];
+	if (len > 1) {
+	    const char *types = insn_op_types(insn);
+	    char type = types[0];
+	  
+	    if (type == TS_INSN)
+		encoded[i + 1] = (VALUE)table[(int) encoded[i + 1]];
+	}
 	i += len;
     }
 #endif
@@ -697,22 +705,35 @@ rb_iseq_translate_threaded_code(rb_iseq_t *iseq)
 VALUE *
 rb_iseq_original_iseq(const rb_iseq_t *iseq) /* cold path */
 {
-    VALUE *original_code;
-
-    if (ISEQ_ORIGINAL_ISEQ(iseq)) return ISEQ_ORIGINAL_ISEQ(iseq);
-    original_code = ISEQ_ORIGINAL_ISEQ_ALLOC(iseq, iseq->body->iseq_size);
-    MEMCPY(original_code, iseq->body->iseq_encoded, VALUE, iseq->body->iseq_size);
+    VALUE *original_code, *encoded;
+    size_t size;
+    
+    if (ISEQ_ORIGINAL_ISEQ(iseq) && ! iseq->body->rtl_ary_p == ! iseq_rtl_p)
+	return ISEQ_ORIGINAL_ISEQ(iseq);
+    size = (iseq_rtl_p ? iseq->body->rtl_size : iseq->body->iseq_size);
+    original_code = ISEQ_ORIGINAL_ISEQ_ALLOC(iseq, size);
+    encoded = (iseq_rtl_p ? iseq->body->rtl_encoded : iseq->body->iseq_encoded);
+    MEMCPY(original_code, encoded, VALUE, size);
+    iseq->body->rtl_ary_p = iseq_rtl_p;
 
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
     {
 	unsigned int i;
 
-	for (i = 0; i < iseq->body->iseq_size; /* */ ) {
+	for (i = 0; i < size; /* */ ) {
 	    const void *addr = (const void *)original_code[i];
 	    const int insn = rb_vm_insn_addr2insn(addr);
+	    int len = insn_len(insn);
 
 	    original_code[i] = insn;
-	    i += insn_len(insn);
+	    if (len > 1) {
+		const char *types = insn_op_types(insn);
+		char type = types[0];
+	  
+	      if (type == TS_INSN)
+		  original_code[i + 1] = rb_vm_insn_addr2insn(original_code[i + 1]);
+	    }
+	    i += len;
 	}
     }
 #endif
@@ -1114,6 +1135,8 @@ new_child_iseq(rb_iseq_t *iseq, NODE *node,
 static int
 iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 {
+    int saved_rtl_p;
+    
     /* debugs("[compile step 2] (iseq_array_to_linkedlist)\n"); */
 
     if (compile_debug > 5)
@@ -1150,8 +1173,20 @@ iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     debugs("[compile step 4.3 (set_optargs_table)] \n");
     if (!iseq_set_optargs_table(iseq)) return COMPILE_NG;
 
+    debugs("[compile step 4.4 (rtl_gen)]\n");
+    if (!rtl_gen(iseq)) return COMPILE_NG;
+    
     debugs("[compile step 5 (iseq_translate_threaded_code)] \n");
     if (!rb_iseq_translate_threaded_code(iseq)) return COMPILE_NG;
+
+    saved_rtl_p = iseq_rtl_p;
+    iseq_rtl_p = TRUE;
+    debugs("[compile step 5.1 (iseq_translate_threaded_code) for RTL] \n");
+    if (!rb_iseq_translate_threaded_code(iseq)) {
+	iseq_rtl_p = saved_rtl_p;
+	return COMPILE_NG;
+    }
+    iseq_rtl_p = saved_rtl_p;
 
     if (compile_debug > 1) {
 	VALUE str = rb_iseq_disasm(iseq);
@@ -6308,7 +6343,7 @@ insn_data_length(INSN *iobj)
 static int
 calc_sp_depth(int depth, INSN *insn)
 {
-    return insn_stack_increase(depth, insn->insn_id, insn->operands);
+    return insn_stack_increase(depth, insn->insn_id, FALSE, insn->operands);
 }
 
 static VALUE
@@ -6358,6 +6393,22 @@ insn_data_to_s_detail(INSN *iobj)
 			val = (VALUE)iseq;
 		    }
 		    rb_str_concat(str, opobj_inspect(val));
+		}
+		break;
+	      case TS_INSN:
+		{
+		    enum ruby_vminsn_type i = (enum ruby_vminsn_type ) OPERAND_AT(iobj, j);
+		    rb_str_catf(str, "%s", insn_name_info[i]);
+		    break;
+		}
+		break;
+	      case TS_VINDEX:
+	      case TS_SINDEX:
+	      case TS_RINDEX:
+		{
+		    long l = (long) OPERAND_AT(iobj, j);
+		    rb_str_catf(str, "%3ld", l);
+		    break;
 		}
 		break;
 	      case TS_LINDEX:
@@ -6706,9 +6757,15 @@ iseq_build_from_ary_body(rb_iseq_t *iseq, LINK_ANCHOR *const anchor,
 			argv[j] = (VALUE)label;
 			break;
 		      }
+		      case TS_VINDEX:
+		      case TS_SINDEX:
+		      case TS_RINDEX:
+			argv[j] = NUM2INT(op);
+			break;
+		      case TS_INSN:
 		      case TS_LINDEX:
 		      case TS_NUM:
-			(void)NUM2INT(op);
+			(void)NUM2LONG(op);
 			argv[j] = op;
 			break;
 		      case TS_VALUE:

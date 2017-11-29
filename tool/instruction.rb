@@ -73,7 +73,7 @@ class RubyVM
         @opes.each_with_index{|(t, v), i|
           if (t == 'rb_num_t' && ((re = /\b#{v}\b/n) =~ @sp_inc)) ||
              (@defopes.any?{|t, val| re =~ val})
-            ret << "        int #{v} = FIX2INT(opes[#{i}]);\n"
+            ret << "        int #{v} = num_p ? (int) opes[#{i}] : FIX2INT(opes[#{i}]);\n"
           elsif (t == 'CALL_INFO' && ((re = /\b#{v}\b/n) =~ @sp_inc))
             ret << "        CALL_INFO #{v} = (CALL_INFO)(opes[#{i}]);\n"
           elsif (t == 'CALL_DATA' && ((re = /\b#{v}\b/n) =~ @sp_inc))
@@ -977,6 +977,8 @@ class RubyVM
         "TS_NUM"
       when /^lindex_t/
         "TS_LINDEX"
+      when /^vindex_t/
+        "TS_VINDEX"
       when /^sindex_t/
         "TS_SINDEX"
       when /^rindex_t/
@@ -1015,6 +1017,7 @@ class RubyVM
       'TS_NUM'       => 'N',
       'TS_INSN'      => 'A',
       'TS_LINDEX'    => 'L',
+      'TS_VINDEX'    => 'v',
       'TS_SINDEX'    => 's',
       'TS_RINDEX'    => 'R',
       'TS_VALUE'     => 'V',

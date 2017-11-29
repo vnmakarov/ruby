@@ -1,3 +1,72 @@
+2017-11-29  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* rtl_gen.c: New file.
+	* common.mk (COMMONOBJS): Add rtl_gen.o.
+	* compile.c (rb_iseq_translate_threaded_code): Use RTL or stack
+	insns depending on iseq_rtl_p.  Process TS_INSN insn args.
+	(rb_iseq_original_iseq):  Ditto.
+	(iseq_setup): Call rtl_gen.  Setup/restore iseq_rtl_p and generate
+	encoded code for RTL.
+	(calc_sp_depth): Pass FALSE as an additional arg to
+	insn_stack_increase.
+	(insn_data_to_s_detail): Process TS_INSN, TS_VINDEX, TS_SINDEX,
+	TS_RINDEX.
+	(iseq_build_from_ary_body): Ditto.
+	* defs/opt_operand.def: Restore base version.
+	* eval.c (ruby_setup): Call rtl_gen_init and rtl_get_finish.
+	* insns.def: Use vindex_t for RTL instead of lindex_t.
+	(temp_reverse): New.
+	* iseq.c (rb_iseq_free): Free rtl_encoded and rtl_line_info_table.
+	(iseq_memsize): Add size of RTL parts.
+	(get_line_info): New arg rtl_p.  Use rtl parts if it is true.
+	(find_line_no): New arg rtl_p.  Pass it to get_line_info.
+	(rb_iseq_line_no): Pass TRUE to find_line_no.
+	(rb_insn_operand_intern): Process TS_VINDEX. Use LONG2FIX.  Check
+	cd on NULL.
+	(iseq_rtl_p): New.
+	(rb_iseq_disasm_insn): Use iseq_rtl_p.
+	(rb_iseq_disasm_rtl_insn): New.
+	(catch_type): Use the right table depending on iseq_rtl_p.
+	(rb_iseq_disasm_rtl): New.
+	(rb_iseqw_line_trace_each): User RTL parts.
+	* mjit.c (get_insn_fun_features): Process temp_reverse.
+	(translate_iseq_insn): Use RTL parts of iseq.  Process VINDEX_T.
+	(translate_unit_iseq): Use RTL parts of iseq.
+	(update_unit_iseq_info_from_insns): Ditto.  Process temp_reverse.
+	(create_unit_iseq, mjit_store_failed_spec_insn): Use RTL parts of
+	iseq.
+	* mjit.h (mjit_execute_iseq_0, mjit_aot_process): Use RTL parts of
+	iseq.
+	* rtl_exec.c (temp_reverse_f): New.
+	(define_class): Use RTL parts.
+	* ruby.c (feature_flag_bits, dump_flag_bits): Add rtl.
+	(process_options): Process --dump rtl.
+	* template/insns_info.inc.tmpl (insn_stack_increase): Add new
+	param opes.
+	* tool/instruction.rb (sp_increase_c_expr): Use num_p to process
+	opes.
+	(op2typesig): Process TS_VINDEX.
+	* vm.c (vm_set_top_stack, vm_set_eval_stack, invoke_block): Use
+	rtl parts of iseq.
+	(invoke_bmethod, vm_exec): Ditto.
+	* vm_args.c (raise_argument_error): Ditto.
+	* vm_backtrace.c (calc_lineno): Ditto.
+	* vm_core.h (vindex_t): New.
+	(struct rb_call_info, struct rb_call_data_with_kwarg): Use
+	vindex_t.
+	(struct rb_iseq_constant_body): Add new members rtl_size,
+	rtl_encoded, rtl_line_info_table, rtl_catch_table, rtl_ary_p,
+	rtl_line_info_size.
+	(rtl_gen, rtl_gen_init, rtl_gen_finish, iseq_rtl_p): New externs.
+	(rb_iseq_disasm_rtl, rb_iseq_disasm_rtl_insn): Ditto.
+	* vm_dump.c (control_frame_dump, rb_vmdebug_debug_print_register):
+	Use RTL parts of iseq.
+	(rb_vmdebug_debug_print_pre): Ditto.
+	* vm_exec.h (sindex_t, rindex_t): Use vindex_t to define them.
+	* vm_insnhelper.c (vm_throw_start, vm_call_iseq_setup_normal): Use
+	rtl parts.
+	(vm_call_iseq_setup_tailcall, vm_invoke_iseq_block): Ditto.
+
 2017-10-16  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* compile.c: Restore base version.

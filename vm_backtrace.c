@@ -31,7 +31,7 @@ id2str(ID id)
 inline static int
 calc_lineno(const rb_iseq_t *iseq, const VALUE *pc)
 {
-    return rb_iseq_line_no(iseq, pc - iseq->body->iseq_encoded);
+    return rb_iseq_line_no(iseq, pc - iseq->body->rtl_encoded);
 }
 
 int

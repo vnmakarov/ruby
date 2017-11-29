@@ -112,13 +112,15 @@ enum feature_flag_bits {
     X(parsetree_with_comment) \
     SEP \
     X(insns) \
+    SEP \
+    X(rtl) \
     /* END OF DUMPS */
 enum dump_flag_bits {
     dump_version_v,
     EACH_DUMPS(DEFINE_DUMP, COMMA),
     dump_exit_bits = (DUMP_BIT(yydebug) | DUMP_BIT(syntax) |
 		      DUMP_BIT(parsetree) | DUMP_BIT(parsetree_with_comment) |
-		      DUMP_BIT(insns))
+		      DUMP_BIT(insns) | DUMP_BIT(rtl))
 };
 
 typedef struct ruby_cmdline_options ruby_cmdline_options_t;
@@ -1786,6 +1788,13 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
 	rb_io_write(rb_stdout, rb_iseq_disasm((const rb_iseq_t *)iseq));
 	rb_io_flush(rb_stdout);
 	dump &= ~DUMP_BIT(insns);
+	if (!dump) return Qtrue;
+    }
+
+    if (dump & DUMP_BIT(rtl)) {
+	rb_io_write(rb_stdout, rb_iseq_disasm_rtl((const rb_iseq_t *)iseq));
+	rb_io_flush(rb_stdout);
+	dump &= ~DUMP_BIT(rtl);
 	if (!dump) return Qtrue;
     }
     if (opt->dump & dump_exit_bits) return Qtrue;

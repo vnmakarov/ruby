@@ -485,7 +485,7 @@ vm_set_top_stack(rb_thread_t *th, const rb_iseq_t *iseq)
     vm_push_frame(th, iseq, VM_FRAME_MAGIC_TOP | VM_ENV_FLAG_LOCAL | VM_FRAME_FLAG_FINISH, th->top_self,
 		  VM_BLOCK_HANDLER_NONE,
 		  (VALUE)vm_cref_new_toplevel(th), /* cref or me */
-		  iseq->body->iseq_encoded, th->cfp->sp, iseq->body->local_table_size, iseq->body->stack_max);
+		  iseq->body->rtl_encoded, th->cfp->sp, iseq->body->local_table_size, iseq->body->stack_max);
 }
 
 static void
@@ -494,7 +494,7 @@ vm_set_eval_stack(rb_thread_t * th, const rb_iseq_t *iseq, const rb_cref_t *cref
     vm_push_frame(th, iseq, VM_FRAME_MAGIC_EVAL | VM_FRAME_FLAG_FINISH,
 		  vm_block_self(base_block), VM_GUARDED_PREV_EP(vm_block_ep(base_block)),
 		  (VALUE)cref, /* cref or me */
-		  iseq->body->iseq_encoded,
+		  iseq->body->rtl_encoded,
 		  th->cfp->sp, iseq->body->local_table_size, iseq->body->stack_max);
 }
 
@@ -1014,7 +1014,7 @@ invoke_block(rb_thread_t *th, const rb_iseq_t *iseq, VALUE self, const struct rb
     vm_push_frame(th, iseq, type, self,
 		  VM_GUARDED_PREV_EP(captured->ep),
 		  (VALUE)cref, /* cref or method */
-		  body->iseq_encoded + opt_pc,
+		  body->rtl_encoded + opt_pc,
 		  th->cfp->sp + arg_size, body->local_table_size - arg_size,
 		  body->stack_max);
     if (except_p || (result = mjit_execute_iseq(th)) == Qundef)
@@ -1032,7 +1032,7 @@ invoke_bmethod(rb_thread_t *th, const rb_iseq_t *iseq, VALUE self, const struct 
     vm_push_frame(th, iseq, type | VM_FRAME_FLAG_FINISH | VM_FRAME_FLAG_BMETHOD, self,
 		  VM_GUARDED_PREV_EP(captured->ep),
 		  (VALUE)me,
-		  iseq->body->iseq_encoded + opt_pc,
+		  iseq->body->rtl_encoded + opt_pc,
 		  th->cfp->sp + arg_size, iseq->body->local_table_size - arg_size,
 		  iseq->body->stack_max);
 
@@ -1803,7 +1803,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 	}
 
 	cfp = th->cfp;
-	epc = cfp->pc - cfp->iseq->body->iseq_encoded;
+	epc = cfp->pc - cfp->iseq->body->rtl_encoded;
 
 	escape_cfp = NULL;
 	if (state == TAG_BREAK || state == TAG_RETURN) {
@@ -1816,7 +1816,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 			THROW_DATA_STATE_SET(err, state = TAG_BREAK);
 		    }
 		    else {
-			ct = cfp->iseq->body->catch_table;
+			ct = cfp->iseq->body->rtl_catch_table;
 			if (ct) for (i = 0; i < ct->size; i++) {
 			    entry = &ct->entries[i];
 			    if (entry->start < epc && entry->end >= epc) {
@@ -1853,7 +1853,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 	}
 
 	if (state == TAG_RAISE) {
-	    ct = cfp->iseq->body->catch_table;
+	    ct = cfp->iseq->body->rtl_catch_table;
 	    if (ct) for (i = 0; i < ct->size; i++) {
 		entry = &ct->entries[i];
 		if (entry->start < epc && entry->end >= epc) {
@@ -1869,7 +1869,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 	    }
 	}
 	else if (state == TAG_RETRY) {
-	    ct = cfp->iseq->body->catch_table;
+	    ct = cfp->iseq->body->rtl_catch_table;
 	    if (ct) for (i = 0; i < ct->size; i++) {
 		entry = &ct->entries[i];
 		if (entry->start < epc && entry->end >= epc) {
@@ -1884,7 +1884,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 			const rb_control_frame_t *escape_cfp;
 			escape_cfp = THROW_DATA_CATCH_FRAME(err);
 			if (cfp == escape_cfp) {
-			    cfp->pc = cfp->iseq->body->iseq_encoded + entry->cont;
+			    cfp->pc = cfp->iseq->body->rtl_encoded + entry->cont;
 			    th->errinfo = Qnil;
 			    no_mjit_p = TRUE;
 			    goto vm_loop_start;
@@ -1897,7 +1897,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 	    type = CATCH_TYPE_BREAK;
 
 	  search_restart_point:
-	    ct = cfp->iseq->body->catch_table;
+	    ct = cfp->iseq->body->rtl_catch_table;
 	    if (ct) for (i = 0; i < ct->size; i++) {
 		entry = &ct->entries[i];
 
@@ -1909,7 +1909,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 			break;
 		    }
 		    else if (entry->type == type) {
-			cfp->pc = cfp->iseq->body->iseq_encoded + entry->cont;
+			cfp->pc = cfp->iseq->body->rtl_encoded + entry->cont;
 			cfp->sp = cfp->bp + 1 + cfp->iseq->body->temp_vars_num;
 			if (state != TAG_REDO) {
 #if OPT_STACK_CACHING
@@ -1935,7 +1935,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 	    goto search_restart_point;
 	}
 	else {
-	    ct = cfp->iseq->body->catch_table;
+	    ct = cfp->iseq->body->rtl_catch_table;
 	    if (ct) for (i = 0; i < ct->size; i++) {
 		entry = &ct->entries[i];
 		if (entry->start < epc && entry->end >= epc) {
@@ -1956,7 +1956,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 
 	    rb_iseq_check(catch_iseq);
 	    cfp->sp = vm_base_ptr(cfp) + cont_sp;
-	    cfp->pc = cfp->iseq->body->iseq_encoded + cont_pc;
+	    cfp->pc = cfp->iseq->body->rtl_encoded + cont_pc;
 
 	    /* push block frame */
 	    cfp->sp[0] = (VALUE)err;
@@ -1964,7 +1964,7 @@ vm_exec(rb_thread_t *th, int no_mjit_p)
 			  cfp->self,
 			  VM_GUARDED_PREV_EP(cfp->ep),
 			  0, /* cref or me */
-			  catch_iseq->body->iseq_encoded,
+			  catch_iseq->body->rtl_encoded,
 			  cfp->sp + arg_size /* push value */,
 			  catch_iseq->body->local_table_size - arg_size,
 			  catch_iseq->body->stack_max);
@@ -3101,7 +3101,7 @@ Init_VM(void)
 
 	rb_gc_register_mark_object((VALUE)iseq);
 	th->cfp->iseq = iseq;
-	th->cfp->pc = iseq->body->iseq_encoded;
+	th->cfp->pc = iseq->body->rtl_encoded;
 	th->cfp->self = th->top_self;
 
 	VM_ENV_FLAGS_UNSET(th->cfp->ep, VM_FRAME_FLAG_CFRAME);

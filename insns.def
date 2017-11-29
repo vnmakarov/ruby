@@ -2200,7 +2200,7 @@ trace
 
    Some insn operand types:
 
-     lindex_t - offset on the stack or in the environment.  Positive
+     vindex_t - offset on the stack or in the environment.  Positive
                 value means local var, negative value means a
                 temporary var.  The function implementing the insn get
                 the address of the local or temporary operand as an
@@ -2236,7 +2236,7 @@ trace
 
 DEFINE_INSN
 var2var
-(rindex_t to, lindex_t from, rb_num_t n)
+(rindex_t to, vindex_t from, rb_num_t n)
 ()
 ()
 {
@@ -2254,7 +2254,7 @@ var_swap
 
 DEFINE_INSN
 temp2temp
-(lindex_t res, lindex_t op)
+(vindex_t res, vindex_t op)
 ()
 ()
 {
@@ -2263,7 +2263,7 @@ temp2temp
 
 DEFINE_INSN
 temp_swap
-(lindex_t op1, lindex_t op2)
+(vindex_t op1, vindex_t op2)
 ()
 ()
 {
@@ -2271,8 +2271,17 @@ temp_swap
 }
 
 DEFINE_INSN
+temp_reverse
+(rb_num_t n, vindex_t start)
+()
+()
+{
+    temp_reverse_f(reg_cfp, n, get_temp_addr(reg_cfp, start));
+}
+
+DEFINE_INSN
 loc2loc
-(rindex_t res, lindex_t op)
+(rindex_t res, vindex_t op)
 ()
 ()
 {
@@ -2281,7 +2290,7 @@ loc2loc
 
 DEFINE_INSN
 loc2temp
-(lindex_t res, lindex_t op)
+(vindex_t res, vindex_t op)
 ()
 ()
 {
@@ -2290,7 +2299,7 @@ loc2temp
 
 DEFINE_INSN
 temp2loc
-(rindex_t res, lindex_t op)
+(rindex_t res, vindex_t op)
 ()
 ()
 {
@@ -2299,7 +2308,7 @@ temp2loc
 
 DEFINE_INSN
 uploc2temp
-(lindex_t res, sindex_t op, rb_num_t level)
+(vindex_t res, sindex_t op, rb_num_t level)
 ()
 ()
 {
@@ -2326,7 +2335,7 @@ val2loc
 
 DEFINE_INSN
 val2temp
-(lindex_t res, VALUE val)
+(vindex_t res, VALUE val)
 ()
 ()
 {
@@ -2344,7 +2353,7 @@ str2var
 
 DEFINE_INSN
 const2var
-(ID id, rindex_t res, lindex_t klass_op)
+(ID id, rindex_t res, vindex_t klass_op)
 ()
 ()
 {
@@ -2381,7 +2390,7 @@ get_inline_cache
 
 DEFINE_INSN
 set_inline_cache
-(lindex_t op, IC ic)
+(vindex_t op, IC ic)
 ()
 ()
 {
@@ -2453,7 +2462,7 @@ iseq2var
 
 DEFINE_INSN
 var2uploc
-(sindex_t idx, lindex_t from, rb_num_t level)
+(sindex_t idx, vindex_t from, rb_num_t level)
 ()
 ()
 {
@@ -2471,7 +2480,7 @@ val2uploc
 
 DEFINE_INSN
 ret_to_loc
-(sindex_t idx, lindex_t from)
+(sindex_t idx, vindex_t from)
 ()
 ()
 {
@@ -2482,7 +2491,7 @@ ret_to_loc
 
 DEFINE_INSN
 ret_to_temp
-(sindex_t idx, lindex_t from)
+(sindex_t idx, vindex_t from)
 ()
 ()
 {
@@ -2493,7 +2502,7 @@ ret_to_temp
 
 DEFINE_INSN
 var2const
-(ID id, lindex_t val_op, lindex_t cbase_op)
+(ID id, vindex_t val_op, vindex_t cbase_op)
 ()
 ()
 {
@@ -2502,7 +2511,7 @@ var2const
 
 DEFINE_INSN
 var2global
-(GENTRY entry, lindex_t val_op)
+(GENTRY entry, vindex_t val_op)
 ()
 ()
 {
@@ -2511,7 +2520,7 @@ var2global
 
 DEFINE_INSN
 var2ivar
-(ID id, IC ic, lindex_t val_op)
+(ID id, IC ic, vindex_t val_op)
 ()
 ()
 {
@@ -2529,7 +2538,7 @@ val2ivar
 
 DEFINE_INSN
 var2cvar
-(ID id, lindex_t val_op)
+(ID id, vindex_t val_op)
 ()
 ()
 {
@@ -2538,7 +2547,7 @@ var2cvar
 
 DEFINE_INSN
 var2special
-(rb_num_t key, lindex_t op)
+(rb_num_t key, vindex_t op)
 ()
 ()
 {
@@ -2572,7 +2581,7 @@ cont_op2
 
 DEFINE_INSN
 length size empty_p succ not unot
-(insn_t _, CALL_DATA cd, rindex_t res, lindex_t op)
+(insn_t _, CALL_DATA cd, rindex_t res, vindex_t op)
 ()
 ()
 {
@@ -2588,7 +2597,7 @@ length size empty_p succ not unot
 /* Speculative not insn:  */
 DEFINE_INSN
 spec_not
-(_, CALL_DATA cd, rindex_t res, lindex_t op)
+(_, CALL_DATA cd, rindex_t res, vindex_t op)
 ()
 ()
 {
@@ -2604,7 +2613,7 @@ spec_not
 /* General and unchanging insns:  */
 DEFINE_INSN
 plus minus mult div mod ltlt ind eq ne lt gt le ge uplus uminus umult udiv umod uind ueq une ult ugt ule uge
-(insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, lindex_t op2)
+(insn_t _, CALL_DATA cd, rindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
@@ -2620,7 +2629,7 @@ plus minus mult div mod ltlt ind eq ne lt gt le ge uplus uminus umult udiv umod 
 /* Speculative insns:  */
 DEFINE_INSN
 iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige fplus fminus fmult fdiv fmod feq fne flt fgt fle fge
-(_, _, rindex_t res, lindex_t op1, lindex_t op2)
+(_, _, rindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
@@ -2637,7 +2646,7 @@ iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige fplus fminus fmul
 /* General immediate insns:  */
 DEFINE_INSN
 plusi plusf minusi minusf multi multf divi divf modi modf ltlti indi inds eqi eqf nei nef lti ltf gti gtf lei lef gei gef
-(insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
+(insn_t _, CALL_DATA cd, rindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -2651,7 +2660,7 @@ plusi plusf minusi minusf multi multf divi divf modi modf ltlti indi inds eqi eq
 /* Unchanging immediate insns:  */
 DEFINE_INSN
 uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf uindi uinds ueqi ueqf unei unef ulti ultf ugti ugtf ulei ulef ugei ugef
-(insn_t _, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
+(insn_t _, CALL_DATA cd, rindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -2665,7 +2674,7 @@ uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf uindi uinds 
 /* Speculative immediate insns:  */
 DEFINE_INSN
 iplusi iminusi imulti idivi imodi aindi hindi hinds ieqi inei ilti igti ilei igei fplusf fminusf fmultf fdivf fmodf feqf fnef fltf fgtf flef fgef
-(_, _, rindex_t res, lindex_t op1, VALUE imm)
+(_, _, rindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -2681,7 +2690,7 @@ iplusi iminusi imulti idivi imodi aindi hindi hinds ieqi inei ilti igti ilei ige
 /* General and unchanging insns:  */
 DEFINE_INSN
 indset uindset
-(CALL_DATA cd, lindex_t op1, lindex_t op2, lindex_t op3)
+(CALL_DATA cd, vindex_t op1, vindex_t op2, vindex_t op3)
 ()
 ()
 {
@@ -2694,7 +2703,7 @@ indset uindset
 /* Speculative insns:  */
 DEFINE_INSN
 aindset hindset
-(_, lindex_t op1, lindex_t op2, lindex_t op3)
+(_, vindex_t op1, vindex_t op2, vindex_t op3)
 ()
 ()
 {
@@ -2710,7 +2719,7 @@ aindset hindset
 /* General and unchanging immediate insns:  */
 DEFINE_INSN
 indseti indsets uindseti uindsets
-(CALL_DATA cd, lindex_t op1, VALUE imm, lindex_t op3)
+(CALL_DATA cd, vindex_t op1, VALUE imm, vindex_t op3)
 ()
 ()
 {
@@ -2723,7 +2732,7 @@ indseti indsets uindseti uindsets
 /* Speculative immediate insns:  */
 DEFINE_INSN
 aindseti hindseti hindsets
-(_, lindex_t op1, VALUE imm, lindex_t op3)
+(_, vindex_t op1, VALUE imm, vindex_t op3)
 ()
 ()
 {
@@ -2749,7 +2758,7 @@ goto
    get_destination_insn for peephole optimizer in compile.c */
 DEFINE_INSN
 bf bt bnil
-(OFFSET dst, lindex_t op)
+(OFFSET dst, vindex_t op)
 ()
 ()
 {
@@ -2789,7 +2798,7 @@ cont_bfcmp
 /* The following insns are combined insns of (eq,ne,lt,gt,le,ge)[if] and (bt|bf):  */
 DEFINE_INSN
 bteq bfeq btne bfne btlt bflt btgt bfgt btle bfle btge bfge
-(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, lindex_t op1, lindex_t op2)
+(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
@@ -2808,7 +2817,7 @@ bteq bfeq btne bfne btlt bflt btgt bfgt btle bfle btge bfge
 /* Unchanging insns:  */
 DEFINE_INSN
 ubteq ubfeq ubtne ubfne ubtlt ubflt ubtgt ubfgt ubtle ubfle ubtge ubfge
-(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, lindex_t op1, lindex_t op2)
+(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
@@ -2827,7 +2836,7 @@ ubteq ubfeq ubtne ubfne ubtlt ubflt ubtgt ubfgt ubtle ubfle ubtge ubfge
 /* Speculative integer insns:  */
 DEFINE_INSN
 ibteq ibfeq ibtne ibfne ibtlt ibflt ibtgt ibfgt ibtle ibfle ibtge ibfge
-(_, OFFSET dst, _, rindex_t res, lindex_t op1, lindex_t op2)
+(_, OFFSET dst, _, rindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
@@ -2848,7 +2857,7 @@ ibteq ibfeq ibtne ibfne ibtlt ibflt ibtgt ibfgt ibtle ibfle ibtge ibfge
 /* Speculative floating point insns:  */
 DEFINE_INSN
 fbteq fbfeq fbtne fbfne fbtlt fbflt fbtgt fbfgt fbtle fbfle fbtge fbfge
-(_, OFFSET dst, _, rindex_t res, lindex_t op1, lindex_t op2)
+(_, OFFSET dst, _, rindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
@@ -2868,7 +2877,7 @@ fbteq fbfeq fbtne fbfne fbtlt fbflt fbtgt fbfgt fbtle fbfle fbtge fbfge
 
 DEFINE_INSN
 bteqi bfeqi btnei bfnei btlti bflti btgti bfgti btlei bflei btgei bfgei bteqf bfeqf btnef bfnef btltf bfltf btgtf bfgtf btlef bflef btgef bfgef
-(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
+(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -2886,7 +2895,7 @@ bteqi bfeqi btnei bfnei btlti bflti btgti bfgti btlei bflei btgei bfgei bteqf bf
 /* Unchanging immediate insns:  */
 DEFINE_INSN
 ubteqi ubfeqi ubtnei ubfnei ubtlti ubflti ubtgti ubfgti ubtlei ubflei ubtgei ubfgei ubteqf ubfeqf ubtnef ubfnef ubtltf ubfltf ubtgtf ubfgtf ubtlef ubflef ubtgef ubfgef
-(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, lindex_t op1, VALUE imm)
+(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -2904,7 +2913,7 @@ ubteqi ubfeqi ubtnei ubfnei ubtlti ubflti ubtgti ubfgti ubtlei ubflei ubtgei ubf
 /* Speculative immediate integer insns:  */
 DEFINE_INSN
 ibteqi ibfeqi ibtnei ibfnei ibtlti ibflti ibtgti ibfgti ibtlei ibflei ibtgei ibfgei
-(_, OFFSET dst, _, rindex_t res, lindex_t op1, VALUE imm)
+(_, OFFSET dst, _, rindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -2924,7 +2933,7 @@ ibteqi ibfeqi ibtnei ibfnei ibtlti ibflti ibtgti ibfgti ibtlei ibflei ibtgei ibf
 /* Speculative immediate floating point insns:  */
 DEFINE_INSN
 fbteqf fbfeqf fbtnef fbfnef fbtltf fbfltf fbtgtf fbfgtf fbtlef fbflef fbtgef fbfgef
-(_, OFFSET dst, _, rindex_t res, lindex_t op1, VALUE imm)
+(_, OFFSET dst, _, rindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -2943,7 +2952,7 @@ fbteqf fbfeqf fbtnef fbfnef fbtltf fbfltf fbtgtf fbfgtf fbtlef fbflef fbtgef fbf
 
 DEFINE_INSN
 freeze_string
-(lindex_t op, VALUE debug_info)
+(vindex_t op, VALUE debug_info)
 ()
 ()
 {
@@ -2952,7 +2961,7 @@ freeze_string
 
 DEFINE_INSN
 to_string
-(rindex_t res, lindex_t op)
+(rindex_t res, vindex_t op)
 ()
 ()
 {
@@ -2961,7 +2970,7 @@ to_string
 
 DEFINE_INSN
 concat_strings
-(lindex_t start, rb_num_t cnt)
+(vindex_t start, rb_num_t cnt)
 ()
 ()
 {
@@ -2979,7 +2988,7 @@ to_regexp
 
 DEFINE_INSN
 defined_p
-(rindex_t res, lindex_t op, rb_num_t op_type, VALUE obj, VALUE needstr)
+(rindex_t res, vindex_t op, rb_num_t op_type, VALUE obj, VALUE needstr)
 ()
 ()
 {
@@ -3006,7 +3015,7 @@ str_freeze_call
 
 DEFINE_INSN
 temp_ret
-(lindex_t op, rb_num_t nf)
+(vindex_t op, rb_num_t nf)
 ()
 ()
 {
@@ -3020,7 +3029,7 @@ temp_ret
 
 DEFINE_INSN
 loc_ret
-(lindex_t op, rb_num_t nf)
+(vindex_t op, rb_num_t nf)
 ()
 ()
 {
@@ -3058,7 +3067,7 @@ simple_call simple_call_self
 
 DEFINE_INSN
 simple_call_recv
-(CALL_DATA cd, sindex_t call_start, lindex_t recv_op)
+(CALL_DATA cd, sindex_t call_start, vindex_t recv_op)
 ()
 ()
 {
@@ -3082,7 +3091,7 @@ call vmcore_call call_self
 
 DEFINE_INSN
 call_recv
-(CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, lindex_t recv_op)
+(CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, vindex_t recv_op)
 ()
 ()
 {
@@ -3141,7 +3150,7 @@ call_super
 
 DEFINE_INSN
 make_range
-(rindex_t res, lindex_t op1, lindex_t op2, rb_num_t flag)
+(rindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
 ()
 ()
 {
@@ -3170,7 +3179,7 @@ clone_array
    result too.  */
 DEFINE_INSN
 spread_array
-(lindex_t op1, rb_num_t num, rb_num_t flag)
+(vindex_t op1, rb_num_t num, rb_num_t flag)
 ()
 ()
 {
@@ -3179,7 +3188,7 @@ spread_array
 
 DEFINE_INSN
 splat_array
-(rindex_t res, lindex_t arr, VALUE flag)
+(rindex_t res, vindex_t arr, VALUE flag)
 ()
 ()
 {
@@ -3189,7 +3198,7 @@ splat_array
 
 DEFINE_INSN
 concat_array
-(rindex_t res, lindex_t op1, lindex_t op2)
+(rindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
@@ -3198,7 +3207,7 @@ concat_array
 
 DEFINE_INSN
 bkw
-(OFFSET dst, lindex_t kw_bits_index, rb_num_t keyword_index)
+(OFFSET dst, vindex_t kw_bits_index, rb_num_t keyword_index)
 ()
 ()
 {
@@ -3208,7 +3217,7 @@ bkw
 
 DEFINE_INSN
 check_match
-(rindex_t res, lindex_t op1, lindex_t op2, rb_num_t flag)
+(rindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
 ()
 ()
 {
@@ -3217,7 +3226,7 @@ check_match
 
 DEFINE_INSN
 bt_match
-(OFFSET dst, rindex_t res, lindex_t op1, lindex_t op2, rb_num_t flag)
+(OFFSET dst, rindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
 ()
 ()
 {
@@ -3227,7 +3236,7 @@ bt_match
 
 DEFINE_INSN
 case_dispatch
-(lindex_t op, CDHASH hash, OFFSET else_offset)
+(vindex_t op, CDHASH hash, OFFSET else_offset)
 ()
 ()
 {
@@ -3239,7 +3248,7 @@ case_dispatch
 
 DEFINE_INSN
 regexp_match1
-(rindex_t res, VALUE regex, lindex_t str_op)
+(rindex_t res, VALUE regex, vindex_t str_op)
 ()
 ()
 {
@@ -3248,7 +3257,7 @@ regexp_match1
 
 DEFINE_INSN
 regexp_match2
-(insn_t _, CALL_DATA cd, rindex_t res, lindex_t str_op, lindex_t regex_op)
+(insn_t _, CALL_DATA cd, rindex_t res, vindex_t str_op, vindex_t regex_op)
 ()
 ()
 {
@@ -3260,7 +3269,7 @@ regexp_match2
 
 DEFINE_INSN
 raise_except
-(lindex_t op, rb_num_t throw_state)
+(vindex_t op, rb_num_t throw_state)
 ()
 ()
 {
@@ -3282,7 +3291,7 @@ raise_except_val
 
 DEFINE_INSN
 define_class
-(ID id, ISEQ class_iseq, rb_num_t flags, lindex_t op1, lindex_t op2, sindex_t stack_top)
+(ID id, ISEQ class_iseq, rb_num_t flags, vindex_t op1, vindex_t op2, sindex_t stack_top)
 ()
 ()
 {

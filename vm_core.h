@@ -149,6 +149,7 @@
 
 typedef unsigned long rb_num_t;
 typedef unsigned long lindex_t;
+typedef long vindex_t;
 
 enum ruby_tag_type {
     RUBY_TAG_RETURN	= 0x1,
@@ -245,7 +246,7 @@ struct rb_call_info {
 struct rb_call_data {
     struct rb_call_info call_info;
     struct rb_call_cache call_cache;
-    lindex_t call_start;
+    vindex_t call_start;
 };
 
 struct rb_call_info_kw_arg {
@@ -256,7 +257,7 @@ struct rb_call_info_kw_arg {
 struct rb_call_data_with_kwarg {
     struct rb_call_info call_info;
     struct rb_call_cache call_cache;
-    lindex_t call_start;
+    vindex_t call_start;
     struct rb_call_info_kw_arg *kw_arg;
 };
 
@@ -303,6 +304,9 @@ struct rb_iseq_constant_body {
     
     unsigned int iseq_size;
     VALUE *iseq_encoded; /* encoded iseq (insn addr and operands) */
+
+    unsigned int rtl_size;
+    VALUE *rtl_encoded; /* encoded rtl (insn addr and operands) */
 
     /**
      * parameter information
@@ -378,11 +382,13 @@ struct rb_iseq_constant_body {
 
     /* insn info, must be freed */
     const struct iseq_line_info_entry *line_info_table;
+    const struct iseq_line_info_entry *rtl_line_info_table;
 
     const ID *local_table;		/* must free */
 
     /* catch table */
     const struct iseq_catch_table *catch_table;
+    const struct iseq_catch_table *rtl_catch_table;
 
     /* for child iseq */
     struct rb_iseq_struct *parent_iseq;
@@ -400,7 +406,11 @@ struct rb_iseq_constant_body {
 				      * So that:
 				      * struct rb_call_data_with_kwarg *cdkw_entries = &body->cd_entries[cd_size];
 				      */
-    
+
+    /* TRUE if mark_ary contains RTL original decoded sequence, not
+       stack insn sequence.  */
+    int rtl_ary_p;
+
     VALUE mark_ary;     /* Array: includes operands which should be GC marked */
 
     unsigned int local_table_size;
@@ -410,6 +420,7 @@ struct rb_iseq_constant_body {
     unsigned int cd_size;
     unsigned int cd_kw_size;
     unsigned int line_info_size;
+    unsigned int rtl_line_info_size;
 
     /* Non-zero for potential processing an exception.  */
     char except_p;
@@ -899,8 +910,17 @@ rb_iseq_t *rb_iseq_compile(VALUE src, VALUE file, VALUE line);
 rb_iseq_t *rb_iseq_compile_on_base(VALUE src, VALUE file, VALUE line, const struct rb_block *base_block);
 rb_iseq_t *rb_iseq_compile_with_option(VALUE src, VALUE file, VALUE absolute_path, VALUE line, const struct rb_block *base_block, VALUE opt);
 
+/* iseq -> rtl */
+int rtl_gen(rb_iseq_t *iseq);
+void rtl_gen_init(void);
+void rtl_gen_finish(void);
+
+extern int iseq_rtl_p;
+
 VALUE rb_iseq_disasm(const rb_iseq_t *iseq);
+VALUE rb_iseq_disasm_rtl(const rb_iseq_t *iseq);
 int rb_iseq_disasm_insn(VALUE str, const VALUE *iseqval, size_t pos, const rb_iseq_t *iseq, VALUE child);
+int rb_iseq_disasm_rtl_insn(VALUE str, const VALUE *iseqval, size_t pos, const rb_iseq_t *iseq, VALUE child);
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
 int rb_vm_insn_addr2insn(const void *addr);
 #endif

@@ -76,7 +76,9 @@ rb_iseq_free(rb_iseq_t *iseq)
 	mjit_free_iseq(iseq); /* Inform MJIT */
 	if (iseq->body) {
 	    ruby_xfree((void *)iseq->body->iseq_encoded);
+	    ruby_xfree((void *)iseq->body->rtl_encoded);
 	    ruby_xfree((void *)iseq->body->line_info_table);
+	    ruby_xfree((void *)iseq->body->rtl_line_info_table);
 	    ruby_xfree((void *)iseq->body->local_table);
 	    ruby_xfree((void *)iseq->body->is_entries);
 
@@ -95,11 +97,14 @@ rb_iseq_free(rb_iseq_t *iseq)
 		struct rb_call_data_with_kwarg *cd_kw_entries = (struct rb_call_data_with_kwarg *)&iseq->body->cd_entries[iseq->body->cd_size];
 		for (i=0; i<iseq->body->cd_kw_size; i++) {
 		    const struct rb_call_info_kw_arg *kw_arg = cd_kw_entries[i].kw_arg;
+#if 0
 		    ruby_xfree((void *)kw_arg);
+#endif
 		}
 		ruby_xfree(iseq->body->cd_entries);
 	    }
 	    ruby_xfree((void *)iseq->body->catch_table);
+	    ruby_xfree((void *)iseq->body->rtl_catch_table);
 	    ruby_xfree((void *)iseq->body->param.opt_table);
 
 	    if (iseq->body->param.keyword != NULL) {
@@ -172,11 +177,14 @@ iseq_memsize(const rb_iseq_t *iseq)
 
 	size += sizeof(struct rb_iseq_constant_body);
 	size += body->iseq_size * sizeof(VALUE);
+	size += body->rtl_size * sizeof(VALUE);
 	size += body->line_info_size * sizeof(struct iseq_line_info_entry);
+	size += body->rtl_line_info_size * sizeof(struct iseq_line_info_entry);
 	size += body->local_table_size * sizeof(ID);
-	if (body->catch_table) {
+	if (body->catch_table)
 	    size += iseq_catch_table_bytes(body->catch_table->size);
-	}
+	if (body->rtl_catch_table)
+	    size += iseq_catch_table_bytes(body->rtl_catch_table->size);
 	size += (body->param.opt_num + 1) * sizeof(VALUE);
 	size += param_keyword_size(body->param.keyword);
 
@@ -1213,10 +1221,10 @@ iseqw_to_a(VALUE self)
          this should be binary search or so. */
 
 static const struct iseq_line_info_entry *
-get_line_info(const rb_iseq_t *iseq, size_t pos)
+get_line_info(const rb_iseq_t *iseq, size_t pos, int rtl_p)
 {
-    size_t i = 0, size = iseq->body->line_info_size;
-    const struct iseq_line_info_entry *table = iseq->body->line_info_table;
+    size_t i = 0, size = (rtl_p ? iseq->body->rtl_line_info_size : iseq->body->line_info_size);
+    const struct iseq_line_info_entry *table = (rtl_p ? iseq->body->rtl_line_info_table : iseq->body->line_info_table);
     const int debug = 0;
 
     if (debug) {
@@ -1248,9 +1256,9 @@ get_line_info(const rb_iseq_t *iseq, size_t pos)
 }
 
 static unsigned int
-find_line_no(const rb_iseq_t *iseq, size_t pos)
+find_line_no(const rb_iseq_t *iseq, size_t pos, int rtl_p)
 {
-    const struct iseq_line_info_entry *entry = get_line_info(iseq, pos);
+    const struct iseq_line_info_entry *entry = get_line_info(iseq, pos, rtl_p);
 
     if (entry) {
 	return entry->line_no;
@@ -1264,10 +1272,10 @@ unsigned int
 rb_iseq_line_no(const rb_iseq_t *iseq, size_t pos)
 {
     if (pos == 0) {
-	return find_line_no(iseq, pos);
+	return find_line_no(iseq, pos, TRUE);
     }
     else {
-	return find_line_no(iseq, pos - 1);
+	return find_line_no(iseq, pos - 1, TRUE);
     }
 }
 
@@ -1328,9 +1336,10 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	ret = rb_str_new2(insn_name(op));
 	break;
 
+      case TS_VINDEX:
       case TS_SINDEX:
       case TS_RINDEX: {
-	ret = rb_inspect(INT2FIX(op));
+	ret = rb_inspect(LONG2FIX(op));
 	break;
       }
       case TS_ID:		/* ID (symbol) */
@@ -1411,20 +1420,20 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	    struct rb_call_info *ci = &cd->call_info;
 	    VALUE ary = rb_ary_new();
 
-	    if (ci->mid) {
+	    if (cd && ci->mid) {
 		rb_ary_push(ary, rb_sprintf("mid:%"PRIsVALUE, rb_id2str(ci->mid)));
 	    }
 
-	    rb_ary_push(ary, rb_sprintf("argc:%d", ci->orig_argc));
-	    rb_ary_push(ary, rb_sprintf("call_start:%ld", (long) cd->call_start));
+	    if (cd) rb_ary_push(ary, rb_sprintf("argc:%d", ci->orig_argc));
+	    if (cd) rb_ary_push(ary, rb_sprintf("call_start:%ld", (long) cd->call_start));
 
-	    if (ci->flag & VM_CALL_KWARG) {
+	    if (cd && ci->flag & VM_CALL_KWARG) {
 		struct rb_call_info_kw_arg *kw_args = ((struct rb_call_data_with_kwarg *)ci)->kw_arg;
 		VALUE kw_ary = rb_ary_new_from_values(kw_args->keyword_len, kw_args->keywords);
 		rb_ary_push(ary, rb_sprintf("kw:[%"PRIsVALUE"]", rb_ary_join(kw_ary, rb_str_new2(","))));
 	    }
 
-	    if (ci->flag) {
+	    if (cd && ci->flag) {
 		VALUE flags = rb_ary_new();
 		if (ci->flag & VM_CALL_ARGS_SPLAT) rb_ary_push(flags, rb_str_new2("ARGS_SPLAT"));
 		if (ci->flag & VM_CALL_ARGS_BLOCKARG) rb_ary_push(flags, rb_str_new2("ARGS_BLOCKARG"));
@@ -1472,6 +1481,10 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
     return ret;
 }
 
+/* TRUE if we should process RTL instead of stack insns for
+   disassembling.  */
+int iseq_rtl_p = 0;
+
 /**
  * Disassemble a instruction
  * Iseq -> Iseq inspect object
@@ -1509,8 +1522,8 @@ rb_iseq_disasm_insn(VALUE ret, const VALUE *code, size_t pos,
     }
 
     {
-	unsigned int line_no = find_line_no(iseq, pos);
-	unsigned int prev = pos == 0 ? 0 : find_line_no(iseq, pos - 1);
+	unsigned int line_no = find_line_no(iseq, pos, iseq_rtl_p);
+	unsigned int prev = pos == 0 ? 0 : find_line_no(iseq, pos - 1, iseq_rtl_p);
 	if (line_no && line_no != prev) {
 	    long slen = RSTRING_LEN(str);
 	    slen = (slen > 70) ? 0 : (70 - slen);
@@ -1526,6 +1539,20 @@ rb_iseq_disasm_insn(VALUE ret, const VALUE *code, size_t pos,
 	fprintf(stderr,"%s\n", RSTRING_PTR(str));
     }
     return len;
+}
+
+/* Disassemble RTL insn starting at position POS in CODE.  Add the
+   result (a string) into RET.  Return the insn length.  */
+int
+rb_iseq_disasm_rtl_insn(VALUE ret, const VALUE *code, size_t pos,
+			const rb_iseq_t *iseq, VALUE child) {
+    int res;
+    int saved_rtl_p = iseq_rtl_p;
+
+    iseq_rtl_p = TRUE;
+    res = rb_iseq_disasm_insn(ret, code, pos, iseq, child);
+    iseq_rtl_p = saved_rtl_p;
+    return res;
 }
 
 static const char *
@@ -1573,10 +1600,11 @@ rb_iseq_disasm(const rb_iseq_t *iseq)
     const ID *tbl;
     size_t n;
     enum {header_minlen = 72};
-
+    const struct iseq_catch_table *catch_table;
+    
     rb_secure(1);
 
-    size = iseq->body->iseq_size;
+    size = (iseq_rtl_p ? iseq->body->rtl_size : iseq->body->iseq_size);
 
     rb_str_cat2(str, "== disasm: ");
 
@@ -1588,12 +1616,13 @@ rb_iseq_disasm(const rb_iseq_t *iseq)
     rb_str_cat2(str, "\n");
 
     /* show catch table information */
-    if (iseq->body->catch_table) {
+    catch_table = (iseq_rtl_p ? iseq->body->rtl_catch_table : iseq->body->catch_table);
+    if (catch_table) {
 	rb_str_cat2(str, "== catch table\n");
     }
-    if (iseq->body->catch_table) {
-	for (i = 0; i < iseq->body->catch_table->size; i++) {
-	    const struct iseq_catch_table_entry *entry = &iseq->body->catch_table->entries[i];
+    if (catch_table) {
+	for (i = 0; i < catch_table->size; i++) {
+	    const struct iseq_catch_table_entry *entry = &catch_table->entries[i];
 	    rb_str_catf(str,
 			"| catch type: %-6s st: %04d ed: %04d sp: %04d cont: %04d\n",
 			catch_type((int)entry->type), (int)entry->start,
@@ -1603,7 +1632,7 @@ rb_iseq_disasm(const rb_iseq_t *iseq)
 	    }
 	}
     }
-    if (iseq->body->catch_table) {
+    if (catch_table) {
 	rb_str_cat2(str, "|-------------------------------------"
 		    "-----------------------------------\n");
     }
@@ -1673,6 +1702,18 @@ rb_iseq_disasm(const rb_iseq_t *iseq)
     }
 
     return str;
+}
+
+/* Disassemble RTL insns of ISEQ.  Return the result ruby string.  */
+VALUE
+rb_iseq_disasm_rtl(const rb_iseq_t *iseq) {
+    VALUE res;
+    int saved_rtl_p = iseq_rtl_p;
+    
+    iseq_rtl_p = TRUE;
+    res = rb_iseq_disasm(iseq);
+    iseq_rtl_p = saved_rtl_p;
+    return res;
 }
 
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
@@ -2360,9 +2401,10 @@ rb_iseqw_line_trace_each(VALUE iseqw, int (*func)(int line, rb_event_flag_t *eve
     const rb_iseq_t *iseq = iseqw_check(iseqw);
     int cont = 1;
     VALUE *iseq_original;
+    size_t size = iseq->body->rtl_size;
 
     iseq_original = rb_iseq_original_iseq(iseq);
-    for (pos = 0; cont && pos < iseq->body->iseq_size; pos += insn_len(insn)) {
+    for (pos = 0; cont && pos < size; pos += insn_len(insn)) {
 	insn = iseq_original[pos];
 
 	if (insn == BIN(trace)) {
@@ -2375,11 +2417,11 @@ rb_iseqw_line_trace_each(VALUE iseqw, int (*func)(int line, rb_event_flag_t *eve
 		trace_num++;
 
 		if (func) {
-		    int line = find_line_no(iseq, pos);
+		    int line = find_line_no(iseq, pos, TRUE);
 		    /* printf("line: %d\n", line); */
 		    cont = (*func)(line, &events, data);
 		    if (current_events != events) {
-			VALUE *encoded = (VALUE *)iseq->body->iseq_encoded;
+			VALUE *encoded = (VALUE *)iseq->body->rtl_encoded;
 			iseq_original[pos+1] = encoded[pos+1] =
 			  (VALUE)(current_events | (events & RUBY_EVENT_SPECIFIED_LINE));
 		    }

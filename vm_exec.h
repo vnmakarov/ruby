@@ -14,8 +14,8 @@
 
 typedef enum ruby_vminsn_type insn_t;
 typedef long OFFSET;
-typedef lindex_t sindex_t;
-typedef lindex_t rindex_t;
+typedef vindex_t sindex_t;
+typedef vindex_t rindex_t;
 typedef VALUE GENTRY;
 typedef rb_iseq_t *ISEQ;
 

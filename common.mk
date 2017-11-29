@@ -110,6 +110,7 @@ COMMONOBJS    = array.$(OBJEXT) \
 		regexec.$(OBJEXT) \
 		regparse.$(OBJEXT) \
 		regsyntax.$(OBJEXT) \
+		rtl_gen.$(OBJEXT) \
 		ruby.$(OBJEXT) \
 		safe.$(OBJEXT) \
 		signal.$(OBJEXT) \
