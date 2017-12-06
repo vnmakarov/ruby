@@ -1337,6 +1337,7 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	break;
 
       case TS_VINDEX:
+      case TS_TINDEX:
       case TS_SINDEX:
       case TS_RINDEX: {
 	ret = rb_inspect(LONG2FIX(op));

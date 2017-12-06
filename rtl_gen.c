@@ -916,7 +916,7 @@ generate_unary_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_
 	op = slot.mode == LOC ? slot.u.loc : slot.u.temp;
     }
     res = new_top_stack_temp_var();
-    APPEND5(res_insn, BIN(cont_op1), cd, res, op);
+    APPEND4(res_insn, cd, res, op);
 }
 
 /* Return a variant of insn INSN_ID with an immediate operand (fixnum
@@ -1006,7 +1006,7 @@ generate_bin_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_in
     
     res_insn = get_binary_ops(iseq, res_insn, args, &res, &op, &op2, &cd);
     push_result(res);
-    APPEND6(res_insn, BIN(cont_op2), cd, res, op, op2);
+    APPEND5(res_insn, cd, res, op, op2);
 }
 
 /* Return RTL compare branch insn.  The original RTL compare insn is
@@ -1223,7 +1223,7 @@ generate_leave(void) {
 static size_t
 translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos) {
     VALUE insn;
-    size_t i, stack_insn_len, rtl_insn_start;
+    size_t stack_insn_len, rtl_insn_start;
     stack_slot slot;
     branch_target_loc loc;
     
@@ -1826,7 +1826,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos) {
 	cd = get_cd(iseq, ci, cc, res);
 	op = to_var(slot, res);
 	op2 = to_var(slot2, res - 1);
-	APPEND6(BIN(regexp_match2), BIN(cont_op2), cd, res, op, op2);
+	APPEND5(BIN(regexp_match2), cd, res, op, op2);
 	slot.mode = TEMP;
 	slot.u.temp = res;
 	push_stack_slot(slot);

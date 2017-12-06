@@ -1,3 +1,130 @@
+2017-12-06  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def (temp2temp, temp_swap, temp_reverse, loc2temp): Use
+	tindex_t and get_temp_addr.
+	(temp2loc, val2temp, const2var, const_ld_val): Ditto
+	(const_cached_val_ld): Ditto.
+	(get_inline_cache, specialobj2var, special2var, global2var): Ditto
+	(ivar2var, cvar2var, iseq2var): Ditto
+	(cont_op1, cont_op2): Remove.
+	(length, size, empty_p, succ, not, unot): Use tindex_t and
+	get_temp_addr, remove cont insn, don't pass res.
+	(spec_not): Ditto, modify pc.
+	(plus, minus): Use tindex_t and get_temp_addr, remove cont insn,
+	don't pass res.
+	(mult, div, mod, ltlt, ind, eq, ne, lt, gt, le, ge, uplus): Ditto.
+	(uminus): Ditto.
+	(umult, udiv, umod, uind, ueq, une, ult, ugt, ule, uge):
+	Ditto.
+	(iplus, iminus, imult, idiv, imod, aind, hind, ieq, ine, ilt):
+	Ditto, modify pc.
+	(igt, ile, ige, fplus, fminus, fmult, fdiv, fmod, feq, fne, flt): Ditto.
+	(fgt, fle, fge): Ditto.
+	(plusi, plusf, minusi, minusf, multi, multf, divi, divf): Use
+	tindex_t and get_temp_addr, remove cont insn, don't pass res.
+	(modi, modf, ltlti, indi, inds, eqi, eqf, nei, nef, lti, ltf):
+	Ditto.
+	(gti): Ditto.
+	(gtf, lei, lef, gei, gef, uplusi, uplusf, uminusi, uminusf): Ditto.
+	(umulti, umultf, udivi, udivf, umodi, umodf, uindi, uinds, ueqi):
+	Ditto.
+	(ueqf, unei, unef, ulti, ultf, ugti, ugtf, ulei, ulef, ugei):
+	Ditto.
+	(ugef): Ditto.
+	(iplusi, iminusi, imulti, idivi, imodi, aindi, hindi, hinds):
+	Ditto, modify pc.
+	(ieqi): Ditto.
+	(inei, ilti, igti, ilei, igei, fplusf, fminusf, fmultf, fdivf):
+	Ditto.
+	(fmodf, feqf, fnef, fltf, fgtf, flef, fgef): Ditto.
+	(cont_btcmp, cont_bfcmp, bteq, bfeq, btne, bfne, btlt, bflt): Use
+	tindex_t and get_temp_addr, remove cont insn, don't pass res.
+	(btgt): Ditto.
+	(bfgt, btle, bfle, btge, bfge, ubteq, ubfeq, ubtne, ubfne, ubtlt):
+	Ditto.
+	(ubflt, ubtgt, ubfgt, ubtle, ubfle, ubtge, ubfge, ibteq, ibfeq):
+	Ditto.
+	(ibtne, ibfne, ibtlt, ibflt, ibtgt, ibfgt, ibtle, ibfle, ibtge):
+	Ditto.
+	(ibfge, fbteq, fbfeq, fbtne, fbfne, fbtlt, fbflt, fbtgt, fbfgt):
+	Ditto.
+	(fbtle, fbfle, fbtge, fbfge, bteqi, bfeqi, btnei, bfnei, btlti):
+	Ditto.
+	(bflti, btgti, bfgti, btlei, bflei, btgei, bfgei, bteqf, bfeqf):
+	Ditto.
+	(btnef, bfnef, btltf, bfltf, btgtf, bfgtf, btlef, bflef, btgef):
+	Ditto.
+	(bfgef, ubteqi, ubfeqi, ubtnei, ubfnei, ubtlti, ubflti, ubtgti):
+	Ditto.
+	(ubfgti, ubtlei, ubflei, ubtgei, ubfgei, ubteqf, ubfeqf, ubtnef):
+	Ditto.
+	(ubfnef, ubtltf, ubfltf, ubtgtf, ubfgtf, ubtlef, ubflef, ubtgef):
+	Ditto.
+	(ubfgef, ibteqi, ibfeqi, ibtnei, ibfnei, ibtlti, ibflti, ibtgti):
+	Ditto.
+	(ibfgti, ibtlei, ibflei, ibtgei, ibfgei, fbteqf, fbfeqf, fbtnef):
+	Ditto.
+	(fbfnef, fbtltf, fbfltf, fbtgtf, fbfgtf, fbtlef, fbflef, fbtgef):
+	Ditto.
+	(fbfgef, to_string, concat_strings, defined_p, val_defined_p):
+	Ditto.
+	(temp_ret, make_range, make_array, make_hash, new_array_min):
+	Ditto.
+	(new_array_max, clone_array, splat_array, concat_array): Ditto.
+	(check_match, bt_match, regexp_match1, regexp_match2, run_once):
+	Ditto.
+	* iseq.c (rb_insn_operand_intern): Process TS_INDEX_T.
+	* mjit.c (get_insn_fun_features): Remove cont_op1, cont_op2.
+	(translate_iseq_insn): Process TS_INDEX_T.
+	* rtl_exec.c (const_ld_val_f, const2var_f, const_cached_val_ld_f):
+	Remove res_ind.  Don't use var_assign.
+	(mjit_const_cached_val_ld, get_inline_cache_f): Ditto.
+	(mjit_get_inline_cache, specialobj2var_f, special2var_f): Ditto.
+	(global2var_f, ivar2var_f, mjit_ivar2var_no_check, mjit_ivar2var):
+	Ditto.
+	(cvar2var_f, iseq2var_f, ary_hash_op, ary_hash_call, ary_hash_op):
+	Ditto.
+	(succ, common_not, not, unot, spec_not_f, do_cmp, cmp_op): Ditto.
+	(cmp_call, ucmp_call, cmp_imm_op, cmp_fix_call, ucmp_fix_call):
+	Ditto.
+	(do_spec_fix_cmp, do_spec_flo_cmp, spec_fix_cmp_op): Ditto.
+	(spec_flo_cmp_op, spec_op2_fun, spec_fix_cmp_call): Ditto.
+	(spec_flo_cmp_call, spec_fix_cmp_imm_op, spec_flo_cmp_imm_op): Ditto.
+	(spec_fix_cmp_imm_call, spec_fix_cmp_imm_op, spec_flo_cmp_imm_op):
+	Ditto.
+	(do_bcmp, bcmp_op, bcmp_call, bcmp_imm_op, bcmp_fix_call): Ditto.
+	(ubcmp_fix_call, bcmp_flo_call, ubcmp_flo_call, spec_bcmp_finish):
+	Ditto.
+	(do_spec_fix_bcmp, do_spec_flo_bcmp, spec_fix_bcmp_op): Ditto.
+	(spec_flo_bcmp_op, spec_fix_bcmp_call, spec_flo_bcmp_call): Ditto.
+	(spec_fix_bcmp_imm_op, spec_flo_bcmp_imm_op): Ditto.
+	(spec_fix_imm_bcmp_call, spec_flo_imm_bcmp_call, do_arithm):
+	Ditto.
+	(arithm_op, arithm_call, arithm_imm_op, arithm_fix_call): Ditto.
+	(uarithm_fix_call, arithm_flo_call, uarithm_flo_call): Ditto.
+	(do_spec_fix_arithm, do_spec_flo_arithm, spec_fix_arithm_op):
+	Ditto.
+	(spec_flo_arithm_op, spec_fix_arithm_call, spec_flo_arithm_call):
+	Ditto.
+	(spec_fix_arithm_imm_op, spec_flo_arithm_imm_op): Ditto.
+	(spec_fix_arithm_imm_call, spec_flo_arithm_imm_call, do_ltlt):
+	Ditto.
+	(ltlt, common_ind, ind, uind, indi, uindi, inds, uinds, aind):
+	Ditto.
+	(hind, aindi, hindi, hinds, to_strin_f, defined_p_f): Ditto.
+	(val_defined_p_f, str_freeze_call_f, make_range_f, make_array_f):
+	Ditto.
+	(make_hash_f, common_new_array_min_max, new_array_min_f): Ditto.
+	(new_array_max_f, clone_array_f, splat_array_f, concat_array_f):
+	Ditto.
+	(check_match_f, bt_match_f, regexp_match1_f, regexp_match2_f):
+	Ditto.
+	(run_once_f): Ditto.
+	* rtl_gen.c (generate_unary_op, generate_bin_op): Remove cont ops.
+	(translate_stack_insn): Ditto.
+	* tool/instruction.rb (op2typesig): Process tindex_t.
+	* vm_exec.h (tindex_t): Define.
+
 2017-11-29  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* rtl_gen.c: New file.

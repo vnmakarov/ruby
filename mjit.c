@@ -1036,8 +1036,6 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(call_c_func):
 	/* C code for the following insns should be never
 	   generated.  */
-    case BIN(cont_op1):
-    case BIN(cont_op2):
     case BIN(cont_btcmp):
     case BIN(cont_bfcmp):
     default:
@@ -1506,6 +1504,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 		break;
 	    case TS_LINDEX:
 	    case TS_VINDEX:
+	    case TS_TINDEX:
 		fprintf(f, "%s", get_op_str(buf, op, tcp));
 		break;
 	    case TS_RINDEX:

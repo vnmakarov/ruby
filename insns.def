@@ -2205,6 +2205,9 @@ trace
                 temporary var.  The function implementing the insn get
                 the address of the local or temporary operand as an
                 argument
+     tindex_t - a negative offset on the stack. The function
+                implementing the insn get the address of the temporary
+                operand as an argument
      rindex_t - the same as above but the offset is passed to besides
                 the address
      sindex_t - a negative number which offset of the temporary on the
@@ -2254,7 +2257,7 @@ var_swap
 
 DEFINE_INSN
 temp2temp
-(vindex_t res, vindex_t op)
+(tindex_t res, tindex_t op)
 ()
 ()
 {
@@ -2263,7 +2266,7 @@ temp2temp
 
 DEFINE_INSN
 temp_swap
-(vindex_t op1, vindex_t op2)
+(tindex_t op1, tindex_t op2)
 ()
 ()
 {
@@ -2272,7 +2275,7 @@ temp_swap
 
 DEFINE_INSN
 temp_reverse
-(rb_num_t n, vindex_t start)
+(rb_num_t n, tindex_t start)
 ()
 ()
 {
@@ -2290,7 +2293,7 @@ loc2loc
 
 DEFINE_INSN
 loc2temp
-(vindex_t res, vindex_t op)
+(tindex_t res, vindex_t op)
 ()
 ()
 {
@@ -2299,7 +2302,7 @@ loc2temp
 
 DEFINE_INSN
 temp2loc
-(rindex_t res, vindex_t op)
+(rindex_t res, tindex_t op)
 ()
 ()
 {
@@ -2335,7 +2338,7 @@ val2loc
 
 DEFINE_INSN
 val2temp
-(vindex_t res, VALUE val)
+(tindex_t res, VALUE val)
 ()
 ()
 {
@@ -2353,38 +2356,38 @@ str2var
 
 DEFINE_INSN
 const2var
-(ID id, rindex_t res, vindex_t klass_op)
+(ID id, tindex_t res, vindex_t klass_op)
 ()
 ()
 {
-    const2var_f(th, reg_cfp, id, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, klass_op));
+    const2var_f(th, reg_cfp, id, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, klass_op));
 }
 
 DEFINE_INSN
 const_ld_val
-(ID id, rindex_t res, VALUE klass)
+(ID id, tindex_t res, VALUE klass)
 ()
 ()
 {
-    const_ld_val_f(th, reg_cfp, id, get_var_addr(reg_cfp, res), res, klass);
+    const_ld_val_f(th, reg_cfp, id, get_temp_addr(reg_cfp, res), klass);
 }
 
 DEFINE_INSN
 const_cached_val_ld
-(rindex_t res, VALUE klass, ID id, IC ic)
+(tindex_t res, VALUE klass, ID id, IC ic)
 ()
 ()
 {
-    const_cached_val_ld_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, klass, id, ic);
+    const_cached_val_ld_f(th, reg_cfp, get_temp_addr(reg_cfp, res), klass, id, ic);
 }
 
 DEFINE_INSN
 get_inline_cache
-(OFFSET dst, rindex_t res, IC ic)
+(OFFSET dst, tindex_t res, IC ic)
 ()
 ()
 {
-    if (get_inline_cache_f(reg_cfp, get_var_addr(reg_cfp, res), res, ic))
+    if (get_inline_cache_f(reg_cfp, get_temp_addr(reg_cfp, res), ic))
 	JUMP(dst);
 }
 
@@ -2399,20 +2402,20 @@ set_inline_cache
 
 DEFINE_INSN
 specialobj2var
-(rindex_t res, rb_num_t value_type)
+(tindex_t res, rb_num_t value_type)
 ()
 ()
 {
-    specialobj2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, value_type);
+    specialobj2var_f(reg_cfp, get_temp_addr(reg_cfp, res), value_type);
 }
 
 DEFINE_INSN
 special2var
-(rindex_t res, rb_num_t key, rb_num_t type)
+(tindex_t res, rb_num_t key, rb_num_t type)
 ()
 ()
 {
-    special2var_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, key, type);
+    special2var_f(th, reg_cfp, get_temp_addr(reg_cfp, res), key, type);
 }
 
 DEFINE_INSN
@@ -2426,38 +2429,38 @@ self2var
 
 DEFINE_INSN
 global2var
-(rindex_t res, GENTRY entry)
+(tindex_t res, GENTRY entry)
 ()
 ()
 {
-    global2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, entry);
+    global2var_f(reg_cfp, get_temp_addr(reg_cfp, res), entry);
 }
 
 DEFINE_INSN
 ivar2var
-(rindex_t res, ID id, IC ic)
+(tindex_t res, ID id, IC ic)
 ()
 ()
 {
-    ivar2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, id, ic);
+    ivar2var_f(reg_cfp, get_temp_addr(reg_cfp, res), id, ic);
 }
 
 DEFINE_INSN
 cvar2var
-(rindex_t res, ID id)
+(tindex_t res, ID id)
 ()
 ()
 {
-    cvar2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, id);
+    cvar2var_f(reg_cfp, get_temp_addr(reg_cfp, res), id);
 }
 
 DEFINE_INSN
 iseq2var
-(rindex_t res, ISEQ iseq)
+(tindex_t res, ISEQ iseq)
 ()
 ()
 {
-    iseq2var_f(reg_cfp, get_var_addr(reg_cfp, res), res, iseq);
+    iseq2var_f(reg_cfp, get_temp_addr(reg_cfp, res), iseq);
 }
 
 DEFINE_INSN
@@ -2554,41 +2557,13 @@ var2special
     var2special_f(th, reg_cfp, key, get_var_addr(reg_cfp, op));
 }
 
-/* The following insn is always a part of some bigger insn with one
-   operand.  It is executed if the bigger insn is actually implemented
-   by a send with usual dispatching.  The purpose of the insn
-   execution to move the result from the stack to the bigger insn
-   destination.  */
-DEFINE_INSN
-cont_op1
-(CALL_DATA cd, rindex_t res, _)
-()
-()
-{
-    var_assign(reg_cfp, get_var_addr(reg_cfp, res), res, *get_temp_addr(reg_cfp, cd->call_start));
-}
-
-/* The following insn is always a part of some bigger insn with two
-   operands.  See also the comment for cont_op1.  */
-DEFINE_INSN
-cont_op2
-(CALL_DATA cd, rindex_t res, _, _)
-()
-()
-{
-    var_assign(reg_cfp, get_var_addr(reg_cfp, res), res, *get_temp_addr(reg_cfp, cd->call_start));
-}
-
 DEFINE_INSN
 length size empty_p succ not unot
-(insn_t _, CALL_DATA cd, rindex_t res, vindex_t op)
+(CALL_DATA cd, tindex_t res, vindex_t op)
 ()
 ()
 {
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op))) {
-	/* We actuall started a new ISEQ execution.  Change pc to
-	   execute cont_op1 insn after the return. */
-	th->cfp[1].pc -= 4;
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op))) {
 	RESTORE_REGS();
 	set_default_sp(reg_cfp, reg_cfp->bp);
     }
@@ -2597,15 +2572,15 @@ length size empty_p succ not unot
 /* Speculative not insn:  */
 DEFINE_INSN
 spec_not
-(_, CALL_DATA cd, rindex_t res, vindex_t op)
+(CALL_DATA cd, tindex_t res, vindex_t op)
 ()
 ()
 {
     enum ruby_vminsn_type new_insn;
     
-    if (spec_not_f(reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op), &new_insn)) {
+    if (spec_not_f(reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op), &new_insn)) {
 	/* Speculation was wrong.  Change and re-execute the insn.  */
-	ADD_PC(-5);
+	ADD_PC(-4);
 	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }
@@ -2613,14 +2588,11 @@ spec_not
 /* General and unchanging insns:  */
 DEFINE_INSN
 plus minus mult div mod ltlt ind eq ne lt gt le ge uplus uminus umult udiv umod uind ueq une ult ugt ule uge
-(insn_t _, CALL_DATA cd, rindex_t res, vindex_t op1, vindex_t op2)
+(CALL_DATA cd, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2))) {
-	/* We actuall started a new ISEQ execution.  Change pc to
-	   execute cont_op2 insn after the return. */
-	th->cfp[1].pc -= 5;
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2))) {
 	RESTORE_REGS();
 	set_default_sp(reg_cfp, reg_cfp->bp);
     }
@@ -2629,16 +2601,16 @@ plus minus mult div mod ltlt ind eq ne lt gt le ge uplus uminus umult udiv umod 
 /* Speculative insns:  */
 DEFINE_INSN
 iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige fplus fminus fmult fdiv fmod feq fne flt fgt fle fge
-(_, _, rindex_t res, vindex_t op1, vindex_t op2)
+(_, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
     enum ruby_vminsn_type new_insn;
     
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res,
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_temp_addr(reg_cfp, res),
 					 get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &new_insn)) {
 	/* Speculation was wrong.  Change and re-execute the insn.  */
-	ADD_PC(-6);
+	ADD_PC(-5);
 	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }
@@ -2646,12 +2618,11 @@ iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige fplus fminus fmul
 /* General immediate insns:  */
 DEFINE_INSN
 plusi plusf minusi minusf multi multf divi divf modi modf ltlti indi inds eqi eqf nei nef lti ltf gti gtf lei lef gei gef
-(insn_t _, CALL_DATA cd, rindex_t res, vindex_t op1, VALUE imm)
+(CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm)) {
-	th->cfp[1].pc -= 5; /* Execute cont_op2 after */
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
 	RESTORE_REGS();
         set_default_sp(reg_cfp, reg_cfp->bp);
     }
@@ -2660,12 +2631,11 @@ plusi plusf minusi minusf multi multf divi divf modi modf ltlti indi inds eqi eq
 /* Unchanging immediate insns:  */
 DEFINE_INSN
 uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf uindi uinds ueqi ueqf unei unef ulti ultf ugti ugtf ulei ulef ugei ugef
-(insn_t _, CALL_DATA cd, rindex_t res, vindex_t op1, VALUE imm)
+(CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm)) {
-	th->cfp[1].pc -= 5; /* Execute cont_op2 after */
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
 	RESTORE_REGS();
         set_default_sp(reg_cfp, reg_cfp->bp);
     }
@@ -2674,15 +2644,15 @@ uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf uindi uinds 
 /* Speculative immediate insns:  */
 DEFINE_INSN
 iplusi iminusi imulti idivi imodi aindi hindi hinds ieqi inei ilti igti ilei igei fplusf fminusf fmultf fdivf fmodf feqf fnef fltf fgtf flef fgef
-(_, _, rindex_t res, vindex_t op1, VALUE imm)
+(_, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
     enum ruby_vminsn_type new_insn;
     
-    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &new_insn)) {
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm, &new_insn)) {
 	/* Change and re-execute the insn.  */
-	ADD_PC(-6);
+	ADD_PC(-5);
 	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }
@@ -2767,13 +2737,12 @@ bf bt bnil
 }
 DEFINE_INSN
 cont_btcmp
-(OFFSET dst, CALL_DATA cd, rindex_t res, _, _)
+(OFFSET dst, CALL_DATA cd, tindex_t res, _, _)
 ()
 ()
 {
-    VALUE val = *get_temp_addr(reg_cfp, cd->call_start);
+    VALUE val = *get_temp_addr(reg_cfp, res);
 
-    var_assign(reg_cfp, get_var_addr(reg_cfp, res), res, val);
     if (RTEST(val)) {
 	RUBY_VM_CHECK_INTS(th);
 	JUMP(dst);
@@ -2782,13 +2751,12 @@ cont_btcmp
 
 DEFINE_INSN
 cont_bfcmp
-(OFFSET dst, CALL_DATA cd, rindex_t res, _, _)
+(OFFSET dst, CALL_DATA cd, tindex_t res, _, _)
 ()
 ()
 {
-    VALUE val = *get_temp_addr(reg_cfp, cd->call_start);
+    VALUE val = *get_temp_addr(reg_cfp, res);
 
-    var_assign(reg_cfp, get_var_addr(reg_cfp, res), res, val);
     if (! RTEST(val)) {
 	RUBY_VM_CHECK_INTS(th);
 	JUMP(dst);
@@ -2798,12 +2766,12 @@ cont_bfcmp
 /* The following insns are combined insns of (eq,ne,lt,gt,le,ge)[if] and (bt|bf):  */
 DEFINE_INSN
 bteq bfeq btne bfne btlt bflt btgt bfgt btle bfle btge bfge
-(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, vindex_t op1, vindex_t op2)
+(insn_t _, OFFSET dst, CALL_DATA cd, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
     VALUE val;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
 
     if (val == Qundef) {
 	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
@@ -2817,12 +2785,12 @@ bteq bfeq btne bfne btlt bflt btgt bfgt btle bfle btge bfge
 /* Unchanging insns:  */
 DEFINE_INSN
 ubteq ubfeq ubtne ubfne ubtlt ubflt ubtgt ubfgt ubtle ubfle ubtge ubfge
-(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, vindex_t op1, vindex_t op2)
+(insn_t _, OFFSET dst, CALL_DATA cd, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
     VALUE val;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val);
 
     if (val == Qundef) {
 	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
@@ -2836,13 +2804,13 @@ ubteq ubfeq ubtne ubfne ubtlt ubflt ubtgt ubfgt ubtle ubfle ubtge ubfge
 /* Speculative integer insns:  */
 DEFINE_INSN
 ibteq ibfeq ibtne ibfne ibtlt ibflt ibtgt ibfgt ibtle ibfle ibtge ibfge
-(_, OFFSET dst, _, rindex_t res, vindex_t op1, vindex_t op2)
+(_, OFFSET dst, _, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
     VALUE val;
     enum ruby_vminsn_type new_insn;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res,
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_temp_addr(reg_cfp, res),
 						 get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val, &new_insn);
 
     if (val == Qundef) {
@@ -2857,13 +2825,13 @@ ibteq ibfeq ibtne ibfne ibtlt ibflt ibtgt ibfgt ibtle ibfle ibtge ibfge
 /* Speculative floating point insns:  */
 DEFINE_INSN
 fbteq fbfeq fbtne fbfne fbtlt fbflt fbtgt fbfgt fbtle fbfle fbtge fbfge
-(_, OFFSET dst, _, rindex_t res, vindex_t op1, vindex_t op2)
+(_, OFFSET dst, _, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
     VALUE val;
     enum ruby_vminsn_type new_insn;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res,
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_temp_addr(reg_cfp, res),
 						 get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &val, &new_insn);
 
     if (val == Qundef) {
@@ -2877,12 +2845,12 @@ fbteq fbfeq fbtne fbfne fbtlt fbflt fbtgt fbfgt fbtle fbfle fbtge fbfge
 
 DEFINE_INSN
 bteqi bfeqi btnei bfnei btlti bflti btgti bfgti btlei bflei btgei bfgei bteqf bfeqf btnef bfnef btltf bfltf btgtf bfgtf btlef bflef btgef bfgef
-(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, vindex_t op1, VALUE imm)
+(insn_t _, OFFSET dst, CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
     VALUE val;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val);
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm, &val);
 
     if (val == Qundef) {
 	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
@@ -2895,12 +2863,12 @@ bteqi bfeqi btnei bfnei btlti bflti btgti bfgti btlei bflei btgei bfgei bteqf bf
 /* Unchanging immediate insns:  */
 DEFINE_INSN
 ubteqi ubfeqi ubtnei ubfnei ubtlti ubflti ubtgti ubfgti ubtlei ubflei ubtgei ubfgei ubteqf ubfeqf ubtnef ubfnef ubtltf ubfltf ubtgtf ubfgtf ubtlef ubflef ubtgef ubfgef
-(insn_t _, OFFSET dst, CALL_DATA cd, rindex_t res, vindex_t op1, VALUE imm)
+(insn_t _, OFFSET dst, CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
     VALUE val;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val);
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm, &val);
 
     if (val == Qundef) {
 	th->cfp[1].pc -= 6; /* Execute cont_btcmp/cont_bfcmp after */
@@ -2913,13 +2881,13 @@ ubteqi ubfeqi ubtnei ubfnei ubtlti ubflti ubtgti ubfgti ubtlei ubflei ubtgei ubf
 /* Speculative immediate integer insns:  */
 DEFINE_INSN
 ibteqi ibfeqi ibtnei ibfnei ibtlti ibflti ibtgti ibfgti ibtlei ibflei ibtgei ibfgei
-(_, OFFSET dst, _, rindex_t res, vindex_t op1, VALUE imm)
+(_, OFFSET dst, _, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
     VALUE val;
     enum ruby_vminsn_type new_insn;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val, &new_insn);
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm, &val, &new_insn);
 
     if (val == Qundef) {
 	/* Change and re-execute the insn.  */
@@ -2933,13 +2901,13 @@ ibteqi ibfeqi ibtnei ibfnei ibtlti ibflti ibtgti ibfgti ibtlei ibflei ibtgei ibf
 /* Speculative immediate floating point insns:  */
 DEFINE_INSN
 fbteqf fbfeqf fbtnef fbfnef fbtltf fbfltf fbtgtf fbfgtf fbtlef fbflef fbtgef fbfgef
-(_, OFFSET dst, _, rindex_t res, vindex_t op1, VALUE imm)
+(_, OFFSET dst, _, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
 {
     VALUE val;
     enum ruby_vminsn_type new_insn;
-    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), imm, &val, &new_insn);
+    int jmp_p = RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm, &val, &new_insn);
 
     if (val == Qundef) {
 	/* Change and re-execute the insn.  */
@@ -2961,16 +2929,16 @@ freeze_string
 
 DEFINE_INSN
 to_string
-(rindex_t res, vindex_t op)
+(tindex_t res, vindex_t op)
 ()
 ()
 {
-    to_string_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op));
+    to_string_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op));
 }
 
 DEFINE_INSN
 concat_strings
-(vindex_t start, rb_num_t cnt)
+(tindex_t start, rb_num_t cnt)
 ()
 ()
 {
@@ -2988,34 +2956,34 @@ to_regexp
 
 DEFINE_INSN
 defined_p
-(rindex_t res, vindex_t op, rb_num_t op_type, VALUE obj, VALUE needstr)
+(tindex_t res, vindex_t op, rb_num_t op_type, VALUE obj, VALUE needstr)
 ()
 ()
 {
-    defined_p_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op), op_type, obj, needstr);
+    defined_p_f(th, reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op), op_type, obj, needstr);
 }
 
 DEFINE_INSN
 val_defined_p
-(rindex_t res, VALUE v, rb_num_t op_type, VALUE obj, VALUE needstr)
+(tindex_t res, VALUE v, rb_num_t op_type, VALUE obj, VALUE needstr)
 ()
 ()
 {
-    val_defined_p_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, v, op_type, obj, needstr);
+    val_defined_p_f(th, reg_cfp, get_temp_addr(reg_cfp, res), v, op_type, obj, needstr);
 }
 
 DEFINE_INSN
 str_freeze_call
-(rindex_t res, VALUE str)
+(tindex_t res, VALUE str)
 ()
 ()
 {
-    str_freeze_call_f(reg_cfp, get_var_addr(reg_cfp, res), res, str);
+    str_freeze_call_f(reg_cfp, get_temp_addr(reg_cfp, res), str);
 }
 
 DEFINE_INSN
 temp_ret
-(vindex_t op, rb_num_t nf)
+(tindex_t op, rb_num_t nf)
 ()
 ()
 {
@@ -3150,29 +3118,29 @@ call_super
 
 DEFINE_INSN
 make_range
-(rindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
+(tindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
 ()
 ()
 {
-    make_range_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag);
+    make_range_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag);
 }
 
 DEFINE_INSN
 make_array make_hash new_array_min new_array_max
-(rindex_t res, sindex_t start, rb_num_t num)
+(tindex_t res, sindex_t start, rb_num_t num)
 ()
 ()
 {
-    RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_var_addr(reg_cfp, res), res, start, num);
+    RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, get_temp_addr(reg_cfp, res), start, num);
 }
 
 DEFINE_INSN
 clone_array
-(rindex_t res, VALUE arr)
+(tindex_t res, VALUE arr)
 ()
 ()
 {
-    clone_array_f(reg_cfp, get_var_addr(reg_cfp, res), res, arr);
+    clone_array_f(reg_cfp, get_temp_addr(reg_cfp, res), arr);
 }
 
 /* op1 is always in a temporary variable and it is a location of the
@@ -3188,21 +3156,21 @@ spread_array
 
 DEFINE_INSN
 splat_array
-(rindex_t res, vindex_t arr, VALUE flag)
+(tindex_t res, vindex_t arr, VALUE flag)
 ()
 ()
 {
-    splat_array_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, arr), flag);
+    splat_array_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, arr), flag);
 }
 
 
 DEFINE_INSN
 concat_array
-(rindex_t res, vindex_t op1, vindex_t op2)
+(tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
 {
-    concat_array_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2));
+    concat_array_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2));
 }
 
 DEFINE_INSN
@@ -3217,20 +3185,20 @@ bkw
 
 DEFINE_INSN
 check_match
-(rindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
+(tindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
 ()
 ()
 {
-    check_match_f(reg_cfp, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag);
+    check_match_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag);
 }
 
 DEFINE_INSN
 bt_match
-(OFFSET dst, rindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
+(OFFSET dst, tindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
 ()
 ()
 {
-    if (bt_match_f(th, reg_cfp, get_temp_addr(reg_cfp, res), res, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag))
+    if (bt_match_f(th, reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag))
 	JUMP(dst);
 }
 
@@ -3248,20 +3216,20 @@ case_dispatch
 
 DEFINE_INSN
 regexp_match1
-(rindex_t res, VALUE regex, vindex_t str_op)
+(tindex_t res, VALUE regex, vindex_t str_op)
 ()
 ()
 {
-    regexp_match1_f(reg_cfp, get_var_addr(reg_cfp, res), res, regex, get_var_addr(reg_cfp, str_op));
+    regexp_match1_f(reg_cfp, get_temp_addr(reg_cfp, res), regex, get_var_addr(reg_cfp, str_op));
 }
 
 DEFINE_INSN
 regexp_match2
-(insn_t _, CALL_DATA cd, rindex_t res, vindex_t str_op, vindex_t regex_op)
+(CALL_DATA cd, tindex_t res, vindex_t str_op, vindex_t regex_op)
 ()
 ()
 {
-    if (regexp_match2_f(th, reg_cfp, cd, get_var_addr(reg_cfp, res), res, get_var_addr(reg_cfp, str_op), get_var_addr(reg_cfp, regex_op))) {
+    if (regexp_match2_f(th, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, str_op), get_var_addr(reg_cfp, regex_op))) {
 	RESTORE_REGS();
 	set_default_sp(reg_cfp, reg_cfp->bp);
     }
@@ -3302,9 +3270,9 @@ define_class
 
 DEFINE_INSN
 run_once
-(rindex_t res, ISEQ iseq, IC ic)
+(tindex_t res, ISEQ iseq, IC ic)
 ()
 ()
 {
-    run_once_f(th, reg_cfp, get_var_addr(reg_cfp, res), res, iseq, ic);
+    run_once_f(th, reg_cfp, get_temp_addr(reg_cfp, res), iseq, ic);
 }

@@ -979,6 +979,8 @@ class RubyVM
         "TS_LINDEX"
       when /^vindex_t/
         "TS_VINDEX"
+      when /^tindex_t/
+        "TS_TINDEX"
       when /^sindex_t/
         "TS_SINDEX"
       when /^rindex_t/
@@ -1018,6 +1020,7 @@ class RubyVM
       'TS_INSN'      => 'A',
       'TS_LINDEX'    => 'L',
       'TS_VINDEX'    => 'v',
+      'TS_TINDEX'    => 't',
       'TS_SINDEX'    => 's',
       'TS_RINDEX'    => 'R',
       'TS_VALUE'     => 'V',

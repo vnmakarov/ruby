@@ -14,6 +14,7 @@
 
 typedef enum ruby_vminsn_type insn_t;
 typedef long OFFSET;
+typedef vindex_t tindex_t;
 typedef vindex_t sindex_t;
 typedef vindex_t rindex_t;
 typedef VALUE GENTRY;
@@ -29,7 +30,7 @@ typedef rb_iseq_t *ISEQ;
 #if VMDEBUG > 0
 #define debugs printf
 #define DEBUG_ENTER_INSN(insn) \
-  if (getenv("MRI_INSN_TRACE")) (GET_CFP()->sp+=80,rb_vmdebug_debug_print_pre(th, GET_CFP(),GET_PC()),GET_CFP()->sp-=80)
+  if (getenv("MRI_INSN_TRACE")) (GET_CFP()->sp+=80,fprintf(stderr, "%lu,%s\n", GET_CFP()->pc, insn)/*rb_vmdebug_debug_print_pre(th, GET_CFP(),GET_PC())*/,GET_CFP()->sp-=80)
 
 #if OPT_STACK_CACHING
 #define SC_REGS() , reg_a, reg_b
