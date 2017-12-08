@@ -1,5 +1,10 @@
 2017-12-08  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* mjit.c (translate_iseq_insn): Remove output of nf for {temp,
+	loc, val}_ret.
+
+2017-12-08  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* insns.def (temp_ret, loc_ret, val_ret): Remove nf.
 	* rtl_exec.c (ret_trace): Remove.
 	(temp_ret_f, loc_ret_f, val_ret_f): Remove nf.

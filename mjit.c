@@ -1323,16 +1323,16 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	    break;
 	}
 	case BIN(temp_ret):
-	    fprintf(f, "  %s_f(th, cfp, %s, %"PRIuVALUE ", &val);\n  return val;\n",
-		    iname, get_op_str(buf, code[pos + 1], tcp), code[pos + 2]);
+	    fprintf(f, "  %s_f(th, cfp, %s, &val);\n  return val;\n",
+		    iname, get_op_str(buf, code[pos + 1], tcp));
 	    break;
 	case BIN(loc_ret):
-	    fprintf(f, "  %s_f(th, cfp, %s, %"PRIuVALUE ", &val);\n  return val;\n",
-		    iname, get_op_str(buf, code[pos + 1], tcp), code[pos + 2]);
+	    fprintf(f, "  %s_f(th, cfp, %s, &val);\n  return val;\n",
+		    iname, get_op_str(buf, code[pos + 1], tcp));
 	    break;
 	case BIN(val_ret):
-	    fprintf(f, "  %s_f(th, cfp, %"PRIuVALUE ", %"PRIuVALUE ", &val);\n  return val;\n",
-		    iname, code[pos + 1], code[pos + 2]);
+	    fprintf(f, "  %s_f(th, cfp, %"PRIuVALUE ", &val);\n  return val;\n",
+		    iname, code[pos + 1]);
 	    break;
 	case BIN(raise_except):
 	    fprintf(f, "  val = %s_f(th, cfp, %s, %"PRIuVALUE ");\n",
