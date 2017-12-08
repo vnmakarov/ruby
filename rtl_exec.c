@@ -3669,28 +3669,13 @@ call_dtrace_hook(rb_thread_t *th) {
 #endif
 }
 
-/* Trace an insn returning RET_VAL from frame CFP of thread TH using
-   even FLAG.  */
-static do_inline void
-ret_trace(rb_thread_t *th, rb_control_frame_t *cfp, rb_event_flag_t flag, VALUE ret_val)
-{
-    rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
-
-    if (! mjit_trace_p)
-	return;
-    call_dtrace_hook(th);
-    EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
-		    (flag & (RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN)) ? ret_val : Qundef);
-}
-
 /* Return value V from frame CFP of thread TH.  Pass the value through
-   VAL.  Trace event NF.  Return a flag to finish vm_exec_core.  */
+   VAL.  Return a flag to finish vm_exec_core.  */
 static do_inline int
-val_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE v, rb_num_t nf, VALUE *val) {
+val_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE v, VALUE *val) {
     int ret_p;
     
     cfp->sp = RTL_GET_BP(cfp) + 1;
-    ret_trace(th, cfp, (rb_event_flag_t) nf, v);
 
     RUBY_VM_CHECK_INTS(th);
 
@@ -3718,18 +3703,18 @@ val_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE v, rb_num_t nf, VALUE 
 /* As val_ret_f but return value is in a temporary variable with
    location RET_OP.  */
 static do_inline int
-temp_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *ret_op, rb_num_t nf, VALUE *val) {
+temp_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *ret_op, VALUE *val) {
     VALUE v = *ret_op;
 
-    return val_ret_f(th, cfp, v, nf, val);
+    return val_ret_f(th, cfp, v, val);
 }
 
 /* As temp_ret_f but the return value is a local variable.  */
 static do_inline int
-loc_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *ret_op, rb_num_t nf, VALUE *val) {
+loc_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *ret_op, VALUE *val) {
     VALUE v = *ret_op;
 
-    return val_ret_f(th, cfp, v, nf, val);
+    return val_ret_f(th, cfp, v, val);
 }
 
 /* Finish a return by putting VAL on the stack top and restoring the

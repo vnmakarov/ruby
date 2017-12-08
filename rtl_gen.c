@@ -880,6 +880,11 @@ generate_call(rb_iseq_t *iseq, const VALUE *args, VALUE block) {
 	    APPEND3(BIN(simple_call_self), cd, cd->call_start);
 	else
 	    APPEND4(BIN(call_self), cd, cd->call_start, block);
+    } else if (slot.mode == LOC) {
+	if (block == 0 && ! stack_block_p)
+	    APPEND4(BIN(simple_call_recv), cd, cd->call_start, slot.u.loc);
+	else
+	    APPEND5(BIN(call_recv), cd, cd->call_start, block, slot.u.loc);
     } else {
 	to_temp(&slot, cd->call_start, FALSE);
 	if (block == 0 && ! stack_block_p)
@@ -1191,28 +1196,26 @@ adjust_stack(size_t pos) {
 /* Generate an RTL ret insn from stack insn leave.  */
 static void
 generate_leave(void) {
-    /* ??? Trace field */
     stack_slot slot;
-    rb_num_t nf = 0;
     
     slot = pop_stack_slot();
     if (slot.mode == SELF) {
 	vindex_t op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	
 	APPEND2(BIN(self2var), op);
-	APPEND3(BIN(temp_ret), op, nf);
+	APPEND2(BIN(temp_ret), op);
     } else if (slot.mode == VAL) {
-	APPEND3(BIN(val_ret), slot.u.val, nf);
+	APPEND2(BIN(val_ret), slot.u.val);
     } else if (slot.mode == STR) {
 	vindex_t op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	
 	APPEND3(BIN(str2var), op, slot.u.str);
-	APPEND3(BIN(temp_ret), op, nf);
+	APPEND2(BIN(temp_ret), op);
     } else if (slot.mode == TEMP) {
-	APPEND3(BIN(temp_ret), slot.u.temp, nf);
+	APPEND2(BIN(temp_ret), slot.u.temp);
     } else {
 	assert(slot.mode == LOC);
-	APPEND3(BIN(loc_ret), slot.u.loc, nf);
+	APPEND2(BIN(loc_ret), slot.u.loc);
     }
 }
 

@@ -1,3 +1,11 @@
+2017-12-08  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def (temp_ret, loc_ret, val_ret): Remove nf.
+	* rtl_exec.c (ret_trace): Remove.
+	(temp_ret_f, loc_ret_f, val_ret_f): Remove nf.
+	* rtl_gen.c (generate_call): Generate [simple_]call_recv.
+	(generate_leave): Remove nf.
+
 2017-12-06  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def (temp2temp, temp_swap, temp_reverse, loc2temp): Use

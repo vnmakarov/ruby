@@ -2983,13 +2983,13 @@ str_freeze_call
 
 DEFINE_INSN
 temp_ret
-(tindex_t op, rb_num_t nf)
+(tindex_t op)
 ()
 ()
 {
     VALUE val;
 
-    if (temp_ret_f(th, reg_cfp, get_temp_addr(reg_cfp, op), nf, &val))
+    if (temp_ret_f(th, reg_cfp, get_temp_addr(reg_cfp, op), &val))
 	return val;
     RESTORE_REGS();
     finish_ret(reg_cfp, val);
@@ -2997,13 +2997,13 @@ temp_ret
 
 DEFINE_INSN
 loc_ret
-(vindex_t op, rb_num_t nf)
+(vindex_t op)
 ()
 ()
 {
     VALUE val;
 
-    if (loc_ret_f(th, reg_cfp, get_loc_addr(reg_cfp, op), nf, &val))
+    if (loc_ret_f(th, reg_cfp, get_loc_addr(reg_cfp, op), &val))
 	return val;
     RESTORE_REGS();
     finish_ret(reg_cfp, val);
@@ -3011,11 +3011,11 @@ loc_ret
 
 DEFINE_INSN
 val_ret
-(VALUE val, rb_num_t nf)
+(VALUE val)
 ()
 ()
 {
-    if (val_ret_f(th, reg_cfp, val, nf, &val))
+    if (val_ret_f(th, reg_cfp, val, &val))
 	return val;
     RESTORE_REGS();
     finish_ret(reg_cfp, val);
