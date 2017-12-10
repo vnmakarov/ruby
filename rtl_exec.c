@@ -1128,6 +1128,7 @@ cmp_op(rb_thread_t *th,
 				 rb_control_frame_t *cfp, \
 				 CALL_DATA cd,		\
 				 VALUE *res, VALUE *op1, VALUE *op2)
+
 /* A function call implementing a comparison insn (which can change
    the insn to speculative one) with operation BOP and suffix SUFF for
    fast execution path functions. */
@@ -1163,6 +1164,42 @@ op2_fun(ult) {return ucmp_call(lt, BOP_LT);}
 op2_fun(ugt) {return ucmp_call(gt, BOP_GT);}
 op2_fun(ule) {return ucmp_call(le, BOP_LE);}
 op2_fun(uge) {return ucmp_call(ge, BOP_GE);}
+
+/* A function call implementing a simple (stack) comparison insn
+   (which can change the insn to speculative one) with operation BOP
+   and suffix SUFF for fast execution path functions. */
+#define scmp_call(suff, bop) cmp_op(th, cfp, cd,				\
+				    res, op1, op2, bop,			\
+				    fix_num_ ## suff, float_num_ ## suff, \
+				    double_num_ ## suff,		\
+				    3, BIN(si ## suff), BIN(sf ## suff))
+
+/* Definitions of the functions implementing simple comparison insns
+   which can be transformed into a speculative variant.  */
+op2_fun(seq) {return scmp_call(eq, BOP_EQ);}
+op2_fun(sne) {return scmp_call(ne, BOP_NEQ);}
+op2_fun(slt) {return scmp_call(lt, BOP_LT);}
+op2_fun(sgt) {return scmp_call(gt, BOP_GT);}
+op2_fun(sle) {return scmp_call(le, BOP_LE);}
+op2_fun(sge) {return scmp_call(ge, BOP_GE);}
+
+/* A function call implementing a simple comparison insn (which can
+   not change the insn) with operation BOP and suffix SUFF for fast
+   path functions. */
+#define sucmp_call(suff, bop) cmp_op(th, cfp, cd, \
+				     res, op1, op2, bop,		\
+				     fix_num_ ## suff, float_num_ ## suff, \
+				     double_num_ ## suff,		\
+				     0, 0, 0)
+
+/* Definitions of the functions implementing simple unchanging
+   comparison insns.  */
+op2_fun(sueq) {return sucmp_call(eq, BOP_EQ);}
+op2_fun(sune) {return sucmp_call(ne, BOP_NEQ);}
+op2_fun(sult) {return sucmp_call(lt, BOP_LT);}
+op2_fun(sugt) {return sucmp_call(gt, BOP_GT);}
+op2_fun(sule) {return sucmp_call(le, BOP_LE);}
+op2_fun(suge) {return sucmp_call(ge, BOP_GE);}
 
 /* It is analogous to cmp_op with known value of the 2nd operand
    (IMM).  */
@@ -1384,6 +1421,38 @@ spec_op2_fun(flt) {return spec_flo_cmp_call(lt, BOP_LT);}
 spec_op2_fun(fgt) {return spec_flo_cmp_call(gt, BOP_GT);}
 spec_op2_fun(fle) {return spec_flo_cmp_call(le, BOP_LE);}
 spec_op2_fun(fge) {return spec_flo_cmp_call(ge, BOP_GE);}
+
+/* A function call implementing a speculative simple (stack) fix num
+   comparison insn with operation BOP and suffix SUFF for fast path
+   execution function. */
+#define spec_fix_scmp_call(suff, bop) spec_fix_cmp_op(cfp,		\
+						      res, op1, op2, bop, \
+						      fix_num_ ## suff, \
+						      BIN(su ## suff), new_insn)
+
+/* Definitions of the functions implementing speculative simple fix
+   num comparison insns.  */
+spec_op2_fun(sieq) {return spec_fix_scmp_call(eq, BOP_EQ);}
+spec_op2_fun(sine) {return spec_fix_scmp_call(ne, BOP_NEQ);}
+spec_op2_fun(silt) {return spec_fix_scmp_call(lt, BOP_LT);}
+spec_op2_fun(sigt) {return spec_fix_scmp_call(gt, BOP_GT);}
+spec_op2_fun(sile) {return spec_fix_scmp_call(le, BOP_LE);}
+spec_op2_fun(sige) {return spec_fix_scmp_call(ge, BOP_GE);}
+
+/* As spec_fix_scmp_call but a flo num variant. */
+#define spec_flo_scmp_call(suff, bop) spec_flo_cmp_op(cfp,		\
+						      res, op1, op2, bop, \
+						      float_num_ ## suff, \
+						      BIN(su ## suff), new_insn)
+
+/* Definitions of the functions implementing speculative simple flo num
+   comparison insns.  */
+spec_op2_fun(sfeq) {return spec_flo_scmp_call(eq, BOP_EQ);}
+spec_op2_fun(sfne) {return spec_flo_scmp_call(ne, BOP_NEQ);}
+spec_op2_fun(sflt) {return spec_flo_scmp_call(lt, BOP_LT);}
+spec_op2_fun(sfgt) {return spec_flo_scmp_call(gt, BOP_GT);}
+spec_op2_fun(sfle) {return spec_flo_scmp_call(le, BOP_LE);}
+spec_op2_fun(sfge) {return spec_flo_scmp_call(ge, BOP_GE);}
 
 /* It is basically do_spec_fix_cmp when fix num IMM (immediate
    operand).  */
@@ -2026,7 +2095,7 @@ arithmf(double_num_mod) {return float_num_mult(op1, op2);}
    float, and doubles given correspondingly by functions FIX_NUM_OP,
    FLOAT_NUM_OP, and DOUBLE_NUM_OP.  For the slow paths use call data
    CD.  If OP2_FIXNUM_P or OP2_FLONUM_P is true, it means that value
-   OP2 is of the corresponding type.  If CHANGE_P is non-zero and we
+   OP2 is of the corresponding type.  If OFFSET is non-zero and we
    use a fast path, change the current insn to the corresponding
    speculative insn FIX_INSN_ID or FLO_INSN_ID.  Return non zero if we
    started a new ISEQ execution (we need to update vm_exec_core regs
@@ -2040,7 +2109,7 @@ do_arithm(rb_thread_t *th,
 	  VALUE (*float_num_op)(VALUE, VALUE),
 	  VALUE (*double_num_op)(VALUE, VALUE),
 	  int op2_fixnum_p, int op2_flonum_p,
-	  int change_p, int fix_insn_id, int flo_insn_id)
+	  int offset, int fix_insn_id, int flo_insn_id)
 {
     VALUE val;
 
@@ -2050,16 +2119,16 @@ do_arithm(rb_thread_t *th,
 	val = fix_num_op(*op1, op2);
 	if (val != Qundef || (bop != BOP_DIV && bop != BOP_MOD)) {
 	    *res = val;
-	    if (change_p)
-		vm_change_insn(cfp->iseq, cfp->pc - 5, fix_insn_id);
+	    if (offset != 0)
+		vm_change_insn(cfp->iseq, cfp->pc - offset, fix_insn_id);
 	    return 0;
 	}
     } else if ((op2_flonum_p && FLONUM_P(*op1)
 		|| (! op2_fixnum_p && ! op2_flonum_p && FLONUM_2_P(*op1, op2)))
 	       && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)) {
 	*res = float_num_op(*op1, op2);
-	if (change_p)
-	    vm_change_insn(cfp->iseq, cfp->pc - 5, flo_insn_id);
+	if (offset != 0)
+	    vm_change_insn(cfp->iseq, cfp->pc - offset, flo_insn_id);
 	return 0;
     }
     else if (! op2_fixnum_p && ! op2_flonum_p
@@ -2092,13 +2161,13 @@ arithm_op(rb_thread_t *th, rb_control_frame_t *cfp,
 	  VALUE (*fix_num_op)(VALUE, VALUE),
 	  VALUE (*float_num_op)(VALUE, VALUE),
 	  VALUE (*double_num_op)(VALUE, VALUE),
-	  int change_p, int fix_insn_id, int flo_insn_id)
+	  int offset, int fix_insn_id, int flo_insn_id)
 {
     VALUE *src1 = op1, src2 = *op2;
 
     return do_arithm(th, cfp, cd, res, src1, src2,
 		     bop, fix_num_op, float_num_op, double_num_op, FALSE, FALSE,
-		     change_p, fix_insn_id, flo_insn_id);
+		     offset, fix_insn_id, flo_insn_id);
 }
 
 /* A function call implementing an arithmetic operation (which can
@@ -2108,7 +2177,7 @@ arithm_op(rb_thread_t *th, rb_control_frame_t *cfp,
 					 res, op1, op2, bop,	\
 					 fix_num_ ## suff, float_num_ ## suff, \
 					 double_num_ ## suff,		\
-					 TRUE, BIN(i ## suff), BIN(f ## suff))
+					 5, BIN(i ## suff), BIN(f ## suff))
 
 /* Definitions of the functions implementing arithmetic insns which
    can be transformed into a speculative variant.  */
@@ -2124,7 +2193,7 @@ op2_fun(mod) {return arithm_call(mod, BOP_MOD);}
 #define uarithm_call(suff, bop) arithm_op(th, cfp, cd, \
 					  res, op1, op2, bop, \
 					  fix_num_ ## suff, float_num_ ## suff, \
-					  double_num_ ## suff, FALSE, 0, 0)
+					  double_num_ ## suff, 0, 0, 0)
 
 /* Definitions of the functions implementing unchanging arithmetic
    insns.  */
@@ -2133,6 +2202,39 @@ op2_fun(uminus) {return uarithm_call(minus, BOP_MINUS);}
 op2_fun(umult) {return uarithm_call(mult, BOP_MULT);}
 op2_fun(udiv) {return uarithm_call(div, BOP_DIV);}
 op2_fun(umod) {return uarithm_call(mod, BOP_MOD);}
+
+/* A function call implementing a simple (stack) arithmetic operation
+   (which can change the insn to speculative one) with operation BOP
+   and suffix SUFF for fast execution path functions. */
+#define sarithm_call(suff, bop) arithm_op(th, cfp, cd, \
+					  res, op1, op2, bop,	\
+					  fix_num_ ## suff, float_num_ ## suff, \
+					  double_num_ ## suff,		\
+					  3, BIN(si ## suff), BIN(sf ## suff))
+
+/* Definitions of the functions implementing simple arithmetic insns which
+   can be transformed into a speculative variant.  */
+op2_fun(splus) {return sarithm_call(plus, BOP_PLUS);}
+op2_fun(sminus) {return sarithm_call(minus, BOP_MINUS);}
+op2_fun(smult) {return sarithm_call(mult, BOP_MULT);}
+op2_fun(sdiv) {return sarithm_call(div, BOP_DIV);}
+op2_fun(smod) {return sarithm_call(mod, BOP_MOD);}
+
+/* A function call implementing a simple (stack) arithmetic operation
+   (which can not change the insn) with operation BOP and suffix SUFF
+   for fast execution path functions. */
+#define suarithm_call(suff, bop) arithm_op(th, cfp, cd, \
+					   res, op1, op2, bop,	\
+					   fix_num_ ## suff, float_num_ ## suff, \
+					   double_num_ ## suff, 0, 0, 0)
+
+/* Definitions of the functions implementing unchanging simple
+   arithmetic insns.  */
+op2_fun(suplus) {return suarithm_call(plus, BOP_PLUS);}
+op2_fun(suminus) {return suarithm_call(minus, BOP_MINUS);}
+op2_fun(sumult) {return suarithm_call(mult, BOP_MULT);}
+op2_fun(sudiv) {return suarithm_call(div, BOP_DIV);}
+op2_fun(sumod) {return suarithm_call(mod, BOP_MOD);}
 
 /* It is analogous to airthm_op with known value of the 2nd operand
    (IMM).  */
@@ -2144,13 +2246,13 @@ arithm_imm_op(rb_thread_t *th, rb_control_frame_t *cfp,
 	      VALUE (*float_num_op)(VALUE, VALUE),
 	      VALUE (*double_num_op)(VALUE, VALUE),
 	      int fixnum_p, int flonum_p,
-	      int change_p, int fix_insn_id, int flo_insn_id)
+	      int offset, int fix_insn_id, int flo_insn_id)
 {
     VALUE *src1 = op1;
 
     return do_arithm(th, cfp, cd, res, src1, imm,
 		     bop, fix_num_op, float_num_op, double_num_op, fixnum_p, flonum_p,
-		     change_p, fix_insn_id, flo_insn_id);
+		     offset, fix_insn_id, flo_insn_id);
 }
 
 /* Analogous to arithm_call but when the 2nd operand is known to have
@@ -2159,7 +2261,7 @@ arithm_imm_op(rb_thread_t *th, rb_control_frame_t *cfp,
 						 res, op1, imm, bop, \
 						 fix_num_ ## suff, float_num_ ## suff, \
 						 double_num_ ## suff, TRUE, FALSE, \
-						 TRUE, BIN(i ## suff ## i), 0)
+						 5, BIN(i ## suff ## i), 0)
 
 /* Definitions of the functions implementing arithmetic insns with
    immediate of type fixnum which can be transformed to a speculative
@@ -2177,7 +2279,7 @@ op2i_fun(modi) {return arithm_fix_call(mod, BOP_MOD);}
 						  res, op1, imm, bop, \
 						  fix_num_ ## suff, float_num_ ## suff, \
 						  double_num_ ## suff, TRUE, FALSE, \
-						  FALSE, 0, 0)
+						  0, 0, 0)
 
 /* Definitions of the functions implementing non-changing arithmetic
    insns with immediate of type fixnum.  */
@@ -2192,7 +2294,7 @@ op2i_fun(umodi) {return uarithm_fix_call(mod, BOP_MOD);}
 						 res, op1, imm, bop, \
 						 fix_num_ ## suff, float_num_ ## suff, \
 						 double_num_ ## suff, FALSE, TRUE, \
-						 TRUE, 0, BIN(f ## suff ## f))
+						 5, 0, BIN(f ## suff ## f))
 
 /* Definitions of the functions implementing arithmetic insns with
    immediate of type flo num.  The insn can be changed into a
@@ -2208,7 +2310,7 @@ op2i_fun(modf) {return arithm_flo_call(mod, BOP_MOD);}
 						  res, op1, imm, bop, \
 						  fix_num_ ## suff, float_num_ ## suff, \
 						  double_num_ ## suff, FALSE, TRUE, \
-						  FALSE, 0, 0)
+						  0, 0, 0)
 
 /* Definitions of the functions implementing non-changing arithmetic
    insns with immediate of type flo num.  */
@@ -2398,6 +2500,35 @@ spec_op2_fun(fminus) {return spec_flo_arithm_call(minus, BOP_MINUS);}
 spec_op2_fun(fmult) {return spec_flo_arithm_call(mult, BOP_MULT);}
 spec_op2_fun(fdiv) {return spec_flo_arithm_call(div, BOP_DIV);}
 spec_op2_fun(fmod) {return spec_flo_arithm_call(mod, BOP_MOD);}
+
+/* Definitions of the functions implementing speculative fix num
+   simple (stack) arithmetic insns.  */
+#define spec_fix_sarithm_call(suff, bop) spec_fix_arithm_op(cfp, \
+							    res, op1, op2, bop, \
+							    spec_fix_num_ ## suff, \
+							    BIN(su ## suff), new_insn)
+
+/* Definitions of the functions implementing speculative fix num
+   simple arithmetic insns.  */
+spec_op2_fun(siplus) {return spec_fix_sarithm_call(plus, BOP_PLUS);}
+spec_op2_fun(siminus) {return spec_fix_sarithm_call(minus, BOP_MINUS);}
+spec_op2_fun(simult) {return spec_fix_sarithm_call(mult, BOP_MULT);}
+spec_op2_fun(sidiv) {return spec_fix_sarithm_call(div, BOP_DIV);}
+spec_op2_fun(simod) {return spec_fix_sarithm_call(mod, BOP_MOD);}
+
+/* As spec_fix_sarithm_call but a flo num variant. */
+#define spec_flo_sarithm_call(suff, bop) spec_flo_arithm_op(cfp, \
+							    res, op1, op2, bop, \
+							    float_num_ ## suff, \
+							    BIN(su ## suff), new_insn)
+
+/* Definitions of the functions implementing speculative flo num
+   simple arithmetic insns.  */
+spec_op2_fun(sfplus) {return spec_flo_sarithm_call(plus, BOP_PLUS);}
+spec_op2_fun(sfminus) {return spec_flo_sarithm_call(minus, BOP_MINUS);}
+spec_op2_fun(sfmult) {return spec_flo_sarithm_call(mult, BOP_MULT);}
+spec_op2_fun(sfdiv) {return spec_flo_sarithm_call(div, BOP_DIV);}
+spec_op2_fun(sfmod) {return spec_flo_sarithm_call(mod, BOP_MOD);}
 
 /* It is basically do_spec_fix_arithm with fix num IMM (immediate
    operand).  */

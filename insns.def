@@ -2598,6 +2598,21 @@ plus minus mult div mod ltlt ind eq ne lt gt le ge uplus uminus umult udiv umod 
     }
 }
 
+/* General and unchanging simple (stack) insns:  */
+DEFINE_INSN
+splus sminus smult sdiv smod seq sne slt sgt sle sge suplus suminus sumult sudiv sumod sueq sune sult sugt sule suge
+(CALL_DATA cd, tindex_t res)
+()
+()
+{
+    VALUE *res_op = get_temp_addr(reg_cfp, res);
+    
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(th, reg_cfp, cd, res_op, res_op, res_op + 1)) {
+	RESTORE_REGS();
+	set_default_sp(reg_cfp, reg_cfp->bp);
+    }
+}
+
 /* Speculative insns:  */
 DEFINE_INSN
 iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige fplus fminus fmult fdiv fmod feq fne flt fgt fle fge
@@ -2611,6 +2626,23 @@ iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige fplus fminus fmul
 					 get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), &new_insn)) {
 	/* Speculation was wrong.  Change and re-execute the insn.  */
 	ADD_PC(-5);
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
+    }
+}
+
+/* Speculative simple (stack) insns:  */
+DEFINE_INSN
+siplus siminus simult sidiv simod sieq sine silt sigt sile sige sfplus sfminus sfmult sfdiv sfmod sfeq sfne sflt sfgt sfle sfge
+(_, tindex_t res)
+()
+()
+{
+    enum ruby_vminsn_type new_insn;
+    VALUE *res_op = get_temp_addr(reg_cfp, res);
+    
+    if (RTL_FUNC_NAME(CURRENT_INSN_NAME)(reg_cfp, res_op, res_op, res_op + 1, &new_insn)) {
+	/* Speculation was wrong.  Change and re-execute the insn.  */
+	ADD_PC(-3);
 	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
     }
 }

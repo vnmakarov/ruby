@@ -617,6 +617,9 @@ struct insn_fun_features {
     char changing_p;
     /* Flag of a speculative insn.  */
     char speculative_p;
+    /* Flag of a simple insn whose all operands are given by one
+       operand number.  */
+    char simple_p;
 };
 
 /* Initiate S with no speculation.  */
@@ -656,7 +659,7 @@ static void
 get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     f->th_p = f->skip_first_p = f->op_end_p = f->bcmp_p = FALSE;
     f->call_p = f->recv_p = f->jmp_p = f->jmp_true_p = FALSE;
-    f->special_p = f->changing_p = f->speculative_p = FALSE;
+    f->special_p = f->changing_p = f->speculative_p = f->simple_p = FALSE;
     switch (insn) {
     case BIN(const2var):
     case BIN(const_ld_val):
@@ -763,7 +766,33 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(uind):
     case BIN(uindi):
     case BIN(uinds):
-	f->th_p = f->skip_first_p = f->op_end_p = TRUE;
+	f->th_p = f->op_end_p = TRUE;
+	break;
+    case BIN(splus):
+    case BIN(sminus):
+    case BIN(smult):
+    case BIN(sdiv):
+    case BIN(smod):
+    case BIN(seq):
+    case BIN(sne):
+    case BIN(slt):
+    case BIN(sgt):
+    case BIN(sle):
+    case BIN(sge):
+	f->changing_p = TRUE;
+	/* fall through: */
+    case BIN(suplus):
+    case BIN(suminus):
+    case BIN(sumult):
+    case BIN(sudiv):
+    case BIN(sumod):
+    case BIN(sueq):
+    case BIN(sune):
+    case BIN(sult):
+    case BIN(sugt):
+    case BIN(sule):
+    case BIN(suge):
+	f->simple_p = f->th_p = f->op_end_p = TRUE;
 	break;
     case BIN(spec_not):
     case BIN(iplus):
@@ -815,7 +844,31 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(fgtf):
     case BIN(flef):
     case BIN(fgef):
-	f->skip_first_p = f->speculative_p = TRUE;
+	f->speculative_p = TRUE;
+	break;
+    case BIN(siplus):
+    case BIN(siminus):
+    case BIN(simult):
+    case BIN(sidiv):
+    case BIN(simod):
+    case BIN(sieq):
+    case BIN(sine):
+    case BIN(silt):
+    case BIN(sigt):
+    case BIN(sile):
+    case BIN(sige):
+    case BIN(sfplus):
+    case BIN(sfminus):
+    case BIN(sfmult):
+    case BIN(sfdiv):
+    case BIN(sfmod):
+    case BIN(sfeq):
+    case BIN(sfne):
+    case BIN(sflt):
+    case BIN(sfgt):
+    case BIN(sfle):
+    case BIN(sfge):
+	f->simple_p = f->speculative_p = TRUE;
 	break;
     case BIN(indset):
     case BIN(indseti):
@@ -1061,6 +1114,17 @@ get_safe_insn(VALUE insn) {
     case BIN(gt): case BIN(igt): case BIN(fgt): return BIN(ugt);
     case BIN(le): case BIN(ile): case BIN(fle): return BIN(ule);
     case BIN(ge): case BIN(ige): case BIN(fge): return BIN(uge);
+    case BIN(splus): case BIN(siplus): case BIN(sfplus): return BIN(suplus);
+    case BIN(sminus): case BIN(siminus): case BIN(sfminus): return BIN(suminus);
+    case BIN(smult): case BIN(simult): case BIN(sfmult): return BIN(sumult);
+    case BIN(sdiv): case BIN(sidiv): case BIN(sfdiv): return BIN(sudiv);
+    case BIN(smod): case BIN(simod): case BIN(sfmod): return BIN(sumod);
+    case BIN(seq): case BIN(sieq): case BIN(sfeq): return BIN(sueq);
+    case BIN(sne): case BIN(sine): case BIN(sfne): return BIN(sune);
+    case BIN(slt): case BIN(silt): case BIN(sflt): return BIN(sult);
+    case BIN(sgt): case BIN(sigt): case BIN(sfgt): return BIN(sugt);
+    case BIN(sle): case BIN(sile): case BIN(sfle): return BIN(sule);
+    case BIN(sge): case BIN(sige): case BIN(sfge): return BIN(suge);
     case BIN(plusi): case BIN(iplusi): return BIN(uplusi);
     case BIN(minusi): case BIN(iminusi): return BIN(uminusi);
     case BIN(multi): case BIN(imulti): return BIN(umulti);
@@ -1506,6 +1570,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	    case TS_VINDEX:
 	    case TS_TINDEX:
 		fprintf(f, "%s", get_op_str(buf, op, tcp));
+		if (features.simple_p)
+		    fprintf(f, ", %s, %s", get_op_str(buf, op, tcp), get_op_str(buf, (ptrdiff_t) op - 1, tcp));
 		break;
 	    case TS_RINDEX:
 		fprintf(f, "%s, (lindex_t) %"PRIdVALUE,

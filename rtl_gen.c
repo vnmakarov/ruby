@@ -1001,17 +1001,41 @@ get_binary_ops(rb_iseq_t *iseq, enum ruby_vminsn_type res_insn, const VALUE *arg
     return res_insn;
 }
 
+/* Return a simple insn code for INSN_ID.  If there is no
+   corresponding simple insn, return nop.  */
+static enum ruby_vminsn_type
+get_simple_insn (enum ruby_vminsn_type insn_id) {
+    switch (insn_id) {
+    case BIN(plus): return BIN(splus);
+    case BIN(minus): return BIN(sminus);
+    case BIN(mult): return BIN(smult);
+    case BIN(eq): return BIN(seq);
+    case BIN(ne): return BIN(sne);
+    case BIN(lt): return BIN(slt);
+    case BIN(gt): return BIN(sgt);
+    case BIN(le): return BIN(sle);
+    case BIN(ge): return BIN(sge);
+    case BIN(div): return BIN(sdiv);
+    case BIN(mod): return BIN(smod);
+    default: return BIN(nop);
+    }
+}
+
 /* Generate RTL insns from an ISEQ binary operator insn whose operands
    are in ARGS.  The corresponding RTL insn code is RES_INSN. */
 static void
 generate_bin_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_insn) {
+    enum ruby_vminsn_type simple_insn;
     struct rb_call_data *cd;
     vindex_t op, res;
     VALUE op2;
     
     res_insn = get_binary_ops(iseq, res_insn, args, &res, &op, &op2, &cd);
     push_result(res);
-    APPEND5(res_insn, cd, res, op, op2);
+    if (res == op && (vindex_t) op2 + 1 == op && (simple_insn = get_simple_insn(res_insn)) != BIN(nop))
+	APPEND3(simple_insn, cd, res);
+    else
+	APPEND5(res_insn, cd, res, op, op2);
 }
 
 /* Return RTL compare branch insn.  The original RTL compare insn is

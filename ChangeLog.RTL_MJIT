@@ -1,3 +1,37 @@
+2017-12-09  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def (splus, sminus, smult, sdiv, smod, seq, sne, slt):
+	New.
+	(sgt, sle, sge, suplus, suminus, sumult, sudiv, sumod, sueq):
+	Ditto.
+	(sune, sult, sugt, sule, suge, siplus, siminus, simult, sidiv):
+	Ditto.
+	(simod, sieq, sine, silt, sigt, sile, sige, sfplus, sfminus): Ditto.
+	(sfmult, sfdiv, sfmod, sfeq, sfne, sflt, sfgt, sfle, sfge): Ditto.
+	* mjit.c (struct insn_fun_features): New member simple_p.
+	(get_insn_fun_features): Process the new insns.
+	(get_safe_insn): Ditto.
+	(translate_iseq_insn): Process vindex_t operand of a simple insn.
+	* rtl_exec. (scmp_call, sucmp_call): New macros.
+	(seq, sne, slt, sgt, sle, sge, sueq, sune, sult, sugt, sule): New
+	functions.
+	(suge): Ditto.
+	(spec_fix_scmp_call, spec_flo_scmp_call): New macros.
+	(sieq, sine, silt, sigt, sile, sige, sfeq, sfne, sflt, sfgt): New functions.
+	(sfle, sfge): Ditto.
+	(do_arithm, arithm_op): Change arg change_p to offset.
+	(arithm_call, uarithm_call): Pass offset.
+	(sarithm_call, suarithm_call): New macros.
+	(splus, sminus, smult, sdiv, smod, suplusu, suminusu, sumult): New functions.
+	(sudiv, sumod): Ditto.
+	(arithm_imm_op): Change arg change_p to offset.
+	(spec_fix_sarithm_call, spec_flo_sarithm_call): New macros.
+	(siplus, siminus, simult, sidiv, simod, sfplus, sfminus, sfmult):
+	New functions.
+	(sfdiv, sfmod): Ditto.
+	* rtl_gen.c (get_simple_insn): New.
+	(generate_bin_op): Use simple insn.
+
 2017-12-08  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (translate_iseq_insn): Remove output of nf for {temp,
