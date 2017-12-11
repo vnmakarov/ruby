@@ -1,3 +1,9 @@
+2017-12-11  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (translate_iseq_insn): Remove output of result index for
+	get inline cache and ivar2var insns.  Output implicit operands
+	separately for simple insns.
+
 2017-12-09  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def (splus, sminus, smult, sdiv, smod, seq, sne, slt):

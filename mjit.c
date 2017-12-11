@@ -1356,13 +1356,13 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	    assert(const_p);
 	    if (tcp->safe_p || insn_mutation_num != 0
 		|| local_ic.ic_serial != ruby_vm_global_constant_state) {
-		fprintf(f, "  if (%s_f(cfp, %s, (lindex_t) %"PRIdVALUE " , (void *) 0x%"PRIxVALUE "))\n  ",
-			iname, get_op_str(buf, code[pos + 2], tcp), code[pos + 2], code[pos + 3]);
+		fprintf(f, "  if (%s_f(cfp, %s, (void *) 0x%"PRIxVALUE "))\n  ",
+			iname, get_op_str(buf, code[pos + 2], tcp), code[pos + 3]);
 	    } else {
-		fprintf(f, "  if (mjit_get_inline_cache(cfp, %llu, %llu, 0x%"PRIxVALUE ", %s, %ld",
+		fprintf(f, "  if (mjit_get_inline_cache(cfp, %llu, %llu, 0x%"PRIxVALUE ", %s",
 			(unsigned long long) local_ic.ic_serial,
 			(unsigned long long) local_ic.ic_cref, local_ic.ic_value.value,
-			get_op_str(buf, code[pos + 2], tcp), code[pos + 2]);
+			get_op_str(buf, code[pos + 2], tcp));
 		fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
 		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    }
@@ -1499,9 +1499,9 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	assert(insn == BIN(ivar2var) || insn == BIN(var2ivar) || insn == BIN(val2ivar));
 	if (ui->ivar_spec != 0) {
 	    if (insn == BIN(ivar2var))
-		fprintf(f, "  mjit_ivar2var_no_check(cfp, self, %d, %llu, %s, %ld);\n",
+		fprintf(f, "  mjit_ivar2var_no_check(cfp, self, %d, %llu, %s);\n",
 			ui->ivar_spec != (size_t) -1, (unsigned long long) local_ic.ic_value.index,
-			get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
+			get_op_str(buf, code[pos + 1], tcp));
 	    else {
 		fprintf(f, "  mjit_%s_no_check(cfp, self, %d, %llu, ",
 			iname, ui->ivar_spec != (size_t) -1, (unsigned long long) local_ic.ic_value.index);
@@ -1513,10 +1513,10 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	    }
 	} else {
 	    if (insn == BIN(ivar2var))
-		fprintf(f, "  if (mjit_ivar2var(cfp, self, %d, %llu, %llu, %s, %ld",
+		fprintf(f, "  if (mjit_ivar2var(cfp, self, %d, %llu, %llu, %s",
 			iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
 			(unsigned long long) local_ic.ic_value.index,
-			get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
+			get_op_str(buf, code[pos + 1], tcp));
 	    else {
 		fprintf(f, "  if (mjit_%s(cfp, self, %d, %llu, %llu, ",
 			iname, iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
@@ -1570,8 +1570,10 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	    case TS_VINDEX:
 	    case TS_TINDEX:
 		fprintf(f, "%s", get_op_str(buf, op, tcp));
-		if (features.simple_p)
-		    fprintf(f, ", %s, %s", get_op_str(buf, op, tcp), get_op_str(buf, (ptrdiff_t) op - 1, tcp));
+		if (features.simple_p) {
+		    fprintf(f, ", %s", get_op_str(buf, op, tcp));
+		    fprintf(f, ", %s", get_op_str(buf, (ptrdiff_t) op - 1, tcp));
+		}
 		break;
 	    case TS_RINDEX:
 		fprintf(f, "%s, (lindex_t) %"PRIdVALUE,
