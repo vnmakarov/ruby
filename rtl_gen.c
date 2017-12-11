@@ -1703,13 +1703,27 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos) {
     }
     case BIN(getinlinecache): {
 	vindex_t res;
+	VALUE next_insn, next_next_insn;
+	size_t next_insn_len, next_next_insn_len;
 	
 	put_top_on_stack();
 	res = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-	APPEND4(BIN(get_inline_cache), code[pos + 1] + pos + stack_insn_len, res, code[pos + 2]);
-	loc.next_insn_pc = VARR_LENGTH(VALUE, iseq_rtl);
-	loc.offset = 3;
-	VARR_PUSH(branch_target_loc, branch_target_locs, loc);
+	next_insn = code[pos + stack_insn_len];
+	next_insn_len = insn_len(next_insn);
+	if (VARR_ADDR(char, pos_label_type)[pos + stack_insn_len] == NO_LABEL
+	    && next_insn == BIN(getconstant)
+	    && (next_next_insn = code[pos + stack_insn_len + next_insn_len]) == BIN(setinlinecache)
+	    && VARR_ADDR(char, pos_label_type)[pos + stack_insn_len + next_insn_len] == NO_LABEL
+	    && (next_next_insn_len = insn_len(next_next_insn)) + next_insn_len == code[pos + 1]
+	    && code[pos + 2] == code[pos + stack_insn_len + next_insn_len + 1] /* ic */) {
+	    APPEND5(BIN(const_cached_val_ld), res, Qnil, code[pos + stack_insn_len + 1] /* id */, code[pos + 2] /* ic */);
+	    stack_insn_len += next_insn_len + next_next_insn_len;
+	} else {
+	    APPEND4(BIN(get_inline_cache), code[pos + 1] + pos + stack_insn_len, res, code[pos + 2]);
+	    loc.next_insn_pc = VARR_LENGTH(VALUE, iseq_rtl);
+	    loc.offset = 3;
+	    VARR_PUSH(branch_target_loc, branch_target_locs, loc);
+	}
 	slot.mode = TEMP;
 	slot.u.temp = res;
 	push_stack_slot(slot);

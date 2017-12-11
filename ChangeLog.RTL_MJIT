@@ -1,5 +1,9 @@
 2017-12-11  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* rtl_gen.c (translate_stack_insn): Generate const_cached_val_ld.
+
+2017-12-11  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* mjit.c (translate_iseq_insn): Remove output of result index for
 	get inline cache and ivar2var insns.  Output implicit operands
 	separately for simple insns.
