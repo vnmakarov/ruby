@@ -1,3 +1,55 @@
+2017-12-18  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* rtl_gen.c: Change the top comment.
+	(UNREACHED_LABEL): Remove.
+	(CONT_LABEL, BRANCH_LABEL): Redefine.
+	(pos_processed_p): Rename to label_processed_p.
+	(enum slot_type): Move up.  Add ANY.
+	(struct stack_slot): Move up.  Define temp only for NDEBUG.
+	(stack_slot, stack): Move up.
+	(push_val, print_stack_slot, print_satck, stack_slot_eq): New.
+	(saved_stack_slots, label_start_stack_slot): New.
+	(save_stack_slots, restore_stack_slots, update_saved_stack_slots):
+	New.
+	(stack_on_label_change_p): New.
+	(process_label): Rewrite.
+	(setup_labels_from_catch_table): Push ANY.
+	(print_label_pos_stack): New.
+	(update_label_pos_stack): Remove.
+	(update_stack_by_insn): New.
+	(calculate_stack_depth): Rename to find_stack_values_on_labels.
+	Rewrite it by using update_stack_by_insn.
+	(push_stack_slot): Do not process TEMP.
+	(push_temp_result): New.
+	(new_top_stack_temp_var): Use push_temp_result.
+	(to_var): Do not process TEMP.  Remove assert for STR, use if
+	instead.
+	(to_temp): Ditto.
+	(prepare_stack_rewrite): Rename to prepare_loc_var_rewrite.
+	(push_result): Remove.
+	(set_local): Use index in the stack for TEMP.
+	(put_top_on_stack): Remove.
+	(get_cd): Add return to remove a compiler warning.
+	(generate_unary_op): Add assert.  Use index in the stack for TEMP.
+	(get_binary_ops): Ditto.  Use push_temp_result.
+	(tune_stack_slot, tune_stack): New.
+	(generate_rel_op): Use tune_stack.
+	(generate_aset_op): Add assert.  Use index in the stack for TEMP.
+	(adjust_stack): Remove.
+	(generate_leave): Add assert.  Use index in the stack for TEMP.
+	(unreachable_code_p): New.
+	(translate_stack_insn): Pass the prev insn.  Don't change
+	unreachable_code_p for throw.  Use tune_stack and
+	unreachable_code_p.  Add more debug print.  Rewrite processing
+	dup, dupn, swap, topn, setn, adjuststack.  Remove put_on_stack for
+	gentinlinecache.  Process TEMP for string in opt_aset_with.  Use
+	push_temp_result.
+	(translate): Reset unreachable_code_p.  Pass prev insn to
+	translate_stack_insn.
+	(rtl_gen): Add debug print.
+	(rtl_gen_init): Create saved_stack_slots and label_start_stack_slot.
+	(rtl_gen_finish): Destroy saved_stack_slots and label_start_stack_slot.
+
 2017-12-11  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* rtl_gen.c (translate_stack_insn): Generate const_cached_val_ld.
