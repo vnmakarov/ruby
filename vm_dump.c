@@ -352,9 +352,13 @@ rb_vmdebug_debug_print_pre(rb_thread_t *th, rb_control_frame_t *cfp, const VALUE
 
 	/* fprintf(stderr,"%3"PRIdPTRDIFF" ", VM_CFP_CNT(th, cfp)); */
 	if (pc >= 0) {
-	    const VALUE *iseq_original = rb_iseq_original_iseq((rb_iseq_t *)iseq);
-
+	    const VALUE *iseq_original;
+	    int saved_rtl_p = iseq_rtl_p;
+	    
+	    iseq_rtl_p = TRUE;
+	    iseq_original = rb_iseq_original_iseq((rb_iseq_t *)iseq);
 	    rb_iseq_disasm_rtl_insn(0, iseq_original, (size_t)pc, iseq, 0);
+	    iseq_rtl_p = saved_rtl_p;
 	}
     }
 

@@ -620,9 +620,9 @@ typedef struct rb_vm_struct {
 
 #define RUBY_VM_SIZE_ALIGN 4096
 
-#define RUBY_VM_THREAD_VM_STACK_SIZE          ( 256 * 1024 * sizeof(VALUE)) /*  512 KB or 1024 KB */
+#define RUBY_VM_THREAD_VM_STACK_SIZE          ( 512 * 1024 * sizeof(VALUE)) /*  512 KB or 1024 KB */
 #define RUBY_VM_THREAD_VM_STACK_SIZE_MIN      (   2 * 1024 * sizeof(VALUE)) /*    8 KB or   16 KB */
-#define RUBY_VM_THREAD_MACHINE_STACK_SIZE     ( 256 * 1024 * sizeof(VALUE)) /*  512 KB or 1024 KB */
+#define RUBY_VM_THREAD_MACHINE_STACK_SIZE     ( 512 * 1024 * sizeof(VALUE)) /*  512 KB or 1024 KB */
 #define RUBY_VM_THREAD_MACHINE_STACK_SIZE_MIN (  16 * 1024 * sizeof(VALUE)) /*   64 KB or  128 KB */
 
 #define RUBY_VM_FIBER_VM_STACK_SIZE           (  16 * 1024 * sizeof(VALUE)) /*   64 KB or  128 KB */

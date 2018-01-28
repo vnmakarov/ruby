@@ -1,3 +1,77 @@
+2018-01-28  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* compile.c (optimize_catch_table): New.
+	(iseq_peephole_optimize): Call it.
+	(iseq_compile_each): Switch off pop generation for NODE_ENSURE.
+	Use the right code for NODE_OP_ASGN2.
+	* iseq.c (rb_iseq_disasm): Print temp only for RTL.
+	* rtl_exec.c (RTL_ASSERT): New. Use it instead of VM_ASSERT.
+	(const_ld_val_f, const_cached_val_ld_f): Don't setup SP.
+	(call_super_f): Rename to call_super_val_f.
+	(call_super_val_f, check_keyword_f): New.
+	(trace_f): Set up data for returns.
+	* rtl_gen.c (RTL_GEN_DEBUG): Move upper.
+	(VARR_T): Use size_t instead of unsigned.
+	(use_only_temp_result_p): New.
+	(struct stack_slot): Add source_insn_pos.
+	(max_stack_depth, loc_stack_count): Move up.
+	(initialize_loc_stack_count): New.
+	(prepare_loc_var_rewrite): Rename to prepare_stack_slot_rewrite.
+	Move up.
+	(prepare_stack_slot_assign): New.
+	(pop_stack_slot, push_stack_slot): Move up.
+	(trunc_stack, change_stack_slot): New.
+	(prepare_loc_var_push): Rename to prepare_stack_slot_assign.  Move
+	up
+	(push_val): Add arg source_insn_pos.  Use push_stack_slot.
+	(restore_stack_slots): Use trunc_stack and push_stack_slot.
+	(get_local, putobject): New arg temp_only_p.
+	(move_to_temp): New.
+	(put_args_on_stack): Use trunk_stack.
+	(make_imm_id): Process indset.
+	(tune_stack): Use trunc_satck. Future code for ANY.
+	(generate_aset_op): New arg str.  Process case with non-nil str.
+	Always use str2val.
+	(translate_stack_insn): Put nop for unreachable code mention in
+	catch_bound_pos.  Use use_only_temp_result_p.  Use putobject for
+	putnil.  Always use str2val for putstring.  Change and move assert
+	and use chang_stack_slot for setn.  Implement checkkeyword.
+	Generate call_super_val.  Add trace if necessary for jump to
+	leave optimization.
+	(translate): Use trunc_stack.
+	(rtl_gen): Use initialize_loc_stack_count.  Print name of iseq.
+	Create use_only_temp_result_p.
+	(rtl_gen_finish): Destroy use_only_temp_result_p.
+	* insns.def (call_super): Rename to call_super_val.  Add new
+	call_super.
+	(check_keyword): New.
+	(update_saved_stack_slots): Set up use_only_temp_result_p.
+	Process non-temp for stack addr.  Add debug print about putting
+	into a temp.
+	(setup_labels_from_catch_table): Print catch entry sp.  Add
+	assert.  Use TEMP instead of ANY.  Use tune_stack.
+	(make_temp): New.
+	(update_stack_by_insn): Use trunc_stack, push_stack_slot, and
+	change_stack_slot.  Use use_only_temp_result_p.  Pass source insn
+	pos tp push_val.  Switch off specific code for putstring.  Add
+	code for setlocal.  Call change_stack_slot for setn.
+	(find_stack_values_on_labels): Use trunc_stack.  Truncate and
+	setup use_only_temp_result_p.  Check label_processed_p for exit.
+	* iseq.c (rb_iseq_disasm):
+	* test/ruby/test_exception.rb (test_too_many_args_in_eval):
+	Increase the range.
+	* test/ruby/test_iseq.rb b/test/ruby/test_iseq.rb
+	(test_frozen_string_literal_compile_option): Use branchnil.
+	* test/ruby/test_optimization.rb (test_opt_case_dispatch): Use
+	opt_case_dispatch.
+	* test/ruby/test_settracefunc.rb (test_return2): Add assert for
+	line 6.
+	(test_break): Restore the original code.
+	* vm_core.h (RUBY_VM_THREAD_VM_STACK_SIZE): Increase.
+	(RUBY_VM_THREAD_MACHINE_STACK_SIZE): Ditto.
+	* vm_dump.c (rb_vmdebug_debug_print_pre): Set/restore iseq_rtl_p.
+	* vm_exec.h (DEBUG_ENTER_INSN): Use rb_vmdebug_debug_print_pre.
+
 2017-12-18  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* rtl_gen.c: Change the top comment.

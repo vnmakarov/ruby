@@ -1643,11 +1643,12 @@ rb_iseq_disasm(const rb_iseq_t *iseq)
 
     if (tbl) {
 	rb_str_catf(str,
-		    "local table (size: %d, temp: %d, argc: %d "
-		    "[opts: %d, rest: %d, post: %d, block: %d, kw: %d@%d, kwrest: %d])\n",
+		    "local table (size: %d, argc: %d",
 		    iseq->body->local_table_size,
-		    iseq->body->temp_vars_num,
-		    iseq->body->param.lead_num,
+		    iseq->body->param.lead_num);
+	if (iseq_rtl_p)
+	  rb_str_catf(str, ", temp: %d", iseq->body->temp_vars_num);
+    	rb_str_catf(str, " [opts: %d, rest: %d, post: %d, block: %d, kw: %d@%d, kwrest: %d])\n",
 		    iseq->body->param.opt_num,
 		    iseq->body->param.flags.has_rest ? iseq->body->param.rest_start : -1,
 		    iseq->body->param.post_num,

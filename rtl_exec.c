@@ -28,6 +28,8 @@
    the JIT code.  */
 #define RTL_GET_BP(cfp) (mjit_ep_neq_bp_p ? (cfp)->bp : (cfp)->ep)
 
+#define RTL_ASSERT VM_ASSERT
+
 /* Return address of temporary variable location with index IND (it
    should be negative) in frame CFP.  */
 static do_inline VALUE *
@@ -35,7 +37,7 @@ get_temp_addr(rb_control_frame_t *cfp, lindex_t ind)
 {
     ptrdiff_t offset = ind;
 
-    VM_ASSERT(offset < 0);
+    RTL_ASSERT(offset < 0);
     return RTL_GET_BP(cfp) - offset;
 }
 
@@ -47,7 +49,7 @@ get_temp_addr_safe(rb_control_frame_t *cfp, lindex_t ind)
 {
     ptrdiff_t offset = ind;
 
-    VM_ASSERT(offset < 0);
+    RTL_ASSERT(offset < 0);
     return cfp->bp - offset;
 }
 
@@ -58,7 +60,7 @@ get_loc_addr(rb_control_frame_t *cfp, lindex_t ind)
 {
     ptrdiff_t offset = ind;
 
-    VM_ASSERT(offset > 0);
+    RTL_ASSERT(offset > 0);
     return cfp->ep - offset;
 }
 
@@ -80,7 +82,7 @@ get_env_loc_addr(VALUE *ep, lindex_t ind)
 {
     ptrdiff_t offset = ind;
 
-    VM_ASSERT(offset > 0);
+    RTL_ASSERT(offset > 0);
     return ep - offset;
 }
 
@@ -110,7 +112,7 @@ mjit_vm_exec_0(rb_thread_t *th, rb_iseq_t *iseq,
 	       struct rb_iseq_constant_body *body, int except_p, int type) {
   VALUE result;
   
-  VM_ASSERT(in_mjit_p);
+  RTL_ASSERT(in_mjit_p);
   if (except_p || (result = mjit_execute_iseq_0(th, iseq, body, type)) == Qundef)
       result = vm_exec(th, ! except_p);
   return result;
@@ -123,7 +125,7 @@ mjit_vm_exec(rb_thread_t *th) {
   VALUE result;
   int except_p = th->cfp->iseq->body->except_p;
   
-  VM_ASSERT(in_mjit_p);
+  RTL_ASSERT(in_mjit_p);
   if (except_p || (result = mjit_execute_iseq(th)) == Qundef)
       result = vm_exec(th, ! except_p);
   return result;
@@ -190,7 +192,7 @@ var2var_f(rb_control_frame_t *cfp, VALUE *to, rindex_t to_ind,
     VALUE *dest = to, *src = from;
     rb_num_t i;
 
-    VM_ASSERT(dest > src && n > 0);
+    RTL_ASSERT(dest > src && n > 0);
     var_assign(cfp, dest, to_ind, *src);
     for (i = 1; i < n; i++)
 	dest[i] = src[i];
@@ -249,7 +251,7 @@ temp_reverse_f(rb_control_frame_t *cfp, rb_num_t n, VALUE *start)
 static do_inline void
 loc2loc_f(rb_control_frame_t *cfp, VALUE *res, lindex_t res_ind, VALUE *op)
 {
-    VM_ASSERT(res_ind > 0);
+    RTL_ASSERT(res_ind > 0);
     var_assign(cfp, res, res_ind, *op);
 }
 
@@ -315,7 +317,7 @@ val2temp_f(rb_control_frame_t *cfp, VALUE *res, VALUE val)
 /* Check that sp of frame CFP has a default value.  */
 static do_inline void
 check_sp_default(rb_control_frame_t *cfp) {
-    VM_ASSERT(cfp->sp == RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num);
+    RTL_ASSERT(cfp->sp == RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num);
 }
 
 /* Assign string STR to local or temporary variable RES with index
@@ -334,7 +336,9 @@ const_ld_val_f(rb_thread_t *th, rb_control_frame_t *cfp, ID id,
 	       VALUE *res, VALUE klass)
 {
     check_sp_default(cfp);
+    //    cfp->sp = res;
     *res = vm_get_ev_const(th, klass, id, 0);
+    //    set_default_sp(cfp, RTL_GET_BP(cfp));
 }
 
 /* The same as above but KLASS_OP is location of the klass value.  */
@@ -360,9 +364,11 @@ const_cached_val_ld_f(rb_thread_t *th, rb_control_frame_t *cfp,
     else {
 	VALUE v;
 
+	//	cfp->sp = res;
 	v = vm_get_ev_const(th, klass, id, 0);
+	//	set_default_sp(cfp, RTL_GET_BP(cfp));
 	*res = v;
-	VM_ASSERT(ic->ic_value.value != Qundef);
+	RTL_ASSERT(ic->ic_value.value != Qundef);
 	ic->ic_value.value = v;
 	ic->ic_cref = vm_get_const_key_cref(GET_EP());
 	VM_ATOMIC_SET(ic->ic_serial, GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count);
@@ -425,7 +431,7 @@ set_inline_cache_f(rb_control_frame_t *cfp, VALUE *op, IC ic)
     VALUE val = *op;
 
     check_sp_default(cfp);
-    VM_ASSERT(ic->ic_value.value != Qundef);
+    RTL_ASSERT(ic->ic_value.value != Qundef);
     ic->ic_value.value = val;
     ic->ic_cref = vm_get_const_key_cref(cfp->ep);
     VM_ATOMIC_SET(ic->ic_serial, GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count);
@@ -501,7 +507,7 @@ ivar2var_f(rb_control_frame_t *cfp, VALUE *res, ID id, IC ic)
    We assume that SELF class has IC_SERIAL.  */
 static do_inline int
 mjit_check_self_p(VALUE self, rb_serial_t ic_serial, size_t ivar_spec) {
-    VM_ASSERT(RB_TYPE_P(self, T_OBJECT) && ivar_spec != 0);
+    RTL_ASSERT(RB_TYPE_P(self, T_OBJECT) && ivar_spec != 0);
     if (ic_serial != RCLASS_SERIAL(RBASIC(self)->klass))
 	return TRUE;
     return (ivar_spec == (size_t) -1 ? ROBJECT_NUMIV(self) != ROBJECT_EMBED_LEN_MAX : ROBJECT_NUMIV(self) <= ivar_spec);
@@ -740,7 +746,7 @@ op1_call(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd, VALUE *recv)
 static do_inline int
 op_val_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, VALUE val) {
     if (val == Qundef) {
-	VM_ASSERT(! in_mjit_p);
+	RTL_ASSERT(! in_mjit_p);
 	return 1;
     }
     *res = val;
@@ -3108,7 +3114,7 @@ vmcore_call_f(rb_thread_t *th, rb_control_frame_t *cfp,
     CALL_INFO ci = &cd->call_info;
     CALL_CACHE cc = &cd->call_cache;
 
-    VM_ASSERT(ci->orig_argc == 0);
+    RTL_ASSERT(ci->orig_argc == 0);
     specialobj2var_f(cfp, get_temp_addr(cfp, call_start), VM_SPECIAL_OBJECT_VMCORE);
     vm_caller_setup_arg_block(th, cfp, calling, ci, blockiseq, FALSE);
     calling->argc = 0;
@@ -3222,9 +3228,9 @@ call_block_f(rb_thread_t *th, rb_control_frame_t *cfp,
    BLOCKISEQ.  The call is defined by call data CD and REC_VAL
    (a receiver).  */
 static do_inline void
-call_super_f(rb_thread_t *th, rb_control_frame_t *cfp,
-	     struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
-	     ISEQ blockiseq, VALUE rec_val)
+call_super_val_f(rb_thread_t *th, rb_control_frame_t *cfp,
+		 struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
+		 ISEQ blockiseq, VALUE rec_val)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_CFP */
     VALUE *top = get_temp_addr(cfp, call_start);
@@ -3237,6 +3243,15 @@ call_super_f(rb_thread_t *th, rb_control_frame_t *cfp,
     vm_caller_setup_arg_block(th, cfp, calling, ci, blockiseq, TRUE);
     calling->recv = GET_SELF();
     vm_search_super_method(th, GET_CFP(), calling, ci, cc);
+}
+
+/* The same as above but reciever value is passed by pointer.  */
+static do_inline void
+call_super_f(rb_thread_t *th, rb_control_frame_t *cfp,
+	     struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
+	     ISEQ blockiseq, VALUE *rec_op)
+{
+    call_super_val_f(th, cfp, calling, cd, call_start, blockiseq, *rec_op);
 }
 
 /* Create a range OP1..OP2 (OP1 and OP2 value locations) and assign
@@ -3317,7 +3332,7 @@ common_new_array_min_max(rb_control_frame_t *cfp, VALUE *res,
     VALUE val;
 
     check_sp_default(cfp);
-    VM_ASSERT((long) start < 0);
+    RTL_ASSERT((long) start < 0);
     if (BASIC_OP_UNREDEFINED_P(BOP_MIN, ARRAY_REDEFINED_OP_FLAG)) {
 	if (num == 0) {
 	    val = Qnil;
@@ -3423,6 +3438,28 @@ concat_array_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE *op2)
     *res = rb_ary_concat(tmp1, tmp2);
 }
 
+/* Set up RES by Qtrue if bit KEYWORD_INDEX in a value of local
+   variable with location KW_BITS_INDEX in frame CFP is present or key
+   KEYWORD_INDEX is present in a hash KEYWORD_INDEX.  Otherwise,
+   assign Qfalse to RES.  */
+static do_inline void
+check_keyword_f(rb_control_frame_t *cfp, VALUE *res, rb_num_t kw_bits_index, rb_num_t keyword_index) {
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_EP */
+    const VALUE *ep = GET_EP();
+    const VALUE kw_bits = *(ep - kw_bits_index);
+    VALUE val;
+
+    if (FIXNUM_P(kw_bits)) {
+	int bits = FIX2INT(kw_bits);
+	*res = (bits &(0x01 << keyword_index)) ? Qfalse : Qtrue;
+    }
+    else {
+	RTL_ASSERT(RB_TYPE_P(kw_bits, T_HASH));
+	val = rb_hash_has_key(kw_bits, INT2FIX(keyword_index));
+	*res = val ? Qfalse : Qtrue;
+    }
+}
+
 /* Return TRUE if bit KEYWORD_INDEX in a value of local variable with
    location KW_BITS_INDEX in frame CFP is present or key KEYWORD_INDEX
    is present in a hash KEYWORD_INDEX.  It means we should jump to the
@@ -3439,7 +3476,7 @@ bkw_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t kw_bits_index, rb_num_t
 	val = (bits &(0x01 << keyword_index)) ? Qfalse : Qtrue;
     }
     else {
-	VM_ASSERT(RB_TYPE_P(kw_bits, T_HASH));
+	RTL_ASSERT(RB_TYPE_P(kw_bits, T_HASH));
 	val = rb_hash_has_key(kw_bits, INT2FIX(keyword_index));
 	val = val ? Qfalse : Qtrue;
     }
@@ -3816,7 +3853,7 @@ val_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE v, VALUE *val) {
 	   is used -- skip the frame.  */
 	ret_p = vm_pop_frame(th, cfp, cfp->ep);
     }
-    VM_ASSERT(in_mjit_p || ret_p || th->cfp->iseq);
+    RTL_ASSERT(in_mjit_p || ret_p || th->cfp->iseq);
     if (! ret_p) {
 	*val = v;
 	return 0;
@@ -3868,8 +3905,22 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
 	   tracing.  */
 	return FALSE;
     call_dtrace_hook(th);
-    EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
-		    Qundef);
+    if (UNLIKELY(ruby_vm_event_flags & flag)) {
+	VALUE data = Qundef;
+
+	if (flag & (RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN)) {
+	    VALUE addr = *cfp->pc;
+
+	    if (vm_exec_insn_address_table[BIN(temp_ret)] == addr)
+		data = *get_temp_addr(reg_cfp, cfp->pc[1]);
+	    else if (vm_exec_insn_address_table[BIN(val_ret)] == addr)
+		data = cfp->pc[1];
+	    else if (vm_exec_insn_address_table[BIN(loc_ret)] == addr)
+		data = *get_loc_addr(reg_cfp, cfp->pc[1]);
+	}
+      EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
+		      data);
+    }
     return ! mjit_ep_neq_bp_p && cfp->ep != cfp->bp;
 }
 

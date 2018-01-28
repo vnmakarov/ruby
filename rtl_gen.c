@@ -2,7 +2,7 @@
 
   rtl_gen.c - Code for Generation RTL from stack insns.
 
-  Copyright (C) 2017 Vladimir Makarov vmakarov@redhat.com
+  Copyright (C) 2017, 2018 Vladimir Makarov vmakarov@redhat.com
 
 **********************************************************************/
 
@@ -21,6 +21,8 @@
 #include "encindex.h"
 #include <math.h>
 
+#define RTL_GEN_DEBUG 0
+
 /* We will use insn_stack_increase from insns_info.inc.  */
 #define USE_INSN_STACK_INCREASE 1
 
@@ -30,8 +32,6 @@
 #include "insns.inc"
 #include "insns_info.inc"
 #include "gc.h"
-
-#define RTL_GEN_DEBUG 0
 
 /* Type used for label relative displacement during RTL
    generation.  */
@@ -65,8 +65,8 @@ static inline void varr_assert_fail(const char *op, const char *var) {
 /* Definition of type of VAR of elements of type T.  */
 #define VARR_T(T)							      \
 typedef struct VARR(T) {                                                      \
-    unsigned els_num; /* number of elements currently in VARR */  	      \
-    unsigned size;    /* curr size of container VARR in elements */           \
+    size_t els_num; /* number of elements currently in VARR */  	      \
+    size_t size;    /* curr size of container VARR in elements */             \
     T *varr;          /* the elements container */			      \
 } VARR(T)
 
@@ -77,7 +77,7 @@ typedef struct VARR(T) {                                                      \
 #define DEF_VARR(T)                                                            \
 VARR_T(T);								       \
 									       \
-static inline void VARR_OP(T, create)(VARR(T) **varr_, unsigned size_) {       \
+static inline void VARR_OP(T, create)(VARR(T) **varr_, size_t size_) {         \
     VARR(T) *va;						       	       \
     if (size_ == 0)							       \
         size_ = VARR_DEFAULT_SIZE;					       \
@@ -94,7 +94,7 @@ static inline void VARR_OP(T, destroy)(VARR(T) **varr_) {	               \
     *varr_ = NULL;							       \
 }									       \
                                                                                \
-static inline unsigned VARR_OP(T, length)(const VARR(T) *varr_) {	       \
+static inline size_t VARR_OP(T, length)(const VARR(T) *varr_) {	               \
     VARR_ASSERT(varr_, "length", T);					       \
     return varr_->els_num;						       \
 }                                                                              \
@@ -109,12 +109,12 @@ static inline T VARR_OP(T, last)(const VARR(T) *varr_) {                       \
     return varr_->varr[varr_->els_num - 1];				       \
 }                                                                              \
                                                                                \
-static inline T VARR_OP(T, get)(const VARR(T) *varr_, unsigned ix_) { 	       \
+static inline T VARR_OP(T, get)(const VARR(T) *varr_, size_t ix_) { 	       \
     VARR_ASSERT(varr_ && varr_->varr && ix_ < varr_->els_num, "get", T);       \
     return varr_->varr[ix_];						       \
 }                                                                              \
                                                                                \
-static inline T VARR_OP(T, set)(const VARR(T) *varr_, unsigned ix_, T obj_) {  \
+static inline T VARR_OP(T, set)(const VARR(T) *varr_, size_t ix_, T obj_) {    \
     T old_obj_;								       \
     VARR_ASSERT(varr_ && varr_->varr && ix_ < varr_->els_num, "set", T);       \
     old_obj_ = varr_->varr[ix_];					       \
@@ -122,12 +122,12 @@ static inline T VARR_OP(T, set)(const VARR(T) *varr_, unsigned ix_, T obj_) {  \
     return old_obj_;							       \
 }                                                                              \
                                                                                \
-static inline void VARR_OP(T,trunc)(VARR(T) *varr_, unsigned size_) {          \
+static inline void VARR_OP(T,trunc)(VARR(T) *varr_, size_t size_) {            \
     VARR_ASSERT(varr_ && varr_->varr && varr_->els_num >= size_, "trunc", T);  \
     varr_->els_num = size_;						       \
 }									       \
                                                                                \
-static inline void VARR_OP(T,expand)(VARR(T) *varr_, unsigned size_) {	       \
+static inline void VARR_OP(T,expand)(VARR(T) *varr_, size_t size_) {	       \
     VARR_ASSERT(varr_  && varr_->varr, "expand", T);			       \
     if (varr_->size < size_) {						       \
 	varr_->varr = (T *) xrealloc(varr_->varr, sizeof(T) * 3 * size_ / 2);  \
@@ -189,6 +189,9 @@ static VARR(char) *label_processed_p;
 /* Map: position in stack insn sequence -> flag of that the position is
    present in the catch table as a bound of the exception region. */
 static VARR(char) *catch_bound_pos_p;
+/* Map: position in stack insn sequence -> flag of that we should
+   always put the insn result into a temp. */
+static VARR(char) *use_only_temp_result_p;
 
 /* Type of slot of the emulated VM stack.  */
 enum slot_type {ANY, SELF, VAL, STR, LOC, TEMP};
@@ -196,6 +199,7 @@ enum slot_type {ANY, SELF, VAL, STR, LOC, TEMP};
 /* Stack slot for emulated VM stack. */
 struct stack_slot {
     enum slot_type mode;
+    size_t source_insn_pos;
     union {
 	VALUE val;     /* value */
 	VALUE str;     /* string */
@@ -214,13 +218,124 @@ DEF_VARR(stack_slot);
 /* The emulated VM stack.  */
 static VARR(stack_slot) *stack;
 
-/* Push value with MODE onto the stack.  Use VAL as a parameter if
-   necessary.  */
+/* Max stack depth of the emulated VM stack.  */
+static size_t max_stack_depth;
+
+/* Map: var location index -> the current number of stack slots with
+   given location in the emulated VM stack.  We need this map to
+   process complicated stack insns generated for a multiple
+   assignment.  In this case we might need temporary variables to
+   implement the assignemnt. */
+static VARR(size_t) *loc_stack_count;
+
 static void
-push_val(enum slot_type mode, VALUE val) {
+initialize_loc_stack_count(rb_iseq_t *iseq) {
+    size_t i, size;
+    
+    max_stack_depth = 0;
+    VARR_TRUNC(size_t, loc_stack_count, 0);
+    size = iseq->body->local_table_size + VM_ENV_DATA_SIZE;
+    for (i = 0; i < size; i++) {
+	VARR_PUSH(size_t, loc_stack_count, 0);
+    }
+}
+
+/* Update loc_stack_count for local var described by SLOT.  */
+static void
+prepare_stack_slot_rewrite(stack_slot *slot) {
+    if (slot->mode == LOC) {
+	assert(VARR_ADDR(size_t, loc_stack_count)[slot->u.loc] > 0);
+	VARR_ADDR(size_t, loc_stack_count)[slot->u.loc]--;
+    }
+}
+
+/* Update loc_stack_count for a local variable in SLOT.  */
+static void
+prepare_stack_slot_assign(stack_slot *slot) {
+    if (slot->mode != LOC)
+	return;
+    VARR_ADDR(size_t, loc_stack_count)[slot->u.loc]++;
+}
+
+/* Pop and return a slot from the emulated VM stack.  Update
+   loc_stack_count.  */
+static stack_slot
+pop_stack_slot(void) {
+    stack_slot slot;
+    
+    slot = VARR_POP(stack_slot, stack);
+    if (slot.mode == LOC) {
+	assert(VARR_ADDR(size_t, loc_stack_count)[slot.u.loc] > 0);
+	VARR_ADDR(size_t, loc_stack_count)[slot.u.loc]--;
+    }
+    return slot;
+}
+
+/* Push SLOT to the emulated VM stack.  Update loc_stack_count thorugh
+   prepare_stack_slot_assign.  */
+static void
+push_stack_slot(stack_slot slot) {
+    size_t len = VARR_LENGTH(stack_slot, stack) + 1;
+
+    assert(slot.mode != TEMP || slot.u.temp == -(vindex_t) len);
+    if (slot.mode == LOC) {
+	prepare_stack_slot_assign(&slot);
+    }
+    VARR_PUSH(stack_slot, stack, slot);
+    if (max_stack_depth < len)
+	max_stack_depth = len;
+}
+
+/* Truncate the stack to DEPTH length through pop_stack_slot to update
+   loc_stack_count.  */
+static void
+trunc_stack(size_t depth) {
+    while(VARR_LENGTH(stack_slot, stack) > depth) {
+	pop_stack_slot();
+    }
+}
+
+static void
+change_stack_slot(size_t n, stack_slot slot) {
+    stack_slot *addr = VARR_ADDR(stack_slot, stack);
+    
+    assert(n < VARR_LENGTH(stack_slot, stack));
+    prepare_stack_slot_rewrite(&addr[n]);
+    prepare_stack_slot_assign(&slot);
+    addr[n] = slot;
+}
+
+/* We are going to assign a value to local var with index RES.  Check
+   there is no slot with such var on the emulated VM stack.  Emulate
+   generation of RTL insns through calling ACTION to move the var
+   value to temp vars in the opposite case.  Update the stack slots of
+   the emulated VM stack.  */
+static void
+prepare_local_assign(vindex_t res, void (*action)(stack_slot *slot, vindex_t res)) {
+    size_t i, len = VARR_LENGTH(stack_slot, stack);
+    stack_slot *curr_slot;
+    
+    assert(res > 0);
+    if (VARR_ADDR(size_t, loc_stack_count)[res] == 0)
+	return;
+    for (i = 0; i < len; i++) {
+	curr_slot = &VARR_ADDR(stack_slot, stack)[i];
+	if (curr_slot->mode == LOC/* && curr_slot->u.loc == res*/) {
+	    action(curr_slot, -(vindex_t) i - 1);
+	}
+    }
+    assert(VARR_ADDR(size_t, loc_stack_count)[res] == 0);
+}
+
+/* Push value with MODE onto the stack.  Use VAL as a parameter if
+   necessary.  The value is a result of stack insn at position
+   SOURCE_INSN_POS.  */
+static void
+push_val(enum slot_type mode, VALUE val, size_t source_insn_pos) {
     stack_slot slot;
     
     slot.mode = mode;
+    slot.source_insn_pos = source_insn_pos;
     switch (mode) {
     case VAL:
 	slot.u.val = val;
@@ -239,7 +354,7 @@ push_val(enum slot_type mode, VALUE val) {
     default:
 	break;
     }
-    VARR_PUSH(stack_slot, stack, slot);
+    push_stack_slot(slot);
 }
 
 #if RTL_GEN_DEBUG
@@ -337,9 +452,9 @@ restore_stack_slots(size_t start, size_t depth) {
     size_t i;
     stack_slot *addr = &VARR_ADDR(stack_slot, saved_stack_slots)[start];
     
-    VARR_TRUNC(stack_slot, stack, 0);
+    trunc_stack(0);
     for (i = 0; i < depth; i++) {
-	VARR_PUSH(stack_slot, stack, addr[i]);
+	push_stack_slot(addr[i]);
     }
 }
 
@@ -351,7 +466,8 @@ restore_stack_slots(size_t start, size_t depth) {
 static int
 update_saved_stack_slots(size_t start_stack_slot_index) {
     size_t i, len = VARR_LENGTH(stack_slot, stack);
-    stack_slot *addr = &VARR_ADDR(stack_slot, saved_stack_slots)[start_stack_slot_index];
+    stack_slot *stack_addr = VARR_ADDR(stack_slot, stack);
+    stack_slot *saved_addr = &VARR_ADDR(stack_slot, saved_stack_slots)[start_stack_slot_index];
     int changed_p = FALSE;
     
 #if RTL_GEN_DEBUG
@@ -359,18 +475,30 @@ update_saved_stack_slots(size_t start_stack_slot_index) {
     print_stack();
 #endif
     for (i = 0; i < len; i++)
-	if (VARR_ADDR(stack_slot, stack)[i].mode == ANY)
+	if (stack_addr[i].mode == ANY)
 	    ;
-	else if (addr[i].mode == ANY) {
-	    addr[i] = VARR_ADDR(stack_slot, stack)[i];
+	else if (saved_addr[i].mode == ANY) {
+	    saved_addr[i] = stack_addr[i];
 	    changed_p = TRUE;
-	} else if (! stack_slot_eq(&addr[i], &VARR_ADDR(stack_slot, stack)[i])) {
-	    if (addr[i].mode != TEMP)
+	} else if (! stack_slot_eq(&saved_addr[i], &stack_addr[i])) {
+	    if (saved_addr[i].mode != TEMP) {
 		changed_p = TRUE;
-	    VARR_ADDR(stack_slot, stack)[i].mode = addr[i].mode = TEMP;
-#ifndef NDEBUG
-	    VARR_ADDR(stack_slot, stack)[i].u.temp = addr[i].u.temp = -(vindex_t) i - 1;
+		VARR_ADDR(char, use_only_temp_result_p)[saved_addr[i].source_insn_pos] = TRUE;
+#if RTL_GEN_DEBUG
+		fprintf(stderr, "     ==Put into temp at pos=%ld\n", saved_addr[i].source_insn_pos);
 #endif
+	    } else if (stack_addr[i].mode != TEMP) {
+		changed_p = TRUE;
+		VARR_ADDR(char, use_only_temp_result_p)[stack_addr[i].source_insn_pos] = TRUE;
+#if RTL_GEN_DEBUG
+		fprintf(stderr, "     ==Put into temp at pos=%ld\n", stack_addr[i].source_insn_pos);
+#endif
+	    }
+	    saved_addr[i].mode = TEMP;
+#ifndef NDEBUG
+	    saved_addr[i].u.temp = -(vindex_t) i - 1;
+#endif
+	    change_stack_slot(i, saved_addr[i]);
 	}
 #if RTL_GEN_DEBUG
     fprintf(stderr, "     ==Stack union after -- ");
@@ -392,7 +520,7 @@ process_label(int type, size_t label, size_t depth) {
 
 #if RTL_GEN_DEBUG
     assert(depth == VARR_LENGTH(stack_slot, stack));
-    fprintf(stderr, " Processing label %lu, type=%d, depth=%d\n",
+    fprintf(stderr, " Processing label %lu, type=%d, depth=%lu\n",
 	    label, type, VARR_LENGTH(stack_slot, stack));
 #endif
     assert(type != NO_LABEL);
@@ -478,10 +606,11 @@ setup_labels_from_catch_table(rb_iseq_t *iseq) {
 	bound_addr[entries[i].end] = TRUE;
 #if RTL_GEN_DEBUG
 	fprintf(stderr, "start=%d, end=%d", entries[i].start, entries[i].end);
-	fprintf(stderr, ", CATCH_TYPE=%d, ", entries[i].type);
+	fprintf(stderr, ", sp=%d, CATCH_TYPE=%d, \n", entries[i].sp, entries[i].type);
 #endif
 	/* See hack for these catch types in compile.c.  */
 	depth = entries[i].sp;
+	assert ((int) depth >= 0);
 	label_type = CONT_LABEL;
 	if (entries[i].type == CATCH_TYPE_RESCUE
 	    || entries[i].type == CATCH_TYPE_NEXT
@@ -490,11 +619,11 @@ setup_labels_from_catch_table(rb_iseq_t *iseq) {
 	}
 	if (depth != 0) {
 	    for (j = 0; j < depth - 1; j++)
-		push_val(ANY, 0);
-	    push_val(TEMP, 0);
+		push_val(TEMP, 0, 0);
+	    push_val(TEMP, 0, 0);
 	}
 	process_label(label_type, entries[i].cont, depth);
-	VARR_TRUNC(stack_slot, stack, 0);
+	trunc_stack(0);
     }
 }
 
@@ -517,12 +646,23 @@ print_label_pos_stack(void) {
 }
 #endif
 
+/* Modify SLOT to be a temporary with index RES.  */
+static void
+make_temp(stack_slot *slot, vindex_t res) {
+    assert(slot->mode == LOC && res < 0);
+    prepare_stack_slot_rewrite(slot);
+    slot->mode = TEMP;
+#ifndef NDEBUG
+    slot->u.temp = res;
+#endif
+}
+
 /* Update the stack and its DEPTH by insn in CODE at position POS.  */
 static void
 update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
     VALUE insn;
     size_t stack_insn_len;
-    int result_p;
+    int result_p, temp_only_p;
     stack_slot slot;
 #if RTL_GEN_DEBUG
     int processed_label_p;
@@ -559,7 +699,7 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
     case BIN(adjuststack):
 	result_p = FALSE;
 	assert(VARR_LENGTH(stack_slot, stack) >= *depth);
-	VARR_TRUNC(stack_slot, stack, *depth);
+	trunc_stack(*depth);
 	break;
     case BIN(dupn):
     case BIN(expandarray):
@@ -568,12 +708,13 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
     default:
 	result_p = TRUE;
 	assert(*depth > 0 && VARR_LENGTH(stack_slot, stack) >= *depth - 1);
-	VARR_TRUNC(stack_slot, stack, *depth - 1);
+	trunc_stack(*depth - 1);
 	break;
     }
 #if RTL_GEN_DEBUG
     processed_label_p = FALSE;
 #endif
+    temp_only_p = VARR_ADDR(char, use_only_temp_result_p)[pos];
     switch (insn) {
     case BIN(branchif):
     case BIN(branchunless):
@@ -581,7 +722,7 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
     case BIN(getinlinecache):
     case BIN(jump): {
 	if (result_p)
-	    push_val(TEMP, 0);
+	    push_val(TEMP, 0, pos);
 #if RTL_GEN_DEBUG
 	fprintf(stderr, "\n");
 	processed_label_p = TRUE;
@@ -605,49 +746,78 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
 	break;
     }
     case BIN(putself):
-	push_val(SELF, Qnil);
+	if (temp_only_p)
+	    push_val(TEMP, 0, pos);
+	else
+	    push_val(SELF, Qnil, pos);
 	break;
     case BIN(putnil):
-	push_val(VAL, Qnil);
+	if (temp_only_p)
+	    push_val(TEMP, 0, pos);
+	else
+	    push_val(VAL, Qnil, pos);
 	break;
     case BIN(putobject):
-	push_val(VAL, code[pos + 1]);
+	if (temp_only_p)
+	    push_val(TEMP, 0, pos);
+	else
+	    push_val(VAL, code[pos + 1], pos);
 	break;
     case BIN(putobject_OP_INT2FIX_O_0_C_):
-	push_val(VAL, INT2FIX(0));
+	if (temp_only_p)
+	    push_val(TEMP, 0, pos);
+	else
+	    push_val(VAL, INT2FIX(0), pos);
 	break;
     case BIN(putobject_OP_INT2FIX_O_1_C_):
-	push_val(VAL, INT2FIX(1));
-	break;
-    case BIN(putstring):
-	push_val(STR, code[pos + 1]);
-	break;
-    case BIN(getlocal):
-	if (code[pos + 2] == 0)
-	    push_val(LOC, code[pos + 1]);
+	if (temp_only_p)
+	    push_val(TEMP, 0, pos);
 	else
-	    push_val(TEMP, 0);
+	    push_val(VAL, INT2FIX(1), pos);
+	break;
+#if 0
+    case BIN(putstring):
+	if (temp_only_p)
+	    push_val(TEMP, 0, pos);
+	else
+	    push_val(STR, code[pos + 1], pos);
+	break;
+#endif
+    case BIN(getlocal):
+	if (code[pos + 2] != 0 || temp_only_p)
+	    push_val(TEMP, 0, pos);
+	else
+	    push_val(LOC, code[pos + 1], pos);
 	break;
     case BIN(getlocal_OP__WC__0):
-	push_val(LOC, code[pos + 1]);
+	if (temp_only_p)
+	    push_val(TEMP, 0, pos);
+	else
+	    push_val(LOC, code[pos + 1], pos);
 	break;
     case BIN(getlocal_OP__WC__1):
-	push_val(TEMP, 0);
+	push_val(TEMP, 0, pos);
+	break;
+    case BIN(setlocal):
+	assert(! result_p);
+	if (code[pos + 2] != 0)
+	    break;
+	/* Fall through */
+    case BIN(setlocal_OP__WC__0):
+	prepare_local_assign(code[pos + 1], make_temp);
 	break;
     case BIN(setn): {
 	size_t len;
 	rb_num_t n = code[pos + 1];
-	stack_slot *nth_slot;
 
 	len = VARR_LENGTH(stack_slot, stack);
 	assert(len > n);
 	slot = VARR_LAST(stack_slot, stack);
-	nth_slot = &VARR_ADDR(stack_slot, stack)[len - n - 1];
-	*nth_slot = slot;
 #ifndef NDEBUG
 	if (slot.mode == TEMP)
-	    nth_slot->u.temp = n - (vindex_t) len;
+	    slot.u.temp = n - (vindex_t) len;
 #endif
+	change_stack_slot(len - n - 1, slot);
 	break;
     }
     case BIN(topn): {
@@ -657,19 +827,19 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
 	len = VARR_LENGTH(stack_slot, stack);
 	assert(len > n);
 	slot = VARR_ADDR(stack_slot, stack)[len - n - 1];
-	if (slot.mode == TEMP) {
-	    push_val(TEMP, 0);
+	if (slot.mode == TEMP || temp_only_p) {
+	    push_val(TEMP, 0, pos);
 	} else {
-	    VARR_PUSH(stack_slot, stack, slot);
+	    push_stack_slot(slot);
 	}
 	break;
     }
     case BIN(dup): {
 	slot = VARR_LAST(stack_slot, stack);
-	if (slot.mode == TEMP) {
-	    push_val(TEMP, 0);
+	if (slot.mode == TEMP || temp_only_p) {
+	    push_val(TEMP, 0, pos);
 	} else {
-	    VARR_PUSH(stack_slot, stack, slot);
+	    push_stack_slot(slot);
 	}
 	break;
     }
@@ -681,10 +851,10 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
 	assert(len >= n);
 	for (i = 0; i < n; i++) {
 	    slot = VARR_ADDR(stack_slot, stack)[len - n + i];
-	    if (slot.mode == TEMP) {
-		push_val(TEMP, 0);
+	    if (slot.mode == TEMP || temp_only_p) {
+		push_val(TEMP, 0, pos);
 	    } else {
-		VARR_PUSH(stack_slot, stack, slot);
+		push_stack_slot(slot);
 	    }
 	}
 	break;
@@ -700,8 +870,8 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
 	if (slot2.mode == TEMP)
 	    slot2.u.temp = -op;
 #endif
-	VARR_ADDR(stack_slot, stack)[op - 1] = slot2; 
-	VARR_ADDR(stack_slot, stack)[op - 2] = slot; 
+	change_stack_slot(op - 1, slot2); 
+	change_stack_slot(op - 2, slot); 
 	break;
     }
     case BIN(reverse): {
@@ -709,10 +879,11 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
 	size_t len = VARR_LENGTH(stack_slot, stack);
 		
 	for (i = 0; i < n; i++) {
-	    VARR_ADDR(stack_slot, stack)[len - i - 1].mode = TEMP;
+	    slot.mode = TEMP;
 #ifndef NDEBUG
-	    VARR_ADDR(stack_slot, stack)[len - i - 1].u.temp = (vindex_t) i - (vindex_t) len;
+	    slot.u.temp = (vindex_t) i - (vindex_t) len;
 #endif
+	    change_stack_slot(len - i - 1, slot);
 	}
 	break;
     }
@@ -723,15 +894,15 @@ update_stack_by_insn(VALUE *code, size_t pos, size_t *depth) {
 	size_t len = VARR_LENGTH(stack_slot, stack);
 
 	assert(len > 0);
-	VARR_TRUNC(stack_slot, stack, len - 1);
+	trunc_stack(len - 1);
 	for (i = 0; i < cnt; i++) {
-	    push_val(TEMP, 0);
+	    push_val(TEMP, 0, pos);
 	}
 	break;
     }
     default:
 	if (result_p)
-	    push_val(TEMP, 0);
+	    push_val(TEMP, 0, pos);
 	break;
     }
 #if RTL_GEN_DEBUG
@@ -762,12 +933,14 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
     VARR_TRUNC(size_t, label_pos_stack, 0);
     VARR_TRUNC(char, pos_label_type, 0);
     VARR_TRUNC(char, label_processed_p, 0);
-    VARR_TRUNC(stack_slot, stack, 0);
+    VARR_TRUNC(char, use_only_temp_result_p, 0);
+    trunc_stack(0);
     VARR_TRUNC(stack_slot, saved_stack_slots, 0);
     for (pos = 0; pos < size; pos++) {
 	VARR_PUSH(size_t, pos_stack_free, 0); /* undefined */
 	VARR_PUSH(char, pos_label_type, NO_LABEL);
 	VARR_PUSH(char, label_processed_p, FALSE);
+	VARR_PUSH(char, use_only_temp_result_p, FALSE);
 	VARR_PUSH(size_t, label_start_stack_slot, 0);
     }
     setup_labels_from_catch_table(iseq);
@@ -800,9 +973,10 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
 		    fprintf(stderr, "Achieving label %lu(%d) by fall through\n", pos, type);
 #endif
 		    assert(depth + 1 == VARR_ADDR(size_t, pos_stack_free)[pos]);
-		    if (! update_saved_stack_slots(VARR_ADDR(size_t, label_start_stack_slot)[pos]))
+		    if (update_saved_stack_slots(VARR_ADDR(size_t, label_start_stack_slot)[pos]))
+			stack_on_label_change_p = TRUE;
+		    else if (VARR_ADDR(char, label_processed_p)[pos])
 			break;
-		    stack_on_label_change_p = TRUE;
 #if RTL_GEN_DEBUG
 		    type = VARR_ADDR(char, pos_label_type)[pos];
 #endif
@@ -855,13 +1029,6 @@ DEF_VARR(branch_target_loc);
    modify labels in generated RTL insns.  */
 static VARR(branch_target_loc) *branch_target_locs;
 
-/* Map: var location index -> the current number of stack slots with
-   given location in the emulated VM stack.  We need this map to
-   process complicated stack insns generated for a multiple
-   assignment.  In this case we might need temporary variables to
-   implement the assignemnt. */
-static VARR(size_t) *loc_stack_count;
-
 /* Definition of VARR of elements with type VALUE.  */
 DEF_VARR(VALUE);
 
@@ -898,44 +1065,6 @@ append_vals(int argc, ...) {
     append_vals(6, (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4), (VALUE) (op5), (VALUE) (op6))
 #define APPEND7(op1, op2, op3, op4, op5, op6, op7) \
     append_vals(7, (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4), (VALUE) (op5), (VALUE) (op6), (VALUE) (op7))
-
-/* Max stack depth of the emulated VM stack.  */
-static size_t max_stack_depth;
-
-/* Pop and return a slot from the emulated VM stack.  */
-static stack_slot
-pop_stack_slot(void) {
-    stack_slot slot;
-    
-    slot = VARR_POP(stack_slot, stack);
-    if (slot.mode == LOC) {
-	assert(VARR_ADDR(size_t, loc_stack_count)[slot.u.loc] > 0);
-	VARR_ADDR(size_t, loc_stack_count)[slot.u.loc]--;
-    }
-    return slot;
-}
-
-/* Update loc_stack_count for a local variable in SLOT.  */
-static void
-prepare_loc_var_push(stack_slot *slot) {
-    if (slot->mode != LOC)
-	return;
-    VARR_ADDR(size_t, loc_stack_count)[slot->u.loc]++;
-}
-
-/* Push SLOT to the emulated VM stack.  */
-static void
-push_stack_slot(stack_slot slot) {
-    size_t len = VARR_LENGTH(stack_slot, stack) + 1;
-
-    assert(slot.mode != TEMP || slot.u.temp == -(vindex_t) len);
-    if (slot.mode == LOC) {
-	prepare_loc_var_push(&slot);
-    }
-    VARR_PUSH(stack_slot, stack, slot);
-    if (max_stack_depth < len)
-	max_stack_depth = len;
-}
 
 /* Push slot describing temp var with index RES to the
    emulated VM stack.  */
@@ -982,15 +1111,6 @@ to_var(stack_slot slot, vindex_t top) {
     return top;
 }
 
-/* Update loc_stack_count for local var described by SLOT.  */
-static void
-prepare_loc_var_rewrite(stack_slot *slot) {
-    if (slot->mode == LOC) {
-	assert(VARR_ADDR(size_t, loc_stack_count)[slot->u.loc] > 0);
-	VARR_ADDR(size_t, loc_stack_count)[slot->u.loc]--;
-    }
-}
-
 /* Generate (zero or more) RTL insns to move value described by SLOT
    to a temporary var with index RES.  STACK_P is TRUE if the slot is
    in the emulated VM stack.  */
@@ -1000,7 +1120,7 @@ to_temp(stack_slot *slot, vindex_t res, int stack_p) {
     if (slot->mode == LOC) {
 	APPEND3(BIN(loc2temp), res, slot->u.loc);
 	if (stack_p) {
-	    prepare_loc_var_rewrite(slot);
+	    prepare_stack_slot_rewrite(slot);
 	}
     } else if (slot->mode == SELF) {
 	APPEND2(BIN(self2var), res);
@@ -1013,27 +1133,6 @@ to_temp(stack_slot *slot, vindex_t res, int stack_p) {
 #ifndef NDEBUG
     slot->u.temp = res;
 #endif
-}
-
-/* We are going to assign a value to local var with index RES.  Check
-   there is no slot with such var on the emulated VM stack.  Generate
-   RTL insns to move the var value to temp vars in the opposite case.
-   Update the stack slots of the emulated VM stack.  */
-static void
-prepare_local_assign(vindex_t res) {
-    size_t i, len = VARR_LENGTH(stack_slot, stack);
-    stack_slot *curr_slot;
-    
-    assert(res > 0);
-    if (VARR_ADDR(size_t, loc_stack_count)[res] == 0)
-	return;
-    for (i = 0; i < len; i++) {
-	curr_slot = &VARR_ADDR(stack_slot, stack)[i];
-	if (curr_slot->mode == LOC) {
-	    to_temp(curr_slot, -(vindex_t) i - 1, TRUE);
-	}
-    }
-    assert(VARR_ADDR(size_t, loc_stack_count)[res] == 0);
 }
 
 /* Pop slot from the emulated VM stack.  Generate RTL insns to place
@@ -1061,20 +1160,30 @@ get_2vars(vindex_t *op1, vindex_t *op2) {
 }
 
 /* Generate (zero or more) RTL insns for stack insn getlocal with args
-   IDX and LEVEL.  */
+   IDX and LEVEL.  Alway put the result into a temporary if
+   TEMP_OMLY_P.  */
 static void
-get_local(lindex_t idx, rb_num_t level) {
+get_local(lindex_t idx, rb_num_t level, int temp_only_p) {
     stack_slot slot;
     
-    if (level == 0) {
+    if (level == 0 && ! temp_only_p) {
 	slot.mode = LOC;
 	slot.u.loc = idx;
 	push_stack_slot(slot);
     } else {
 	vindex_t res = new_top_stack_temp_var();
 	
-	APPEND4(BIN(uploc2temp), res, idx, level);
+	if (level == 0)
+	    APPEND3(BIN(loc2temp), res, idx);
+	else
+	    APPEND4(BIN(uploc2temp), res, idx, level);
     }
+}
+
+/* Put a value decribed by SLOT into a temporary with index RES.  */
+static void
+move_to_temp(stack_slot *slot, vindex_t res) {
+    to_temp(slot, res, TRUE);
 }
 
 /* Generate (one or more) RTL insns for stack insn setlocal with args
@@ -1085,7 +1194,7 @@ set_local(lindex_t idx, rb_num_t level) {
 
     slot = pop_stack_slot();
     if (level == 0)
-	prepare_local_assign(idx);
+	prepare_local_assign(idx, move_to_temp);
     if (slot.mode == SELF) {
 	if (level == 0)
 	    APPEND2(BIN(self2var), idx);
@@ -1127,14 +1236,20 @@ set_local(lindex_t idx, rb_num_t level) {
 }
 
 /* Update the emulated VM stack for for stack insn putobject with arg
-   V.  */
+   V.  Alway put the result into a temporary if TEMP_OMLY_P.  */
 static void
-putobject(VALUE v) {
+putobject(VALUE v, int temp_only_p) {
     stack_slot slot;
 
-    slot.mode = VAL;
-    slot.u.val = v;
-    push_stack_slot(slot);
+    if (temp_only_p) {
+	vindex_t res = new_top_stack_temp_var();
+	
+	APPEND3(BIN(val2temp), res, v);
+    } else {
+	slot.mode = VAL;
+	slot.u.val = v;
+	push_stack_slot(slot);
+    }
 }
 
 /* Generate RTL insns to put values on the VM stack.  The values are
@@ -1157,7 +1272,7 @@ put_args_on_stack(vindex_t args_num) {
     vindex_t len = VARR_LENGTH(stack_slot, stack);
 
     put_on_stack(args_num);
-    VARR_TRUNC(stack_slot, stack, len - args_num);
+    trunc_stack(len - args_num);
 }
 
 /* Generate RTL insn RES_INSN for special load stack insn with ARGS.
@@ -1310,10 +1425,9 @@ generate_unary_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_
    if FIXNUM_P or flonum if FLONUM_P or string otherwise).  Return NOP
    if there is no such insn.  */
 static enum ruby_vminsn_type
-make_imm_id(enum ruby_vminsn_type insn_id, int fixnum_p, int flonum_p)
-{
+make_imm_id(enum ruby_vminsn_type insn_id, int fixnum_p, int flonum_p) {
     if (!fixnum_p && !flonum_p)
-	return insn_id == BIN(ind) ? BIN(inds) : insn_id == BIN(ind) ? BIN(indsets): BIN(nop);
+	return insn_id == BIN(ind) ? BIN(inds) : insn_id == BIN(indset) ? BIN(indsets): BIN(nop);
     assert(fixnum_p && !flonum_p || !fixnum_p && flonum_p);
     switch (insn_id) {
     case BIN(plus): return fixnum_p ? BIN(plusi) : BIN(plusf);
@@ -1458,7 +1572,7 @@ static void
 tune_stack_slot(size_t pos, size_t n) {
     size_t start = VARR_ADDR(size_t, label_start_stack_slot)[pos];
     stack_slot *saved_slots_addr = &VARR_ADDR(stack_slot, saved_stack_slots)[start];
-    stack_slot *slots_addr = &VARR_ADDR(stack_slot, stack)[0];
+    stack_slot *slots_addr = VARR_ADDR(stack_slot, stack);
     
     assert(VARR_ADDR(char, pos_label_type)[pos] != NO_LABEL);
 #if RTL_GEN_DEBUG
@@ -1495,10 +1609,19 @@ tune_stack(size_t pos, int label_type, int restore_p) {
 	size_t start = VARR_ADDR(size_t, label_start_stack_slot)[pos];
 	stack_slot *saved_slots_addr = &VARR_ADDR(stack_slot, saved_stack_slots)[start];
 	
-	for (i = 0; i < len; i++)
-	    pop_stack_slot();
-	for (i = 0; i < depth; i++)
-	    push_stack_slot(saved_slots_addr[i]);
+	trunc_stack(0);
+	for (i = 0; i < depth; i++) {
+	  stack_slot slot = saved_slots_addr[i];
+
+	  if (slot.mode == ANY && 0) {
+	    slot.mode = TEMP;
+	    slot.u.temp = -(vindex_t) i - 1;
+#if RTL_GEN_DEBUG
+	    fprintf(stderr, "-->Changing ANY on TEMP (%ld)\n", slot.u.temp);
+#endif
+	  }
+	  push_stack_slot(slot);
+	}
 #if RTL_GEN_DEBUG
 	fprintf(stderr, "-->Restoring stack at pos %lu. ", (long unsigned) pos);
 	print_stack();
@@ -1545,10 +1668,11 @@ generate_rel_op(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_vminsn
     return len + next_insn_len;
 }
 
-/* Generate RTL insns from ISEQ stack insn opt_aref or opt_aref_with
-   whose operands are in ARGS.  */
+/* Generate RTL insns from ISEQ stack insn opt_aref (STR == Qnil in
+   this case) or opt_aref_with (STR is the last arg) whose operands
+   are in ARGS.  */
 static void
-generate_aset_op(rb_iseq_t *iseq, const VALUE *args) {
+generate_aset_op(rb_iseq_t *iseq, const VALUE *args, VALUE str) {
     CALL_INFO ci = (CALL_INFO) args[0];
     CALL_CACHE cc = (CALL_CACHE) args[1];
     struct rb_call_data *cd;
@@ -1559,12 +1683,18 @@ generate_aset_op(rb_iseq_t *iseq, const VALUE *args) {
     stack_slot slot, slot2, slot3;
     
     slot3 = pop_stack_slot();
-    slot2 = pop_stack_slot();
+    if (str == Qnil)
+	slot2 = pop_stack_slot();
     slot = pop_stack_slot();
     res = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
     cd = get_cd(iseq, ci, cc, res);
     op = to_var(slot, res);
-    if (slot2.mode == SELF) {
+    if (str != Qnil) {
+	imm_insn = make_imm_id(res_insn, FALSE, FALSE);
+	assert(imm_insn != BIN(nop));
+	op2 = str;
+	res_insn = imm_insn;
+    } else if (slot2.mode == SELF) {
 	op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
 	APPEND2(BIN(self2var), op2);
     } else if (slot2.mode == VAL) {
@@ -1581,20 +1711,14 @@ generate_aset_op(rb_iseq_t *iseq, const VALUE *args) {
 	    APPEND3(BIN(val2temp), op2, slot2.u.val);
 	}
     } else if (slot2.mode == STR) {
-	imm_insn = make_imm_id(res_insn, FALSE, FALSE);
-	if (imm_insn != BIN(nop)) {
-	    op2 = slot2.u.str;
-	    res_insn = imm_insn;
-	} else {
-	    op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
-	    APPEND3(BIN(str2var), op2, slot2.u.str);
-	}
+	op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
+	APPEND3(BIN(str2var), op2, slot2.u.str);
     } else {
 	assert(slot2.mode == LOC || slot2.mode == TEMP);
 	assert(slot2.mode != TEMP || slot2.u.temp == -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2);
 	op2 = slot2.mode == LOC ? slot2.u.loc : -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
     }
-    op3 = to_var(slot3, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 3);
+    op3 = to_var(slot3, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2 - (str == Qnil ? 1 : 0));
     APPEND5(res_insn, cd, op, op2, op3);
 #ifndef NDEBUG
     if (slot3.mode == TEMP)
@@ -1678,8 +1802,8 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
     size_t stack_insn_len, rtl_insn_start;
     stack_slot slot;
     branch_target_loc loc;
-    int label_type;
-
+    int label_type, temp_only_p;
+    
     insn = code[pos];
     stack_insn_len = insn_len(insn);
     label_type = VARR_ADDR(char, pos_label_type)[pos];
@@ -1702,11 +1826,14 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 #if RTL_GEN_DEBUG
 	fprintf(stderr, "\n");
 #endif
+	if (VARR_ADDR(char, catch_bound_pos_p)[pos])
+	    APPEND1(BIN(nop));
 	return pos + stack_insn_len;
     }
+    temp_only_p = VARR_ADDR(char, use_only_temp_result_p)[pos];
     switch (insn) {
     case BIN(getlocal):
-	get_local(code[pos + 1], code[pos + 2]);
+      get_local(code[pos + 1], code[pos + 2], temp_only_p);
 	break;
     case BIN(setlocal):
 	set_local(code[pos + 1], code[pos + 2]);
@@ -1772,16 +1899,20 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	specialized_store(BIN(var2global), &code[pos + 1]);
 	break;
     case BIN(putnil):
-	slot.mode = VAL;
-	slot.u.val = Qnil;
-	push_stack_slot(slot);
+	putobject(Qnil, temp_only_p);
 	break;
     case BIN(putself):
-	slot.mode = SELF;
-	push_stack_slot(slot);
+	if (temp_only_p) {
+	    vindex_t res = new_top_stack_temp_var();
+
+	    APPEND2(BIN(self2var), res);
+	} else {
+	    slot.mode = SELF;
+	    push_stack_slot(slot);
+	}
 	break;
     case BIN(putobject):
-	putobject(code[pos + 1]);
+	putobject(code[pos + 1], temp_only_p);
 	break;
     case BIN(putspecialobject):
 	/* Fall through: */
@@ -1793,11 +1924,17 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 		res, code[pos + 1]);
 	break;
     }
-    case BIN(putstring):
+    case BIN(putstring): {
+#if 0
 	slot.mode = STR;
 	slot.u.str = code[pos + 1];
 	push_stack_slot(slot);
+#else
+	vindex_t res = new_top_stack_temp_var();
+	APPEND3(BIN(str2var), res, code[pos + 1]);
+#endif
 	break;
+    }
     case BIN(concatstrings): {
 	rb_num_t cnt = code[pos + 1];
 	vindex_t res;
@@ -1968,7 +2105,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	rb_num_t n = code[pos + 1];
 
 	put_on_stack(n);
-	APPEND3(BIN(temp_reverse), n, (vindex_t) (VARR_LENGTH(stack_slot, stack) - n) - 1);
+	APPEND3(BIN(temp_reverse), n, -(vindex_t) (VARR_LENGTH(stack_slot, stack) - n) - 1);
 	break;
     }
     case BIN(reput):
@@ -1998,24 +2135,20 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	size_t len;
 	rb_num_t n = code[pos + 1];
 	long i;
-	stack_slot *nth_slot;
 	
 	assert(n > 0);
 	len = VARR_LENGTH(stack_slot, stack);
 	assert(len > n);
 	slot = VARR_LAST(stack_slot, stack);
+	assert(slot.mode != TEMP || slot.u.temp == - (vindex_t) VARR_LENGTH(stack_slot, stack));
 	i = len - n - 1;
-	nth_slot = &VARR_ADDR(stack_slot, stack)[i];
-	prepare_loc_var_rewrite(nth_slot);
-	*nth_slot = slot;
 #ifndef NDEBUG
 	if (slot.mode == TEMP)
-	    nth_slot->u.temp = -i - 1;
+	    slot.u.temp = -i - 1;
 #endif
-	prepare_loc_var_push(nth_slot);
-	to_temp(nth_slot, -i - 1, TRUE);
+	change_stack_slot(i, slot);
+	//to_temp(nth_slot, -i - 1, TRUE);
 	if (slot.mode == TEMP) {
-	    assert(slot.u.temp == - (vindex_t) VARR_LENGTH(stack_slot, stack));
 	    APPEND3(BIN(temp2temp), -i - 1, - (vindex_t) VARR_LENGTH(stack_slot, stack));
 	}
 	break;
@@ -2061,8 +2194,11 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	break;
     }
     case BIN(checkkeyword): {
-	abort();
-	/* ??? */
+	vindex_t res;
+	
+	res = new_top_stack_temp_var();
+	APPEND4(BIN(check_keyword), res, code[pos + 1], code[pos + 2]);
+	/* ??? combining with branch */
 	break;
     }
     case BIN(defineclass): {
@@ -2110,7 +2246,6 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	CALL_INFO ci = (CALL_INFO) code[pos + 1];
 	CALL_CACHE cc = (CALL_CACHE) code[pos + 2];
 	VALUE block = code[pos + 3];
-	VALUE recval;
 	struct rb_call_data *cd;
 	vindex_t args_num;
 	int stack_block_p = ci->flag & VM_CALL_ARGS_BLOCKARG;
@@ -2119,9 +2254,12 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	put_args_on_stack(args_num);
 	slot = pop_stack_slot();
 	cd = get_cd(iseq, ci, cc, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
-	assert(slot.mode == VAL);
-	recval = slot.u.val;
-	APPEND5(BIN(call_super), cd, cd->call_start, block, recval);
+	if (slot.mode == VAL) {
+	    APPEND5(BIN(call_super_val), cd, cd->call_start, block, slot.u.val);
+	} else {
+	    assert (slot.mode == TEMP);
+	    APPEND5(BIN(call_super), cd, cd->call_start, block, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
+	}
 	push_temp_result(cd->call_start);
 	break;
     }
@@ -2164,6 +2302,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	    generate_leave();
 	} else if (code[dest] == BIN(trace)
 		   && code[dest + insn_len(BIN(trace))] == BIN(leave)) {
+	    APPEND2(code[dest], code[dest + 1]);
 	    generate_leave();
 	} else {
 #if RTL_GEN_DEBUG
@@ -2301,28 +2440,11 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	generate_bin_op(iseq, &code[pos + 1], BIN(ind));
 	break;
     case BIN(opt_aset):
-	generate_aset_op(iseq, &code[pos + 1]);
+	generate_aset_op(iseq, &code[pos + 1], Qnil);
 	break;
-    case BIN(opt_aset_with): {
-	stack_slot slot2;
-	VALUE key = code[pos + 3];
-
-	slot = pop_stack_slot();
-	slot2.mode = STR;
-	slot2.u.str = key;
-	push_stack_slot(slot2);
-	if (slot.mode == TEMP) {
-	    vindex_t op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-
-	    APPEND3(BIN(temp2temp), op, op + 1);
-#ifndef NDEBUG
-	    slot.u.temp = op;
-#endif
-	}
-	push_stack_slot(slot);
-	generate_aset_op(iseq, &code[pos + 1]);
+    case BIN(opt_aset_with):
+	generate_aset_op(iseq, &code[pos + 1], code[pos + 3]);
 	break;
-    }
     case BIN(opt_aref_with):
 	slot.mode = STR;
 	slot.u.str = code[pos + 3];
@@ -2393,10 +2515,10 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	break;
     }
     case BIN(getlocal_OP__WC__0):
-	get_local(code[pos + 1], 0);
+	get_local(code[pos + 1], 0, temp_only_p);
 	break;
     case BIN(getlocal_OP__WC__1):
-	get_local(code[pos + 1], 1);
+	get_local(code[pos + 1], 1, temp_only_p);
 	break;
     case BIN(setlocal_OP__WC__0):
 	set_local(code[pos + 1], 0);
@@ -2405,10 +2527,10 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	set_local(code[pos + 1], 1);
 	break;
     case BIN(putobject_OP_INT2FIX_O_0_C_):
-	putobject(INT2FIX(0));
+	putobject(INT2FIX(0), temp_only_p);
 	break;
     case BIN(putobject_OP_INT2FIX_O_1_C_):
-	putobject(INT2FIX(1));
+	putobject(INT2FIX(1), temp_only_p);
 	break;
     default:
 	break;
@@ -2424,18 +2546,12 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 static void
 translate(rb_iseq_t *iseq){
     const VALUE *code = iseq->body->iseq_encoded;
-    size_t i, pos, size;
+    size_t pos, size;
     enum ruby_vminsn_type insn, prev_insn;
     
     VARR_TRUNC(branch_target_loc, branch_target_locs, 0);
     VARR_TRUNC(size_t, new_insn_offsets, 0);
-    VARR_TRUNC(stack_slot, stack, 0);
-    max_stack_depth = 0;
-    VARR_TRUNC(size_t, loc_stack_count, 0);
-    size = iseq->body->local_table_size + VM_ENV_DATA_SIZE;
-    for (i = 0; i < size; i++) {
-	VARR_PUSH(size_t, loc_stack_count, 0);
-    }
+    trunc_stack(0);
     VARR_TRUNC(VALUE, iseq_rtl, 0);
     size = iseq->body->iseq_size;
     for (pos = 0; pos < size; pos++) {
@@ -2449,6 +2565,7 @@ translate(rb_iseq_t *iseq){
 	insn = code[pos];
 	pos = translate_stack_insn(iseq, code, pos, prev_insn);
     }
+    trunc_stack(0);
  }
 
 /* Create a line table of the generated RTL of ISEQ.  Return FALSE if
@@ -2539,8 +2656,10 @@ rtl_gen(rb_iseq_t *iseq) {
     
     if (! create_cd_data(iseq))
 	return FALSE;
+    initialize_loc_stack_count(iseq);
 #if RTL_GEN_DEBUG
-    fprintf(stderr, "---------------------------------------------\n");
+    fprintf(stderr, "------------%s@%s------------\n",
+	    RSTRING_PTR(iseq->body->location.label), RSTRING_PTR(rb_iseq_path(iseq)));
 #endif
     /* First pass on stack insns:  */
     find_stack_values_on_labels(iseq);
@@ -2592,6 +2711,7 @@ rtl_gen_init(void) {
     VARR_CREATE(char, pos_label_type, 0);
     VARR_CREATE(char, label_processed_p, 0);
     VARR_CREATE(char, catch_bound_pos_p, 0);
+    VARR_CREATE(char, use_only_temp_result_p, 0);
 }
 
 /* Finish stack insns -> RTL gnerator.  */
@@ -2609,4 +2729,5 @@ rtl_gen_finish(void) {
     VARR_DESTROY(char, pos_label_type);
     VARR_DESTROY(char, label_processed_p);
     VARR_DESTROY(char, catch_bound_pos_p);
+    VARR_DESTROY(char, use_only_temp_result_p);
 }

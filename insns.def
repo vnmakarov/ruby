@@ -3137,14 +3137,26 @@ call_block
 }
 
 DEFINE_INSN
-call_super
+call_super_val
 (CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, VALUE rec_val)
 ()
 ()
 {
     struct rb_calling_info calling;
 
-    call_super_f(th, reg_cfp, &calling, cd, call_start, blockiseq, rec_val);
+    call_super_val_f(th, reg_cfp, &calling, cd, call_start, blockiseq, rec_val);
+    RTL_CALL_METHOD(&calling, cd);
+}
+
+DEFINE_INSN
+call_super
+(CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, vindex_t rec_op)
+()
+()
+{
+    struct rb_calling_info calling;
+
+    call_super_f(th, reg_cfp, &calling, cd, call_start, blockiseq, get_var_addr(reg_cfp, rec_op));
     RTL_CALL_METHOD(&calling, cd);
 }
 
@@ -3203,6 +3215,15 @@ concat_array
 ()
 {
     concat_array_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2));
+}
+
+DEFINE_INSN
+check_keyword
+(tindex_t res, vindex_t kw_bits_index, rb_num_t keyword_index)
+()
+()
+{
+    check_keyword_f(reg_cfp, get_temp_addr(reg_cfp, res), kw_bits_index, keyword_index);
 }
 
 DEFINE_INSN

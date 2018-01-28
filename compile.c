@@ -2063,6 +2063,44 @@ remove_unreachable_chunk(rb_iseq_t *iseq, LINK_ELEMENT *i)
     return removed;
 }
 
+/* Remove jumps to jumps from the catch table.  */
+static void
+optimize_catch_table(rb_iseq_t *iseq)
+{
+    const VALUE *tptr;
+    VALUE *ptr;
+    unsigned int tlen, i, type;
+
+    tlen = (int)RARRAY_LEN(ISEQ_COMPILE_DATA(iseq)->catch_table_ary);
+    tptr = RARRAY_CONST_PTR(ISEQ_COMPILE_DATA(iseq)->catch_table_ary);
+    if (tlen > 0) {
+	for (i = 0; i < tlen; i++) {
+	    ptr = RARRAY_CONST_PTR(tptr[i]);
+	    type = (enum catch_type)(ptr[0] & 0xffff);
+	    /* For break we should not change the jump for its correct
+	       work.  */
+	    if (type != CATCH_TYPE_BREAK && ptr[4]) {
+		LABEL *lobj, *start_label = (LABEL *)(ptr[4] & ~1);
+
+		for (lobj = start_label;;) {
+		    INSN *iobj = (INSN *)get_next_insn((INSN *) lobj);
+
+		    if (! IS_INSN_ID(iobj, jump))
+			break;
+		    lobj = (LABEL *)OPERAND_AT(iobj, 0);
+		    if (lobj == start_label)
+			break;
+		}
+		if (lobj != start_label) {
+		    --start_label->refcnt;
+		    ptr[4] = (VALUE)(lobj) | 1;
+		    ++lobj->refcnt;
+		}
+	    }
+	}
+    }
+}
+
 static int
 iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcallopt)
 {
@@ -2362,6 +2400,7 @@ iseq_peephole_optimize(rb_iseq_t *iseq, LINK_ELEMENT *list, const int do_tailcal
 	}
     }
 
+    optimize_catch_table(iseq);
     return COMPILE_OK;
 }
 
@@ -4692,7 +4731,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node, int poppe
 	    ADD_SEQ(ret, ensr);
 	}
 	ADD_LABEL(ret, lcont);
-	if (last_leave) ADD_INSN(ret, line, pop);
+	if (0&&last_leave) ADD_INSN(ret, line, pop);
 
 	erange = ISEQ_COMPILE_DATA(iseq)->ensure_node_stack->erange;
 	if (lstart->link.next != &lend->link) {
@@ -5045,8 +5084,11 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node, int poppe
 		ADD_INSN1(ret, line, topn, INT2FIX(1));
 	    }
 	    ADD_SEND_WITH_FLAG(ret, line, aid, INT2FIX(1), INT2FIX(asgnflag));
+	    if (lskip && popped) {
+		ADD_LABEL(ret, lskip);
+	    }
 	    ADD_INSN(ret, line, pop);
-	    if (lskip) {
+	    if (lskip && !popped) {
 		ADD_LABEL(ret, lskip);
 	    }
 	}
