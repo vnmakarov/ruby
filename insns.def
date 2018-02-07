@@ -2522,12 +2522,21 @@ var2global
 }
 
 DEFINE_INSN
-var2ivar
+temp2ivar
+(ID id, IC ic, tindex_t val_op)
+()
+()
+{
+    temp2ivar_f(reg_cfp, id, ic, get_temp_addr(reg_cfp, val_op));
+}
+
+DEFINE_INSN
+loc2ivar
 (ID id, IC ic, vindex_t val_op)
 ()
 ()
 {
-    var2ivar_f(reg_cfp, id, ic, get_var_addr(reg_cfp, val_op));
+    loc2ivar_f(reg_cfp, id, ic, get_loc_addr(reg_cfp, val_op));
 }
 
 DEFINE_INSN

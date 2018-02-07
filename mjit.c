@@ -1042,7 +1042,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(call_block):
 	f->call_p = f->special_p = TRUE;
 	break;
-    case BIN(var2ivar):
+    case BIN(temp2ivar):
+    case BIN(loc2ivar):
     case BIN(val2ivar):
     case BIN(ivar2var):
     case BIN(var2var):
@@ -1335,7 +1336,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	/* Remember cc can change in the interpreter thread in
 	   parallel.  TODO: Make the following atomic.  */
 	local_cc = *cc;
-    } else if (insn == BIN(ivar2var) || insn == BIN(var2ivar) || insn == BIN(val2ivar)) {
+    } else if (insn == BIN(ivar2var) || insn == BIN(temp2ivar)
+	       || insn == BIN(loc2ivar) || insn == BIN(val2ivar)) {
 	ivar_p = TRUE;
 	local_ic = *(IC) (insn == BIN(ivar2var) ? code[pos + 3] : code[pos + 2]);
     } else if (insn == BIN(const_cached_val_ld) || insn == BIN(get_inline_cache)) {
@@ -1496,7 +1498,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
     } else if (!tcp->safe_p && ivar_p && insn_mutation_num == 0) {
-	assert(insn == BIN(ivar2var) || insn == BIN(var2ivar) || insn == BIN(val2ivar));
+	assert(insn == BIN(ivar2var) || insn == BIN(temp2ivar) || insn == BIN(loc2ivar) || insn == BIN(val2ivar));
 	if (ui->ivar_spec != 0) {
 	    if (insn == BIN(ivar2var))
 		fprintf(f, "  mjit_ivar2var_no_check(cfp, self, %d, %llu, %s);\n",
@@ -1505,7 +1507,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	    else {
 		fprintf(f, "  mjit_%s_no_check(cfp, self, %d, %llu, ",
 			iname, ui->ivar_spec != (size_t) -1, (unsigned long long) local_ic.ic_value.index);
-		if (insn == BIN(var2ivar))
+		if (insn == BIN(temp2ivar) || insn == BIN(loc2ivar))
 		    fprintf (f, "%s", get_op_str(buf, code[pos + 3], tcp));
 		else
 		    fprintf (f, "0x%"PRIxVALUE, code[pos + 3]);
@@ -1521,7 +1523,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 		fprintf(f, "  if (mjit_%s(cfp, self, %d, %llu, %llu, ",
 			iname, iseq->body->in_type_object_p, (unsigned long long) local_ic.ic_serial,
 			(unsigned long long) local_ic.ic_value.index);
-		if (insn == BIN(var2ivar))
+		if (insn == BIN(temp2ivar) || insn == BIN(loc2ivar))
 		    fprintf (f, "%s", get_op_str(buf, code[pos + 3], tcp));
 		else
 		    fprintf (f, "0x%"PRIxVALUE, code[pos + 3]);
@@ -1532,10 +1534,10 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
     } else if (!tcp->safe_p && const_p && insn_mutation_num == 0 && insn == BIN(const_cached_val_ld)
 	       && local_ic.ic_serial == ruby_vm_global_constant_state) {
 	assert(insn == BIN(const_cached_val_ld));
-	fprintf(f, "  if (mjit_const_cached_val_ld(cfp, %llu, %llu, 0x%"PRIxVALUE ", %s, %ld",
+	fprintf(f, "  if (mjit_const_cached_val_ld(cfp, %llu, %llu, 0x%"PRIxVALUE ", %s",
 		(unsigned long long) local_ic.ic_serial,
 		(unsigned long long) local_ic.ic_cref, local_ic.ic_value.value,
-		get_op_str(buf, code[pos + 1], tcp), code[pos + 1]);
+		get_op_str(buf, code[pos + 1], tcp));
 	fprintf(f, ")) {\n  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
     } else {
@@ -2192,7 +2194,8 @@ update_unit_iseq_info_from_insns(struct rb_mjit_unit_iseq *ui) {
 	case BIN(ivar2var):
 	    ic_disp = 3;
 	case BIN(val2ivar):
-	case BIN(var2ivar):
+	case BIN(temp2ivar):
+	case BIN(loc2ivar):
 	    ic = (IC) code[pos + ic_disp];
 	    if (ivar_access_num == 0)
 		ivar_serial = ic->ic_serial;

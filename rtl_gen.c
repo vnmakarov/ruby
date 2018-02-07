@@ -1857,7 +1857,10 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	} else {
 	    op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	    op = to_var(slot, op);
-	    APPEND4(BIN(var2ivar), code[pos + 1], code[pos + 2], op);
+	    if (op < 0)
+	      APPEND4(BIN(temp2ivar), code[pos + 1], code[pos + 2], op);
+	    else
+	      APPEND4(BIN(loc2ivar), code[pos + 1], code[pos + 2], op);
 	}
 	break;
     }

@@ -680,23 +680,35 @@ mjit_val2ivar(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
 
 /* As val2ivar_f but VAL_OP of CFP location of the value.  */
 static do_inline void
-var2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE *val_op)
-{
+temp2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE *val_op) {
+    val2ivar_f(cfp, id, ic, *val_op);
+}
+static do_inline void
+loc2ivar_f(rb_control_frame_t *cfp, ID id, IC ic, VALUE *val_op) {
     val2ivar_f(cfp, id, ic, *val_op);
 }
 
 /* As mjit_val2ivar_no_check but with the value in location VAL_OP.  */
 static do_inline void
-mjit_var2ivar_no_check(rb_control_frame_t *cfp,
+mjit_temp2ivar_no_check(rb_control_frame_t *cfp,
+		       VALUE self, int big_p, size_t index, VALUE *val_op) {
+    mjit_val2ivar_no_check(cfp, self, big_p, index, *val_op);
+}
+static do_inline void
+mjit_loc2ivar_no_check(rb_control_frame_t *cfp,
 		       VALUE self, int big_p, size_t index, VALUE *val_op) {
     mjit_val2ivar_no_check(cfp, self, big_p, index, *val_op);
 }
 
 /* As mjit_val2ivar but with the value in location VAL_OP.  */
 static do_inline int
-mjit_var2ivar(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
-	      rb_serial_t ic_serial, size_t index, VALUE *val_op)
-{
+mjit_temp2ivar(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
+	       rb_serial_t ic_serial, size_t index, VALUE *val_op) {
+    return mjit_val2ivar(cfp, self, type_obj_p, ic_serial, index, *val_op);
+}
+static do_inline int
+mjit_loc2ivar(rb_control_frame_t *cfp, VALUE self, int type_obj_p,
+	      rb_serial_t ic_serial, size_t index, VALUE *val_op) {
     return mjit_val2ivar(cfp, self, type_obj_p, ic_serial, index, *val_op);
 }
 

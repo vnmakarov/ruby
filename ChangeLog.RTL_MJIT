@@ -1,3 +1,20 @@
+2018-02-07  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def (var2ivar): Use temp2ivar and loc2ivar instead.
+	* mjit.c (get_insn_fun_features): Use temp2ivar and loc2ivar
+	instead of var2ivar.
+	(update_unit_iseq_info_from_insns): Ditto.
+	(translate_iseq_insn): Ditto.  Remove last arg in
+	mjit_const_cached_val call.
+	* rtl_exec.c (var2ivar_f): Rename to temp2ivar.
+	(loc2ivar_f): New.
+	(mjit_var2ivar_no_check): Rename to mjit_temp2ivar_no_check.
+	(mjit_loc2ivar_no_check): New.
+	(mjit_var2ivar): Rename to mjit_temp2ivar.
+	(mjit_loc2ivar): New.
+	* rtl_gen.c (translate_stack_insn): Use temp2ivar and loc2ivar
+	instead of var2ivar.
+
 2018-01-28  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* compile.c (optimize_catch_table): New.
