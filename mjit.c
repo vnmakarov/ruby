@@ -681,6 +681,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(simple_call_recv):
     case BIN(call_self):
     case BIN(call_recv):
+    case BIN(call_super_val):
 	f->th_p = f->call_p = TRUE;
 	break;
     case BIN(length):
@@ -1441,17 +1442,22 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 			     ? (ptrdiff_t) code[pos + 3] : call_start);
 	VALUE block_iseq = simple_p ? 0 : code[pos + 3];
 	const char *rec;
+	char buf2[150];
 	
 	if (tcp->use_temp_vars_p)
 	    /* Generate copying temps to the stack.  */
 	    generate_param_setup(f, code, pos, features.recv_p);
-	rec = (self_p ? "&cfp->self" : get_op_str(buf, recv_op, tcp));
+	if (insn != BIN(call_super_val))
+	    rec = (self_p ? "&cfp->self" : get_op_str(buf2, recv_op, tcp));
+	else {
+	    sprintf (buf2, "0x%"PRIxVALUE, code[pos + 4]);
+	    rec = buf2;
+	}
 	fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu)) {\n",
 		rec, (unsigned long long) local_cc.method_state,
 		(unsigned long long) local_cc.class_serial);
 	fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
-	rec = (self_p ? "&cfp->self" : get_op_str(buf, recv_op, tcp));
 	if (local_cc.call == vm_call_cfunc) {
 	    fprintf(f, "  if (mjit_call_cfunc(th, cfp, %llu, (void *) 0x%"PRIxVALUE
 		    ", %u, %d, 0x%x, (void *) 0x%"PRIxVALUE
@@ -1482,9 +1488,17 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	       && local_cc.aux.index > 0) {
 	ptrdiff_t call_start = code[pos + 2];
 	long call_ivar_obj_op = features.recv_p ? code[pos + 2] : code[pos + 3];
-	const char *rec = (insn == BIN(simple_call_self)
-			   ? "&cfp->self" : get_op_str(buf, call_ivar_obj_op, tcp));
-	assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call) || insn == BIN(simple_call_self) || insn == BIN(call_super));
+	const char *rec;
+	
+	assert(insn == BIN(simple_call_recv) || insn == BIN(simple_call)
+	       || insn == BIN(simple_call_self) || insn == BIN(call_super) || insn == BIN(call_super_val));
+	if (insn != BIN(call_super_val))
+	    rec = (insn == BIN(simple_call_self)
+		   ? "&cfp->self" : get_op_str(buf, call_ivar_obj_op, tcp));
+	else {
+	    sprintf (buf, "0x%"PRIxVALUE, code[pos + 4]);
+	    rec = buf;
+	}
 	fprintf(f, "  if (mjit_check_cc_attr_p(*%s, %llu, %llu) || ",
 		rec, (unsigned long long) local_cc.method_state,
 		(unsigned long long) local_cc.class_serial);
@@ -2020,7 +2034,7 @@ load_unit(struct rb_mjit_unit *u) {
 
 /* Set to TRUE to finish workers.  */
 static int finish_workers_p;
-/* A number of teh finished workers so far.  */
+/* A number of the finished workers so far.  */
 static int finished_workers;
 
 /* The function implementing a worker. It is executed in a separate

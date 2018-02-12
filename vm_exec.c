@@ -43,6 +43,8 @@ vm_stack_overflow_for_insn(void)
 }
 #endif
 
+#define STACK_INSN_CODE 0
+
 #if !OPT_CALL_THREADED_CODE
 VALUE
 vm_exec_core(rb_thread_t *th, VALUE initial)
@@ -64,8 +66,9 @@ vm_exec_core(rb_thread_t *th, VALUE initial)
     DECL_SC_REG(rb_control_frame_t *, cfp, "si");
 #define USE_MACHINE_REGS 1
 
-#elif 0 && defined(__GNUC__) && defined(__x86_64__)
-    DECL_SC_REG(const VALUE *, pc, "14");
+#elif defined(__GNUC__) && defined(__x86_64__)
+    DECL_SC_REG(const VALUE *, dummy, "12");
+    DECL_SC_REG(VALUE *, pc, "14");
 # if defined(__native_client__)
     DECL_SC_REG(rb_control_frame_t *, cfp, "13");
 # else

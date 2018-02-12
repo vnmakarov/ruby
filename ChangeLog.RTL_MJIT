@@ -1,3 +1,10 @@
+2018-02-12  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* mjit.c (get_insn_fun_features): Add case for call_super_val.
+	(translate_iseq_insn): Declare buf2.  Use it for rec.  Process
+	call_super_val.
+	* vm_exec.c (vm_exec_core): Switch on code for reg vars.
+
 2018-02-07  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def (var2ivar): Use temp2ivar and loc2ivar instead.
