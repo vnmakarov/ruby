@@ -56,8 +56,9 @@ ruby_setup(void)
     Init_heap();
     Init_vm_objects();
 
-    rtl_gen_init();
-
+    if (! rtl_gen_init())
+        return 1;
+    
     PUSH_TAG();
     if ((state = EXEC_TAG()) == 0) {
 	rb_call_inits();

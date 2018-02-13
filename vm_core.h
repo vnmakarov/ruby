@@ -912,7 +912,7 @@ rb_iseq_t *rb_iseq_compile_with_option(VALUE src, VALUE file, VALUE absolute_pat
 
 /* iseq -> rtl */
 int rtl_gen(rb_iseq_t *iseq);
-void rtl_gen_init(void);
+int rtl_gen_init(void);
 void rtl_gen_finish(void);
 
 extern int iseq_rtl_p;

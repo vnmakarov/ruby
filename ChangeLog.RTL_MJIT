@@ -1,3 +1,16 @@
+2018-02-13  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* common.mk: Update dependencies.
+	* eval.c (ruby_setup): Process rtl_gen_init return value.
+	* rtl_gen.c: Edit comments.  Remove unnecessary {}.
+	(rtl_gen_jump_buf): New.
+	(varr_malloc_failure): New.
+	(VARR_OP(T, create), VARR_OP(T,expand)): Call varr_malloc_failure
+	in case of allocation failure.
+	(get_cd): Remove unused arg.
+	(rtl_gen, rtl_gen_init): Process generation failures.
+	* vm_core.h (rtl_gen_init): Change return type.
+
 2018-02-12  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* mjit.c (get_insn_fun_features): Add case for call_super_val.
