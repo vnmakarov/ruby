@@ -1217,7 +1217,7 @@ VALUE rb_float_abs(VALUE flt);
 #if USE_FLONUM
 #define RUBY_BIT_ROTL(v, n) (((v) << (n)) | ((v) >> ((sizeof(v) * 8) - n)))
 #define RUBY_BIT_ROTR(v, n) (((v) >> (n)) | ((v) << ((sizeof(v) * 8) - n)))
-#define NEW_FLONUM 1
+#define NEW_FLONUM 0
 #endif
 
 static do_inline double
