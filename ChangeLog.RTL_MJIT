@@ -1,3 +1,13 @@
+2018-02-16  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def: Switch off stack insns.
+	* internal.h (NEW_FLONUM): New.
+	(rb_float_flonum_value, rb_float_new_inline): Add new code.
+	* tool/instruction.rb (make_header_operands): Generate
+	RB_UNUSED_VAR.
+	(make_header_stack_pops): Ditto.
+	* rtl_gen.c (create_rtl_catch_table): Set up iseq except_p.
+
 2018-02-13  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* common.mk: Update dependencies.

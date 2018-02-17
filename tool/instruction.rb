@@ -745,7 +745,7 @@ class RubyVM
         # TODO: really needed?
         re = /\b#{var}\b/n
         if re =~ insn.body or re =~ insn.sp_inc or insn.rets.any?{|t, v| re =~ v} or re =~ 'ic' or re =~ 'ci' or re =~ 'cc'
-          ops << "  #{type} #{var} = (#{type})GET_OPERAND(#{i+1});"
+          ops << "  #{type} RB_UNUSED_VAR(#{var}) = (#{type})GET_OPERAND(#{i+1});"
         end
 
         n += 1
@@ -796,9 +796,9 @@ class RubyVM
           break
         end
         if r
-          pops << "  #{type} #{var} = SCREG(#{r});"
+          pops << "  #{type} RB_UNUSED_VAR(#{var}) = SCREG(#{r});"
         else
-          pops << "  #{type} #{var} = TOPN(#{n});"
+          pops << "  #{type} RB_UNUSED_VAR(#{var}) = TOPN(#{n});"
           n += 1
         end
       }

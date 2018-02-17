@@ -47,6 +47,7 @@ getlocal
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     int i, lev = (int)level;
     const VALUE *ep = GET_EP();
 
@@ -55,6 +56,7 @@ getlocal
 	ep = GET_PREV_EP(ep);
     }
     val = *(ep - idx);
+#endif
 }
 
 /**
@@ -70,6 +72,7 @@ setlocal
 (VALUE val)
 ()
 {
+#if STACK_INSN_CODE
     int i, lev = (int)level;
     const VALUE *ep = GET_EP();
 
@@ -78,6 +81,7 @@ setlocal
 	ep = GET_PREV_EP(ep);
     }
     vm_env_write(ep, -(int)idx, val);
+#endif
 }
 
 /**
@@ -91,7 +95,9 @@ getspecial
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = vm_getspecial(th, GET_LEP(), key, type);
+#endif
 }
 
 /**
@@ -105,7 +111,9 @@ setspecial
 (VALUE obj)
 ()
 {
+#if STACK_INSN_CODE
     lep_svar_set(th, GET_LEP(), key, obj);
+#endif
 }
 
 /**
@@ -120,7 +128,9 @@ getinstancevariable
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = vm_getinstancevariable(GET_SELF(), id, ic);
+#endif
 }
 
 /**
@@ -135,7 +145,9 @@ setinstancevariable
 (VALUE val)
 ()
 {
+#if STACK_INSN_CODE
     vm_setinstancevariable(GET_SELF(), id, val, ic);
+#endif
 }
 
 /**
@@ -149,7 +161,9 @@ getclassvariable
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = rb_cvar_get(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id);
+#endif
 }
 
 /**
@@ -163,8 +177,10 @@ setclassvariable
 (VALUE val)
 ()
 {
+#if STACK_INSN_CODE
     vm_ensure_not_refinement_module(GET_SELF());
     rb_cvar_set(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id, val);
+#endif
 }
 
 /**
@@ -185,7 +201,9 @@ getconstant
 (VALUE klass)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = vm_get_ev_const(th, klass, id, 0);
+#endif
 }
 
 /**
@@ -207,9 +225,11 @@ setconstant
 (VALUE val, VALUE cbase)
 ()
 {
+#if STACK_INSN_CODE
     vm_check_if_namespace(cbase);
     vm_ensure_not_refinement_module(GET_SELF());
     rb_const_set(cbase, id, val);
+#endif
 }
 
 /**
@@ -223,7 +243,9 @@ getglobal
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = GET_GLOBAL((VALUE)entry);
+#endif
 }
 
 /**
@@ -237,7 +259,9 @@ setglobal
 (VALUE val)
 ()
 {
+#if STACK_INSN_CODE
     SET_GLOBAL((VALUE)entry, val);
+#endif
 }
 
 
@@ -256,7 +280,9 @@ putnil
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = Qnil;
+#endif
 }
 
 /**
@@ -270,7 +296,9 @@ putself
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = GET_SELF();
+#endif
 }
 
 /**
@@ -286,7 +314,9 @@ putobject
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     /* */
+#endif
 }
 
 /**
@@ -301,6 +331,7 @@ putspecialobject
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     enum vm_special_object_type type = (enum vm_special_object_type)value_type;
 
     switch (type) {
@@ -316,6 +347,7 @@ putspecialobject
       default:
 	rb_bug("putspecialobject insn: unknown value_type");
     }
+#endif
 }
 
 /**
@@ -329,7 +361,9 @@ putiseq
 ()
 (VALUE ret)
 {
+#if STACK_INSN_CODE
     ret = (VALUE)iseq;
+#endif
 }
 
 /**
@@ -343,7 +377,9 @@ putstring
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = rb_str_resurrect(str);
+#endif
 }
 
 /**
@@ -357,8 +393,10 @@ concatstrings
 (...)
 (VALUE val) // inc += 1 - num;
 {
+#if STACK_INSN_CODE
     val = rb_str_concat_literals(num, &TOPN(num-1));
     POPN(num);
+#endif
 }
 
 /**
@@ -372,7 +410,9 @@ tostring
 (VALUE val)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = rb_obj_as_string(val);
+#endif
 }
 
 /**
@@ -386,10 +426,12 @@ freezestring
 (VALUE str)
 (VALUE str)
 {
+#if STACK_INSN_CODE
     if (!NIL_P(debug_info)) {
 	rb_ivar_set(str, id_debug_created_info, debug_info);
     }
     rb_str_freeze(str);
+#endif
 }
 
 /**
@@ -405,6 +447,7 @@ toregexp
 (...)
 (VALUE val) // inc += 1 - cnt;
 {
+#if STACK_INSN_CODE
     VALUE rb_reg_new_ary(VALUE ary, int options);
     rb_num_t i;
     const VALUE ary = rb_ary_tmp_new(cnt);
@@ -414,6 +457,7 @@ toregexp
     POPN(cnt);
     val = rb_reg_new_ary(ary, (int)opt);
     rb_ary_clear(ary);
+#endif
 }
 
 /**
@@ -427,8 +471,10 @@ newarray
 (...)
 (VALUE val) // inc += 1 - num;
 {
+#if STACK_INSN_CODE
     val = rb_ary_new4((long)num, STACK_ADDR_FROM_TOP(num));
     POPN(num);
+#endif
 }
 
 /**
@@ -442,7 +488,9 @@ duparray
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = rb_ary_resurrect(ary);
+#endif
 }
 
 /**
@@ -470,7 +518,9 @@ expandarray
 (..., VALUE ary)
 (...) // inc += num - 1 + (flag & 1 ? 1 : 0);
 {
+#if STACK_INSN_CODE
     vm_expandarray(GET_CFP(), ary, num, (int)flag);
+#endif
 }
 
 /**
@@ -484,6 +534,7 @@ concatarray
 (VALUE ary1, VALUE ary2st)
 (VALUE ary)
 {
+#if STACK_INSN_CODE
     const VALUE ary2 = ary2st;
     VALUE tmp1 = rb_check_convert_type(ary1, T_ARRAY, "Array", "to_a");
     VALUE tmp2 = rb_check_convert_type(ary2, T_ARRAY, "Array", "to_a");
@@ -500,6 +551,7 @@ concatarray
 	tmp1 = rb_ary_dup(ary1);
     }
     ary = rb_ary_concat(tmp1, tmp2);
+#endif
 }
 
 /**
@@ -513,6 +565,7 @@ splatarray
 (VALUE ary)
 (VALUE obj)
 {
+#if STACK_INSN_CODE
     VALUE tmp = rb_check_convert_type(ary, T_ARRAY, "Array", "to_a");
     if (NIL_P(tmp)) {
 	tmp = rb_ary_new3(1, ary);
@@ -521,6 +574,7 @@ splatarray
 	tmp = rb_ary_dup(tmp);
     }
     obj = tmp;
+#endif
 }
 
 /**
@@ -535,6 +589,7 @@ newhash
 (...)
 (VALUE val) // inc += 1 - num;
 {
+#if STACK_INSN_CODE
     rb_num_t i;
 
     RUBY_DTRACE_CREATE_HOOK(HASH, num);
@@ -547,6 +602,7 @@ newhash
 	rb_hash_aset(val, k, v);
     }
     POPN(num);
+#endif
 }
 
 /**
@@ -560,7 +616,9 @@ newrange
 (VALUE low, VALUE high)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = rb_range_new(low, high, (int)flag);
+#endif
 }
 
 /**********************************************************/
@@ -578,8 +636,10 @@ pop
 (VALUE val)
 ()
 {
+#if STACK_INSN_CODE
     (void)val;
     /* none */
+#endif
 }
 
 /**
@@ -593,7 +653,9 @@ dup
 (VALUE val)
 (VALUE val1, VALUE val2)
 {
+#if STACK_INSN_CODE
     val1 = val2 = val;
+#endif
 }
 
 /**
@@ -607,12 +669,14 @@ dupn
 (...)
 (...) // inc += n;
 {
+#if STACK_INSN_CODE
     rb_num_t i;
     VALUE *sp = STACK_ADDR_FROM_TOP(n);
     for (i = 0; i < n; i++) {
 	GET_SP()[i] = sp[i];
     }
     INC_SP(n);
+#endif
 }
 
 
@@ -627,7 +691,9 @@ swap
 (VALUE val, VALUE obj)
 (VALUE obj, VALUE val)
 {
+#if STACK_INSN_CODE
     /* none */
+#endif
 }
 
 /**
@@ -641,6 +707,7 @@ reverse
 (...)
 (...) // inc += 0;
 {
+#if STACK_INSN_CODE
     rb_num_t i;
     VALUE *sp = STACK_ADDR_FROM_TOP(n);
 
@@ -650,6 +717,7 @@ reverse
 	sp[i] = v1;
 	TOPN(i) = v0;
     }
+#endif
 }
 
 /**
@@ -663,7 +731,9 @@ reput
 (..., VALUE val)
 (VALUE val) // inc += 0;
 {
+#if STACK_INSN_CODE
     /* none */
+#endif
 }
 
 /**
@@ -677,7 +747,9 @@ topn
 (...)
 (VALUE val) // inc += 1;
 {
+#if STACK_INSN_CODE
     val = TOPN(n);
+#endif
 }
 
 /**
@@ -691,7 +763,9 @@ setn
 (..., VALUE val)
 (VALUE val) // inc += 0
 {
+#if STACK_INSN_CODE
     TOPN(n-1) = val;
+#endif
 }
 
 /**
@@ -705,7 +779,9 @@ adjuststack
 (...)
 (...) // inc -= n
 {
+#if STACK_INSN_CODE
     DEC_SP(n);
+#endif
 }
 
 
@@ -724,7 +800,9 @@ defined
 (VALUE v)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = vm_defined(th, GET_CFP(), op_type, obj, needstr, v);
+#endif
 }
 
 /**
@@ -743,6 +821,7 @@ checkmatch
 (VALUE target, VALUE pattern)
 (VALUE result)
 {
+#if STACK_INSN_CODE
     enum vm_check_match_type checkmatch_type =
       (enum vm_check_match_type)(flag & VM_CHECKMATCH_TYPE_MASK);
     result = Qfalse;
@@ -761,6 +840,7 @@ checkmatch
 	    result = Qtrue;
 	}
     }
+#endif
 }
 
 /**
@@ -774,6 +854,7 @@ checkkeyword
 ()
 (VALUE ret)
 {
+#if STACK_INSN_CODE
     const VALUE *ep = GET_EP();
     const VALUE kw_bits = *(ep - kw_bits_index);
 
@@ -785,6 +866,7 @@ checkkeyword
 	VM_ASSERT(RB_TYPE_P(kw_bits, T_HASH));
 	ret = rb_hash_has_key(kw_bits, INT2FIX(keyword_index)) ? Qfalse : Qtrue;
     }
+#endif
 }
 
 /**********************************************************/
@@ -806,6 +888,7 @@ defineclass
 (VALUE cbase, VALUE super)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     VALUE klass;
     rb_vm_defineclass_type_t type = VM_DEFINECLASS_TYPE(flags);
 
@@ -894,6 +977,7 @@ defineclass
 		  class_iseq->body->stack_max);
     RESTORE_REGS();
     NEXT_INSN();
+#endif
 }
 
 
@@ -912,11 +996,13 @@ send
 (...)
 (VALUE val) // inc += - (int)(ci->orig_argc + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0));
 {
+#if STACK_INSN_CODE
     struct rb_calling_info calling;
 
     vm_caller_setup_arg_block(th, reg_cfp, &calling, ci, blockiseq, FALSE);
     vm_search_method(ci, cc, calling.recv = TOPN(calling.argc = ci->orig_argc));
     CALL_METHOD(&calling, ci, cc);
+#endif
 }
 
 DEFINE_INSN
@@ -925,12 +1011,14 @@ opt_str_freeze
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (BASIC_OP_UNREDEFINED_P(BOP_FREEZE, STRING_REDEFINED_OP_FLAG)) {
 	val = str;
     }
     else {
 	val = rb_funcall(rb_str_resurrect(str), idFreeze, 0);
     }
+#endif
 }
 
 DEFINE_INSN
@@ -939,6 +1027,7 @@ opt_newarray_max
 (...)
 (VALUE val) // inc += 1 - num;
 {
+#if STACK_INSN_CODE
 #define id_cmp  idCmp
     if (BASIC_OP_UNREDEFINED_P(BOP_MAX, ARRAY_REDEFINED_OP_FLAG)) {
 	if (num == 0) {
@@ -965,6 +1054,7 @@ opt_newarray_max
 	POPN(num);
     }
 #undef id_cmp
+#endif
 }
 
 DEFINE_INSN
@@ -973,6 +1063,7 @@ opt_newarray_min
 (...)
 (VALUE val) // inc += 1 - num;
 {
+#if STACK_INSN_CODE
 #define id_cmp  idCmp
     if (BASIC_OP_UNREDEFINED_P(BOP_MIN, ARRAY_REDEFINED_OP_FLAG)) {
 	if (num == 0) {
@@ -999,6 +1090,7 @@ opt_newarray_min
 	POPN(num);
     }
 #undef id_cmp
+#endif
 }
 
 /**
@@ -1012,10 +1104,12 @@ opt_send_without_block
 (...)
 (VALUE val) // inc += -ci->orig_argc;
 {
+#if STACK_INSN_CODE
     struct rb_calling_info calling;
     calling.block_handler = VM_BLOCK_HANDLER_NONE;
     vm_search_method(ci, cc, calling.recv = TOPN(calling.argc = ci->orig_argc));
     CALL_METHOD(&calling, ci, cc);
+#endif
 }
 
 /**
@@ -1029,6 +1123,7 @@ invokesuper
 (...)
 (VALUE val) // inc += - (int)(ci->orig_argc + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0));
 {
+#if STACK_INSN_CODE
     struct rb_calling_info calling;
     calling.argc = ci->orig_argc;
 
@@ -1036,6 +1131,7 @@ invokesuper
     calling.recv = GET_SELF();
     vm_search_super_method(th, GET_CFP(), &calling, ci, cc);
     CALL_METHOD(&calling, ci, cc);
+#endif
 }
 
 /**
@@ -1049,6 +1145,7 @@ invokeblock
 (...)
 (VALUE val)  // inc += 1 - ci->orig_argc;
 {
+#if STACK_INSN_CODE
     struct rb_calling_info calling;
     calling.argc = ci->orig_argc;
     calling.block_handler = VM_BLOCK_HANDLER_NONE;
@@ -1059,6 +1156,7 @@ invokeblock
 	RESTORE_REGS();
 	NEXT_INSN();
     }
+#endif
 }
 
 /**
@@ -1072,6 +1170,7 @@ leave
 (VALUE val)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (OPT_CHECKED_RUN) {
 	const VALUE *const bp = vm_base_ptr(reg_cfp);
 	if (reg_cfp->sp != bp) {
@@ -1093,6 +1192,7 @@ leave
     else {
 	RESTORE_REGS();
     }
+#endif
 }
 
 /**********************************************************/
@@ -1110,10 +1210,12 @@ throw
 (VALUE throwobj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     RUBY_VM_CHECK_INTS(th);
     val = vm_throw(th, GET_CFP(), throw_state, throwobj);
     THROW_EXCEPTION(val);
     /* unreachable */
+#endif
 }
 
 /**********************************************************/
@@ -1131,8 +1233,10 @@ jump
 ()
 ()
 {
+#if STACK_INSN_CODE
     RUBY_VM_CHECK_INTS(th);
     JUMP(dst);
+#endif
 }
 
 /**
@@ -1146,10 +1250,12 @@ branchif
 (VALUE val)
 ()
 {
+#if STACK_INSN_CODE
     if (RTEST(val)) {
 	RUBY_VM_CHECK_INTS(th);
 	JUMP(dst);
     }
+#endif
 }
 
 /**
@@ -1163,10 +1269,12 @@ branchunless
 (VALUE val)
 ()
 {
+#if STACK_INSN_CODE
     if (!RTEST(val)) {
 	RUBY_VM_CHECK_INTS(th);
 	JUMP(dst);
     }
+#endif
 }
 
 /**
@@ -1180,10 +1288,12 @@ branchnil
 (VALUE val)
 ()
 {
+#if STACK_INSN_CODE
     if (NIL_P(val)) {
 	RUBY_VM_CHECK_INTS(th);
 	JUMP(dst);
     }
+#endif
 }
 
 
@@ -1202,6 +1312,7 @@ getinlinecache
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (ic->ic_serial == GET_GLOBAL_CONSTANT_STATE() &&
 	(ic->ic_cref == NULL || ic->ic_cref == rb_vm_get_cref(GET_EP()))) {
 	val = ic->ic_value.value;
@@ -1211,6 +1322,7 @@ getinlinecache
 	/* none */
 	val = Qnil;
     }
+#endif
 }
 
 /**
@@ -1224,11 +1336,13 @@ setinlinecache
 (VALUE val)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     VM_ASSERT(ic->ic_value.value != Qundef);
     ic->ic_value.value = val;
     ic->ic_serial = GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count;
     ic->ic_cref = vm_get_const_key_cref(GET_EP());
     ruby_vm_const_missing_count = 0;
+#endif
 }
 
 /**
@@ -1242,6 +1356,7 @@ once
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     union iseq_inline_storage_entry *is = (union iseq_inline_storage_entry *)ic;
 
 #define RUNNING_THREAD_ONCE_DONE ((rb_thread_t *)(0x1))
@@ -1266,6 +1381,7 @@ once
 	rb_thread_schedule();
 	goto retry;
     }
+#endif
 }
 
 /**
@@ -1279,6 +1395,7 @@ opt_case_dispatch
 (..., VALUE key)
 () // inc += -1;
 {
+#if STACK_INSN_CODE
     switch (OBJ_BUILTIN_TYPE(key)) {
       case -1:
       case T_FLOAT:
@@ -1308,6 +1425,7 @@ opt_case_dispatch
 	    }
 	}
     }
+#endif
 }
 
 /** simple functions */
@@ -1323,6 +1441,7 @@ opt_plus
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_PLUS,INTEGER_REDEFINED_OP_FLAG)) {
 	/* fixnum + fixnum */
@@ -1363,6 +1482,7 @@ opt_plus
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1376,6 +1496,7 @@ opt_minus
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_MINUS, INTEGER_REDEFINED_OP_FLAG)) {
 	long a, b, c;
@@ -1405,6 +1526,7 @@ opt_minus
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1418,6 +1540,7 @@ opt_mult
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_MULT, INTEGER_REDEFINED_OP_FLAG)) {
 	val = rb_fix_mul_fix(recv, obj);
@@ -1441,6 +1564,7 @@ opt_mult
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1454,6 +1578,7 @@ opt_div
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_DIV, INTEGER_REDEFINED_OP_FLAG)) {
 	if (FIX2LONG(obj) == 0) goto INSN_LABEL(normal_dispatch);
@@ -1478,6 +1603,7 @@ opt_div
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1491,6 +1617,7 @@ opt_mod
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_MOD, INTEGER_REDEFINED_OP_FLAG )) {
 	if (FIX2LONG(obj) == 0) goto INSN_LABEL(normal_dispatch);
@@ -1515,6 +1642,7 @@ opt_mod
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1528,6 +1656,7 @@ opt_eq
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = opt_eq_func(recv, obj, ci, cc);
 
     if (val == Qundef) {
@@ -1536,6 +1665,7 @@ opt_eq
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1549,6 +1679,7 @@ opt_neq
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     extern VALUE rb_obj_not_equal(VALUE obj1, VALUE obj2);
     vm_search_method(ci, cc, recv);
 
@@ -1568,6 +1699,7 @@ opt_neq
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1581,6 +1713,7 @@ opt_lt
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_LT, INTEGER_REDEFINED_OP_FLAG)) {
 	SIGNED_VALUE a = recv, b = obj;
@@ -1612,6 +1745,7 @@ opt_lt
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1625,6 +1759,7 @@ opt_le
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_LE, INTEGER_REDEFINED_OP_FLAG)) {
 	SIGNED_VALUE a = recv, b = obj;
@@ -1647,6 +1782,7 @@ opt_le
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1660,6 +1796,7 @@ opt_gt
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_GT, INTEGER_REDEFINED_OP_FLAG)) {
 	SIGNED_VALUE a = recv, b = obj;
@@ -1691,6 +1828,7 @@ opt_gt
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1704,6 +1842,7 @@ opt_ge
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (FIXNUM_2_P(recv, obj) &&
 	BASIC_OP_UNREDEFINED_P(BOP_GE, INTEGER_REDEFINED_OP_FLAG)) {
 	SIGNED_VALUE a = recv, b = obj;
@@ -1725,6 +1864,7 @@ opt_ge
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1738,6 +1878,7 @@ opt_ltlt
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (!SPECIAL_CONST_P(recv)) {
 	if (RBASIC_CLASS(recv) == rb_cString &&
 	    BASIC_OP_UNREDEFINED_P(BOP_LTLT, STRING_REDEFINED_OP_FLAG)) {
@@ -1757,6 +1898,7 @@ opt_ltlt
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1770,6 +1912,7 @@ opt_aref
 (VALUE recv, VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (!SPECIAL_CONST_P(recv)) {
 	if (RBASIC_CLASS(recv) == rb_cArray && BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG) && FIXNUM_P(obj)) {
 	    val = rb_ary_entry(recv, FIX2LONG(obj));
@@ -1787,6 +1930,7 @@ opt_aref
 	PUSH(obj);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1800,6 +1944,7 @@ opt_aset
 (VALUE recv, VALUE obj, VALUE set)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (!SPECIAL_CONST_P(recv)) {
 	if (RBASIC_CLASS(recv) == rb_cArray && BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG) && FIXNUM_P(obj)) {
 	    rb_ary_store(recv, FIX2LONG(obj), set);
@@ -1820,6 +1965,7 @@ opt_aset
 	PUSH(set);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1833,6 +1979,7 @@ opt_aset_with
 (VALUE recv, VALUE val)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (!SPECIAL_CONST_P(recv) && RBASIC_CLASS(recv) == rb_cHash &&
 	BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG) &&
 	rb_hash_compare_by_id_p(recv) == Qfalse) {
@@ -1844,6 +1991,7 @@ opt_aset_with
 	PUSH(val);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1857,6 +2005,7 @@ opt_aref_with
 (VALUE recv)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (!SPECIAL_CONST_P(recv) && RBASIC_CLASS(recv) == rb_cHash &&
 	BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG) &&
 	rb_hash_compare_by_id_p(recv) == Qfalse) {
@@ -1867,6 +2016,7 @@ opt_aref_with
 	PUSH(rb_str_resurrect(key));
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1880,6 +2030,7 @@ opt_length
 (VALUE recv)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (!SPECIAL_CONST_P(recv)) {
 	if (RBASIC_CLASS(recv) == rb_cString &&
 	    BASIC_OP_UNREDEFINED_P(BOP_LENGTH, STRING_REDEFINED_OP_FLAG)) {
@@ -1902,6 +2053,7 @@ opt_length
 	PUSH(recv);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1915,6 +2067,7 @@ opt_size
 (VALUE recv)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (!SPECIAL_CONST_P(recv)) {
 	if (RBASIC_CLASS(recv) == rb_cString &&
 	    BASIC_OP_UNREDEFINED_P(BOP_SIZE, STRING_REDEFINED_OP_FLAG)) {
@@ -1937,6 +2090,7 @@ opt_size
 	PUSH(recv);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1950,6 +2104,7 @@ opt_empty_p
 (VALUE recv)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (!SPECIAL_CONST_P(recv)) {
 	if (RBASIC_CLASS(recv) == rb_cString &&
 	    BASIC_OP_UNREDEFINED_P(BOP_EMPTY_P, STRING_REDEFINED_OP_FLAG)) {
@@ -1975,6 +2130,7 @@ opt_empty_p
 	PUSH(recv);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -1988,6 +2144,7 @@ opt_succ
 (VALUE recv)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (SPECIAL_CONST_P(recv)) {
 	if (FIXNUM_P(recv) &&
 	    BASIC_OP_UNREDEFINED_P(BOP_SUCC, INTEGER_REDEFINED_OP_FLAG)) {
@@ -2017,6 +2174,7 @@ opt_succ
 	PUSH(recv);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 /**
@@ -2030,6 +2188,7 @@ opt_not
 (VALUE recv)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     vm_search_method(ci, cc, recv);
 
     if (check_cfunc(cc->me, rb_obj_not)) {
@@ -2039,6 +2198,7 @@ opt_not
 	PUSH(recv);
 	CALL_SIMPLE_METHOD(recv);
     }
+#endif
 }
 
 
@@ -2053,12 +2213,14 @@ opt_regexpmatch1
 (VALUE obj)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (BASIC_OP_UNREDEFINED_P(BOP_MATCH, REGEXP_REDEFINED_OP_FLAG)) {
 	val = rb_reg_match(r, obj);
     }
     else {
 	val = rb_funcall(r, idEqTilde, 1, obj);
     }
+#endif
 }
 
 /**
@@ -2072,6 +2234,7 @@ opt_regexpmatch2
 (VALUE obj2, VALUE obj1)
 (VALUE val)
 {
+#if STACK_INSN_CODE
     if (CLASS_OF(obj2) == rb_cString &&
 	BASIC_OP_UNREDEFINED_P(BOP_MATCH, STRING_REDEFINED_OP_FLAG)) {
 	val = rb_reg_match(obj1, obj2);
@@ -2081,6 +2244,7 @@ opt_regexpmatch2
 	PUSH(obj1);
 	CALL_SIMPLE_METHOD(obj2);
     }
+#endif
 }
 
 /**
@@ -2094,6 +2258,7 @@ opt_call_c_function
 ()
 ()
 {
+#if STACK_INSN_CODE
     reg_cfp = (funcptr)(th, reg_cfp);
 
     if (reg_cfp == 0) {
@@ -2104,6 +2269,7 @@ opt_call_c_function
 
     RESTORE_REGS();
     NEXT_INSN();
+#endif
 }
 
 /**
@@ -2117,7 +2283,9 @@ bitblt
 ()
 (VALUE ret)
 {
+#if STACK_INSN_CODE
     ret = rb_str_new2("a bit of bacon, lettuce and tomato");
+#endif
 }
 
 /**
@@ -2131,7 +2299,9 @@ answer
 ()
 (VALUE ret)
 {
+#if STACK_INSN_CODE
     ret = INT2FIX(42);
+#endif
 }
 
 /*------------------- Common RTL and stack insns: ------------*/

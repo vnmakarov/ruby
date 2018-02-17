@@ -2606,7 +2606,7 @@ create_rtl_line_table(rb_iseq_t *iseq) {
 }
 
 /* Create a catch table of the generated RTL of ISEQ.  Return FALSE if
-   we failed to do this.  */
+   we failed to do this.  Set up except_p for ISEQ too.  */
 static int
 create_rtl_catch_table(rb_iseq_t *iseq) {
     size_t i, size;
@@ -2616,6 +2616,7 @@ create_rtl_catch_table(rb_iseq_t *iseq) {
     struct iseq_catch_table_entry *rtl_entries;
     const size_t *addr;
     
+    iseq->body->except_p = FALSE;
     table = iseq->body->catch_table;
     if (table == NULL)
 	return TRUE;
@@ -2628,6 +2629,9 @@ create_rtl_catch_table(rb_iseq_t *iseq) {
     rtl_entries = rtl_table->entries;
     addr = VARR_ADDR(size_t, new_insn_offsets);
     for (i = 0; i < size; i++) {
+	if (entries[i].type != CATCH_TYPE_NEXT
+	    && entries[i].type != CATCH_TYPE_REDO)
+	    iseq->body->except_p = TRUE;
 	rtl_entries[i] = entries[i];
 	rtl_entries[i].start = addr[rtl_entries[i].start];
 	rtl_entries[i].end = addr[rtl_entries[i].end];

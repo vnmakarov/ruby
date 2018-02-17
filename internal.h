@@ -1217,6 +1217,7 @@ VALUE rb_float_abs(VALUE flt);
 #if USE_FLONUM
 #define RUBY_BIT_ROTL(v, n) (((v) << (n)) | ((v) >> ((sizeof(v) * 8) - n)))
 #define RUBY_BIT_ROTR(v, n) (((v) >> (n)) | ((v) << ((sizeof(v) * 8) - n)))
+#define NEW_FLONUM 1
 #endif
 
 static do_inline double
@@ -1228,6 +1229,22 @@ rb_float_flonum_value(VALUE v)
 	VALUE v;
     } t;
 
+#if 0
+    unsigned char sh = v & 0x4;
+
+    t.v = RUBY_BIT_ROTR(v ^ ((0x21 >> sh) & 0x7), 4);
+    if (t.v != 0x3000000000000000)
+	return t.d;
+    return 0.0;
+#elif NEW_FLONUM
+    VALUE m;
+    static const unsigned char xor [] = {
+	0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x7, 0x0
+    };
+    m = xor[v & 0xf];
+    t.v = RUBY_BIT_ROTR(v ^ m, 5);
+    return t.d;
+#else
     VALUE b63 = (v >> 63);
     /* e: xx1... -> 011... */
     /*    xx0... -> 100... */
@@ -1238,6 +1255,7 @@ rb_float_flonum_value(VALUE v)
     t.v = RUBY_BIT_ROTR((2 - b63) | (v & ~(VALUE)0x03), 3);
     if (t.v != 0x3000000000000000)
 	return t.d;
+#endif
 #endif
     return 0.0;
 }
@@ -1265,9 +1283,34 @@ rb_float_new_inline(double d)
 	double d;
 	VALUE v;
     } t;
-    int bits;
     VALUE v;
     
+#if 0
+    t.d = d;
+    v = RUBY_BIT_ROTL(t.v, 4);
+    if (LIKELY(! ((v - 3) & 0x6) && t.v != 0x3000000000000000)) {
+	return (v & ~0x3) | 0x2;
+    } else if (t.v == (VALUE)0) {
+	/* +0.0 */
+	return 0x0000000000000002;
+    }
+#elif NEW_FLONUM
+    {
+	VALUE m;
+      
+	static const unsigned char xor [] = {
+	    0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x2, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	    0x12, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x2, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	};
+	t.d = d;
+	v = RUBY_BIT_ROTL(t.v, 5);
+	m = xor[v & 0x1f];
+	if (m != 0)
+	    return v ^ m;
+    }
+#else
+    int bits;
+
     t.d = d;
     bits = (int)((VALUE)(t.v >> 60) & 0x7);
     /* bits contains 3 bits of b62..b60. */
@@ -1284,6 +1327,7 @@ rb_float_new_inline(double d)
 	/* +0.0 */
 	return 0x8000000000000002;
     }
+#endif
 #endif
     /* out of range */
     return rb_float_new_in_heap(d);
