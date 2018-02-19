@@ -1,3 +1,7 @@
+2018-02-19  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* README.md: Modify to reflect all changes on the branch.
+
 2018-02-17  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* internal.h (NEW_FLONUM): Reset.
