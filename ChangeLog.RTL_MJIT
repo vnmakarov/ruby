@@ -1,3 +1,8 @@
+2018-02-21  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* README.md: Add results for Graal 0.31 with `--native` and some
+	performance analysis.
+
 2018-02-20  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* README.md: Use results for Graal 0.31 instead of 0.22.
