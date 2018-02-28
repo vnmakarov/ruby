@@ -7,8 +7,7 @@ class C
   def l
     i = 0
     while i < 1000000
-      @a
-      i += 1
+      i += @a
     end
   end
 end
