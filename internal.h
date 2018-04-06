@@ -1217,7 +1217,7 @@ VALUE rb_float_abs(VALUE flt);
 #if USE_FLONUM
 #define RUBY_BIT_ROTL(v, n) (((v) << (n)) | ((v) >> ((sizeof(v) * 8) - n)))
 #define RUBY_BIT_ROTR(v, n) (((v) >> (n)) | ((v) << ((sizeof(v) * 8) - n)))
-#define NEW_FLONUM 0
+#define NEW_FLONUM 1
 #endif
 
 static do_inline double
@@ -1237,6 +1237,15 @@ rb_float_flonum_value(VALUE v)
 	return t.d;
     return 0.0;
 #elif NEW_FLONUM
+    unsigned int sh;
+    VALUE m;
+    const VALUE c = 0x700020001000200;
+
+    sh = (v & 0xf) << 2;
+    m = (c >> sh) & 0xf;
+    t.v = RUBY_BIT_ROTR(v ^ m, 5);
+    return t.d;
+#elif NEW_FLONUM
     VALUE m;
     static const unsigned char xor [] = {
 	0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x7, 0x0
@@ -1244,6 +1253,15 @@ rb_float_flonum_value(VALUE v)
     m = xor[v & 0xf];
     t.v = RUBY_BIT_ROTR(v ^ m, 5);
     return t.d;
+#elif 1
+    if (v != (VALUE)0x8000000000000002) { /* LIKELY */
+        VALUE b63 = (v >> 63);
+	/* e: xx1... -> 011... */
+	/*    xx0... -> 100... */
+	/*      ^b63           */
+	t.v = RUBY_BIT_ROTR((2 - b63) | (v & ~(VALUE)0x03), 3);
+	return t.d;
+    }
 #else
     VALUE b63 = (v >> 63);
     /* e: xx1... -> 011... */
@@ -1296,11 +1314,24 @@ rb_float_new_inline(double d)
     }
 #elif NEW_FLONUM
     {
+	unsigned int sh;
+        VALUE m;
+	const VALUE c = 0x7210000002;
+	
+	t.d = d;
+	v = RUBY_BIT_ROTL(t.v, 5);
+	sh = (v & 0xf) << 2;
+	m = (c >> sh) & 0xf;
+	if (LIKELY (m != 0))
+	    return v ^ m;
+    }
+#elif NEW_FLONUM
+    {
 	VALUE m;
       
 	static const unsigned char xor [] = {
-	    0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x2, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-	    0x12, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x2, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	    0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x2, 0x7, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	    0x0/*12*/, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x2, 0x7, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
 	};
 	t.d = d;
 	v = RUBY_BIT_ROTL(t.v, 5);
@@ -1308,6 +1339,25 @@ rb_float_new_inline(double d)
 	if (m != 0)
 	    return v ^ m;
     }
+#elif 1
+    int bits;
+
+    t.d = d;
+    bits = (int)((VALUE)(t.v >> 60) & 0x7);
+    /* bits contains 3 bits of b62..b60. */
+    /* bits - 3 = */
+    /*   b011 -> b000 */
+    /*   b100 -> b001 */
+
+    if (t.v != 0x3000000000000000 /* 1.72723e-77 */ &&
+	!((bits-3) & ~0x01)) {
+	return (RUBY_BIT_ROTL(t.v, 3) & ~(VALUE)0x01) | 0x02;
+    }
+    else if (t.v == (VALUE)0) {
+	/* +0.0 */
+	return 0x8000000000000002;
+    }
+    /* out of range */
 #else
     int bits;
 

@@ -1005,8 +1005,14 @@ cmpf(fix_num_le) {return (SIGNED_VALUE) a <= (SIGNED_VALUE) b;}
 cmpf(fix_num_ge) {return (SIGNED_VALUE) a >= (SIGNED_VALUE) b;}
 
 /* As above but for floats.  */
+#if NEW_FLONUM
+/* 0x12 for +-0.0 with -0.0 combination  */
+cmpf(float_num_eq) {return a == b || (a | b) == 0x12;}
+cmpf(float_num_ne) {return a != b && (a | b) != 0x12;}
+#else
 cmpf(float_num_eq) {return a == b;}
 cmpf(float_num_ne) {return a != b;}
+#endif
 cmpf(float_num_lt) {return RFLOAT_VALUE(a) < RFLOAT_VALUE(b);}
 cmpf(float_num_gt) {return RFLOAT_VALUE(a) > RFLOAT_VALUE(b);}
 cmpf(float_num_le) {return RFLOAT_VALUE(a) <= RFLOAT_VALUE(b);}
@@ -2417,6 +2423,68 @@ arithmf(spec_fix_num_mod) {
     return LONG2FIX(mod);
 }
 
+#if USE_FLONUM && NEW_FLONUM
+static do_inline VALUE
+spec_dbl2num(double d) {
+    union {
+	double d;
+	VALUE v;
+    } t;
+    unsigned int sh;
+    VALUE v;
+    VALUE m;
+    const VALUE c = 0x7210000002;
+
+    t.d = d;
+    v = RUBY_BIT_ROTL(t.v, 5);
+    sh = (v & 0xf) << 2;
+    m = (c >> sh) & 0xf;
+    if (LIKELY(m != 0))
+	return v ^ m;
+    return Qundef;
+}
+#endif
+
+arithmf(spec_flo_num_plus) {
+#if USE_FLONUM && NEW_FLONUM
+    return spec_dbl2num(RFLOAT_VALUE(op1) + RFLOAT_VALUE(op2));
+#else
+    return float_num_plus(op1, op2);
+#endif
+}
+
+arithmf(spec_flo_num_minus) {
+#if USE_FLONUM && NEW_FLONUM
+    return spec_dbl2num(RFLOAT_VALUE(op1) - RFLOAT_VALUE(op2));
+#else
+    return float_num_minus(op1, op2);
+#endif
+}
+
+arithmf(spec_flo_num_mult) {
+#if USE_FLONUM && NEW_FLONUM
+    return spec_dbl2num(RFLOAT_VALUE(op1) * RFLOAT_VALUE(op2));
+#else
+    return float_num_mult(op1, op2);
+#endif
+}
+
+arithmf(spec_flo_num_div) {
+#if USE_FLONUM && NEW_FLONUM
+    return spec_dbl2num(RFLOAT_VALUE(op1) / RFLOAT_VALUE(op2));
+#else
+    return float_num_div(op1, op2);
+#endif
+}
+
+arithmf(spec_flo_num_mod) {
+#if USE_FLONUM && NEW_FLONUM
+    return spec_dbl2num(ruby_float_mod(RFLOAT_VALUE(op1), RFLOAT_VALUE(op2)));
+#else
+    return float_num_mod(op1, op2);
+#endif
+}
+
 /* Do speculative fix num arithmetic operation, assign the result to
    temporary variable in frame CFP with location RES, and return
    FALSE.  If the speculation was wrong, set up NEW_INSN to UINSN and
@@ -2455,11 +2523,21 @@ do_spec_flo_arithm(rb_control_frame_t *cfp,
 		   int op2_flonum_p, int uinsn,
 		   enum ruby_vminsn_type *new_insn)
 {
+    VALUE val;
+
     if (LIKELY((! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG))
 	       && ((op2_flonum_p && FLONUM_P(*op1))
 		   || (! op2_flonum_p && FLONUM_2_P(*op1, op2))))) {
-        *res = float_num_op(*op1, op2);
+        val = float_num_op(*op1, op2);
+#if USE_FLONUM && NEW_FLONUM
+	if (val != Qundef) {
+	    *res = val;
+	    return FALSE;
+	}
+#else
+	*res = val;
 	return FALSE;
+#endif
     }
     *new_insn = uinsn;
     return TRUE;
@@ -2508,7 +2586,7 @@ spec_op2_fun(imod) {return spec_fix_arithm_call(mod, BOP_MOD);}
 /* As spec_fix_arithm_call but a flo num variant. */
 #define spec_flo_arithm_call(suff, bop) spec_flo_arithm_op(cfp, \
 							   res, op1, op2, bop, \
-							   float_num_ ## suff, \
+							   spec_flo_num_ ## suff, \
 							   BIN(u ## suff), new_insn)
 
 /* Definitions of the functions implementing speculative flo num
@@ -2537,7 +2615,7 @@ spec_op2_fun(simod) {return spec_fix_sarithm_call(mod, BOP_MOD);}
 /* As spec_fix_sarithm_call but a flo num variant. */
 #define spec_flo_sarithm_call(suff, bop) spec_flo_arithm_op(cfp, \
 							    res, op1, op2, bop, \
-							    float_num_ ## suff, \
+							    spec_flo_num_ ## suff, \
 							    BIN(su ## suff), new_insn)
 
 /* Definitions of the functions implementing speculative flo num
@@ -2590,7 +2668,7 @@ spec_op2i_fun(imodi) {return spec_fix_arithm_imm_call(mod, BOP_MOD);}
 /* As spec_fix_arithm_imm_call but a flo num variant. */
 #define spec_flo_arithm_imm_call(suff, bop) spec_flo_arithm_imm_op(cfp, \
 								   res, op1, imm, bop, \
-								   float_num_ ## suff, \
+								   spec_flo_num_ ## suff, \
 								   BIN(u ## suff ## f), new_insn)
 
 /* Definitions of the functions implementing speculative flo num

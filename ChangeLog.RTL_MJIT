@@ -1,3 +1,19 @@
+2018-04-05  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* vm_insnhelper.c (opt_eq_func): Add -0.0 case for NEW_FLONUM.
+	* internal.h (NEW_FLONUM): Set.
+	(rb_float_flonum_value, rb_float_new_inline): Add code for new
+	flonum and restore old code.
+	* rtl_exec.c (float_num_eq, float_num_new): New code for new
+	flonum.
+	(spec_dbl2num): New.
+	(spec_flo_num_{plus, minus, mult, div, mod}): Add code for new
+	flonum.
+	(do_spec_flo_arithm): Ditto.
+	(spec_flo_arithm_call, spec_flo_sarithm_call): Pass spec_flo_num
+	functions.
+	(spec_flo_arithm_imm_call): Ditto.
+
 2018-02-21  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* README.md: Add results for Graal 0.31 with `--native` and some

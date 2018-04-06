@@ -1345,7 +1345,12 @@ opt_eq_func(VALUE recv, VALUE obj, CALL_INFO ci, CALL_CACHE cc)
     }
     else if (FLONUM_2_P(recv, obj) &&
 	     BASIC_OP_UNREDEFINED_P(BOP_EQ, FLOAT_REDEFINED_OP_FLAG)) {
+#if NEW_FLONUM
+	/* 0x12 for +-0.0 with -0.0 combination  */
+	return (recv == obj || (recv | obj) == 0x12) ? Qtrue : Qfalse;
+#else
 	return (recv == obj) ? Qtrue : Qfalse;
+#endif
     }
     else if (!SPECIAL_CONST_P(recv) && !SPECIAL_CONST_P(obj)) {
 	if (RBASIC_CLASS(recv) == rb_cFloat &&
