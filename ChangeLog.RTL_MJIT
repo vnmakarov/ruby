@@ -1,3 +1,9 @@
+2018-04-15  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* iseq.h (struct iseq_compile_data): Add member throw_p.
+	* compile.c (iseq_compile_each): Set up and use throw_p.  Add
+	exception entries only when throw_p is true.
+
 2018-04-05  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* vm_insnhelper.c (opt_eq_func): Add -0.0 case for NEW_FLONUM.

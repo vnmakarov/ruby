@@ -202,6 +202,9 @@ struct iseq_compile_data {
     VALUE ensure_node;
     VALUE for_iseq;
     struct iseq_compile_data_ensure_node_stack *ensure_node_stack;
+    /* Used for iseq generated from while/repeat/n nodes.  True if
+       break/next/redo is actually throwing an exception: */
+    int throw_p;
     int loopval_popped;	/* used by NODE_BREAK */
     int cached_const;
     struct iseq_compile_data_storage *storage_head;

@@ -4256,7 +4256,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node, int poppe
 	LABEL *prev_end_label = ISEQ_COMPILE_DATA(iseq)->end_label;
 	LABEL *prev_redo_label = ISEQ_COMPILE_DATA(iseq)->redo_label;
 	int prev_loopval_popped = ISEQ_COMPILE_DATA(iseq)->loopval_popped;
-
+	int throw_p = ISEQ_COMPILE_DATA(iseq)->throw_p;
 	struct iseq_compile_data_ensure_node_stack enl;
 
 	LABEL *next_label = ISEQ_COMPILE_DATA(iseq)->start_label = NEW_LABEL(line);	/* next  */
@@ -4268,6 +4268,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node, int poppe
 	LABEL *next_catch_label = NEW_LABEL(line);
 	LABEL *tmp_label = NULL;
 
+	ISEQ_COMPILE_DATA(iseq)->throw_p = FALSE;
 	ISEQ_COMPILE_DATA(iseq)->loopval_popped = 0;
 	push_ensure_entry(iseq, &enl, 0, 0);
 
@@ -4322,18 +4323,20 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node, int poppe
 	    ADD_INSN(ret, line, pop);
 	}
 
-	ADD_CATCH_ENTRY(CATCH_TYPE_BREAK, redo_label, break_label,
-			0, break_label);
-	ADD_CATCH_ENTRY(CATCH_TYPE_NEXT, redo_label, break_label, 0,
-			next_catch_label);
-	ADD_CATCH_ENTRY(CATCH_TYPE_REDO, redo_label, break_label, 0,
-			ISEQ_COMPILE_DATA(iseq)->redo_label);
-
+	if (ISEQ_COMPILE_DATA(iseq)->throw_p) {
+	    ADD_CATCH_ENTRY(CATCH_TYPE_BREAK, redo_label, break_label,
+		            0, break_label);
+	    ADD_CATCH_ENTRY(CATCH_TYPE_NEXT, redo_label, break_label, 0,
+		            next_catch_label);
+	    ADD_CATCH_ENTRY(CATCH_TYPE_REDO, redo_label, break_label, 0,
+		            ISEQ_COMPILE_DATA(iseq)->redo_label);
+	}
 	ISEQ_COMPILE_DATA(iseq)->start_label = prev_start_label;
 	ISEQ_COMPILE_DATA(iseq)->end_label = prev_end_label;
 	ISEQ_COMPILE_DATA(iseq)->redo_label = prev_redo_label;
 	ISEQ_COMPILE_DATA(iseq)->loopval_popped = prev_loopval_popped;
 	ISEQ_COMPILE_DATA(iseq)->ensure_node_stack = ISEQ_COMPILE_DATA(iseq)->ensure_node_stack->prev;
+	ISEQ_COMPILE_DATA(iseq)->throw_p = throw_p;
 	break;
       }
       case NODE_FOR:
@@ -4437,6 +4440,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node, int poppe
 		level++;
 		if (ISEQ_COMPILE_DATA(ip)->redo_label != 0) {
 		    level = VM_THROW_NO_ESCAPE_FLAG;
+		    ISEQ_COMPILE_DATA(ip)->throw_p = TRUE;
 		    goto break_by_insn;
 		}
 		else if (ip->body->type == ISEQ_TYPE_BLOCK) {
@@ -4514,6 +4518,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node, int poppe
 	    }
 	    if (ip != 0) {
 		CHECK(COMPILE(ret, "next val", node->nd_stts));
+		ISEQ_COMPILE_DATA(ip)->throw_p = TRUE;
 		ADD_INSN1(ret, line, throw, INT2FIX(level | TAG_NEXT));
 
 		if (popped) {
@@ -4583,6 +4588,7 @@ iseq_compile_each(rb_iseq_t *iseq, LINK_ANCHOR *const ret, NODE *node, int poppe
 	    }
 	    if (ip != 0) {
 		ADD_INSN(ret, line, putnil);
+		ISEQ_COMPILE_DATA(ip)->throw_p = TRUE;
 		ADD_INSN1(ret, line, throw, INT2FIX(level | TAG_REDO));
 
 		if (popped) {
