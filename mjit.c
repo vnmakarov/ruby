@@ -86,6 +86,7 @@
 #include <sys/wait.h>
 #include <sys/time.h>
 #include <dlfcn.h>
+#include "ccan/list/list.h"
 #include "internal.h"
 #include "vm_core.h"
 #include "iseq.h"
@@ -262,6 +263,8 @@ struct rb_mjit_unit_iseq {
     /* See the corresponding fields in iseq_constant_body.  The values
        are saved for GCed iseqs.  */
     unsigned long resume_calls, stop_calls, jit_calls, failed_jit_calls;
+    /* map: var (local or temp) num -> flag of that it might be a double */
+    char doubles_p[1];
 };
 
 /* Defined in the client thread before starting MJIT threads:  */
@@ -591,35 +594,46 @@ static const char *LLVM_EMIT_PCH_ARGS[] = {"-emit-pch", NULL};
    passing) to implement the insn.  */
 struct insn_fun_features {
     /* Pass argument th.  */
-    char th_p;
+    char th_p : 1;
     /* True if the first insn operand is a continuation insn (see
        comments of insns.def).  We don't pass such operands.  */
-    char skip_first_p;
+    char skip_first_p : 1;
     /* Just go to spec section if the function returns non-zero.  */
-    char op_end_p;
+    char op_end_p : 1;
     /* Pass structure calling and call function mjit_call_method
        afterwards.  */
-    char call_p;
+    char call_p : 1;
     /* Defined only for call insns.  True if the call recv should be
        present on the stack.  */
-    char recv_p;
+    char recv_p : 1;
     /* Jump the dest (1st of 2nd insn operand) if the function returns
        non-zero.  */
-    char jmp_p;
+    char jmp_p : 1;
     /* It is a bcmp insn, call function mjit_bcmp_end if it is
        necessary.  */
-    char bcmp_p;
+    char bcmp_p : 1;
     /* A value passed to function jmp_bcmp_end.  */
-    char jmp_true_p;
+    char jmp_true_p : 1;
     /* Use a separate code to generate C code for the insn.  */
-    char special_p;
+    char special_p : 1;
     /* Flag of an insn which can become a speculative one.  */
-    char changing_p;
+    char changing_p : 1;
     /* Flag of a speculative insn.  */
-    char speculative_p;
+    char speculative_p : 1;
     /* Flag of a simple insn whose all operands are given by one
        operand number.  */
-    char simple_p;
+    char simple_p : 1;
+    /* True if it is a speculative compare double insn or other double
+       insn.  */
+    char cmp_double_p : 1, double_p : 1;
+    /* True if any speculative double insn contains imm. double
+       operand.  */
+    char imm_double_p : 1;
+    /* True if it is some special assignment insn, e.g. swap.  */
+    char special_assign_p : 1;
+    /* Number of insn operand which is the result.  Zero if there is
+       no result.  */
+    signed char result;
 };
 
 /* Initiate S with no speculation.  */
@@ -660,15 +674,23 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     f->th_p = f->skip_first_p = f->op_end_p = f->bcmp_p = FALSE;
     f->call_p = f->recv_p = f->jmp_p = f->jmp_true_p = FALSE;
     f->special_p = f->changing_p = f->speculative_p = f->simple_p = FALSE;
+    f->imm_double_p = f->double_p = f->cmp_double_p = f->special_assign_p = FALSE;
+    f->result = 2;
     switch (insn) {
-    case BIN(const2var):
-    case BIN(const_ld_val):
     case BIN(const_cached_val_ld):
     case BIN(special2var):
-    case BIN(var2special):
-    case BIN(define_class):
     case BIN(defined_p):
     case BIN(val_defined_p):
+	f->result = 1;
+	f->th_p = TRUE;
+	break;
+    case BIN(var2special):
+    case BIN(define_class):
+	f->result = 0;
+	f->th_p = TRUE;
+	break;
+    case BIN(const2var):
+    case BIN(const_ld_val):
 	f->th_p = TRUE;
 	break;
     case BIN(simple_call):
@@ -703,14 +725,14 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(le):
     case BIN(ge):
     case BIN(plusi):
-    case BIN(plusf):
     case BIN(minusi):
-    case BIN(minusf):
     case BIN(multi):
-    case BIN(multf):
     case BIN(divi):
-    case BIN(divf):
     case BIN(modi):
+    case BIN(plusf):
+    case BIN(minusf):
+    case BIN(multf):
+    case BIN(divf):
     case BIN(modf):
     case BIN(ltlti):
     case BIN(indi):
@@ -728,7 +750,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(gei):
     case BIN(gef):
 	f->changing_p = TRUE;
-	/* fall through: */
+	/* falls through */
     case BIN(unot):
     case BIN(uplus):
     case BIN(uminus):
@@ -742,14 +764,14 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(ule):
     case BIN(uge):
     case BIN(uplusi):
-    case BIN(uplusf):
     case BIN(uminusi):
-    case BIN(uminusf):
     case BIN(umulti):
-    case BIN(umultf):
     case BIN(udivi):
-    case BIN(udivf):
     case BIN(umodi):
+    case BIN(uplusf):
+    case BIN(uminusf):
+    case BIN(umultf):
+    case BIN(udivf):
     case BIN(umodf):
     case BIN(ueqi):
     case BIN(ueqf):
@@ -781,7 +803,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(sle):
     case BIN(sge):
 	f->changing_p = TRUE;
-	/* fall through: */
+	/* falls through */
     case BIN(suplus):
     case BIN(suminus):
     case BIN(sumult):
@@ -795,6 +817,36 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(suge):
 	f->simple_p = f->th_p = f->op_end_p = TRUE;
 	break;
+    case BIN(feqf):
+    case BIN(fnef):
+    case BIN(fltf):
+    case BIN(fgtf):
+    case BIN(flef):
+    case BIN(fgef):
+	f->imm_double_p = TRUE;
+	/* falls through */
+    case BIN(feq):
+    case BIN(fne):
+    case BIN(flt):
+    case BIN(fgt):
+    case BIN(fle):
+    case BIN(fge):
+	f->speculative_p = f->cmp_double_p = TRUE;
+	break;
+    case BIN(fplusf):
+    case BIN(fminusf):
+    case BIN(fmultf):
+    case BIN(fdivf):
+    case BIN(fmodf):
+	f->imm_double_p = TRUE;
+	/* falls through */
+    case BIN(fplus):
+    case BIN(fminus):
+    case BIN(fmult):
+    case BIN(fdiv):
+    case BIN(fmod):
+	f->double_p = TRUE;
+	/* falls through */
     case BIN(spec_not):
     case BIN(iplus):
     case BIN(iminus):
@@ -809,17 +861,6 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(igt):
     case BIN(ile):
     case BIN(ige):
-    case BIN(fplus):
-    case BIN(fminus):
-    case BIN(fmult):
-    case BIN(fdiv):
-    case BIN(fmod):
-    case BIN(feq):
-    case BIN(fne):
-    case BIN(flt):
-    case BIN(fgt):
-    case BIN(fle):
-    case BIN(fge):
     case BIN(iplusi):
     case BIN(iminusi):
     case BIN(imulti):
@@ -834,19 +875,15 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(igti):
     case BIN(ilei):
     case BIN(igei):
-    case BIN(fplusf):
-    case BIN(fminusf):
-    case BIN(fmultf):
-    case BIN(fdivf):
-    case BIN(fmodf):
-    case BIN(feqf):
-    case BIN(fnef):
-    case BIN(fltf):
-    case BIN(fgtf):
-    case BIN(flef):
-    case BIN(fgef):
 	f->speculative_p = TRUE;
 	break;
+    case BIN(sfplus):
+    case BIN(sfminus):
+    case BIN(sfmult):
+    case BIN(sfdiv):
+    case BIN(sfmod):
+	f->double_p = TRUE;
+	/* falls through */
     case BIN(siplus):
     case BIN(siminus):
     case BIN(simult):
@@ -858,27 +895,25 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(sigt):
     case BIN(sile):
     case BIN(sige):
-    case BIN(sfplus):
-    case BIN(sfminus):
-    case BIN(sfmult):
-    case BIN(sfdiv):
-    case BIN(sfmod):
+	f->simple_p = f->speculative_p = TRUE;
+	break;
     case BIN(sfeq):
     case BIN(sfne):
     case BIN(sflt):
     case BIN(sfgt):
     case BIN(sfle):
     case BIN(sfge):
-	f->simple_p = f->speculative_p = TRUE;
+	f->cmp_double_p = f->simple_p = f->speculative_p = TRUE;
 	break;
     case BIN(indset):
     case BIN(indseti):
     case BIN(indsets):
 	f->changing_p = TRUE;
-	/* fall through: */
+	/* falls through */
     case BIN(uindset):
     case BIN(uindseti):
     case BIN(uindsets):
+	f->result = 0;
 	f->th_p = f->op_end_p = TRUE;
 	break;
     case BIN(aindset):
@@ -886,18 +921,22 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(aindseti):
     case BIN(hindseti):
     case BIN(hindsets):
+	f->result = 0;
 	f->speculative_p = TRUE;
 	break;
     case BIN(trace):
     case BIN(goto):
-    case BIN(get_inline_cache):
     case BIN(case_dispatch):
+	f->result = 0;
+	/* falls through */
+    case BIN(get_inline_cache):
 	f->special_p = TRUE;
 	break;
     case BIN(bt):
     case BIN(bf):
     case BIN(bnil):
     case BIN(bkw):
+	f->result = 0;
 	f->th_p = f->jmp_p = TRUE;
 	break;
     case BIN(bteq):
@@ -919,7 +958,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(btgei):
     case BIN(btgef):
 	f->changing_p = TRUE;
-	/* fall through: */
+	/* falls through */
     case BIN(ubteq):
     case BIN(ubtne):
     case BIN(ubtlt):
@@ -938,6 +977,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(ubtlef):
     case BIN(ubtgei):
     case BIN(ubtgef):
+	f->result = 4;
 	f->th_p = f->jmp_p = f->jmp_true_p = f->bcmp_p = f->skip_first_p = TRUE;
 	break;
     case BIN(bfeq):
@@ -958,8 +998,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(bflef):
     case BIN(bfgei):
     case BIN(bfgef):
-	/* fall through: */
 	f->changing_p = TRUE;
+	/* falls through */
     case BIN(ubfeq):
     case BIN(ubfne):
     case BIN(ubflt):
@@ -978,7 +1018,42 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(ubflef):
     case BIN(ubfgei):
     case BIN(ubfgef):
+	f->result = 4;
 	f->th_p = f->jmp_p = f->bcmp_p = f->skip_first_p = TRUE;
+	break;
+    case BIN(fbteqf):
+    case BIN(fbtnef):
+    case BIN(fbtltf):
+    case BIN(fbtgtf):
+    case BIN(fbtlef):
+    case BIN(fbtgef):
+	f->imm_double_p = TRUE;
+	/* falls through */
+    case BIN(fbteq):
+    case BIN(fbtne):
+    case BIN(fbtlt):
+    case BIN(fbtgt):
+    case BIN(fbtle):
+    case BIN(fbtge):
+	f->result = 4;
+	f->jmp_true_p = f->double_p = f->jmp_p = f->bcmp_p = f->skip_first_p = f->speculative_p = TRUE;
+	break;
+    case BIN(fbfeqf):
+    case BIN(fbfnef):
+    case BIN(fbfltf):
+    case BIN(fbfgtf):
+    case BIN(fbflef):
+    case BIN(fbfgef):
+	f->imm_double_p = TRUE;
+	/* falls through */
+    case BIN(fbfeq):
+    case BIN(fbfne):
+    case BIN(fbflt):
+    case BIN(fbfgt):
+    case BIN(fbfle):
+    case BIN(fbfge):
+	f->result = 4;
+	f->double_p = f->jmp_p = f->bcmp_p = f->skip_first_p = f->speculative_p = TRUE;
 	break;
     case BIN(ibteq):
     case BIN(ibtne):
@@ -986,72 +1061,49 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(ibtgt):
     case BIN(ibtle):
     case BIN(ibtge):
-    case BIN(fbteq):
-    case BIN(fbtne):
-    case BIN(fbtlt):
-    case BIN(fbtgt):
-    case BIN(fbtle):
-    case BIN(fbtge):
     case BIN(ibteqi):
     case BIN(ibtnei):
     case BIN(ibtlti):
     case BIN(ibtgti):
     case BIN(ibtlei):
     case BIN(ibtgei):
-    case BIN(fbteqf):
-    case BIN(fbtnef):
-    case BIN(fbtltf):
-    case BIN(fbtgtf):
-    case BIN(fbtlef):
-    case BIN(fbtgef):
 	f->jmp_true_p = TRUE;
-	/* fall through: */
+	/* falls through */
     case BIN(ibfeq):
     case BIN(ibfne):
     case BIN(ibflt):
     case BIN(ibfgt):
     case BIN(ibfle):
     case BIN(ibfge):
-    case BIN(fbfeq):
-    case BIN(fbfne):
-    case BIN(fbflt):
-    case BIN(fbfgt):
-    case BIN(fbfle):
-    case BIN(fbfge):
     case BIN(ibfeqi):
     case BIN(ibfnei):
     case BIN(ibflti):
     case BIN(ibfgti):
     case BIN(ibflei):
     case BIN(ibfgei):
-    case BIN(fbfeqf):
-    case BIN(fbfnef):
-    case BIN(fbfltf):
-    case BIN(fbfgtf):
-    case BIN(fbflef):
-    case BIN(fbfgef):
+	f->result = 4;
 	f->jmp_p = f->bcmp_p = f->skip_first_p = f->speculative_p = TRUE;
 	break;
     case BIN(nop):
     case BIN(temp_ret):
     case BIN(loc_ret):
     case BIN(val_ret):
-    case BIN(raise_except):
-    case BIN(raise_except_val):
     case BIN(ret_to_loc):
     case BIN(ret_to_temp):
+    case BIN(raise_except):
+    case BIN(raise_except_val):
+	f->result = 0;
+	/* falls through */
     case BIN(call_block):
 	f->call_p = f->special_p = TRUE;
 	break;
-    case BIN(temp2ivar):
-    case BIN(loc2ivar):
-    case BIN(val2ivar):
-    case BIN(ivar2var):
     case BIN(var2var):
     case BIN(var_swap):
-    case BIN(temp2temp):
     case BIN(temp_swap):
     case BIN(temp_reverse):
+	f->special_assign_p = TRUE;
+	break;
+    case BIN(temp2temp):
     case BIN(loc2loc):
     case BIN(loc2temp):
     case BIN(temp2loc):
@@ -1060,17 +1112,16 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(val2temp):
     case BIN(val2loc):
     case BIN(str2var):
-    case BIN(set_inline_cache):
     case BIN(specialobj2var):
     case BIN(self2var):
     case BIN(global2var):
+    case BIN(ivar2var):
     case BIN(cvar2var):
     case BIN(iseq2var):
-    case BIN(var2uploc):
-    case BIN(val2uploc):
-    case BIN(var2const):
-    case BIN(var2global):
-    case BIN(var2cvar):
+    case BIN(to_string):
+    case BIN(concat_strings):
+    case BIN(to_regexp):
+    case BIN(str_freeze_call):
     case BIN(make_range):
     case BIN(make_array):
     case BIN(make_hash):
@@ -1082,11 +1133,19 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(concat_array):
     case BIN(check_match):
     case BIN(regexp_match1):
-    case BIN(to_string):
-    case BIN(concat_strings):
-    case BIN(to_regexp):
-    case BIN(str_freeze_call):
+	f->result = 1;
+	break;
+    case BIN(set_inline_cache):
+    case BIN(var2uploc):
+    case BIN(val2uploc):
+    case BIN(var2const):
+    case BIN(var2global):
+    case BIN(temp2ivar):
+    case BIN(loc2ivar):
+    case BIN(val2ivar):
+    case BIN(var2cvar):
     case BIN(freeze_string):
+	f->result = 0;
 	break;
     case BIN(call_c_func):
 	/* C code for the following insns should be never
@@ -1190,6 +1249,354 @@ get_safe_insn(VALUE insn) {
     }
 }
 
+
+
+/* Minimal number of chars to keep NBITS bits.  */
+static size_t bit2char(size_t nbits) { return (nbits + CHAR_BIT - 1) / CHAR_BIT; }
+
+/* Set up NBIT bit in V.  */
+static void
+set_bit(char *v, size_t nbit) {
+    v[nbit / CHAR_BIT] |= 1 << (nbit % CHAR_BIT);
+}
+
+/* Reset up NBIT bit in V.  */
+static void
+reset_bit(char *v, size_t nbit) {
+    v[nbit / CHAR_BIT] &= ~(1 << (nbit % CHAR_BIT));
+}
+
+/* Get NBIT bit in V.  */
+static int
+get_bit(char *v, size_t nbit) {
+    return (v[nbit / CHAR_BIT] >> (nbit % CHAR_BIT)) & 1;
+}
+
+/* Basic block */
+struct bb;
+
+/* CFG edge (an edge connecting two BBs) */
+struct edge {
+    /* Source and destination of the edge  */
+    struct bb *src, *dst;
+    /* All edges with the same source or destination are linked
+       through the following fields.  */
+    struct list_node src_link;
+    struct list_node dst_link;
+};
+
+struct bb {
+    size_t num; /* basic block order number. */
+    /* Position of the first BB insn and position right after the last
+       BB insn.  */
+    size_t start, end;
+    /* Used for some algorithms.  */
+    size_t temp;
+    /* True if BB can be achieved through exception table using a
+       continuation label.  */
+    int except_p;
+    /* Bit sets (vectors) containg kill, gen, in, and out sets for
+       calculation variables which are of floating point type.  */
+    char *kill, *gen, *in, *out;
+    /* All bbs are linked through the following field.  */
+    struct list_node bb_link;
+    /* Lists of edges where given BB is a source or destination.  */
+    struct list_head in_edges, out_edges;
+};
+
+/* Control flow graph of a method being JITted.  */
+struct cfg {
+    size_t bbs_num; /* number of BBs in CFG  */
+    /* A map: insn pos to BB containg the insn:  */
+    struct bb **pos2bb;
+    /* Artificial BBs which are enter and exit of the CFG: */
+    struct bb *entry_bb, *exit_bb;
+    /* List of all CFG BBs:  */
+    struct list_head bbs;
+};
+
+/* Create and return an edges from SRC to DST.  Include the edge into
+   BB edge lists.  Return NULL in case of allocation error.  */
+static struct edge *create_edge(struct bb *src, struct bb *dst) {
+    struct edge *edge = xmalloc(sizeof (struct edge));
+
+    if (edge == NULL)
+	return NULL;
+    edge->src = src;
+    edge->dst = dst;
+    list_add_tail(&dst->in_edges, &edge->dst_link);
+    list_add_tail(&src->out_edges, &edge->src_link);
+    return edge;
+}
+
+/* Free BB sets. */
+static void free_bb_sets(struct bb *bb) {
+    if (bb->kill != NULL)
+	free(bb->kill);
+    if (bb->gen != NULL)
+	free(bb->gen);
+    if (bb->in != NULL)
+	free(bb->in);
+    if (bb->out != NULL)
+	free(bb->out);
+}
+
+/* Create and return BB whose the first insn is at position START.
+   Allocate BB sets for VARS_NUM locals and temps.  Return NULL in
+   case of allocation error.  */
+static struct bb *create_bb(size_t start, size_t vars_num) {
+    struct bb *bb = xmalloc(sizeof (struct bb));
+    size_t size = bit2char(vars_num);
+    
+    if (bb == NULL)
+	return NULL;
+    bb->kill = bb->gen = bb->in = bb->out = NULL;
+    if ((bb->kill = xmalloc(sizeof(char) * size)) == NULL
+	|| (bb->gen = xmalloc(sizeof(char) * size)) == NULL
+	|| (bb->in = xmalloc(sizeof(char) * size)) == NULL
+	|| (bb->out = xmalloc(sizeof(char) * size)) == NULL) {
+	free_bb_sets(bb);
+	return NULL;
+    }
+    bb->except_p = FALSE;
+    bb->start = start;
+    bb->end = 0;
+    list_head_init(&bb->in_edges);
+    list_head_init(&bb->out_edges);
+    return bb;
+}
+
+/* Free BB and its sets and all edges coming into BB.  Remove BB from
+   the BB list if UNLIST_P.  */
+static void free_bb(struct bb *bb, int unlist_p) {
+    struct edge *edge, *next_edge;
+
+    if (unlist_p)
+	list_del(&bb->bb_link);
+    list_for_each_safe(&bb->in_edges, edge, next_edge, dst_link) {
+	list_del(&edge->dst_link);
+	free(edge);
+    }
+    free_bb_sets(bb);
+    free(bb);
+}
+
+/* Free all CFG (including BBs and edges).  */
+static void free_cfg(struct cfg *cfg) {
+    struct bb *bb, *next_bb;
+    
+    if (cfg == NULL)
+	return;
+    if (cfg->pos2bb != NULL)
+	free(cfg->pos2bb);
+    if (cfg->entry_bb != NULL)
+	free_bb(cfg->entry_bb, FALSE);
+    if (cfg->exit_bb != NULL)
+	free_bb(cfg->exit_bb, FALSE);
+    list_for_each_safe(&cfg->bbs, bb, next_bb, bb_link) {
+	free_bb(bb, TRUE);
+    }
+    free(cfg);
+}
+
+/* Return BB in CFG starting at position POS.  Return NULL in case of
+   error.  Create BB if it is not created yet.  In case of creation,
+   include it into BBS list and update CFG->POS2BB.  */
+static struct bb *create_bb_from_pos(size_t pos, struct cfg *cfg,
+				     struct list_head *bbs, size_t vars_num) {
+    struct bb *curr_bb;
+    
+    if ((curr_bb = cfg->pos2bb[pos]) == NULL) {
+	if ((curr_bb = create_bb(pos, vars_num)) == NULL)
+	    return NULL;
+	cfg->pos2bb[pos] = curr_bb;
+	list_add_tail(bbs, &curr_bb->bb_link);
+    }
+    return curr_bb;
+}
+
+/* Build and return CFG for unit iseq UI.  Return NULL in case of
+   allocation error.  In case of error, free all already allocated
+   memory for CFG.  BBs in CFG are ordered according their original
+   order in the iseq.  */
+static struct cfg *build_cfg(struct rb_mjit_unit_iseq *ui) {
+    struct cfg *cfg = xmalloc(sizeof (struct cfg));
+    struct rb_iseq_constant_body *body = ui->iseq->body;
+    const VALUE *code = body->rtl_encoded;
+    size_t i, pos, len, dst, size = ui->iseq_size;
+    size_t vars_num = body->local_table_size + body->temp_vars_num;
+    int create_bb_p, prev_jmp_p;
+    VALUE insn;
+    struct insn_fun_features features;
+    struct bb *bb, *curr_bb, *next_bb;
+    struct iseq_catch_table *rtl_catch_table = body->rtl_catch_table;
+    LIST_HEAD(non_cfg_bbs);
+
+    if (cfg == NULL)
+	return NULL;
+    cfg->bbs_num = 0;
+    cfg->entry_bb = cfg->exit_bb = NULL;
+    list_head_init(&cfg->bbs);
+    if ((cfg->entry_bb = create_bb(0, vars_num)) == NULL)
+	goto err;
+    cfg->entry_bb->num = cfg->bbs_num++;
+    cfg->pos2bb = xmalloc(sizeof (struct bb *) * size);
+    if (cfg->pos2bb == NULL) {
+	free(cfg);
+	return NULL;
+    }
+    memset (cfg->pos2bb, 0, sizeof (struct bb *) * size);
+    if (rtl_catch_table != NULL)
+	for (i = 0; i < rtl_catch_table->size; i++) {
+	    if ((bb = create_bb_from_pos(rtl_catch_table->entries[i].cont, cfg,
+					 &non_cfg_bbs, vars_num)) == NULL)
+		goto err;
+	    bb->except_p = TRUE;
+	}
+    for (pos = 0; pos < size;) { /* Create bbs for labels. */
+	insn = code[pos];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+	insn = rb_vm_insn_addr2insn((void *) insn);
+#endif
+	len = insn_len(insn);
+	get_insn_fun_features(insn, &features);
+	if (features.jmp_p || insn == BIN(goto)) {
+	    dst = pos + len + code[pos + (! features.bcmp_p || insn == BIN(goto) ? 1 : 2)];
+	    if (create_bb_from_pos(dst, cfg, &non_cfg_bbs, vars_num) == NULL)
+		goto err;
+	}
+	pos += len;
+    }
+    curr_bb = NULL;
+    create_bb_p = TRUE;
+    prev_jmp_p = FALSE;
+    for (pos = 0; pos < size;) {
+	if ((bb = cfg->pos2bb[pos]) != NULL || create_bb_p) {
+	    if (bb != NULL)
+		list_del(&bb->bb_link);
+	    else if ((bb = create_bb(pos, vars_num)) == NULL)
+		goto err;
+	    bb->num = cfg->bbs_num++;
+	    list_add_tail(&cfg->bbs, &bb->bb_link);
+	    if (curr_bb != NULL) {
+		if (! prev_jmp_p && create_edge(curr_bb, bb) == NULL)
+		    goto err;
+		curr_bb->end = pos;
+	    }
+	    curr_bb = bb;
+	}
+	cfg->pos2bb[pos] = curr_bb;
+	create_bb_p = FALSE;
+	insn = code[pos];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+	insn = rb_vm_insn_addr2insn((void *) insn);
+#endif
+	len = insn_len(insn);
+	get_insn_fun_features(insn, &features);
+	if (features.jmp_p || insn == BIN(goto)) {
+	    dst = pos + len + code[pos + (! features.bcmp_p || insn == BIN(goto) ? 1 : 2)];
+	    curr_bb->end = pos + len;
+	    bb = cfg->pos2bb[dst];
+	    assert(bb != NULL);
+	    if (create_edge(curr_bb, bb) == NULL)
+		goto err;
+	    create_bb_p = TRUE;
+	}
+	prev_jmp_p = insn == BIN(goto);
+	pos += len;
+    }
+    if (curr_bb != NULL)
+	curr_bb->end = pos;
+    assert(list_top(&non_cfg_bbs, struct bb, bb_link) == NULL);
+    if ((cfg->exit_bb = create_bb(size, vars_num)) == NULL)
+	goto err;
+    cfg->exit_bb->num = cfg->bbs_num++;
+    list_for_each_safe(&cfg->bbs, bb, next_bb, bb_link) {
+	if (list_top(&bb->in_edges, struct edge, dst_link) == NULL
+	    && create_edge(cfg->entry_bb, bb) == NULL)
+	    goto err;
+	if (list_top(&bb->out_edges, struct edge, src_link) == NULL
+	    && create_edge(bb, cfg->exit_bb) == NULL)
+	    goto err;
+    }
+    return cfg;
+ err:
+    if (cfg->entry_bb != NULL)
+	free_bb(cfg->entry_bb, FALSE);
+    if (cfg->exit_bb != NULL)
+	free_bb(cfg->exit_bb, FALSE);
+    list_for_each_safe(&non_cfg_bbs, bb, next_bb, bb_link) {
+	free_bb(bb, TRUE);
+    }
+    free_cfg(cfg);
+    return NULL;
+}
+
+/* Print all incoming (if IN_P) or outcoming BB edges.  */
+static void print_edges(int in_p, struct bb *bb) {
+    struct edge *e;
+    
+    fprintf (stderr, " %s edges:", in_p ? "in" : "out");
+    if (in_p) {
+	list_for_each(&bb->in_edges, e, dst_link) {
+	    fprintf(stderr, " %lu", (unsigned long) e->src->num);
+	}
+    } else {
+	list_for_each(&bb->out_edges, e, src_link) {
+	    fprintf(stderr, " %lu", (unsigned long) e->dst->num);
+	}
+    }
+    fprintf (stderr, "\n");
+}
+
+/* Print set V of size NBITS.  Use title NAME.  */
+static void print_set(const char *name, char *v, size_t nbits) {
+    size_t i;
+    
+    fprintf (stderr, "  %s:", name);
+    for (i = 0; i < nbits; i++)
+	if (get_bit(v, i))
+	    fprintf (stderr, "  %3lu", (unsigned long) i);
+    fprintf (stderr, "\n");
+}
+
+/* Print BB, its order number, its insns, sets, and incoming and
+   outcoming edges.  */
+static void print_bb(const VALUE *code, struct bb *bb, size_t vars_num) {
+    size_t pos;
+    VALUE insn;
+    
+    fprintf (stderr, "BB %lu:\n", (unsigned long) bb->num);
+    print_edges(TRUE, bb);
+    print_edges(FALSE, bb);
+    print_set("gen", bb->gen, vars_num);
+    print_set("kill", bb->kill, vars_num);
+    print_set("in", bb->in, vars_num);
+    print_set("out", bb->out, vars_num);
+    for (pos = bb->start; pos < bb->end; ) {
+	insn = code[pos];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+	insn = rb_vm_insn_addr2insn((void *) insn);
+#endif
+	fprintf(stderr, "%04lu %s\n", pos, insn_name(insn));
+	pos += insn_len(insn);
+    }
+}
+
+/* Print all CFG BBs of unit iseq UI.  */
+static void print_cfg(struct rb_mjit_unit_iseq *ui, struct cfg *cfg) {
+    struct bb *bb;
+    size_t vars_num = ui->iseq->body->local_table_size + ui->iseq->body->temp_vars_num;
+    
+    print_bb(ui->iseq->body->rtl_encoded, cfg->entry_bb, vars_num);
+    list_for_each(&cfg->bbs, bb, bb_link) {
+	print_bb(ui->iseq->body->rtl_encoded, bb, vars_num);
+    }
+    print_bb(ui->iseq->body->rtl_encoded, cfg->exit_bb, vars_num);
+}
+
+
+
 /* Describes parameters affecting ISEQ compilation.  The parameters
    are calculated for every ISEQ compilation.  */
 struct translation_control {
@@ -1291,15 +1698,260 @@ print_case(st_data_t key, st_data_t val, st_data_t arg) {
     return ST_CONTINUE;
 }
 
+/* Return number for operand TO.  The iseq has LOCAL_TABLE_SIZE
+   locals.  Local numbers (non-negative TO) starts with zero.
+   Temporary (negative TO) numbers start after local ones.  */
+static long get_var_double_num(long to, int local_table_size) {
+    to = to >= 0 ? to - VM_ENV_DATA_SIZE : -to + local_table_size - 1;
+    assert(to >= 0);
+    return to;
+}
+
+/* Update GEN and KILL for INSN BB in CFG of iseq with CODE and
+   LOCAL_TABLE_SIZE locals.  Insn position, length, and features are
+   correspondingly POS, LEN, and FEATURES.  Next insn is NEXT_INSN.
+   Don't setup GEN and KILL for insn result if IGNORE_RESULT_P.  If F
+   is not NULL, output code setting C double var for val2loc and
+   val2temp with floating point value.  Return TRUE if we should
+   ignore result of the next insn.  */
+static int
+update_bb_kill_gen_by_insn(FILE *f, const VALUE *code, int local_table_size, struct cfg *cfg,
+			   VALUE insn, size_t pos, size_t len,
+			   struct insn_fun_features *features,
+			   int ignore_result_p, VALUE next_insn) {
+    struct bb *bb;
+    int ignore_next_p;
+    long to;
+    rb_num_t n;
+    
+    if (cfg == NULL)
+	return FALSE;
+    bb = cfg->pos2bb[pos];
+    ignore_next_p = FALSE;
+    if (features->special_assign_p) {
+	switch (insn) {
+	case BIN(var2var):
+	    to = get_var_double_num((long) code[pos + 1], local_table_size);
+	    n = (rb_num_t) code[pos + 3];
+	    while (n-- > 0) {
+		set_bit(bb->kill, to);
+		reset_bit(bb->gen, to++);
+	    }
+	    break;
+	case BIN(var_swap):
+	case BIN(temp_swap):
+	    assert(insn == BIN(var_swap) && (long) code[pos + 1] >= 0 && (long) code[pos + 2] >= 0
+		   || insn == BIN(temp_swap) && (long) code[pos + 1] < 0 && (long) code[pos + 2] < 0);
+	    to = get_var_double_num((long) code[pos + 1], local_table_size);
+	    set_bit(bb->kill, to);
+	    reset_bit(bb->gen, to);
+	    to = get_var_double_num((long) code[pos + 2], local_table_size);
+	    set_bit(bb->kill, to);
+	    reset_bit(bb->gen, to);
+	    break;
+	case BIN(temp_reverse):
+	    assert((long) code[pos + 2] < 0);
+	    to = get_var_double_num((long) code[pos + 2], local_table_size);
+	    n = (rb_num_t) code[pos + 1];
+	    while (n-- > 0)
+		set_bit(bb->kill, to);
+	    reset_bit(bb->gen, to++);
+	    break;
+	default:
+	    assert(FALSE);
+	}
+    } else if (features->result != 0) {
+	to = get_var_double_num((long) code[pos + features->result], local_table_size);
+	if (! features->double_p || features->cmp_double_p || features->bcmp_p) {
+	  if ((insn != BIN(val2loc) && insn != BIN(val2temp)) || !FLONUM_P(code[pos + 2])) {
+	    if (! ignore_result_p) {
+	      set_bit(bb->kill, to);
+	      reset_bit(bb->gen, to);
+	    }
+	  } else {
+	    set_bit(bb->gen, to);
+	    if (f != NULL)
+	      fprintf(f, "  d%ld = rb_float_flonum_value(0x%"PRIxVALUE ");\n", to, code[pos + 2]);
+	  }
+	} else if (next_insn != BIN(temp2loc)
+		   || code[pos + len + 2] != code[pos + features->result]
+		   || bb != cfg->pos2bb[pos +len]) { /* not in the same BB */
+	    set_bit(bb->gen, to);
+	} else {
+	    set_bit(bb->kill, to);
+	    to = get_var_double_num((long) code[pos + len + 1], local_table_size);
+	    assert(to >= 0);
+	    set_bit(bb->gen, to);
+	    ignore_next_p = TRUE;
+	}
+    }
+    return ignore_next_p;
+}
+
+/* Return number of CFG double C var for result (if RES_P) or input
+   operand OP of insn with length I_LEN at position POS in CODE whose
+   next insn is NEXT_INSN.  LOCAL_TABLE_SIZE is number of locals for
+   CFG iseq.  */
+static long
+get_op_double_num(struct cfg *cfg, int local_table_size, const VALUE *code,
+		  size_t pos, int i_len, VALUE op, int res_p, VALUE next_insn) {
+    long to;
+    struct bb *bb;
+
+    if (cfg == NULL)
+	return -1;
+    bb = cfg->pos2bb[pos];
+    to = (long) op;
+    if (res_p && next_insn == BIN(temp2loc) && code[pos + i_len + 2] == op
+	&& bb == cfg->pos2bb[pos + i_len]) { /* The same BB */
+	to = (long) code[pos + i_len + 1];
+    }
+    to = get_var_double_num(to, local_table_size);
+    return ! res_p && ! get_bit(bb->gen, to) ? -1 : to;
+}
+
+/* Function used to sort CFG BBs according their order number.  */
+static int bb_compare(const void *a1, const void *a2) {
+    const struct bb *bb1 = (const struct bb *) a1;
+    const struct bb *bb2 = (const struct bb *) a2;
+
+    return bb1->num < bb2->num ? -1 : bb1->num > bb2->num ? 1 : 0;
+}
+
+/* Return TRUE if BB is reachable in CFG.  */
+static int bb_reachable_p(struct bb *bb, struct cfg *cfg) {
+    struct edge *e;
+    
+    if (bb->except_p)
+	return TRUE; /* reachable by exception */
+    list_for_each(&bb->in_edges, e, dst_link) {
+	if (e->src != cfg->entry_bb)
+	    return TRUE;
+    }
+    return FALSE;
+}
+
+/* Build CFG bb sets for uint iseq UI.
+
+   Our data flow problem:
+    bb.in = for all predecessors p: and (p.out);
+    bb.out = bb.in and not bb.kill or bb.gen;
+
+  Floating point arithmetic speculative insns set up GEN.  All other
+  insns with results set up KILL.
+*/
+static void
+build_bb_sets(struct rb_mjit_unit_iseq *ui, struct cfg *cfg) {
+    VALUE insn, next_insn;
+    char b;
+    struct insn_fun_features features;
+    struct rb_iseq_constant_body *body = ui->iseq->body;
+    const VALUE *code = body->rtl_encoded;
+    size_t pos, len, size = ui->iseq_size;
+    size_t i, n, iter, to, from;
+    int change_p, first_p, ignore_result_p;
+    size_t set_size = bit2char(body->temp_vars_num + body->local_table_size);
+    struct bb *dst, *curr_bb = NULL;
+    struct bb **bbs, **next_bbs, **temp;
+    struct edge *e;
+
+    /* Calculate gen and kill sets: */
+    for (pos = 0, ignore_result_p = FALSE; pos < size; ) {
+	if (cfg != NULL && curr_bb != cfg->pos2bb[pos]) { /* BB start */
+	    curr_bb = cfg->pos2bb[pos];
+	    memset(curr_bb->gen, 0, set_size);
+	    memset(curr_bb->kill, 0, set_size);
+	}
+	insn = code[pos];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+	insn = rb_vm_insn_addr2insn((void *) insn);
+#endif
+	len = insn_len(insn);
+	if (pos + len >= size)
+	    next_insn = BIN(nop);
+	else {
+	    next_insn = code[pos + len];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+	    next_insn = rb_vm_insn_addr2insn((void *) next_insn);
+#endif
+	}
+	get_insn_fun_features(insn, &features);
+	ignore_result_p = update_bb_kill_gen_by_insn(NULL, code, body->local_table_size, cfg,
+						   insn, pos, len, &features, ignore_result_p, next_insn);
+	pos += len;
+    }
+    /* Calculate in and out.  It is forward data flow problem:  */
+    if ((bbs = xmalloc(cfg->bbs_num * sizeof (struct bb *))) == NULL)
+	return;
+    if ((next_bbs = xmalloc(cfg->bbs_num * sizeof (struct bb *))) == NULL) {
+	free(bbs);
+	return;
+    }
+    n = 0;
+    list_for_each(&cfg->bbs, curr_bb, bb_link) {
+	curr_bb->temp = 0;
+	bbs[n++] = curr_bb;
+    }
+    for (iter = 1;; iter++) {
+	to = 0;
+	for (from = 0; from < n; from++) {
+	    curr_bb = bbs[from];
+	    first_p = TRUE;
+	    list_for_each(&curr_bb->in_edges, e, dst_link) {
+		for (i = 0; i < set_size; i++)
+		    if (e->src == cfg->entry_bb)
+			curr_bb->in[i] = 0;
+		    else if (first_p)
+			curr_bb->in[i] = e->src->out[i];
+		    else if (bb_reachable_p(e->src, cfg))
+			curr_bb->in[i] &= e->src->out[i];
+		first_p = FALSE;
+	    }
+	    change_p = FALSE;
+	    for (i = 0; i < set_size; i++) {
+		b = (curr_bb->in[i] & ~curr_bb->kill[i]) | curr_bb->gen[i];
+		if (b != curr_bb->out[i])
+		    change_p = TRUE;
+		curr_bb->out[i] = b;
+	    }
+	    if (change_p) {
+		list_for_each(&curr_bb->out_edges, e, src_link) {
+		    dst = e->dst;
+		    if (dst->temp != iter) {
+			dst->temp = iter;
+			next_bbs[to++] = dst;
+		    }
+		}
+	    }
+	}
+	if (to == 0)
+	    break;
+	n = to;
+	/* We could decrease the iteration number if we ordered BBs
+	   according reverse their postorder in CFG.  But sorting
+	   according BB order number is simple and pretty good enough
+	   for a typical iseq GFG.  */
+	qsort(next_bbs, n, sizeof(struct bb *), bb_compare);
+	temp = bbs;
+	bbs = next_bbs;
+	next_bbs = temp;
+    }
+    free(bbs);
+    free(next_bbs);
+}
+
 /* Output C code implementing an iseq UI insn starting with position
    POS to file F.  Generate the code according to TCP.  */
 static int
 translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
-		    struct translation_control *tcp) {
+		    struct cfg *cfg, int *ignore_next_p, struct translation_control *tcp) {
     rb_iseq_t *iseq = ui->iseq;
-    const VALUE *code = iseq->body->rtl_encoded;
-    VALUE insn, op;
-    int len, i, ivar_p, const_p, insn_mutation_num;
+    struct rb_iseq_constant_body *body = iseq->body;
+    size_t size = ui->iseq_size;
+    const VALUE *code = body->rtl_encoded;
+    VALUE insn, next_insn, op;
+    int len, i, ivar_p, const_p, insn_mutation_num, ignore_result_p = *ignore_next_p;
+    long to;
     const char *types;
     const char *iname;
     struct insn_fun_features features;
@@ -1308,7 +1960,7 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
     CALL_CACHE cc = NULL;
     CALL_INFO ci = NULL;
     char buf[150];
-    
+
     insn_mutation_num = get_insn_mutation_num(ui, pos);
     insn = code[pos];
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
@@ -1317,6 +1969,14 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
     if (tcp->safe_p || insn_mutation_num != 0)
 	insn = get_safe_insn(insn);
     len = insn_len(insn);
+    if (pos + len >= size)
+	next_insn = BIN(nop);
+    else {
+	next_insn = code[pos + len];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+	next_insn = rb_vm_insn_addr2insn((void *) next_insn);
+#endif
+    }
     types = insn_op_types(insn);
     iname = insn_name(insn);
     fprintf(f, "l%ld:\n", pos);
@@ -1619,13 +2279,76 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 		break;
 	    }
 	}
+	assert(! (features.double_p || features.cmp_double_p) || features.speculative_p);
 	if (features.op_end_p)
 	    fprintf(f, ")) {\n    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	else if (features.speculative_p) {
-	    if (features.jmp_p)
-		fprintf(f, ", &val, &new_insn);\n  if (val == RUBY_Qundef) {\n");
-	    else
-		fprintf(f, ", &new_insn)) {\n");
+	    if (features.jmp_p) {
+		fprintf(f, ", &val, &new_insn");
+		if (features.double_p) {
+		    assert(features.bcmp_p && ! features.simple_p);
+		    to = get_op_double_num(cfg, body->local_table_size, code, pos, len,
+					   code[pos + features.result + 1],
+					   FALSE, next_insn);
+		    if (to < 0)
+			fprintf(f, ", 0");
+		    else {
+			assert(ui->doubles_p == NULL || ui->doubles_p[to]);
+			fprintf(f, ", &d%ld", to);
+		    }
+		    if (! features.imm_double_p) {
+			to = get_op_double_num(cfg, body->local_table_size, code, pos, len,
+					       code[pos + features.result + 2],
+					       FALSE, next_insn);
+			if (to < 0)
+			    fprintf(f, ", 0");
+			else {
+			    assert(ui->doubles_p == NULL || ui->doubles_p[to]);
+			    fprintf(f, ", &d%ld", to);
+			}
+		    }
+		}
+		fprintf(f, ");\n  if (val == RUBY_Qundef) {\n");
+	    } else {
+		fprintf(f, ", &new_insn");
+		if (features.double_p || features.cmp_double_p) {
+		    if (features.double_p) {
+			to = get_op_double_num(cfg, body->local_table_size, code, pos, len,
+					       code[pos + features.result], TRUE, next_insn);
+			if (to < 0)
+			    fprintf(f, ", 0");
+			else {
+			    assert(ui->doubles_p == NULL || ui->doubles_p[to]);
+			    fprintf(f, ", &d%ld", to);
+			}
+		    }
+		    to = get_op_double_num(cfg, body->local_table_size, code, pos, len,
+					   features.simple_p
+					   ? code[pos + features.result]
+					   : code[pos + features.result + 1],
+					   FALSE, next_insn);
+		    if (to < 0)
+			fprintf(f, ", 0");
+		    else {
+			assert(ui->doubles_p == NULL || ui->doubles_p[to]);
+			fprintf(f, ", &d%ld", to);
+		    }
+		    if (! features.imm_double_p) {
+			to = get_op_double_num(cfg, body->local_table_size, code, pos, len,
+					       features.simple_p
+					       ? (VALUE) ((long) code[pos + features.result] - 1)
+					       : code[pos + features.result + 2],
+					       FALSE, next_insn);
+			if (to < 0)
+			    fprintf(f, ", 0");
+			else {
+			    assert(ui->doubles_p == NULL || ui->doubles_p[to]);
+			    fprintf(f, ", &d%ld", to);
+			}
+		    }
+		}
+		fprintf(f, ")) {\n");
+	    }
 	    fprintf(f, "  %s", generate_set_pc(TRUE, buf, &code[pos]));
 	    fprintf(f, "    vm_change_insn(cfp->iseq, (void *) 0x%"PRIxVALUE ", new_insn);\n",
 		    (VALUE) &code[pos]);
@@ -1669,6 +2392,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 	    }
         }
     }
+    *ignore_next_p = update_bb_kill_gen_by_insn(f, code, body->local_table_size, cfg,
+						insn, pos, len, &features, ignore_result_p, next_insn);
     return len;
 }
 
@@ -1679,7 +2404,8 @@ translate_iseq_insn(FILE *f, size_t pos, struct rb_mjit_unit_iseq *ui,
 static int
 translate_unit_iseq(struct rb_mjit_unit *u, const char *include_fname) {
     struct rb_mjit_unit_iseq *ui;
-    int fd, err, ep_neq_bp_p;
+    int fd, err, ep_neq_bp_p, ignore_result_p;
+    struct cfg *cfg;
     FILE *f = fopen(u->cfname, "w");
     char mjit_fname_holder[MAX_MJIT_FNAME_LEN];
 
@@ -1708,11 +2434,11 @@ translate_unit_iseq(struct rb_mjit_unit *u, const char *include_fname) {
     fprintf(f, "static const char mjit_bop_redefined_p = %u;\n", u->spec_state.bop_redefined_p);
     fprintf(f, "static const char mjit_ep_neq_bp_p = %d;\n", ep_neq_bp_p);
     if (ui->iseq != NULL) {
-	struct rb_iseq_constant_body *body;
+	struct rb_iseq_constant_body *body = ui->iseq->body;
 	size_t i, size = ui->iseq_size;
 	struct translation_control tc;
+	struct bb *curr_bb;
 	
-       	body = ui->iseq->body;
 	tc.safe_p = ui->jit_mutations_num >= mjit_opts.max_mutations;
 	tc.use_temp_vars_p = ui->use_temp_vars_p;
 	/* If the current iseq contains a block, we should not use C
@@ -1736,6 +2462,14 @@ translate_unit_iseq(struct rb_mjit_unit *u, const char *include_fname) {
 	if (tc.use_temp_vars_p)
 	    for (i = 0; i <= body->temp_vars_num; i++)
 		fprintf(f, "  VALUE t%lu;\n", i);
+	cfg = NULL;
+	if (0 && ! tc.safe_p && tc.use_local_vars_p && ui->doubles_p != NULL)
+	    for (i = 0; i < body->local_table_size + body->temp_vars_num; i++)
+		if (ui->doubles_p[i]) {
+		    if (cfg == NULL && (cfg = build_cfg(ui)) == NULL)
+			break;
+		    fprintf(f, "  double d%lu;\n", i);
+		}
 	if (! ep_neq_bp_p) {
 	    fprintf(f, "  if (cfp->bp != cfp->ep) {\n");
 	    fprintf(f, "    mjit_ep_eq_bp_fail(cfp->iseq); return RUBY_Qundef;\n  }\n");
@@ -1761,8 +2495,23 @@ translate_unit_iseq(struct rb_mjit_unit *u, const char *include_fname) {
 	  }
 	  fprintf(f, "  }\n");
 	}
-	for (i = 0; i < size;)
-	    i += translate_iseq_insn(f, i, ui, &tc);
+	if (cfg != NULL) {
+	    build_bb_sets(ui, cfg);
+#if 0
+	    print_cfg(ui, cfg);
+#endif
+	}
+	ignore_result_p = FALSE;
+	curr_bb = NULL;
+	for (i = 0; i < size;) {
+	    if (cfg != NULL && curr_bb != cfg->pos2bb[i]) { /* BB start */
+		curr_bb = cfg->pos2bb[i];
+		memcpy(curr_bb->gen, curr_bb->in, bit2char(body->temp_vars_num + body->local_table_size));
+	    }
+	    i += translate_iseq_insn(f, i, ui, cfg, &ignore_result_p, &tc);
+	}
+	if (cfg != NULL)
+	    free_cfg(cfg);
 	fprintf(f, "stop_spec:\n");
 	fprintf(f, "  mjit_store_failed_spec_insn(cfp->iseq, failed_insn_pc, mutation_num);\n");
 	fprintf(f, "  mjit_change_iseq(cfp->iseq, 1);\n");
@@ -2174,13 +2923,14 @@ static void
 update_unit_iseq_info_from_insns(struct rb_mjit_unit_iseq *ui) {
     rb_iseq_t *iseq = ui->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
-    size_t pos, ic_disp, size = ui->iseq_size;
+    size_t pos, len, ic_disp, size = ui->iseq_size;
     rb_serial_t ivar_serial;
     int ivar_spec_update_p;
     size_t ivar_access_num, index, max_ivar_spec_index;
     const VALUE *code = iseq->body->rtl_encoded;
-    VALUE insn;
+    VALUE insn, next_insn;
     IC ic;
+    long res;
     
     ivar_spec_update_p = TRUE;
     ivar_serial = 0;
@@ -2192,6 +2942,15 @@ update_unit_iseq_info_from_insns(struct rb_mjit_unit_iseq *ui) {
 	insn = rb_vm_insn_addr2insn((void *) insn);
 #endif
 	ic_disp = 2;
+	len = insn_len(insn);
+	if (pos + len >= size)
+	    next_insn = BIN(nop);
+	else {
+	    next_insn = code[pos + len];
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+	    next_insn = rb_vm_insn_addr2insn((void *) next_insn);
+#endif
+	}
 	switch (insn) {
 	case BIN(var2var):
 	case BIN(temp_reverse):
@@ -2207,6 +2966,7 @@ update_unit_iseq_info_from_insns(struct rb_mjit_unit_iseq *ui) {
 	    break;
 	case BIN(ivar2var):
 	    ic_disp = 3;
+	    /* falls through */
 	case BIN(val2ivar):
 	case BIN(temp2ivar):
 	case BIN(loc2ivar):
@@ -2220,8 +2980,66 @@ update_unit_iseq_info_from_insns(struct rb_mjit_unit_iseq *ui) {
 		max_ivar_spec_index = index;
 	    ivar_access_num++;
 	    break;
+	    /* We consider non-speculative insns too as they can
+	       become speculative before actual translation.  TODO:
+	       copy iseq to prevent its change and remove
+	       non-speculative insns here.  */
+	case BIN(plusf):
+	case BIN(minusf):
+	case BIN(multf):
+	case BIN(divf):
+	case BIN(modf):
+	case BIN(plus):
+	case BIN(minus):
+	case BIN(mult):
+	case BIN(div):
+	case BIN(mod):
+	case BIN(splus):
+	case BIN(sminus):
+	case BIN(smult):
+	case BIN(sdiv):
+	case BIN(smod):
+	case BIN(fplusf):
+	case BIN(fminusf):
+	case BIN(fmultf):
+	case BIN(fdivf):
+	case BIN(fmodf):
+	case BIN(fplus):
+	case BIN(fminus):
+	case BIN(fmult):
+	case BIN(fdiv):
+	case BIN(fmod):
+	case BIN(sfplus):
+	case BIN(sfminus):
+	case BIN(sfmult):
+	case BIN(sfdiv):
+	case BIN(sfmod): {
+	    res = get_var_double_num((long) code[pos + 2], body->local_table_size);
+	    assert(res >= 0);
+	    if (pos + len >= size || next_insn != BIN(temp2loc)
+		|| code[pos + len + 2] != code[pos + 2]) {
+		ui->doubles_p[res] = TRUE;
+	    } else {
+		/* There is temp2loc insn moving result of speculative
+		   floating point insn.  TODO: check that they are in
+		   the same BB and remove setting double for res.  */
+		ui->doubles_p[res] = TRUE;
+		res = get_var_double_num((long) code[pos + len + 1], body->local_table_size);
+		assert(res >= 0);
+		ui->doubles_p[res] = TRUE;
+	    }
+	    break;
 	}
-	pos += insn_len(insn);
+	case BIN(val2loc):
+	case BIN(val2temp):
+	    if (FLONUM_P(code[pos + 2])) {
+		res = get_var_double_num((long) code[pos + 1], body->local_table_size);
+		assert(res >= 0);
+		ui->doubles_p[res] = TRUE;
+	    }
+	    break;
+	}
+	pos += len;
     }
     if (ivar_spec_update_p && ivar_access_num > 2 && body->in_type_object_p) {
 	/* We have enough ivar accesses to make whole function
@@ -2240,8 +3058,9 @@ static struct rb_mjit_unit_iseq *
 create_unit_iseq(rb_iseq_t *iseq) {
     int i;
     struct rb_mjit_unit_iseq *ui;
+    struct rb_iseq_constant_body *body = iseq->body;
 
-    ui = xmalloc(sizeof(struct rb_mjit_unit_iseq));
+    ui = xmalloc(sizeof(struct rb_mjit_unit_iseq) + sizeof (char) * (body->temp_vars_num + body->local_table_size));
     if (ui == NULL)
 	return NULL;
     ui->num = curr_unit_iseq_num++;
@@ -2263,6 +3082,7 @@ create_unit_iseq(rb_iseq_t *iseq) {
     ui->used_code_p = FALSE;
     ui->jit_mutations_num = 0;
     ui->mutation_insns = xmalloc(sizeof (struct mjit_mutation_insns) * (mjit_opts.max_mutations + 1));
+    memset(ui->doubles_p, 0, sizeof (char) * (body->temp_vars_num + body->local_table_size));
     for (i = 0; i <= mjit_opts.max_mutations; i++)
 	ui->mutation_insns[i].insn = BIN(nop);
     update_unit_iseq_info_from_insns(ui);
@@ -3030,19 +3850,19 @@ mjit_init(struct mjit_options *opts) {
     switch (init_state) {
     case 5:
 	mjit_init_p = TRUE;
-	/* Fall through: */
+	/* falls through */
     case 4:
 	pthread_cond_destroy(&mjit_gc_wakeup);
-	/* Fall through: */
+	/* falls through */
     case 3:
 	pthread_cond_destroy(&mjit_worker_wakeup);
-	/* Fall through: */
+	/* falls through */
     case 2:
 	pthread_cond_destroy(&mjit_client_wakeup);
-	/* Fall through: */
+	/* falls through */
     case 1:
 	pthread_cond_destroy(&mjit_pch_wakeup);
-	/* Fall through: */
+	/* falls through */
     case 0:
 	free(header_fname); header_fname = NULL;
 	free(cc_path); cc_path = NULL;

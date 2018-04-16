@@ -1301,9 +1301,10 @@ rb_float_new_inline(double d)
 	double d;
 	VALUE v;
     } t;
-    VALUE v;
     
 #if 0
+    VALUE v;
+
     t.d = d;
     v = RUBY_BIT_ROTL(t.v, 4);
     if (LIKELY(! ((v - 3) & 0x6) && t.v != 0x3000000000000000)) {
@@ -1315,7 +1316,7 @@ rb_float_new_inline(double d)
 #elif NEW_FLONUM
     {
 	unsigned int sh;
-        VALUE m;
+        VALUE v, m;
 	const VALUE c = 0x7210000002;
 	
 	t.d = d;
@@ -1327,7 +1328,7 @@ rb_float_new_inline(double d)
     }
 #elif NEW_FLONUM
     {
-	VALUE m;
+	VALUE v, m;
       
 	static const unsigned char xor [] = {
 	    0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x2, 0x7, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,

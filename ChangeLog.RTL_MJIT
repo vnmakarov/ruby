@@ -1,5 +1,80 @@
 2018-04-15  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* internal.h (rb_float_new_inline): Move v declaration where it is
+	used.
+	* insns.def (fplus, fminus, fmult, fdiv, fmod): Pass additional
+	parameters for addresses of doubles.
+	(feq, fne, flt, fgt, fle, fge): Ditto.
+	(sfplus, sfminus, sfmult, sfdiv, sfmod): Ditto.
+	(sfeq, sfne, sflt, sfgt, sfle, sfge): Ditto.
+	(fplusf, fminusf, fmultf, fdivf, fmodf): Ditto.
+	(feqf, fnef, fltf, fgtf, flef, fgef): Ditto.
+	(fbteqf, fbfeqf, fbtnef, fbfnef, fbtltf, fbfltf, fbtgtf, fbfgtf):
+	Ditto.
+	(fbtlef, fbflef, fbtgef, fbfgef): Ditto.
+	* rtl_exec.c (spec_cmpf): New macro.
+	(common_spec_flo_cmp, ): Add two address args.  Use them.
+	(do_spec_flo_cmp): Add two address args.  Pass them.
+	(spec_op2_dcfun, spec_op2_dfun): New.
+	(spec_flo_cmp_call, spec_flo_scmp_call): Pass two new args.
+	(feq, fne, flt, fgt, fle, fge): Define with spec_op2_dcfun.
+	(sfeq, sfne, sflt, sfgt, sfle, sfge): Ditto.
+	(spec_flo_cmp_imm_op): Add new address arg.  Use it.
+	(spec_op2i_dcfun, spec_op2i_dfun): New.
+	(spec_flo_cmp_imm_call): Pass new arg.
+	(feqf, fnef, fltf, fgtf, flef, fgef): Define with spec_op2i_dcfun.
+	(spec_dbcmp_fun): New.
+	(do_spec_flo_bcmp): Add two address args.  Use them.
+	(spec_flo_bcmp_op): Add two address args.  Pass them.
+	(spec_flo_bcmp_call): Pass new args.
+	(fbteq, fbfeq, fbtne, fbfne, fbtlt, fbflt): Define with
+	spec_dbcmp_cfun.
+	(fbtgt, fbfgt, fbtle, fbfle, fbtge, fbfge): Ditto.
+	(spec_dbcmpi_fun): New.
+	(spec_flo_bcmp_imm_op): Add two address args.  Pass them.
+	(fbteqf, fbfeqf, fbtnef, fbfnef, fbtltf, fbfltf): Define with
+	spec_dbcmpi_cfun.
+	(fbtgtf, fbfgtf, fbtlef, fbflef, fbtgef, fbfgef): Ditto.
+	(spec_dbl2num): Add new arg.
+	(darithmf): New.
+	(spec_flo_num_plus, spec_flo_num_minus, spec_flo_num_mult): Define
+	with darithm.
+	(spec_flo_num_div, spec_flo_num_mod): Ditto.
+	(do_spec_flo_arithm): Add three address args.  Use them.
+	(spec_flo_arithm_op): Add three address args.  Pass them.
+	(spec_flo_arithm_call): Pass three new args.
+	(fplus, fminus, fmult, fdiv, fmod): Define with spec_op2_dfun.
+	(spec_flo_sarithm_call): Pass three new args.
+	(sfplus, sfminus, sfmult, sfdiv, sfmod): Define with
+	spec_op2_dfun.
+	(spec_flo_arithm_imm_op): Add two address args.  Pass them.
+	(spec_flo_arithm_imm_call): Pass two new args.
+	(fplusf, fminusf, fmultf, fdivf, fmodf): Define with
+	spec_op2i_dfun.
+	* mjit.c: Include ccan/list/list.h.
+	(struct rb_mjit_unit_iseq): New member double.
+	(struct insn_fun_features): Transform fields into bitfields.  Add
+	new fields double, imm_double_p, cmp_double_p, special_assign_p,
+	and result.
+	(get_insn_fun_features): Set up new fields.
+	(bit2char, set_bit, reset_bit, get_bit): New.
+	(struct edge, struct bb, struct cfg): New.
+	(create_edge, free_bb_sets, create_bb, free_bb, free_cfg): New.
+	(create_bb_from_pos, build_cfg, print_edges, print_set, print_bb): New.
+	(print_cfg): New.
+	(get_var_double_num, update_bb_kill_gen_by_insn): New.
+	(get_op_double_num): New.
+	(bb_compare, bb_reachable_p, build_bb_sets): New.
+	(translate_iseq_insn): Use update_bb_kill_gen_by_insn.  Pass
+	additional arguments to speculative floating point insns.
+	(translate_unit_iseq): Build CFG and BB sets.  Generate double C
+	vars.
+	(update_unit_iseq_info_from_insns): Set up double_p elements.
+	(create_unit_iseq): Allocat space for double_p too.
+	(mjit_init): Use a standard comment for falls through.
+
+2018-04-15  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* iseq.h (struct iseq_compile_data): Add member throw_p.
 	* compile.c (iseq_compile_each): Set up and use throw_p.  Add
 	exception entries only when throw_p is true.

@@ -995,6 +995,10 @@ op3_call(rb_thread_t *th, rb_control_frame_t *cfp,
    execution path of comparison of a specific type.  */
 #define cmpf(name) static do_inline int name(VALUE a, VALUE b)
 
+/* Header of a function NAME with double args a and b implementing a
+   fast execution path of comparison of floating point values.  */
+#define spec_cmpf(name) static do_inline int name(double a, double b)
+
 /* Definitions of functions implementing a fast execution path of of
    comparison of fixnums.  */
 cmpf(fix_num_eq) {return (SIGNED_VALUE) a == (SIGNED_VALUE) b;}
@@ -1025,6 +1029,13 @@ cmpf(double_num_lt) {return double_cmp_lt(RFLOAT_VALUE(a), RFLOAT_VALUE(b)) == Q
 cmpf(double_num_gt) {return double_cmp_gt(RFLOAT_VALUE(a), RFLOAT_VALUE(b)) == Qtrue;}
 cmpf(double_num_le) {return double_cmp_le(RFLOAT_VALUE(a), RFLOAT_VALUE(b)) == Qtrue;}
 cmpf(double_num_ge) {return double_cmp_ge(RFLOAT_VALUE(a), RFLOAT_VALUE(b)) == Qtrue;}
+
+spec_cmpf(spec_float_num_eq) {return a == b;}
+spec_cmpf(spec_float_num_ne) {return a != b;}
+spec_cmpf(spec_float_num_lt) {return a < b;}
+spec_cmpf(spec_float_num_gt) {return a > b;}
+spec_cmpf(spec_float_num_le) {return a <= b;}
+spec_cmpf(spec_float_num_ge) {return a >= b;}
 
 /* Common function executing a comparison of operands OP1 (value
    location) and OP2 (value) in frame CFP of thread TH.  The function
@@ -1251,6 +1262,7 @@ cmp_imm_op(rb_thread_t *th,
 				  rb_control_frame_t *cfp,	\
 				  CALL_DATA cd,	\
 				  VALUE *res, VALUE *op1, VALUE imm)
+
 /* Analogous to cmp_call but with fixnum value IMM as the 2nd
    operand.  */
 #define cmp_fix_call(suff, bop) cmp_imm_op(th, cfp, cd,			\
@@ -1333,15 +1345,24 @@ common_spec_fix_cmp(VALUE op1, VALUE op2, enum ruby_basic_operators bop,
     return Qundef;
 }
 
-/* As above but when we guess that the both operands are flo nums.  */
+/* As above but when we guess that the both operands are flo nums.  If
+   D1 and/or D2 are non null pointers we know for sure that operands
+   are floating point values which can be referred through D1 and
+   D2.  */
 static do_inline VALUE
 common_spec_flo_cmp(VALUE op1, VALUE op2, enum ruby_basic_operators bop,
-		    int (*float_num_cmp)(VALUE, VALUE), int op2_flonum_p)
+		    int (*float_num_cmp)(double, double), int op2_flonum_p,
+		    double *d1, double *d2)
 {
     if (LIKELY((! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG))
-	       && (op2_flonum_p && FLONUM_P(op1)
-		   || (! op2_flonum_p && FLONUM_2_P(op1, op2)))))
-	return float_num_cmp(op1, op2) ? Qtrue : Qfalse;
+	       && (op2_flonum_p && (d1 != NULL || FLONUM_P(op1))
+		   || (! op2_flonum_p && ((d1 != NULL && d2 != NULL) || FLONUM_2_P(op1, op2)))))) {
+	double flo1, flo2;
+
+	flo1 = d1 != NULL ? *d1 : RFLOAT_VALUE(op1);
+	flo2 = d2 != NULL ? *d2 : RFLOAT_VALUE(op2);
+	return float_num_cmp(flo1, flo2) ? Qtrue : Qfalse;
+    }
     return Qundef;
 }
 
@@ -1365,14 +1386,15 @@ do_spec_fix_cmp(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE op2,
     return FALSE;
 }
 
-/* As above but when we guess that the both operands are flo nums.  */
+/* As above but when we guess that the both operands are flo nums.
+   For D1 and D2 description see comment for common_spec_flo_cmp.  */
 static do_inline int
 do_spec_flo_cmp(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE op2,
 		enum ruby_basic_operators bop,
-		int (*float_num_cmp)(VALUE, VALUE), int op2_flonum_p, int uinsn,
-		enum ruby_vminsn_type *new_insn)
+		int (*float_num_cmp)(double, double), int op2_flonum_p, int uinsn,
+		enum ruby_vminsn_type *new_insn, double *d1, double *d2)
 {
-    VALUE val = common_spec_flo_cmp(*op1, op2, bop, float_num_cmp, op2_flonum_p);
+    VALUE val = common_spec_flo_cmp(*op1, op2, bop, float_num_cmp, op2_flonum_p, d1, d2);
 
     if (val == Qundef) {
 	*new_insn = uinsn;
@@ -1395,24 +1417,40 @@ spec_fix_cmp_op(rb_control_frame_t *cfp,
 			   uinsn, new_insn);
 }
 
-/* As above but when we guess that the both operands are flo nums.  */
+/* As above but when we guess that the both operands are flo nums.
+   For D1 and D2 description see comment for common_spec_flo_cmp.  */
 static do_inline int
 spec_flo_cmp_op(rb_control_frame_t *cfp,
 		VALUE *res, VALUE *op1, VALUE *op2,
 		enum ruby_basic_operators bop,
-		int (*float_num_cmp)(VALUE, VALUE), int uinsn,
-		enum ruby_vminsn_type *new_insn)
+		int (*float_num_cmp)(double, double), int uinsn,
+		enum ruby_vminsn_type *new_insn, double *d1, double *d2)
 {
     return do_spec_flo_cmp(cfp, res, op1, *op2, bop, float_num_cmp, FALSE,
-			   uinsn, new_insn);
+			   uinsn, new_insn, d1, d2);
 }
 
-/* Header of a function executing two operand speculative insn NAME
-   with unknown type of OP2.  */
+/* Header of a function executing two operand speculative insn NAME.  */
 #define spec_op2_fun(name) static do_inline int				\
                            name ## _f(rb_control_frame_t *cfp,				\
 				      VALUE *res, VALUE *op1, VALUE *op2, \
 				      enum ruby_vminsn_type *new_insn)
+
+/* Header of a function executing two operand speculative floating
+   point compare insn NAME.  */
+#define spec_op2_dcfun(name) static do_inline int				\
+                             name ## _f(rb_control_frame_t *cfp,				\
+					VALUE *res, VALUE *op1, VALUE *op2, \
+					enum ruby_vminsn_type *new_insn, \
+					double *d1, double *d2)
+
+/* Header of a function executing two operand speculative floating
+   point arithmentic insn NAME.  */
+#define spec_op2_dfun(name) static do_inline int				\
+                            name ## _f(rb_control_frame_t *cfp,				\
+				       VALUE *res, VALUE *op1, VALUE *op2, \
+				       enum ruby_vminsn_type *new_insn, \
+				       double *rd, double *d1, double *d2)
 
 /* A function call implementing a speculative fix num comparison insn
    with operation BOP and suffix SUFF for fast path execution
@@ -1434,17 +1472,18 @@ spec_op2_fun(ige) {return spec_fix_cmp_call(ge, BOP_GE);}
 /* As spec_fix_cmp_call but a flo num variant. */
 #define spec_flo_cmp_call(suff, bop) spec_flo_cmp_op(cfp,		\
 						     res, op1, op2, bop,\
-						     float_num_ ## suff, \
-						     BIN(u ## suff), new_insn)
+						     spec_float_num_ ## suff, \
+						     BIN(u ## suff), new_insn, \
+						     d1, d2)
 
 /* Definitions of the functions implementing speculative flo num
    comparison insns.  */
-spec_op2_fun(feq) {return spec_flo_cmp_call(eq, BOP_EQ);}
-spec_op2_fun(fne) {return spec_flo_cmp_call(ne, BOP_NEQ);}
-spec_op2_fun(flt) {return spec_flo_cmp_call(lt, BOP_LT);}
-spec_op2_fun(fgt) {return spec_flo_cmp_call(gt, BOP_GT);}
-spec_op2_fun(fle) {return spec_flo_cmp_call(le, BOP_LE);}
-spec_op2_fun(fge) {return spec_flo_cmp_call(ge, BOP_GE);}
+spec_op2_dcfun(feq) {return spec_flo_cmp_call(eq, BOP_EQ);}
+spec_op2_dcfun(fne) {return spec_flo_cmp_call(ne, BOP_NEQ);}
+spec_op2_dcfun(flt) {return spec_flo_cmp_call(lt, BOP_LT);}
+spec_op2_dcfun(fgt) {return spec_flo_cmp_call(gt, BOP_GT);}
+spec_op2_dcfun(fle) {return spec_flo_cmp_call(le, BOP_LE);}
+spec_op2_dcfun(fge) {return spec_flo_cmp_call(ge, BOP_GE);}
 
 /* A function call implementing a speculative simple (stack) fix num
    comparison insn with operation BOP and suffix SUFF for fast path
@@ -1466,17 +1505,18 @@ spec_op2_fun(sige) {return spec_fix_scmp_call(ge, BOP_GE);}
 /* As spec_fix_scmp_call but a flo num variant. */
 #define spec_flo_scmp_call(suff, bop) spec_flo_cmp_op(cfp,		\
 						      res, op1, op2, bop, \
-						      float_num_ ## suff, \
-						      BIN(su ## suff), new_insn)
+						      spec_float_num_ ## suff, \
+						      BIN(su ## suff), new_insn, \
+                                                      d1, d2)
 
 /* Definitions of the functions implementing speculative simple flo num
    comparison insns.  */
-spec_op2_fun(sfeq) {return spec_flo_scmp_call(eq, BOP_EQ);}
-spec_op2_fun(sfne) {return spec_flo_scmp_call(ne, BOP_NEQ);}
-spec_op2_fun(sflt) {return spec_flo_scmp_call(lt, BOP_LT);}
-spec_op2_fun(sfgt) {return spec_flo_scmp_call(gt, BOP_GT);}
-spec_op2_fun(sfle) {return spec_flo_scmp_call(le, BOP_LE);}
-spec_op2_fun(sfge) {return spec_flo_scmp_call(ge, BOP_GE);}
+spec_op2_dcfun(sfeq) {return spec_flo_scmp_call(eq, BOP_EQ);}
+spec_op2_dcfun(sfne) {return spec_flo_scmp_call(ne, BOP_NEQ);}
+spec_op2_dcfun(sflt) {return spec_flo_scmp_call(lt, BOP_LT);}
+spec_op2_dcfun(sfgt) {return spec_flo_scmp_call(gt, BOP_GT);}
+spec_op2_dcfun(sfle) {return spec_flo_scmp_call(le, BOP_LE);}
+spec_op2_dcfun(sfge) {return spec_flo_scmp_call(ge, BOP_GE);}
 
 /* It is basically do_spec_fix_cmp when fix num IMM (immediate
    operand).  */
@@ -1491,16 +1531,17 @@ spec_fix_cmp_imm_op(rb_control_frame_t *cfp,
 			   uinsn, new_insn);
 }
 
-/* As above but flo num variant.  */
+/* As above but flo num variant.  For D description see comment for
+   common_spec_flo_cmp.  */
 static do_inline int
 spec_flo_cmp_imm_op(rb_control_frame_t *cfp,
 		    VALUE *res, VALUE *op1, VALUE imm,
 		    enum ruby_basic_operators bop,
-		    int (*flo_num_cmp)(VALUE, VALUE), int flonum_p, int uinsn,
-		    enum ruby_vminsn_type *new_insn)
+		    int (*flo_num_cmp)(double, double), int flonum_p, int uinsn,
+		    enum ruby_vminsn_type *new_insn, double *d)
 {
     return do_spec_flo_cmp(cfp, res, op1, imm, bop, flo_num_cmp, flonum_p,
-			   uinsn, new_insn);
+			   uinsn, new_insn, d, NULL);
 }
 
 /* Header of a function executing 2 operand insn NAME with an
@@ -1509,6 +1550,24 @@ spec_flo_cmp_imm_op(rb_control_frame_t *cfp,
                             name ## _f(rb_control_frame_t *cfp,	\
 				       VALUE *res, VALUE *op1, VALUE imm, \
 				       enum ruby_vminsn_type *new_insn)
+
+/* Header of a function executing speculative floating point
+   comparison insn NAME with an immediate value as the 2nd
+   operand.  */
+#define spec_op2i_dcfun(name) static do_inline int	     \
+                             name ## _f(rb_control_frame_t *cfp,	\
+					VALUE *res, VALUE *op1, VALUE imm, \
+					enum ruby_vminsn_type *new_insn, \
+					double *d)
+
+/* Header of a function executing speculative floating point
+   arithmetic insn NAME with an immediate value as the 2nd
+   operand.  */
+#define spec_op2i_dfun(name) static do_inline int	     \
+                             name ## _f(rb_control_frame_t *cfp,	\
+					VALUE *res, VALUE *op1, VALUE imm, \
+					enum ruby_vminsn_type *new_insn, \
+					double *rd, double *d1)
 
 /* A function call implementing a speculative fix num comparison insn
    with an immediate value as the 2nd operand.  */
@@ -1529,17 +1588,17 @@ spec_op2i_fun(igei) {return spec_fix_cmp_imm_call(ge, BOP_GE);}
 /* As spec_fix_imm_cmp_call but a flo num variant. */
 #define spec_flo_cmp_imm_call(suff, bop) spec_flo_cmp_imm_op(cfp, \
 							     res, op1, imm, bop, \
-							     float_num_ ## suff, TRUE, \
-							     BIN(u ## suff ## f), new_insn)
+							     spec_float_num_ ## suff, TRUE, \
+							     BIN(u ## suff ## f), new_insn, d)
 
 /* Definitions of the functions implementing speculative flo num
    comparison insns with a flo num as an immediate 2nd operand.  */
-spec_op2i_fun(feqf) {return spec_flo_cmp_imm_call(eq, BOP_EQ);}
-spec_op2i_fun(fnef) {return spec_flo_cmp_imm_call(ne, BOP_NEQ);}
-spec_op2i_fun(fltf) {return spec_flo_cmp_imm_call(lt, BOP_LT);}
-spec_op2i_fun(fgtf) {return spec_flo_cmp_imm_call(gt, BOP_GT);}
-spec_op2i_fun(flef) {return spec_flo_cmp_imm_call(le, BOP_LE);}
-spec_op2i_fun(fgef) {return spec_flo_cmp_imm_call(ge, BOP_GE);}
+spec_op2i_dcfun(feqf) {return spec_flo_cmp_imm_call(eq, BOP_EQ);}
+spec_op2i_dcfun(fnef) {return spec_flo_cmp_imm_call(ne, BOP_NEQ);}
+spec_op2i_dcfun(fltf) {return spec_flo_cmp_imm_call(lt, BOP_LT);}
+spec_op2i_dcfun(fgtf) {return spec_flo_cmp_imm_call(gt, BOP_GT);}
+spec_op2i_dcfun(flef) {return spec_flo_cmp_imm_call(le, BOP_LE);}
+spec_op2i_dcfun(fgef) {return spec_flo_cmp_imm_call(ge, BOP_GE);}
 
 /* It is a part of goto insn.  */
 static do_inline void
@@ -1847,6 +1906,14 @@ bcmpi_fun(ubfgef) {return ubcmp_flo_call(ge, FALSE, BOP_GE);}
 				       VALUE *res, VALUE *op1, VALUE *op2, \
 				       VALUE *val, enum ruby_vminsn_type *new_insn)
 
+/* Header of a function executing most code of speculative floating
+   poit comparison and branch insn NAME.  */
+#define spec_dbcmp_fun(name) static do_inline int			\
+                            name ## _f(rb_control_frame_t *cfp,			\
+				       VALUE *res, VALUE *op1, VALUE *op2, \
+				       VALUE *val, enum ruby_vminsn_type *new_insn, \
+				       double *d1, double *d2)
+
 /* If V is Qundef, set up NEW_INSN to UINSN, remote back PC to
    re-execute the changed insn, and return FALSE.  Otherwise, assign V
    to temporary variable with location RES in frame CFP and return
@@ -1878,16 +1945,18 @@ do_spec_fix_bcmp(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE op2,
     return spec_bcmp_finish(cfp, res, v, true_p, uinsn, new_insn);
 }
 
-/* Analogous to do_spec_fix_bcmp but with guessing that the operands are flo nums.  */
+/* Analogous to do_spec_fix_bcmp but with guessing that the operands
+   are flo nums.  For D1 and D2 description see comment for
+   common_spec_flo_cmp.  */
 static do_inline int
 do_spec_flo_bcmp(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE op2,
 		 VALUE *val, int true_p, enum ruby_basic_operators bop,
-		 int (*float_num_cmp)(VALUE, VALUE), int op2_flonum_p, int uinsn,
-		 enum ruby_vminsn_type *new_insn)
+		 int (*float_num_cmp)(double, double), int op2_flonum_p, int uinsn,
+		 enum ruby_vminsn_type *new_insn, double *d1, double *d2)
 {
     VALUE v;
 
-    *val = v = common_spec_flo_cmp(*op1, op2, bop, float_num_cmp, op2_flonum_p);
+    *val = v = common_spec_flo_cmp(*op1, op2, bop, float_num_cmp, op2_flonum_p, d1, d2);
     return spec_bcmp_finish(cfp, res, v, true_p, uinsn, new_insn);
 }
 
@@ -1910,11 +1979,11 @@ static do_inline int
 spec_flo_bcmp_op(rb_control_frame_t *cfp,
 		 VALUE *res, VALUE *op1, VALUE *op2,
 		 VALUE *val, int true_p, enum ruby_basic_operators bop,
-		 int (*float_num_cmp)(VALUE, VALUE), int uinsn,
-		 enum ruby_vminsn_type *new_insn)
+		 int (*float_num_cmp)(double, double), int uinsn,
+		 enum ruby_vminsn_type *new_insn, double *d1, double *d2)
 {
     return do_spec_flo_bcmp(cfp, res, op1, *op2, val, true_p, bop, float_num_cmp, FALSE,
-			    uinsn, new_insn);
+			    uinsn, new_insn, d1, d2);
 }
 
 /* A function call implementing a speculative comparison and branch
@@ -1940,28 +2009,33 @@ spec_bcmp_fun(ibfge) {return spec_fix_bcmp_call(ge, FALSE, BOP_GE);}
 
 /* Analogous to spec_fix_bcmp_call but for flo num speculation.  */
 #define spec_flo_bcmp_call(suff, true_p, bop)				\
-    spec_flo_bcmp_op(cfp, res, op1, op2, val, true_p, bop, float_num_ ## suff, \
-		     (true_p) ? BIN(ubt ## suff) : BIN(ubf ## suff), new_insn)
+    spec_flo_bcmp_op(cfp, res, op1, op2, val, true_p, bop, spec_float_num_ ## suff, \
+		     (true_p) ? BIN(ubt ## suff) : BIN(ubf ## suff), new_insn, d1, d2)
 
 /* Definitions of the functions implementing speculative flo num
    comparison and branch insns.  */
-spec_bcmp_fun(fbteq) {return spec_flo_bcmp_call(eq, TRUE, BOP_EQ);}
-spec_bcmp_fun(fbfeq) {return spec_flo_bcmp_call(eq, FALSE, BOP_EQ);}
-spec_bcmp_fun(fbtne) {return spec_flo_bcmp_call(ne, TRUE, BOP_NEQ);}
-spec_bcmp_fun(fbfne) {return spec_flo_bcmp_call(ne, FALSE, BOP_NEQ);}
-spec_bcmp_fun(fbtlt) {return spec_flo_bcmp_call(lt, TRUE, BOP_LT);}
-spec_bcmp_fun(fbflt) {return spec_flo_bcmp_call(lt, FALSE, BOP_LT);}
-spec_bcmp_fun(fbtgt) {return spec_flo_bcmp_call(gt, TRUE, BOP_GT);}
-spec_bcmp_fun(fbfgt) {return spec_flo_bcmp_call(gt, FALSE, BOP_GT);}
-spec_bcmp_fun(fbtle) {return spec_flo_bcmp_call(le, TRUE, BOP_LE);}
-spec_bcmp_fun(fbfle) {return spec_flo_bcmp_call(le, FALSE, BOP_LE);}
-spec_bcmp_fun(fbtge) {return spec_flo_bcmp_call(ge, TRUE, BOP_GE);}
-spec_bcmp_fun(fbfge) {return spec_flo_bcmp_call(ge, FALSE, BOP_GE);}
+spec_dbcmp_fun(fbteq) {return spec_flo_bcmp_call(eq, TRUE, BOP_EQ);}
+spec_dbcmp_fun(fbfeq) {return spec_flo_bcmp_call(eq, FALSE, BOP_EQ);}
+spec_dbcmp_fun(fbtne) {return spec_flo_bcmp_call(ne, TRUE, BOP_NEQ);}
+spec_dbcmp_fun(fbfne) {return spec_flo_bcmp_call(ne, FALSE, BOP_NEQ);}
+spec_dbcmp_fun(fbtlt) {return spec_flo_bcmp_call(lt, TRUE, BOP_LT);}
+spec_dbcmp_fun(fbflt) {return spec_flo_bcmp_call(lt, FALSE, BOP_LT);}
+spec_dbcmp_fun(fbtgt) {return spec_flo_bcmp_call(gt, TRUE, BOP_GT);}
+spec_dbcmp_fun(fbfgt) {return spec_flo_bcmp_call(gt, FALSE, BOP_GT);}
+spec_dbcmp_fun(fbtle) {return spec_flo_bcmp_call(le, TRUE, BOP_LE);}
+spec_dbcmp_fun(fbfle) {return spec_flo_bcmp_call(le, FALSE, BOP_LE);}
+spec_dbcmp_fun(fbtge) {return spec_flo_bcmp_call(ge, TRUE, BOP_GE);}
+spec_dbcmp_fun(fbfge) {return spec_flo_bcmp_call(ge, FALSE, BOP_GE);}
 
 #define spec_bcmpi_fun(name) static do_inline int			\
                              name ## _f(rb_control_frame_t *cfp,					\
 				       VALUE *res, VALUE *op1, VALUE imm, \
 					VALUE *val, enum ruby_vminsn_type *new_insn)
+
+#define spec_dbcmpi_fun(name) static do_inline int			\
+                              name ## _f(rb_control_frame_t *cfp,					\
+					 VALUE *res, VALUE *op1, VALUE imm, \
+					 VALUE *val, enum ruby_vminsn_type *new_insn, double *d)
 
 /* It is just a call of do_spec_fix_bcmp when we know that 2nd operand
    type is a fix num.  */
@@ -1977,16 +2051,17 @@ spec_fix_bcmp_imm_op(rb_control_frame_t *cfp,
 }
 
 /* It is just a call of do_spec_fix_bcmp when we know that 2nd operand
-   type is a flo num.  */
+   type is a fixed flo num.  For D description see comment for
+   common_spec_flo_cmp.  */
 static do_inline int
 spec_flo_bcmp_imm_op(rb_control_frame_t *cfp,
 		     VALUE *res, VALUE *op1, VALUE imm,
 		     VALUE *val, int true_p, enum ruby_basic_operators bop,
-		     int (*float_num_cmp)(VALUE, VALUE), int uinsn,
-		     enum ruby_vminsn_type *new_insn)
+		     int (*float_num_cmp)(double, double), int uinsn,
+		     enum ruby_vminsn_type *new_insn, double *d)
 {
     return do_spec_flo_bcmp(cfp, res, op1, imm, val, true_p, bop, float_num_cmp, TRUE,
-			    uinsn, new_insn);
+			    uinsn, new_insn, d, NULL);
 }
 
 /* A call to implement a speculative fix num comparison and branch
@@ -2014,24 +2089,24 @@ spec_bcmpi_fun(ibfgei) {return spec_fix_imm_bcmp_call(ge, FALSE, BOP_GE);}
 /* A call to implement a speculative flo num comparison and branch
    insn with flo num immediate.  */
 #define spec_flo_imm_bcmp_call(suff, true_p, bop)			\
-    spec_flo_bcmp_imm_op(cfp, res, op1, imm, val, true_p, bop, float_num_ ## suff, \
-			 (true_p) ? BIN(ubt ## suff ## f) : BIN(ubf ## suff ## f), new_insn)
+    spec_flo_bcmp_imm_op(cfp, res, op1, imm, val, true_p, bop, spec_float_num_ ## suff, \
+			 (true_p) ? BIN(ubt ## suff ## f) : BIN(ubf ## suff ## f), new_insn, d)
 
 /* Definitions of the functions implementing speculative flo num
    comparison and branch insns with flo num immediate as the 2nd
    operand.  */
-spec_bcmpi_fun(fbteqf) {return spec_flo_imm_bcmp_call(eq, TRUE, BOP_EQ);}
-spec_bcmpi_fun(fbfeqf) {return spec_flo_imm_bcmp_call(eq, FALSE, BOP_EQ);}
-spec_bcmpi_fun(fbtnef) {return spec_flo_imm_bcmp_call(ne, TRUE, BOP_NEQ);}
-spec_bcmpi_fun(fbfnef) {return spec_flo_imm_bcmp_call(ne, FALSE, BOP_NEQ);}
-spec_bcmpi_fun(fbtltf) {return spec_flo_imm_bcmp_call(lt, TRUE, BOP_LT);}
-spec_bcmpi_fun(fbfltf) {return spec_flo_imm_bcmp_call(lt, FALSE, BOP_LT);}
-spec_bcmpi_fun(fbtgtf) {return spec_flo_imm_bcmp_call(gt, TRUE, BOP_GT);}
-spec_bcmpi_fun(fbfgtf) {return spec_flo_imm_bcmp_call(gt, FALSE, BOP_GT);}
-spec_bcmpi_fun(fbtlef) {return spec_flo_imm_bcmp_call(le, TRUE, BOP_LE);}
-spec_bcmpi_fun(fbflef) {return spec_flo_imm_bcmp_call(le, FALSE, BOP_LE);}
-spec_bcmpi_fun(fbtgef) {return spec_flo_imm_bcmp_call(ge, TRUE, BOP_GE);}
-spec_bcmpi_fun(fbfgef) {return spec_flo_imm_bcmp_call(ge, FALSE, BOP_GE);}
+spec_dbcmpi_fun(fbteqf) {return spec_flo_imm_bcmp_call(eq, TRUE, BOP_EQ);}
+spec_dbcmpi_fun(fbfeqf) {return spec_flo_imm_bcmp_call(eq, FALSE, BOP_EQ);}
+spec_dbcmpi_fun(fbtnef) {return spec_flo_imm_bcmp_call(ne, TRUE, BOP_NEQ);}
+spec_dbcmpi_fun(fbfnef) {return spec_flo_imm_bcmp_call(ne, FALSE, BOP_NEQ);}
+spec_dbcmpi_fun(fbtltf) {return spec_flo_imm_bcmp_call(lt, TRUE, BOP_LT);}
+spec_dbcmpi_fun(fbfltf) {return spec_flo_imm_bcmp_call(lt, FALSE, BOP_LT);}
+spec_dbcmpi_fun(fbtgtf) {return spec_flo_imm_bcmp_call(gt, TRUE, BOP_GT);}
+spec_dbcmpi_fun(fbfgtf) {return spec_flo_imm_bcmp_call(gt, FALSE, BOP_GT);}
+spec_dbcmpi_fun(fbtlef) {return spec_flo_imm_bcmp_call(le, TRUE, BOP_LE);}
+spec_dbcmpi_fun(fbflef) {return spec_flo_imm_bcmp_call(le, FALSE, BOP_LE);}
+spec_dbcmpi_fun(fbtgef) {return spec_flo_imm_bcmp_call(ge, TRUE, BOP_GE);}
+spec_dbcmpi_fun(fbfgef) {return spec_flo_imm_bcmp_call(ge, FALSE, BOP_GE);}
 
 
 /* Header of a function with NAME implementing a fast execution path
@@ -2136,7 +2211,7 @@ do_arithm(rb_thread_t *th,
 	  int offset, int fix_insn_id, int flo_insn_id)
 {
     VALUE val;
-
+    
     if (((op2_fixnum_p && FIXNUM_P(*op1))
 	 || (! op2_fixnum_p && ! op2_flonum_p && FIXNUM_2_P(*op1, op2)))
 	&& BASIC_OP_UNREDEFINED_P(bop, INTEGER_REDEFINED_OP_FLAG)) {
@@ -2424,8 +2499,12 @@ arithmf(spec_fix_num_mod) {
 }
 
 #if USE_FLONUM && NEW_FLONUM
+
+/* Transform double D into value and return it.  If it is not
+   possible, return Qundef.  If RES is not null set up the pointed
+   memory to D.  */
 static do_inline VALUE
-spec_dbl2num(double d) {
+spec_dbl2num(double d, double *res) {
     union {
 	double d;
 	VALUE v;
@@ -2435,6 +2514,7 @@ spec_dbl2num(double d) {
     VALUE m;
     const VALUE c = 0x7210000002;
 
+    if (res != NULL) *res = d;
     t.d = d;
     v = RUBY_BIT_ROTL(t.v, 5);
     sh = (v & 0xf) << 2;
@@ -2443,46 +2523,39 @@ spec_dbl2num(double d) {
 	return v ^ m;
     return Qundef;
 }
-#endif
 
-arithmf(spec_flo_num_plus) {
-#if USE_FLONUM && NEW_FLONUM
-    return spec_dbl2num(RFLOAT_VALUE(op1) + RFLOAT_VALUE(op2));
 #else
-    return float_num_plus(op1, op2);
-#endif
+
+static do_inline VALUE
+spec_dbl2num(double d, double *res) {
+    if (res != NULL) *res = d;
+    return DBL2NUM(d);
 }
 
-arithmf(spec_flo_num_minus) {
-#if USE_FLONUM && NEW_FLONUM
-    return spec_dbl2num(RFLOAT_VALUE(op1) - RFLOAT_VALUE(op2));
-#else
-    return float_num_minus(op1, op2);
 #endif
+
+/* Header of a function with NAME implementing a fast execution path
+   of arithmetic two operands (OP1, OP2) floating point operation.  */
+#define darithmf(name) static do_inline VALUE name(double op1, double op2, double *res)
+
+darithmf(spec_flo_num_plus) {
+    return spec_dbl2num(op1 + op2, res);
 }
 
-arithmf(spec_flo_num_mult) {
-#if USE_FLONUM && NEW_FLONUM
-    return spec_dbl2num(RFLOAT_VALUE(op1) * RFLOAT_VALUE(op2));
-#else
-    return float_num_mult(op1, op2);
-#endif
+darithmf(spec_flo_num_minus) {
+    return spec_dbl2num(op1 - op2, res);
 }
 
-arithmf(spec_flo_num_div) {
-#if USE_FLONUM && NEW_FLONUM
-    return spec_dbl2num(RFLOAT_VALUE(op1) / RFLOAT_VALUE(op2));
-#else
-    return float_num_div(op1, op2);
-#endif
+darithmf(spec_flo_num_mult) {
+    return spec_dbl2num(op1 * op2, res);
 }
 
-arithmf(spec_flo_num_mod) {
-#if USE_FLONUM && NEW_FLONUM
-    return spec_dbl2num(ruby_float_mod(RFLOAT_VALUE(op1), RFLOAT_VALUE(op2)));
-#else
-    return float_num_mod(op1, op2);
-#endif
+darithmf(spec_flo_num_div) {
+    return spec_dbl2num(op1 / op2, res);
+}
+
+darithmf(spec_flo_num_mod) {
+    return spec_dbl2num(ruby_float_mod(op1, op2), res);
 }
 
 /* Do speculative fix num arithmetic operation, assign the result to
@@ -2514,21 +2587,27 @@ do_spec_fix_arithm(rb_control_frame_t *cfp,
 }
 
 /* Analogous to do_spec_fix_arithm but for flo num operand
-   speculation.  */
+   speculation.  If D1 and/or D2 are non null pointers we know for
+   sure that operands are floating point values which can be referred
+   through D1 and D2.  If RES is not null set the pointed memory to
+   the result double.  */
 static do_inline int
 do_spec_flo_arithm(rb_control_frame_t *cfp,
 		   VALUE *res, VALUE *op1, VALUE op2,
 		   enum ruby_basic_operators bop,
-		   VALUE (*float_num_op)(VALUE, VALUE),
+		   VALUE (*float_num_op)(double, double, double *),
 		   int op2_flonum_p, int uinsn,
-		   enum ruby_vminsn_type *new_insn)
+		   enum ruby_vminsn_type *new_insn, double *rd, double *d1, double *d2)
 {
     VALUE val;
+    double flo1, flo2;
 
     if (LIKELY((! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG))
-	       && ((op2_flonum_p && FLONUM_P(*op1))
-		   || (! op2_flonum_p && FLONUM_2_P(*op1, op2))))) {
-        val = float_num_op(*op1, op2);
+	       && ((op2_flonum_p && (d1 != NULL || FLONUM_P(*op1)))
+		   || (! op2_flonum_p && ((d1 != NULL && d2 != NULL) || FLONUM_2_P(*op1, op2)))))) {
+	flo1 = d1 != NULL ? *d1 : RFLOAT_VALUE(*op1);
+	flo2 = d2 != NULL ? *d2 : RFLOAT_VALUE(op2);
+	val = float_num_op(flo1, flo2, rd);
 #if USE_FLONUM && NEW_FLONUM
 	if (val != Qundef) {
 	    *res = val;
@@ -2556,15 +2635,17 @@ spec_fix_arithm_op(rb_control_frame_t *cfp,
 }
 
 /* It is basically do_spec_flo_airthm when type OP2 is not known for
-   sure (non-immediate operand).  */
+   sure (non-immediate operand).  For RD, D1, and D2 description see
+   comment for do_spec_flo_arithm. */
 static do_inline int
 spec_flo_arithm_op(rb_control_frame_t *cfp,
 		   VALUE *res, VALUE *op1, VALUE *op2,
 		   enum ruby_basic_operators bop,
-		   VALUE (*flo_num_op)(VALUE, VALUE), int uinsn,
-		   enum ruby_vminsn_type *new_insn)
+		   VALUE (*flo_num_op)(double, double, double *), int uinsn,
+		   enum ruby_vminsn_type *new_insn, double *rd, double *d1, double *d2)
 {
-    return do_spec_flo_arithm(cfp, res, op1, *op2, bop, flo_num_op, FALSE, uinsn, new_insn);
+    return do_spec_flo_arithm(cfp, res, op1, *op2, bop, flo_num_op, FALSE, uinsn, new_insn,
+			      rd, d1, d2);
 }
 
 /* A function call implementing a speculative fix num arithmetic insn
@@ -2587,15 +2668,15 @@ spec_op2_fun(imod) {return spec_fix_arithm_call(mod, BOP_MOD);}
 #define spec_flo_arithm_call(suff, bop) spec_flo_arithm_op(cfp, \
 							   res, op1, op2, bop, \
 							   spec_flo_num_ ## suff, \
-							   BIN(u ## suff), new_insn)
+							   BIN(u ## suff), new_insn, rd, d1, d2)
 
 /* Definitions of the functions implementing speculative flo num
    arithmetic insns.  */
-spec_op2_fun(fplus) {return spec_flo_arithm_call(plus, BOP_PLUS);}
-spec_op2_fun(fminus) {return spec_flo_arithm_call(minus, BOP_MINUS);}
-spec_op2_fun(fmult) {return spec_flo_arithm_call(mult, BOP_MULT);}
-spec_op2_fun(fdiv) {return spec_flo_arithm_call(div, BOP_DIV);}
-spec_op2_fun(fmod) {return spec_flo_arithm_call(mod, BOP_MOD);}
+spec_op2_dfun(fplus) {return spec_flo_arithm_call(plus, BOP_PLUS);}
+spec_op2_dfun(fminus) {return spec_flo_arithm_call(minus, BOP_MINUS);}
+spec_op2_dfun(fmult) {return spec_flo_arithm_call(mult, BOP_MULT);}
+spec_op2_dfun(fdiv) {return spec_flo_arithm_call(div, BOP_DIV);}
+spec_op2_dfun(fmod) {return spec_flo_arithm_call(mod, BOP_MOD);}
 
 /* Definitions of the functions implementing speculative fix num
    simple (stack) arithmetic insns.  */
@@ -2616,15 +2697,15 @@ spec_op2_fun(simod) {return spec_fix_sarithm_call(mod, BOP_MOD);}
 #define spec_flo_sarithm_call(suff, bop) spec_flo_arithm_op(cfp, \
 							    res, op1, op2, bop, \
 							    spec_flo_num_ ## suff, \
-							    BIN(su ## suff), new_insn)
+							    BIN(su ## suff), new_insn, rd, d1, d2)
 
 /* Definitions of the functions implementing speculative flo num
    simple arithmetic insns.  */
-spec_op2_fun(sfplus) {return spec_flo_sarithm_call(plus, BOP_PLUS);}
-spec_op2_fun(sfminus) {return spec_flo_sarithm_call(minus, BOP_MINUS);}
-spec_op2_fun(sfmult) {return spec_flo_sarithm_call(mult, BOP_MULT);}
-spec_op2_fun(sfdiv) {return spec_flo_sarithm_call(div, BOP_DIV);}
-spec_op2_fun(sfmod) {return spec_flo_sarithm_call(mod, BOP_MOD);}
+spec_op2_dfun(sfplus) {return spec_flo_sarithm_call(plus, BOP_PLUS);}
+spec_op2_dfun(sfminus) {return spec_flo_sarithm_call(minus, BOP_MINUS);}
+spec_op2_dfun(sfmult) {return spec_flo_sarithm_call(mult, BOP_MULT);}
+spec_op2_dfun(sfdiv) {return spec_flo_sarithm_call(div, BOP_DIV);}
+spec_op2_dfun(sfmod) {return spec_flo_sarithm_call(mod, BOP_MOD);}
 
 /* It is basically do_spec_fix_arithm with fix num IMM (immediate
    operand).  */
@@ -2639,15 +2720,17 @@ spec_fix_arithm_imm_op(rb_control_frame_t *cfp,
 }
 
 /* It is basically do_spec_fix_arithm with flo num IMM (immediate
-   operand).  */
+   operand).  For RD, and D1 description see comment for
+   do_spec_flo_arithm.  */
 static do_inline int
 spec_flo_arithm_imm_op(rb_control_frame_t *cfp,
 		       VALUE *res, VALUE *op1, VALUE imm,
 		       enum ruby_basic_operators bop,
-		       VALUE (*flo_num_op)(VALUE, VALUE), int uinsn,
-		       enum ruby_vminsn_type *new_insn)
+		       VALUE (*flo_num_op)(double, double, double *), int uinsn,
+		       enum ruby_vminsn_type *new_insn, double *rd, double *d1)
 {
-    return do_spec_flo_arithm(cfp, res, op1, imm, bop, flo_num_op, TRUE, uinsn, new_insn);
+    return do_spec_flo_arithm(cfp, res, op1, imm, bop, flo_num_op, TRUE, uinsn, new_insn,
+			      rd, d1, NULL);
 }
 
 /* A function call implementing a speculative fix num arithmetic insn
@@ -2669,15 +2752,15 @@ spec_op2i_fun(imodi) {return spec_fix_arithm_imm_call(mod, BOP_MOD);}
 #define spec_flo_arithm_imm_call(suff, bop) spec_flo_arithm_imm_op(cfp, \
 								   res, op1, imm, bop, \
 								   spec_flo_num_ ## suff, \
-								   BIN(u ## suff ## f), new_insn)
+								   BIN(u ## suff ## f), new_insn, rd, d1)
 
 /* Definitions of the functions implementing speculative flo num
    arithmetic insns with a flo num as an immediate 2nd operand.  */
-spec_op2i_fun(fplusf) {return spec_flo_arithm_imm_call(plus, BOP_PLUS);}
-spec_op2i_fun(fminusf) {return spec_flo_arithm_imm_call(minus, BOP_MINUS);}
-spec_op2i_fun(fmultf) {return spec_flo_arithm_imm_call(mult, BOP_MULT);}
-spec_op2i_fun(fdivf) {return spec_flo_arithm_imm_call(div, BOP_DIV);}
-spec_op2i_fun(fmodf) {return spec_flo_arithm_imm_call(mod, BOP_MOD);}
+spec_op2i_dfun(fplusf) {return spec_flo_arithm_imm_call(plus, BOP_PLUS);}
+spec_op2i_dfun(fminusf) {return spec_flo_arithm_imm_call(minus, BOP_MINUS);}
+spec_op2i_dfun(fmultf) {return spec_flo_arithm_imm_call(mult, BOP_MULT);}
+spec_op2i_dfun(fdivf) {return spec_flo_arithm_imm_call(div, BOP_DIV);}
+spec_op2i_dfun(fmodf) {return spec_flo_arithm_imm_call(mod, BOP_MOD);}
 
 /* Common function executing operation << for operands SRC1 (value
    location) and SRC2 (value) in frame CFP of thread TH.  The function
