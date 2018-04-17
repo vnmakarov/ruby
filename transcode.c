@@ -9,6 +9,7 @@
 
 **********************************************************************/
 
+#include "ruby/encoding.h"
 #include "internal.h"
 #include "transcode_data.h"
 #include <ctype.h>
@@ -16,9 +17,9 @@
 #define ENABLE_ECONV_NEWLINE_OPTION 1
 
 /* VALUE rb_cEncoding = rb_define_class("Encoding", rb_cObject); */
-VALUE rb_eUndefinedConversionError;
-VALUE rb_eInvalidByteSequenceError;
-VALUE rb_eConverterNotFoundError;
+static VALUE rb_eUndefinedConversionError;
+static VALUE rb_eInvalidByteSequenceError;
+static VALUE rb_eConverterNotFoundError;
 
 VALUE rb_cEncodingConverter;
 
@@ -368,14 +369,13 @@ load_transcoder_entry(transcoder_entry_t *entry)
         const size_t total_len = sizeof(transcoder_lib_prefix) - 1 + len;
         const VALUE fn = rb_str_new(0, total_len);
         char *const path = RSTRING_PTR(fn);
-	const int safe = rb_safe_level();
 
         memcpy(path, transcoder_lib_prefix, sizeof(transcoder_lib_prefix) - 1);
         memcpy(path + sizeof(transcoder_lib_prefix) - 1, lib, len);
         rb_str_set_len(fn, total_len);
         FL_UNSET(fn, FL_TAINT);
         OBJ_FREEZE(fn);
-        rb_require_safe(fn, safe > 3 ? 3 : safe);
+        rb_require_safe(fn, rb_safe_level());
     }
 
     if (entry->transcoder)
@@ -2905,6 +2905,11 @@ encoded_dup(VALUE newstr, VALUE str, int encidx)
     return str_encode_associate(newstr, encidx);
 }
 
+/*
+ * Document-class: Encoding::Converter
+ *
+ * Encoding conversion class.
+ */
 static void
 econv_free(void *ptr)
 {

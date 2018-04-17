@@ -421,13 +421,13 @@ module REXML
         rest
       end
 
-      #| AdditiveExpr ('+' | S '-') MultiplicativeExpr
+      #| AdditiveExpr ('+' | '-') MultiplicativeExpr
       #| MultiplicativeExpr
       def AdditiveExpr path, parsed
         n = []
         rest = MultiplicativeExpr( path, n )
         if rest != path
-          while rest =~ /^\s*(\+| -)\s*/
+          while rest =~ /^\s*(\+|-)\s*/
             if $1[0] == ?+
               n = [ :plus, n, [] ]
             else
@@ -515,7 +515,9 @@ module REXML
         rest = FilterExpr( path, n )
         if rest != path
           if rest and rest[0] == ?/
-            return RelativeLocationPath(rest, n)
+            rest = RelativeLocationPath(rest, n)
+            parsed.concat(n)
+            return rest
           end
         end
         rest = LocationPath(rest, n) if rest =~ /\A[\/\.\@\[\w*]/

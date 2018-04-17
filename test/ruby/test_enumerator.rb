@@ -79,7 +79,7 @@ class TestEnumerator < Test::Unit::TestCase
     enum = @obj.to_enum
     assert_raise(NoMethodError) { enum.each {} }
     enum.freeze
-    assert_raise(RuntimeError) {
+    assert_raise(FrozenError) {
       capture_io do
         # warning: Enumerator.new without a block is deprecated; use Object#to_enum
         enum.__send__(:initialize, @obj, :foo)
@@ -440,7 +440,7 @@ class TestEnumerator < Test::Unit::TestCase
     assert_equal([1, 2, 3], a)
 
     g.freeze
-    assert_raise(RuntimeError) {
+    assert_raise(FrozenError) {
       g.__send__ :initialize, proc { |y| y << 4 << 5 }
     }
 
@@ -505,7 +505,7 @@ class TestEnumerator < Test::Unit::TestCase
   def test_size_for_enum_created_from_array
     arr = %w[hello world]
     %i[each each_with_index reverse_each sort_by! sort_by map map!
-      keep_if reject! reject select! select delete_if].each do |method|
+      keep_if reject! reject select! select filter! filter delete_if].each do |method|
       assert_equal arr.size, arr.send(method).size
     end
   end
@@ -522,7 +522,7 @@ class TestEnumerator < Test::Unit::TestCase
 
   def test_size_for_enum_created_from_hash
     h = {a: 1, b: 2, c: 3}
-    methods = %i[delete_if reject reject! select select! keep_if each each_key each_pair]
+    methods = %i[delete_if reject reject! select select! filter filter! keep_if each each_key each_pair]
     enums = methods.map {|method| h.send(method)}
     s = enums.group_by(&:size)
     assert_equal([3], s.keys, ->{s.reject!{|k| k==3}.inspect})
@@ -532,7 +532,7 @@ class TestEnumerator < Test::Unit::TestCase
   end
 
   def test_size_for_enum_created_from_env
-    %i[each_pair reject! delete_if select select! keep_if].each do |method|
+    %i[each_pair reject! delete_if select select! filter filter! keep_if].each do |method|
       assert_equal ENV.size, ENV.send(method).size
     end
   end
@@ -576,13 +576,22 @@ class TestEnumerator < Test::Unit::TestCase
     assert_equal Float::INFINITY, [:foo].cycle.size
     assert_equal 10, [:foo, :bar].cycle(5).size
     assert_equal 0,  [:foo, :bar].cycle(-10).size
+    assert_equal Float::INFINITY, {foo: 1}.cycle.size
+    assert_equal 10, {foo: 1, bar: 2}.cycle(5).size
+    assert_equal 0,  {foo: 1, bar: 2}.cycle(-10).size
     assert_equal 0,  [].cycle.size
     assert_equal 0,  [].cycle(5).size
+    assert_equal 0,  {}.cycle.size
+    assert_equal 0,  {}.cycle(5).size
 
     assert_equal nil, @obj.cycle.size
     assert_equal nil, @obj.cycle(5).size
     assert_equal Float::INFINITY, @sized.cycle.size
     assert_equal 126, @sized.cycle(3).size
+    assert_equal Float::INFINITY, [].to_enum { 42 }.cycle.size
+    assert_equal 0, [].to_enum { 0 }.cycle.size
+
+    assert_raise(TypeError) {[].to_enum { 0 }.cycle("").size}
   end
 
   def test_size_for_loops
@@ -648,8 +657,9 @@ class TestEnumerator < Test::Unit::TestCase
   end
 
   def test_uniq
-    assert_equal([1, 2, 3, 4, 5, 10],
-                 (1..Float::INFINITY).lazy.uniq{|x| (x**2) % 10 }.first(6))
+    u = [0, 1, 0, 1].to_enum.lazy.uniq
+    assert_equal([0, 1], u.force)
+    assert_equal([0, 1], u.force)
   end
 end
 

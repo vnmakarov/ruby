@@ -1,10 +1,10 @@
-#define RUBY_VERSION "2.5.0"
+#define RUBY_VERSION "2.6.0"
 #define RUBY_RELEASE_DATE RUBY_RELEASE_YEAR_STR"-"RUBY_RELEASE_MONTH_STR"-"RUBY_RELEASE_DAY_STR
 #define RUBY_PATCHLEVEL -1
 
-#define RUBY_RELEASE_YEAR 2017
-#define RUBY_RELEASE_MONTH 1
-#define RUBY_RELEASE_DAY 11
+#define RUBY_RELEASE_YEAR 2018
+#define RUBY_RELEASE_MONTH 4
+#define RUBY_RELEASE_DAY 17
 
 #include "ruby/version.h"
 
@@ -60,11 +60,11 @@
 # define RUBY_REVISION_STR ""
 #endif
 
-# define RUBY_DESCRIPTION	    \
+# define RUBY_DESCRIPTION_WITH(opt) \
     "ruby "RUBY_VERSION		    \
     RUBY_PATCHLEVEL_STR		    \
     " ("RUBY_RELEASE_DATE	    \
-    RUBY_REVISION_STR") "	    \
+    RUBY_REVISION_STR")"opt" "	    \
     "["RUBY_PLATFORM"]"
 # define RUBY_COPYRIGHT		    \
     "ruby - Copyright (C) "	    \

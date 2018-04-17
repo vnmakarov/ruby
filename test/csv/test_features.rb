@@ -104,6 +104,20 @@ class TestCSV::Features < TestCSV
     assert_equal($/, CSV.new(STDERR).row_sep)
   end
 
+  def test_line
+    lines = [
+      %Q(abc,def\n),
+      %Q(abc,"d\nef"\n),
+      %Q(abc,"d\r\nef"\n),
+      %Q(abc,"d\ref")
+    ]
+    csv = CSV.new(lines.join(''))
+    lines.each do |line|
+      csv.shift
+      assert_equal(line, csv.line)
+    end
+  end
+
   def test_lineno
     assert_equal(5, @sample_data.lines.to_a.size)
 
@@ -124,8 +138,11 @@ class TestCSV::Features < TestCSV
   end
 
   def test_unknown_options
-    assert_raise_with_message(ArgumentError, /unknown/) {
+    assert_raise_with_message(ArgumentError, /unknown keyword/) {
       CSV.new(@sample_data, unknown: :error)
+    }
+    assert_raise_with_message(ArgumentError, /unknown keyword/) {
+      CSV.new(@sample_data, universal_newline: true)
     }
   end
 
@@ -287,19 +304,17 @@ class TestCSV::Features < TestCSV
   end
 
   def test_inspect_shows_headers_when_available
-    CSV.new("one,two,three\n1,2,3\n", headers: true) do |csv|
-      assert_include(csv.inspect, "headers:true", "Header hint not shown.")
-      csv.shift  # load headers
-      assert_match(/headers:\[[^\]]+\]/, csv.inspect)
-    end
+    csv = CSV.new("one,two,three\n1,2,3\n", headers: true)
+    assert_include(csv.inspect, "headers:true", "Header hint not shown.")
+    csv.shift  # load headers
+    assert_match(/headers:\[[^\]]+\]/, csv.inspect)
   end
 
   def test_inspect_encoding_is_ascii_compatible
-    CSV.new("one,two,three\n1,2,3\n".encode("UTF-16BE")) do |csv|
-      assert_send([Encoding, :compatible?,
-                   Encoding.find("US-ASCII"), csv.inspect.encoding],
-                  "inspect() was not ASCII compatible.")
-    end
+    csv = CSV.new("one,two,three\n1,2,3\n".encode("UTF-16BE"))
+    assert_send([Encoding, :compatible?,
+                 Encoding.find("US-ASCII"), csv.inspect.encoding],
+                "inspect() was not ASCII compatible.")
   end
 
   def test_version
@@ -336,6 +351,15 @@ class TestCSV::Features < TestCSV
     assert_equal [["line", "1", "a"], ["line", "2", "b"]], c.each.to_a
   end
 
+  def test_comment_rows_are_ignored_with_heredoc
+    c = CSV.new(<<~EOL, skip_lines: ".")
+    1,foo
+    .2,bar
+    3,baz
+    EOL
+    assert_equal [["1", "foo"], ["3", "baz"]], c.each.to_a
+  end
+
   def test_quoted_skip_line_markers_are_ignored
     sample_data = "line,1,a\n\"#not\",a,line\nline,2,b"
     c = CSV.new sample_data, :skip_lines => /\A\s*#/
@@ -348,4 +372,7 @@ class TestCSV::Features < TestCSV
     assert_equal [["line", "1", "a"], ["line", "2", "b"]], c.each.to_a
   end
 
+  def test_table_nil_equality
+    assert_nothing_raised(NoMethodError) { CSV.parse("test", headers: true) == nil }
+  end
 end

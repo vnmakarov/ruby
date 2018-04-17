@@ -84,12 +84,12 @@ class TestIO < Test::Unit::TestCase
     }
   end
 
-  def trapping_usr1
+  def trapping_usr2
     @usr1_rcvd  = 0
-    trap(:USR1) { @usr1_rcvd += 1 }
+    trap(:USR2) { @usr1_rcvd += 1 }
     yield
   ensure
-    trap(:USR1, "DEFAULT")
+    trap(:USR2, "DEFAULT")
   end
 
   def test_pipe
@@ -366,6 +366,16 @@ class TestIO < Test::Unit::TestCase
     }
   end
 
+  def test_copy_stream_append
+    with_srccontent("foobar") {|src, content|
+      File.open('dst', 'ab') do |dst|
+        ret = IO.copy_stream(src, dst)
+        assert_equal(content.bytesize, ret)
+        assert_equal(content, File.read("dst"))
+      end
+    }
+  end
+
   def test_copy_stream_smaller
     with_srccontent {|src, content|
 
@@ -532,6 +542,22 @@ class TestIO < Test::Unit::TestCase
   end
 
   if have_nonblock?
+    def test_copy_stream_no_busy_wait
+      # JIT has busy wait on GC. It's hard to test this with JIT.
+      skip "MJIT has busy wait on GC. We can't test this with JIT." if RubyVM::MJIT.enabled?
+
+      msg = 'r58534 [ruby-core:80969] [Backport #13533]'
+      IO.pipe do |r,w|
+        r.nonblock = true
+        assert_cpu_usage_low(msg) do
+          th = Thread.new { IO.copy_stream(r, IO::NULL) }
+          sleep 0.1
+          w.close
+          th.join
+        end
+      end
+    end
+
     def test_copy_stream_pipe_nonblock
       mkcdtmpdir {
         with_read_pipe("abc") {|r1|
@@ -839,14 +865,15 @@ class TestIO < Test::Unit::TestCase
         rescue Errno::EBADF
           skip "nonblocking IO for pipe is not implemented"
         end
-        trapping_usr1 do
+        trapping_usr2 do
           nr = 30
           begin
             pid = fork do
               s1.close
               IO.select([s2])
-              Process.kill(:USR1, Process.ppid)
-              s2.read
+              Process.kill(:USR2, Process.ppid)
+              buf = String.new(capacity: 16384)
+              nil while s2.read(16384, buf)
             end
             s2.close
             nr.times do
@@ -1172,7 +1199,7 @@ class TestIO < Test::Unit::TestCase
     opts = {}
     if defined?(Process::RLIMIT_NPROC)
       lim = Process.getrlimit(Process::RLIMIT_NPROC)[1]
-      opts[:rlimit_nproc] = [lim, 1024].min
+      opts[:rlimit_nproc] = [lim, 2048].min
     end
     f = IO.popen([ruby] + args, 'r+', opts)
     pid = f.pid
@@ -1201,6 +1228,70 @@ class TestIO < Test::Unit::TestCase
       f = true
       assert_equal("0" * 10000 + "1" * 10000, r.read)
     end)
+  end
+
+  def test_write_with_multiple_arguments
+    pipe(proc do |w|
+      w.write("foo", "bar")
+      w.close
+    end, proc do |r|
+      assert_equal("foobar", r.read)
+    end)
+  end
+
+  def test_write_with_multiple_arguments_and_buffer
+    mkcdtmpdir do
+      line = "x"*9+"\n"
+      file = "test.out"
+      open(file, "wb") do |w|
+        w.write(line)
+        assert_equal(11, w.write(line, "\n"))
+      end
+      open(file, "rb") do |r|
+        assert_equal([line, line, "\n"], r.readlines)
+      end
+
+      line = "x"*99+"\n"
+      open(file, "wb") do |w|
+        w.write(line*81)        # 8100 bytes
+        assert_equal(100, w.write("a"*99, "\n"))
+      end
+      open(file, "rb") do |r|
+        81.times {assert_equal(line, r.gets)}
+        assert_equal("a"*99+"\n", r.gets)
+      end
+    end
+  end
+
+  def test_write_with_many_arguments
+    [1023, 1024].each do |n|
+      pipe(proc do |w|
+        w.write(*(["a"] * n))
+        w.close
+      end, proc do |r|
+        assert_equal("a" * n, r.read)
+      end)
+    end
+  end
+
+  def test_write_with_multiple_nonstring_arguments
+    assert_in_out_err([], "STDOUT.write(:foo, :bar)", ["foobar"])
+  end
+
+  def test_write_buffered_with_multiple_arguments
+    out, err, (_, status) = EnvUtil.invoke_ruby(["-e", "sleep 0.1;puts 'foo'"], "", true, true) do |_, o, e, i|
+      [o.read, e.read, Process.waitpid2(i)]
+    end
+    assert_predicate(status, :success?)
+    assert_equal("foo\n", out)
+    assert_empty(err)
+  end
+
+  def test_write_no_args
+    IO.pipe do |r, w|
+      assert_equal 0, w.write, '[ruby-core:86285] [Bug #14338]'
+      assert_equal :wait_readable, r.read_nonblock(1, exception: false)
+    end
   end
 
   def test_write_non_writable
@@ -2051,6 +2142,12 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_autoclose_true_closed_by_finalizer
+    if RubyVM::MJIT.enabled?
+      # This is skipped but this test passes with AOT mode.
+      # At least it should not be a JIT compiler's bug.
+      skip "MJIT worker does IO which is unexpected for this test"
+    end
+
     feature2250 = '[ruby-core:26222]'
     pre = 'ft2250'
     t = Tempfile.new(pre)
@@ -2066,7 +2163,7 @@ class TestIO < Test::Unit::TestCase
       assert_raise(Errno::EBADF, feature2250) {t.close}
     end
   ensure
-    t.close!
+    t&.close!
   end
 
   def test_autoclose_false_closed_by_finalizer
@@ -2101,6 +2198,22 @@ class TestIO < Test::Unit::TestCase
       f.puts "puts 'foo'"
       f.close_write
       assert_equal("foo\n", f.read)
+    end
+  end
+
+  def test_read_command
+    assert_equal("foo\n", IO.read("|echo foo"))
+    assert_raise(Errno::ENOENT, Errno::EINVAL) do
+      File.read("|#{EnvUtil.rubybin} -e puts")
+    end
+    assert_raise(Errno::ENOENT, Errno::EINVAL) do
+      File.binread("|#{EnvUtil.rubybin} -e puts")
+    end
+    assert_raise(Errno::ENOENT, Errno::EINVAL) do
+      Class.new(IO).read("|#{EnvUtil.rubybin} -e puts")
+    end
+    assert_raise(Errno::ENOENT, Errno::EINVAL) do
+      Class.new(IO).binread("|#{EnvUtil.rubybin} -e puts")
     end
   end
 
@@ -2277,6 +2390,10 @@ End
     IO.foreach("|" + EnvUtil.rubybin + " -e 'puts :foo; puts :bar; puts :baz'") {|x| a << x }
     assert_equal(["foo\n", "bar\n", "baz\n"], a)
 
+    a = []
+    IO.foreach("|" + EnvUtil.rubybin + " -e 'puts :zot'", :open_args => ["r"]) {|x| a << x }
+    assert_equal(["zot\n"], a)
+
     make_tempfile {|t|
       a = []
       IO.foreach(t.path) {|x| a << x }
@@ -2388,6 +2505,36 @@ End
     end)
   end
 
+  def test_puts_parallel
+    skip "not portable"
+    pipe(proc do |w|
+      threads = []
+      100.times do
+        threads << Thread.new { w.puts "hey" }
+      end
+      threads.each(&:join)
+      w.close
+    end, proc do |r|
+      assert_equal("hey\n" * 100, r.read)
+    end)
+  end
+
+  def test_puts_old_write
+    capture = String.new
+    def capture.write(str)
+      self << str
+    end
+
+    capture.clear
+    assert_warning(/[.#]write is outdated/) do
+      stdout, $stdout = $stdout, capture
+      puts "hey"
+    ensure
+      $stdout = stdout
+    end
+    assert_equal("hey\n", capture)
+  end
+
   def test_display
     pipe(proc do |w|
       "foo".display(w)
@@ -2404,7 +2551,8 @@ End
 
     assert_in_out_err([], "$> = $stderr\nputs 'foo'", [], %w(foo))
 
-    assert_separately(%w[-Eutf-8], <<-"end;") #    do
+    assert_separately(%w[-Eutf-8], "#{<<~"begin;"}\n#{<<~"end;"}")
+    begin;
       alias $\u{6a19 6e96 51fa 529b} $stdout
       x = eval("class X\u{307b 3052}; self; end".encode("euc-jp"))
       assert_raise_with_message(TypeError, /\\$\u{6a19 6e96 51fa 529b} must.*, X\u{307b 3052} given/) do
@@ -2801,13 +2949,39 @@ __END__
         $stdin.reopen(r)
         r.close
         read_thread = Thread.new do
-          $stdin.read(1)
+          begin
+            $stdin.read(1)
+          rescue IOError => e
+            e
+          end
         end
         sleep(0.1) until read_thread.stop?
         $stdin.close
-        assert_raise(IOError) {read_thread.join}
+        assert_kind_of(IOError, read_thread.value)
       end
     end;
+  end
+
+  def test_single_exception_on_close
+    a = []
+    t = []
+    10.times do
+      r, w = IO.pipe
+      a << [r, w]
+      t << Thread.new do
+        while r.gets
+        end rescue IOError
+        Thread.current.pending_interrupt?
+      end
+    end
+    a.each do |r, w|
+      w.write(-"\n")
+      w.close
+      r.close
+    end
+    t.each do |th|
+      assert_equal false, th.value, '[ruby-core:81581] [Bug #13632]'
+    end
   end
 
   def test_open_mode
@@ -3256,12 +3430,16 @@ __END__
 
     str = ""
     IO.pipe {|r,|
-      t = Thread.new { r.read(nil, str) }
+      t = Thread.new {
+        assert_raise(RuntimeError) {
+          r.read(nil, str)
+        }
+      }
       sleep 0.1 until t.stop?
       t.raise
       sleep 0.1 while t.alive?
       assert_nothing_raised(RuntimeError, bug8669) { str.clear }
-      assert_raise(RuntimeError) { t.join }
+      t.join
     }
   end if /cygwin/ !~ RUBY_PLATFORM
 
@@ -3270,12 +3448,16 @@ __END__
 
     str = ""
     IO.pipe {|r, w|
-      t = Thread.new { r.readpartial(4096, str) }
+      t = Thread.new {
+        assert_raise(RuntimeError) {
+          r.readpartial(4096, str)
+        }
+      }
       sleep 0.1 until t.stop?
       t.raise
       sleep 0.1 while t.alive?
       assert_nothing_raised(RuntimeError, bug8669) { str.clear }
-      assert_raise(RuntimeError) { t.join }
+      t.join
     }
   end if /cygwin/ !~ RUBY_PLATFORM
 
@@ -3295,12 +3477,16 @@ __END__
 
     str = ""
     IO.pipe {|r, w|
-      t = Thread.new { r.sysread(4096, str) }
+      t = Thread.new {
+        assert_raise(RuntimeError) {
+          r.sysread(4096, str)
+        }
+      }
       sleep 0.1 until t.stop?
       t.raise
       sleep 0.1 while t.alive?
       assert_nothing_raised(RuntimeError, bug8669) { str.clear }
-      assert_raise(RuntimeError) { t.join }
+      t.join
     }
   end if /cygwin/ !~ RUBY_PLATFORM
 
@@ -3371,7 +3557,7 @@ __END__
     assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}")
     bug13076 = '[ruby-core:78845] [Bug #13076]'
     begin;
-      100.times do |i|
+      10.times do |i|
         a = []
         t = []
         10.times do
@@ -3393,6 +3579,33 @@ __END__
         assert_nothing_raised(IOError, bug13076) {
           t.each(&:join)
         }
+      end
+    end;
+  end
+
+  def test_race_closed_stream
+    assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}")
+    begin;
+      bug13158 = '[ruby-core:79262] [Bug #13158]'
+      closed = nil
+      q = Queue.new
+      IO.pipe do |r, w|
+        thread = Thread.new do
+          begin
+            q << true
+            assert_raise_with_message(IOError, /stream closed/) do
+              while r.gets
+              end
+            end
+          ensure
+            closed = r.closed?
+          end
+        end
+        q.pop
+        sleep 0.01 until thread.stop?
+        r.close
+        thread.join
+        assert_equal(true, closed, bug13158 + ': stream should be closed')
       end
     end;
   end
@@ -3463,5 +3676,88 @@ __END__
         assert_equal(["foo\n", "bar\n", "baz\n"], IO.readlines(t.path))
       }
     end
+
+    def test_closed_stream_in_rescue
+      assert_separately([], "#{<<-"begin;"}\n#{<<~"end;"}")
+      begin;
+      10.times do
+        assert_nothing_raised(RuntimeError, /frozen IOError/) do
+          IO.pipe do |r, w|
+            th = Thread.start {r.close}
+            r.gets
+          rescue IOError
+            # swallow pending exceptions
+            begin
+              sleep 0.001
+            rescue IOError
+              retry
+            end
+          ensure
+            th.kill.join
+          end
+        end
+      end
+      end;
+    end
+
+    def test_write_no_garbage
+      res = {}
+      ObjectSpace.count_objects(res) # creates strings on first call
+      [ 'foo'.b, '*' * 24 ].each do |buf|
+        with_pipe do |r, w|
+          GC.disable
+          begin
+            before = ObjectSpace.count_objects(res)[:T_STRING]
+            n = w.write(buf)
+            s = w.syswrite(buf)
+            after = ObjectSpace.count_objects(res)[:T_STRING]
+          ensure
+            GC.enable
+          end
+          assert_equal before, after,
+            "no strings left over after write [ruby-core:78898] [Bug #13085]: #{ before } strings before write -> #{ after } strings after write"
+          assert_not_predicate buf, :frozen?, 'no inadvertent freeze'
+          assert_equal buf.bytesize, n, 'IO#write wrote expected size'
+          assert_equal s, n, 'IO#syswrite wrote expected size'
+        end
+      end
+    end
+
+    def test_pread
+      make_tempfile { |t|
+        open(t.path) do |f|
+          assert_equal("bar", f.pread(3, 4))
+          buf = "asdf"
+          assert_equal("bar", f.pread(3, 4, buf))
+          assert_equal("bar", buf)
+          assert_raise(EOFError) { f.pread(1, f.size) }
+        end
+      }
+    end if IO.method_defined?(:pread)
+
+    def test_pwrite
+      make_tempfile { |t|
+        open(t.path, IO::RDWR) do |f|
+          assert_equal(3, f.pwrite("ooo", 4))
+          assert_equal("ooo", f.pread(3, 4))
+        end
+      }
+    end if IO.method_defined?(:pread) and IO.method_defined?(:pwrite)
   end
+
+  def test_select_exceptfds
+    if Etc.uname[:sysname] == 'SunOS' && Etc.uname[:release] == '5.11'
+      skip "Solaris 11 fails this"
+    end
+
+    TCPServer.open('localhost', 0) do |svr|
+      con = TCPSocket.new('localhost', svr.addr[1])
+      acc = svr.accept
+      assert_equal 5, con.send('hello', Socket::MSG_OOB)
+      set = IO.select(nil, nil, [acc], 30)
+      assert_equal([[], [], [acc]], set, 'IO#select exceptions array OK')
+      acc.close
+      con.close
+    end
+  end if Socket.const_defined?(:MSG_OOB)
 end

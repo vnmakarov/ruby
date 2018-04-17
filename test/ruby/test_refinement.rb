@@ -1474,6 +1474,25 @@ class TestRefinement < Test::Unit::TestCase
     INPUT
   end
 
+  def test_undef_prepended_method
+    bug13096 = '[ruby-core:78944] [Bug #13096]'
+    klass = EnvUtil.labeled_class("X") do
+      def foo; end
+    end
+    klass.prepend(Module.new)
+    ext = EnvUtil.labeled_module("Ext") do
+      refine klass do
+        def foo
+        end
+      end
+    end
+    assert_nothing_raised(NameError, bug13096) do
+      klass.class_eval do
+        undef :foo
+      end
+    end
+  end
+
   def test_call_refined_method_in_duplicate_module
     bug10885 = '[ruby-dev:48878]'
     assert_in_out_err([], <<-INPUT, [], [], bug10885)
@@ -1750,6 +1769,31 @@ class TestRefinement < Test::Unit::TestCase
     assert_equal("Foo#x", FooExtClient.return_proc(&:x).(Foo.new))
   end
 
+  def test_symbol_proc_with_block
+    assert_separately([], "#{<<~"begin;"}\n#{<<~'end;'}")
+    bug = '[ruby-core:80219] [Bug #13325]'
+    begin;
+      module M
+        refine Class.new do
+        end
+      end
+      class C
+        def call(a, x, &b)
+          b.call(a, &x)
+        end
+      end
+      o = C.new
+      r = nil
+      x = ->(z){r = z}
+      assert_equal(42, o.call(42, x, &:tap))
+      assert_equal(42, r)
+      using M
+      r = nil
+      assert_equal(42, o.call(42, x, &:tap), bug)
+      assert_equal(42, r, bug)
+    end;
+  end
+
   module AliasInSubclass
     class C
       def foo
@@ -1808,6 +1852,342 @@ class TestRefinement < Test::Unit::TestCase
       using PublicCows
       assert_equal("Moo", Cow.new.moo, bug12729)
     end;
+  end
+
+  module SuperToModule
+    class Parent
+    end
+
+    class Child < Parent
+    end
+
+    module FooBar
+      refine Parent do
+        def to_s
+          "Parent"
+        end
+      end
+
+      refine Child do
+        def to_s
+          super + " -> Child"
+        end
+      end
+    end
+
+    using FooBar
+    def Child.test
+      new.to_s
+    end
+  end
+
+  def test_super_to_module
+    bug = '[ruby-core:79588] [Bug #13227]'
+    assert_equal("Parent -> Child", SuperToModule::Child.test, bug)
+  end
+
+  def test_include_refinement
+    bug = '[ruby-core:79632] [Bug #13236] cannot include refinement module'
+    r = nil
+    m = Module.new do
+      r = refine(String) {def test;:ok end}
+    end
+    assert_raise_with_message(ArgumentError, /refinement/, bug) do
+      m.module_eval {include r}
+    end
+    assert_raise_with_message(ArgumentError, /refinement/, bug) do
+      m.module_eval {prepend r}
+    end
+  end
+
+  class ParentDefiningPrivateMethod
+    private
+    def some_inherited_method
+    end
+  end
+
+  module MixinDefiningPrivateMethod
+    private
+    def some_included_method
+    end
+  end
+
+  class SomeChildClassToRefine < ParentDefiningPrivateMethod
+    include MixinDefiningPrivateMethod
+
+    private
+    def some_method
+    end
+  end
+
+  def test_refine_inherited_method_with_visibility_changes
+    Module.new do
+      refine(SomeChildClassToRefine) do
+        def some_inherited_method; end
+        def some_included_method; end
+        def some_method; end
+      end
+    end
+
+    obj = SomeChildClassToRefine.new
+
+    assert_raise_with_message(NoMethodError, /private/) do
+      obj.some_inherited_method
+    end
+
+    assert_raise_with_message(NoMethodError, /private/) do
+      obj.some_included_method
+    end
+
+    assert_raise_with_message(NoMethodError, /private/) do
+      obj.some_method
+    end
+  end
+
+  def test_refined_method_alias_warning
+    c = Class.new do
+      def t; :t end
+      def f; :f end
+    end
+    Module.new do
+      refine(c) do
+        alias foo t
+      end
+    end
+    assert_warning('', '[ruby-core:82385] [Bug #13817] refined method is not redefined') do
+      c.class_eval do
+        alias foo f
+      end
+    end
+  end
+
+  def test_using_wrong_argument
+    bug = '[ruby-dev:50270] [Bug #13956]'
+    pattern = /expected Module/
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+    bug = ""#{bug.dump}
+    pattern = /#{pattern}/
+    begin;
+      assert_raise_with_message(TypeError, pattern, bug) {
+        using(1) do end
+      }
+    end;
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+    bug = ""#{bug.dump}
+    pattern = /#{pattern}/
+    begin;
+      assert_raise_with_message(TypeError, pattern, bug) {
+        Module.new {using(1) {}}
+      }
+    end;
+  end
+
+  class ToString
+    c = self
+    using Module.new {refine(c) {def to_s; "ok"; end}}
+    def string
+      "#{self}"
+    end
+  end
+
+  def test_tostring
+    assert_equal("ok", ToString.new.string)
+    assert_predicate(ToString.new.taint.string, :tainted?)
+  end
+
+  class ToSymbol
+    c = self
+    using Module.new {refine(c) {def intern; "<#{upcase}>"; end}}
+    def symbol
+      :"#{@string}"
+    end
+    def initialize(string)
+      @string = string
+    end
+  end
+
+  def test_dsym_literal
+    assert_equal(:foo, ToSymbol.new("foo").symbol)
+  end
+
+  module ToProc
+    def self.call &block
+      block.call
+    end
+
+    class ReturnProc
+      c = self
+      using Module.new {
+        refine c do
+          def to_proc
+            proc { "to_proc" }
+          end
+        end
+      }
+      def call
+        ToProc.call &self
+      end
+    end
+
+    class ReturnNoProc
+      c = self
+      using Module.new {
+        refine c do
+          def to_proc
+            true
+          end
+        end
+      }
+
+      def call
+        ToProc.call &self
+      end
+    end
+
+    class PrivateToProc
+      c = self
+      using Module.new {
+        refine c do
+          private
+          def to_proc
+            proc { "private_to_proc" }
+          end
+        end
+      }
+
+      def call
+        ToProc.call &self
+      end
+    end
+
+
+    class NonProc
+      def call
+        ToProc.call &self
+      end
+    end
+
+    class MethodMissing
+      def method_missing *args
+        proc { "method_missing" }
+      end
+
+      def call
+        ToProc.call &self
+      end
+      end
+
+    class ToProcAndMethodMissing
+      def method_missing *args
+        proc { "method_missing" }
+      end
+
+      c = self
+      using Module.new {
+        refine c do
+          def to_proc
+            proc { "to_proc" }
+          end
+        end
+      }
+
+      def call
+        ToProc.call &self
+      end
+    end
+
+    class ToProcAndRefinements
+      def to_proc
+        proc { "to_proc" }
+      end
+
+      c = self
+      using Module.new {
+        refine c do
+          def to_proc
+            proc { "refinements_to_proc" }
+          end
+        end
+      }
+
+      def call
+        ToProc.call &self
+      end
+    end
+  end
+
+  def test_to_proc
+    assert_equal("to_proc", ToProc::ReturnProc.new.call)
+    assert_equal("private_to_proc", ToProc::PrivateToProc.new.call)
+    assert_raise(TypeError){ ToProc::ReturnNoProc.new.call }
+    assert_raise(TypeError){ ToProc::NonProc.new.call }
+    assert_equal("method_missing", ToProc::MethodMissing.new.call)
+    assert_equal("to_proc", ToProc::ToProcAndMethodMissing.new.call)
+    assert_equal("refinements_to_proc", ToProc::ToProcAndRefinements.new.call)
+  end
+
+  def test_unused_refinement_for_module
+    bug14068 = '[ruby-core:83613] [Bug #14068]'
+    assert_in_out_err([], <<-INPUT, ["M1#foo"], [], bug14068)
+      module M1
+        def foo
+          puts "M1#foo"
+        end
+      end
+
+      module M2
+      end
+
+      module UnusedRefinement
+        refine(M2) do
+          def foo
+            puts "M2#foo"
+          end
+        end
+      end
+
+      include M1
+      include M2
+      foo()
+    INPUT
+  end
+
+  def test_refining_module_repeatedly
+    bug14070 = '[ruby-core:83617] [Bug #14070]'
+    assert_in_out_err([], <<-INPUT, ["ok"], [], bug14070)
+      1000.times do
+        Class.new do
+          include Enumerable
+        end
+
+        Module.new do
+          refine Enumerable do
+            def foo
+            end
+          end
+        end
+      end
+      puts "ok"
+    INPUT
+  end
+
+  def test_super_from_refined_module
+    a = EnvUtil.labeled_module("A") do
+      def foo;"[A#{super}]";end
+    end
+    b = EnvUtil.labeled_class("B") do
+      def foo;"[B]";end
+    end
+    c = EnvUtil.labeled_class("C", b) do
+      include a
+      def foo;"[C#{super}]";end
+    end
+    d = EnvUtil.labeled_module("D") do
+      refine(a) do
+        def foo;end
+      end
+    end
+    assert_equal("[C[A[B]]]", c.new.foo, '[ruby-dev:50390] [Bug #14232]')
   end
 
   private

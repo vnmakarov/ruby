@@ -22,6 +22,7 @@
 static void dln_loaderror(const char *format, ...);
 #endif
 #include "dln.h"
+#include "internal.h"
 
 #ifdef HAVE_STDLIB_H
 # include <stdlib.h>
@@ -231,13 +232,13 @@ load_header(int fd, struct exec *hdrp, long disp)
 #  define R_RIGHTSHIFT(r)	(reloc_r_rightshift[(r)->r_type])
 #  define R_BITSIZE(r) 		(reloc_r_bitsize[(r)->r_type])
 #  define R_LENGTH(r)		(reloc_r_length[(r)->r_type])
-static int reloc_r_rightshift[] = {
+static const int reloc_r_rightshift[] = {
   0, 0, 0, 0, 0, 0, 2, 2, 10, 0, 0, 0, 0, 0, 0,
 };
-static int reloc_r_bitsize[] = {
+static const int reloc_r_bitsize[] = {
   8, 16, 32, 8, 16, 32, 30, 22, 22, 22, 13, 10, 32, 32, 16,
 };
-static int reloc_r_length[] = {
+static const int reloc_r_length[] = {
   0, 1, 2, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
 };
 #  define R_PCREL(r) \
@@ -1242,6 +1243,27 @@ rb_w32_check_imported(HMODULE ext, HMODULE mine)
 #define translit_separator(str) (void)(str)
 #endif
 
+#ifdef USE_DLN_DLOPEN
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpedantic"
+#elif defined(__GNUC__) && (__GNUC__ >= 5)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+#endif
+static bool
+dln_incompatible_library_p(void *handle)
+{
+    void *ex = dlsym(handle, EXTERNAL_PREFIX"ruby_xmalloc");
+    return ex && ex != ruby_xmalloc;
+}
+#ifdef __clang__
+#pragma clang diagnostic pop
+#elif defined(__GNUC__) && (__GNUC__ >= 5)
+#pragma GCC diagnostic pop
+#endif
+#endif
+
 void*
 dln_load(const char *file)
 {
@@ -1329,8 +1351,7 @@ dln_load(const char *file)
 	}
 # if defined RUBY_EXPORT
 	{
-	    void *ex = dlsym(handle, EXTERNAL_PREFIX"ruby_xmalloc");
-	    if (ex && ex != ruby_xmalloc) {
+	    if (dln_incompatible_library_p(handle)) {
 
 #   if defined __APPLE__ && \
     defined(MAC_OS_X_VERSION_MIN_REQUIRED) && \

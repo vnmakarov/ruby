@@ -3,6 +3,7 @@ require 'test/unit'
 
 require 'tmpdir'
 require 'tempfile'
+require_relative '../lib/jit_support'
 
 class TestRubyOptions < Test::Unit::TestCase
   def write_file(filename, content)
@@ -26,7 +27,7 @@ class TestRubyOptions < Test::Unit::TestCase
 
   def test_usage
     assert_in_out_err(%w(-h)) do |r, e|
-      assert_operator(r.size, :<=, 24)
+      assert_operator(r.size, :<=, 25)
       longer = r[1..-1].select {|x| x.size > 80}
       assert_equal([], longer)
       assert_equal([], e)
@@ -48,7 +49,7 @@ class TestRubyOptions < Test::Unit::TestCase
     end
 
     assert_in_out_err(%w(-p -l -a -e) + ['p [$-p, $-l, $-a]'],
-                      "foo\nbar\nbaz\n") do |r, e|
+                      "foo\nbar\nbaz") do |r, e|
       assert_equal(
         [ '[true, true, true]', 'foo',
           '[true, true, true]', 'bar',
@@ -56,6 +57,7 @@ class TestRubyOptions < Test::Unit::TestCase
       assert_equal([], e)
     end
   end
+
 
   def test_warning
     save_rubyopt = ENV['RUBYOPT']
@@ -94,6 +96,15 @@ class TestRubyOptions < Test::Unit::TestCase
       /^ruby #{q[RUBY_VERSION]}(?:[p ]|dev|rc).*? \[#{q[RUBY_PLATFORM]}\]$/
     end
   private_constant :VERSION_PATTERN
+
+  VERSION_PATTERN_WITH_JIT =
+    case RUBY_ENGINE
+    when 'ruby'
+      /^ruby #{q[RUBY_VERSION]}(?:[p ]|dev|rc).*? \+JIT \[#{q[RUBY_PLATFORM]}\]$/
+    else
+      VERSION_PATTERN
+    end
+  private_constant :VERSION_PATTERN_WITH_JIT
 
   def test_verbose
     assert_in_out_err(["-vve", ""]) do |r, e|
@@ -154,8 +165,23 @@ class TestRubyOptions < Test::Unit::TestCase
   def test_version
     assert_in_out_err(%w(--version)) do |r, e|
       assert_match(VERSION_PATTERN, r[0])
-      assert_equal(RUBY_DESCRIPTION, r[0])
+      if RubyVM::MJIT.enabled?
+        assert_equal(EnvUtil.invoke_ruby(['-e', 'print RUBY_DESCRIPTION'], '', true).first, r[0])
+      else
+        assert_equal(RUBY_DESCRIPTION, r[0])
+      end
       assert_equal([], e)
+    end
+    if JITSupport.supported?
+      assert_in_out_err(%w(--version --jit)) do |r, e|
+        assert_match(VERSION_PATTERN_WITH_JIT, r[0])
+        if RubyVM::MJIT.enabled?
+          assert_equal(RUBY_DESCRIPTION, r[0])
+        else
+          assert_equal(EnvUtil.invoke_ruby(['--jit', '-e', 'print RUBY_DESCRIPTION'], '', true).first, r[0])
+        end
+        assert_equal([], e)
+      end
     end
   end
 
@@ -184,6 +210,10 @@ class TestRubyOptions < Test::Unit::TestCase
     assert_in_out_err(%w(-0141 -e) + ["print gets"], "foo\nbar\0baz", %w(foo ba), [])
 
     assert_in_out_err(%w(-0e) + ["print gets"], "foo\nbar\0baz", %W(foo bar\0), [])
+
+    assert_in_out_err(%w(-00 -e) + ["p gets, gets"], "foo\nbar\n\nbaz\nzot\n\n\n", %w("foo\nbar\n\n" "baz\nzot\n\n"), [])
+
+    assert_in_out_err(%w(-00 -e) + ["p gets, gets"], "foo\nbar\n\n\n\nbaz\n", %w("foo\nbar\n\n" "baz\n"), [])
   end
 
   def test_autosplit
@@ -295,13 +325,15 @@ class TestRubyOptions < Test::Unit::TestCase
       @verbose = $VERBOSE
       $VERBOSE = nil
 
-      ENV['PATH'] = File.dirname(t.path)
+      path, name = File.split(t.path)
 
-      assert_in_out_err(%w(-S) + [File.basename(t.path)], "", %w(1), [])
+      ENV['PATH'] = (path_orig && RbConfig::CONFIG['LIBPATHENV'] == 'PATH') ?
+          [path, path_orig].join(File::PATH_SEPARATOR) : path
+      assert_in_out_err(%w(-S) + [name], "", %w(1), [])
+      ENV['PATH'] = path_orig
 
-      ENV['RUBYPATH'] = File.dirname(t.path)
-
-      assert_in_out_err(%w(-S) + [File.basename(t.path)], "", %w(1), [])
+      ENV['RUBYPATH'] = path
+      assert_in_out_err(%w(-S) + [name], "", %w(1), [])
     }
 
   ensure
@@ -325,7 +357,7 @@ class TestRubyOptions < Test::Unit::TestCase
     assert_in_out_err([], "#! /test_r_u_b_y_test_r_u_b_y_options_foobarbazqux -foo -bar\r\np 1\r\n",
                       [], /: no Ruby script found in input/)
 
-    warning = /mswin|mingw/ =~ RUBY_PLATFORM ? [] : /shebang line ends with \\r/
+    warning = /mswin|mingw/ =~ RUBY_PLATFORM ? [] : /shebang line ending with \\r/
     assert_in_out_err([{'RUBYOPT' => nil}], "#!ruby -KU -Eutf-8\r\np \"\u3042\"\r\n",
                       ["\"\u3042\""], warning,
                       encoding: Encoding::UTF_8)
@@ -335,6 +367,23 @@ class TestRubyOptions < Test::Unit::TestCase
                       %w[4], [], bug4118)
     assert_in_out_err(%w[-x], "#!/bin/sh\n""#!shebang\n""#!ruby\n""puts __LINE__\n",
                       %w[4], [], bug4118)
+
+    assert_ruby_status(%w[], "#! ruby -- /", '[ruby-core:82267] [Bug #13786]')
+  end
+
+  def test_flag_in_shebang
+    Tempfile.create(%w"pflag .rb") do |script|
+      code = "#!ruby -p"
+      script.puts(code)
+      script.close
+      assert_in_out_err([script.path, script.path], '', [code])
+    end
+    Tempfile.create(%w"sflag .rb") do |script|
+      script.puts("#!ruby -s")
+      script.puts("p $abc")
+      script.close
+      assert_in_out_err([script.path, "-abc=foo"], '', ['"foo"'])
+    end
   end
 
   def test_sflag
@@ -359,7 +408,7 @@ class TestRubyOptions < Test::Unit::TestCase
       t.puts "  end"
       t.puts "end"
       t.flush
-      warning = ' warning: found = in conditional, should be =='
+      warning = ' warning: found `= literal\' in conditional, should be =='
       err = ["#{t.path}:1:#{warning}",
              "#{t.path}:4:#{warning}",
             ]
@@ -396,10 +445,18 @@ class TestRubyOptions < Test::Unit::TestCase
           "begin", "if false", "for _ in []", "while false",
           "def foo", "class X", "module M",
           ["-> do", "end"], ["-> {", "}"],
+          ["if false;", "else ; end"],
+          ["if false;", "elsif false ; end"],
+          ["begin", "rescue ; end"],
+          ["begin rescue", "else ; end"],
+          ["begin", "ensure ; end"],
+          ["  case nil", "when true; end"],
+          ["case nil; when true", "end"],
         ].each do
           |b, e = 'end'|
           src = ["#{b}\n", " #{e}\n"]
-          k = b[/\A\S+/]
+          k = b[/\A\s*(\S+)/, 1]
+          e = e[/\A\s*(\S+)/, 1]
 
           a.for("no directives with #{b}") do
             err = ["#{t.path}:2: warning: mismatched indentations at '#{e}' with '#{k}' at 1"]
@@ -441,6 +498,17 @@ class TestRubyOptions < Test::Unit::TestCase
             t.flush
             assert_in_out_err(["-w", t.path], "", [], [], '[ruby-core:25442]')
           end
+
+          a.for("BOM with #{b}") do
+            err = ["#{t.path}:2: warning: mismatched indentations at '#{e}' with '#{k}' at 1"]
+            t.rewind
+            t.truncate(0)
+            t.print "\u{feff}"
+            t.puts src
+            t.flush
+            assert_in_out_err(["-w", t.path], "", [], err)
+            assert_in_out_err(["-wr", t.path, "-e", ""], "", [], err)
+          end
         end
       end
     end
@@ -448,8 +516,9 @@ class TestRubyOptions < Test::Unit::TestCase
 
   def test_notfound
     notexist = "./notexist.rb"
-    rubybin = EnvUtil.rubybin.dup
-    rubybin.gsub!(%r(/), '\\') if /mswin|mingw/ =~ RUBY_PLATFORM
+    dir, *rubybin = RbConfig::CONFIG.values_at('bindir', 'RUBY_INSTALL_NAME', 'EXEEXT')
+    rubybin = "#{dir}/#{rubybin.join('')}"
+    rubybin.tr!('/', '\\') if /mswin|mingw/ =~ RUBY_PLATFORM
     rubybin = Regexp.quote(rubybin)
     pat = Regexp.quote(notexist)
     bug1573 = '[ruby-core:23717]'
@@ -528,6 +597,13 @@ class TestRubyOptions < Test::Unit::TestCase
   def test_setproctitle
     skip "platform dependent feature" unless defined?(PSCMD) and PSCMD
 
+    assert_separately([], "#{<<-"{#"}\n#{<<-'};'}")
+    {#
+      assert_raise(ArgumentError) do
+        Process.setproctitle("hello\0")
+      end
+    };
+
     with_tmpchdir do
       write_file("test-script", "$_0 = $0.dup; Process.setproctitle('hello world'); $0 == $_0 or Process.setproctitle('$0 changed!'); sleep 60")
 
@@ -587,6 +663,11 @@ class TestRubyOptions < Test::Unit::TestCase
         (?:.*\n)?
         For\sdetails:\shttp:\/\/.*\.ruby-lang\.org/.*\n
         \n
+        (?:
+          \[IMPORTANT\]\n
+          (?:.+\n)+
+          \n
+        )?
       )x,
     ]
     ExpectedStderrList << additional if additional
@@ -880,7 +961,7 @@ class TestRubyOptions < Test::Unit::TestCase
 
   def test_frozen_string_literal_debug
     with_debug_pat = /created at/
-    wo_debug_pat = /can\'t modify frozen String \(RuntimeError\)\n\z/
+    wo_debug_pat = /can\'t modify frozen String \(FrozenError\)\n\z/
     frozen = [
       ["--enable-frozen-string-literal", true],
       ["--disable-frozen-string-literal", false],
@@ -896,10 +977,52 @@ class TestRubyOptions < Test::Unit::TestCase
     frozen.product(debugs) do |(opt1, freeze), (opt2, debug)|
       opt = opts + [opt1, opt2].compact
       err = !freeze ? [] : debug ? with_debug_pat : wo_debug_pat
-      assert_in_out_err(opt, '"foo" << "bar"', [], err)
-      if freeze
-        assert_in_out_err(opt, '"foo#{123}bar" << "bar"', [], err)
+      [
+        ['"foo" << "bar"', err],
+        ['"foo#{123}bar" << "bar"', err],
+        ['+"foo#{123}bar" << "bar"', []],
+        ['-"foo#{123}bar" << "bar"', freeze && debug ? with_debug_pat : wo_debug_pat],
+      ].each do |code, expected|
+        assert_in_out_err(opt, code, [], expected, [opt, code])
       end
     end
+  end
+
+  def test___dir__encoding
+    lang = {"LC_ALL"=>ENV["LC_ALL"]||ENV["LANG"]}
+    with_tmpchdir do
+      testdir = "\u30c6\u30b9\u30c8"
+      Dir.mkdir(testdir)
+      Dir.chdir(testdir) do
+        open("test.rb", "w") do |f|
+          f.puts <<-END
+            if __FILE__.encoding == __dir__.encoding
+              p true
+            else
+              puts "__FILE__: \#{__FILE__.encoding}, __dir__: \#{__dir__.encoding}"
+            end
+          END
+        end
+        r, = EnvUtil.invoke_ruby([lang, "test.rb"], "", true)
+        assert_equal "true", r.chomp, "the encoding of __FILE__ and __dir__ should be same"
+      end
+    end
+  end
+
+  def test_cwd_encoding
+    with_tmpchdir do
+      testdir = "\u30c6\u30b9\u30c8"
+      Dir.mkdir(testdir)
+      Dir.chdir(testdir) do
+        File.write("a.rb", "require './b'")
+        File.write("b.rb", "puts 'ok'")
+        assert_ruby_status([{"RUBYLIB"=>"."}, *%w[-E cp932:utf-8 a.rb]])
+      end
+    end
+  end
+
+  def test_null_script
+    skip "#{IO::NULL} is not a character device" unless File.chardev?(IO::NULL)
+    assert_in_out_err([IO::NULL], success: true)
   end
 end

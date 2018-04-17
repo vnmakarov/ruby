@@ -16,8 +16,8 @@ Rubyはテキスト処理関係の能力などに優れ，Perlと同じくらい
 *   イテレータとクロージャ
 *   ガーベージコレクタ
 *   ダイナミックローディング (アーキテクチャによる)
-*   移植性が高い．多くのUnix-like/POSIX互換プラットフォーム上で動くだけでなく，Windows， Mac OS
-    X，Haikuなどの上でも動く cf.
+*   移植性が高い．多くのUnix-like/POSIX互換プラットフォーム上で動くだけでなく，Windows， macOS，
+    Haikuなどの上でも動く cf.
     https://bugs.ruby-lang.org/projects/ruby-trunk/wiki/SupportedPlatformsJa
 
 
@@ -78,7 +78,7 @@ Ruby拡張モジュールについて話し合うruby-extメーリングリス�
 
 以下の手順で行ってください．
 
-1.  もし `configure` ファイルが見つからない，もしくは `configure.in` より古いようなら， `autoconf` を実行して
+1.  もし `configure` ファイルが見つからない，もしくは `configure.ac` より古いようなら， `autoconf` を実行して
     新しく `configure` を生成する
 
 2.  `configure` を実行して `Makefile` などを生成する

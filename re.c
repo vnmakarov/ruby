@@ -9,9 +9,10 @@
 
 **********************************************************************/
 
-#include "internal.h"
+#include "ruby/encoding.h"
 #include "ruby/re.h"
 #include "ruby/util.h"
+#include "internal.h"
 #include "regint.h"
 #include "encindex.h"
 #include <ctype.h>
@@ -88,14 +89,6 @@ rb_memcicmp(const void *x, const void *y, long len)
     return 0;
 }
 
-#undef rb_memcmp
-
-int
-rb_memcmp(const void *p1, const void *p2, long len)
-{
-    return memcmp(p1, p2, len);
-}
-
 #ifdef HAVE_MEMMEM
 static inline long
 rb_memsearch_ss(const unsigned char *xs, long m, const unsigned char *ys, long n)
@@ -113,13 +106,7 @@ rb_memsearch_ss(const unsigned char *xs, long m, const unsigned char *ys, long n
 {
     const unsigned char *x = xs, *xe = xs + m;
     const unsigned char *y = ys, *ye = ys + n;
-#ifndef VALUE_MAX
-# if SIZEOF_VALUE == 8
-#  define VALUE_MAX 0xFFFFFFFFFFFFFFFFULL
-# elif SIZEOF_VALUE == 4
-#  define VALUE_MAX 0xFFFFFFFFUL
-# endif
-#endif
+#define VALUE_MAX ((VALUE)~(VALUE)0)
     VALUE hx, hy, mask = VALUE_MAX >> ((SIZEOF_VALUE - m) * CHAR_BIT);
 
     if (m > SIZEOF_VALUE)
@@ -364,7 +351,7 @@ rb_reg_check(VALUE re)
 
 static void
 rb_reg_expr_str(VALUE str, const char *s, long len,
-	rb_encoding *enc, rb_encoding *resenc)
+		rb_encoding *enc, rb_encoding *resenc, int term)
 {
     const char *p, *pend;
     int cr = ENC_CODERANGE_UNKNOWN;
@@ -385,7 +372,7 @@ rb_reg_expr_str(VALUE str, const char *s, long len,
 		    break;
 		}
 	    }
-	    else if (c != '/' && rb_enc_isprint(c, enc)) {
+	    else if (c != term && rb_enc_isprint(c, enc)) {
 		p += clen;
 	    }
 	    else {
@@ -412,11 +399,6 @@ rb_reg_expr_str(VALUE str, const char *s, long len,
 		p += n;
 		continue;
 	    }
-	    else if (c == '/') {
-		char c = '\\';
-		rb_str_buf_cat(str, &c, 1);
-		rb_str_buf_cat(str, p, clen);
-	    }
 	    else if (c == -1) {
 		clen = rb_enc_precise_mbclen(p, pend, enc);
 		if (!MBCLEN_CHARFOUND_P(clen)) {
@@ -432,6 +414,11 @@ rb_reg_expr_str(VALUE str, const char *s, long len,
 		    clen = MBCLEN_CHARFOUND_LEN(clen);
 		    rb_str_buf_cat(str, p, clen);
 		}
+	    }
+	    else if (c == term) {
+		char c = '\\';
+		rb_str_buf_cat(str, &c, 1);
+		rb_str_buf_cat(str, p, clen);
 	    }
 	    else if (rb_enc_isprint(c, enc)) {
 		rb_str_buf_cat(str, p, clen);
@@ -465,7 +452,7 @@ rb_reg_desc(const char *s, long len, VALUE re)
     else {
 	rb_enc_associate(str, rb_usascii_encoding());
     }
-    rb_reg_expr_str(str, s, len, enc, resenc);
+    rb_reg_expr_str(str, s, len, enc, resenc, '/');
     rb_str_buf_cat2(str, "/");
     if (re) {
 	char opts[4];
@@ -526,6 +513,7 @@ rb_reg_inspect(VALUE re)
     return rb_reg_desc(RREGEXP_SRC_PTR(re), RREGEXP_SRC_LEN(re), re);
 }
 
+static VALUE rb_reg_str_with_term(VALUE re, int term);
 
 /*
  *  call-seq:
@@ -549,6 +537,12 @@ rb_reg_inspect(VALUE re)
 
 static VALUE
 rb_reg_to_s(VALUE re)
+{
+    return rb_reg_str_with_term(re, '/');
+}
+
+static VALUE
+rb_reg_str_with_term(VALUE re, int term)
 {
     int options, opt;
     const int embeddable = ONIG_OPTION_MULTILINE|ONIG_OPTION_IGNORECASE|ONIG_OPTION_EXTEND;
@@ -606,7 +600,7 @@ rb_reg_to_s(VALUE re)
 
 	    ++ptr;
 	    len -= 2;
-            err = onig_new(&rp, ptr, ptr + len, ONIG_OPTION_DEFAULT,
+            err = onig_new(&rp, ptr, ptr + len, options,
 			   enc, OnigDefaultSyntax, NULL);
 	    onig_free(rp);
 	    ruby_verbose = verbose;
@@ -628,7 +622,7 @@ rb_reg_to_s(VALUE re)
 
     rb_str_buf_cat2(str, ":");
     if (rb_enc_asciicompat(enc)) {
-	rb_reg_expr_str(str, (char*)ptr, len, enc, NULL);
+	rb_reg_expr_str(str, (char*)ptr, len, enc, NULL, term);
 	rb_str_buf_cat2(str, ")");
     }
     else {
@@ -648,7 +642,7 @@ rb_reg_to_s(VALUE re)
 	memcpy(paren, s, n);
 	rb_str_resize(str, RSTRING_LEN(str) - n);
 
-	rb_reg_expr_str(str, (char*)ptr, len, enc, NULL);
+	rb_reg_expr_str(str, (char*)ptr, len, enc, NULL, term);
 	rb_str_buf_cat(str, paren, n);
     }
     rb_enc_copy(str, re);
@@ -656,6 +650,8 @@ rb_reg_to_s(VALUE re)
     OBJ_INFECT(str, re);
     return str;
 }
+
+NORETURN(static void rb_reg_raise(const char *s, long len, const char *err, VALUE re));
 
 static void
 rb_reg_raise(const char *s, long len, const char *err, VALUE re)
@@ -675,12 +671,14 @@ rb_enc_reg_error_desc(const char *s, long len, rb_encoding *enc, int options, co
 
     rb_enc_associate(desc, enc);
     rb_str_buf_cat2(desc, ": /");
-    rb_reg_expr_str(desc, s, len, enc, resenc);
+    rb_reg_expr_str(desc, s, len, enc, resenc, '/');
     opts[0] = '/';
     option_to_str(opts + 1, options);
     rb_str_buf_cat2(desc, opts);
     return rb_exc_new3(rb_eRegexpError, desc);
 }
+
+NORETURN(static void rb_enc_reg_raise(const char *s, long len, rb_encoding *enc, int options, const char *err));
 
 static void
 rb_enc_reg_raise(const char *s, long len, rb_encoding *enc, int options, const char *err)
@@ -694,6 +692,8 @@ rb_reg_error_desc(VALUE str, int options, const char *err)
     return rb_enc_reg_error_desc(RSTRING_PTR(str), RSTRING_LEN(str),
 				 rb_enc_get(str), options, err);
 }
+
+NORETURN(static void rb_reg_raise_str(VALUE str, int options, const char *err));
 
 static void
 rb_reg_raise_str(VALUE str, int options, const char *err)
@@ -828,9 +828,9 @@ reg_named_captures_iter(const OnigUChar *name, const OnigUChar *name_end,
 static VALUE
 rb_reg_named_captures(VALUE re)
 {
-    VALUE hash = rb_hash_new();
-    rb_reg_check(re);
-    onig_foreach_name(RREGEXP_PTR(re), reg_named_captures_iter, (void*)hash);
+    regex_t *reg = (rb_reg_check(re), RREGEXP_PTR(re));
+    VALUE hash = rb_hash_new_with_size(onig_number_of_names(reg));
+    onig_foreach_name(reg, reg_named_captures_iter, (void*)hash);
     return hash;
 }
 
@@ -1333,14 +1333,14 @@ rb_backref_set_string(VALUE string, long pos, long len)
  *      r.fixed_encoding?                               #=> true
  *      r.encoding                                      #=> #<Encoding:UTF-8>
  *      r =~ "\u{6666} a"                               #=> 2
- *      r =~ "\xa1\xa2".force_encoding("euc-jp")        #=> ArgumentError
+ *      r =~ "\xa1\xa2".force_encoding("euc-jp")        #=> Encoding::CompatibilityError
  *      r =~ "abc".force_encoding("euc-jp")             #=> 0
  *
  *      r = /\u{6666}/
  *      r.fixed_encoding?                               #=> true
  *      r.encoding                                      #=> #<Encoding:UTF-8>
  *      r =~ "\u{6666} a"                               #=> 0
- *      r =~ "\xa1\xa2".force_encoding("euc-jp")        #=> ArgumentError
+ *      r =~ "\xa1\xa2".force_encoding("euc-jp")        #=> Encoding::CompatibilityError
  *      r =~ "abc".force_encoding("euc-jp")             #=> nil
  */
 
@@ -1357,6 +1357,7 @@ static VALUE
 rb_reg_preprocess(const char *p, const char *end, rb_encoding *enc,
         rb_encoding **fixed_enc, onig_errmsg_buffer err);
 
+NORETURN(static void reg_enc_error(VALUE re, VALUE str));
 
 static void
 reg_enc_error(VALUE re, VALUE str)
@@ -1410,7 +1411,7 @@ rb_reg_prepare_enc(VALUE re, VALUE str, int warn)
     else if (warn && (RBASIC(re)->flags & REG_ENCODING_NONE) &&
 	enc != rb_ascii8bit_encoding() &&
 	cr != ENC_CODERANGE_7BIT) {
-	rb_warn("regexp match /.../n against to %s string",
+	rb_warn("historical binary regexp match /.../n against %s string",
 		rb_enc_name(enc));
     }
     return enc;
@@ -1586,6 +1587,83 @@ long
 rb_reg_search(VALUE re, VALUE str, long pos, int reverse)
 {
     return rb_reg_search0(re, str, pos, reverse, 1);
+}
+
+bool
+rb_reg_start_with_p(VALUE re, VALUE str)
+{
+    long result;
+    VALUE match;
+    struct re_registers regi, *regs = &regi;
+    regex_t *reg;
+    int tmpreg;
+    onig_errmsg_buffer err = "";
+
+    reg = rb_reg_prepare_re0(re, str, err);
+    tmpreg = reg != RREGEXP_PTR(re);
+    if (!tmpreg) RREGEXP(re)->usecnt++;
+
+    match = rb_backref_get();
+    if (!NIL_P(match)) {
+	if (FL_TEST(match, MATCH_BUSY)) {
+	    match = Qnil;
+	}
+	else {
+	    regs = RMATCH_REGS(match);
+	}
+    }
+    if (NIL_P(match)) {
+	MEMZERO(regs, struct re_registers, 1);
+    }
+    result = onig_match(reg,
+	    (UChar*)(RSTRING_PTR(str)),
+	    ((UChar*)(RSTRING_PTR(str)) + RSTRING_LEN(str)),
+	    (UChar*)(RSTRING_PTR(str)),
+	    regs, ONIG_OPTION_NONE);
+    if (!tmpreg) RREGEXP(re)->usecnt--;
+    if (tmpreg) {
+	if (RREGEXP(re)->usecnt) {
+	    onig_free(reg);
+	}
+	else {
+	    onig_free(RREGEXP_PTR(re));
+	    RREGEXP_PTR(re) = reg;
+	}
+    }
+    if (result < 0) {
+	if (regs == &regi)
+	    onig_region_free(regs, 0);
+	if (result == ONIG_MISMATCH) {
+	    rb_backref_set(Qnil);
+	    return false;
+	}
+	else {
+	    onig_error_code_to_str((UChar*)err, (int)result);
+	    rb_reg_raise(RREGEXP_SRC_PTR(re), RREGEXP_SRC_LEN(re), err, re);
+	}
+    }
+
+    if (NIL_P(match)) {
+	int err;
+	match = match_alloc(rb_cMatch);
+	err = rb_reg_region_copy(RMATCH_REGS(match), regs);
+	onig_region_free(regs, 0);
+	if (err) rb_memerror();
+    }
+    else {
+	FL_UNSET(match, FL_TAINT);
+    }
+
+    RMATCH(match)->str = rb_str_new4(str);
+    OBJ_INFECT(match, str);
+
+    RMATCH(match)->regexp = re;
+    RMATCH(match)->rmatch->char_offset_updated = 0;
+    rb_backref_set(match);
+
+    OBJ_INFECT(match, re);
+
+    return true;
 }
 
 VALUE
@@ -2466,11 +2544,13 @@ unescape_nonascii(const char *p, const char *end, rb_encoding *enc,
     while (p < end) {
         int chlen = rb_enc_precise_mbclen(p, end, enc);
         if (!MBCLEN_CHARFOUND_P(chlen)) {
+          invalid_multibyte:
             errcpy(err, "invalid multibyte character");
             return -1;
         }
         chlen = MBCLEN_CHARFOUND_LEN(chlen);
         if (1 < chlen || (*p & 0x80)) {
+          multibyte:
             rb_str_buf_cat(buf, p, chlen);
             p += chlen;
             if (*encp == 0)
@@ -2487,6 +2567,16 @@ unescape_nonascii(const char *p, const char *end, rb_encoding *enc,
             if (p == end) {
                 errcpy(err, "too short escape sequence");
                 return -1;
+            }
+            chlen = rb_enc_precise_mbclen(p, end, enc);
+            if (!MBCLEN_CHARFOUND_P(chlen)) {
+                goto invalid_multibyte;
+            }
+            if ((chlen = MBCLEN_CHARFOUND_LEN(chlen)) > 1) {
+		/* include the previous backslash */
+                --p;
+                ++chlen;
+                goto multibyte;
             }
             switch (c = *p++) {
               case '1': case '2': case '3':
@@ -2820,7 +2910,7 @@ rb_reg_init_str_enc(VALUE re, VALUE s, rb_encoding *enc, int options)
     return re;
 }
 
-VALUE
+MJIT_FUNC_EXPORTED VALUE
 rb_reg_new_ary(VALUE ary, int opt)
 {
     return rb_reg_new_str(rb_reg_preprocess_dregexp(ary, opt), opt);
@@ -3087,9 +3177,9 @@ rb_reg_match(VALUE re, VALUE str)
  *
  *     a = "HELLO"
  *     case a
- *     when /^[a-z]*$/; print "Lower case\n"
- *     when /^[A-Z]*$/; print "Upper case\n"
- *     else;            print "Mixed case\n"
+ *     when /\A[a-z]*\z/; print "Lower case\n"
+ *     when /\A[A-Z]*\z/; print "Upper case\n"
+ *     else;              print "Mixed case\n"
  *     end
  *     #=> "Upper case"
  *
@@ -3568,7 +3658,7 @@ rb_reg_s_union(VALUE self, VALUE args0)
                 else {
                     has_asciionly = 1;
                 }
-		v = rb_reg_to_s(v);
+		v = rb_reg_str_with_term(v, -1);
 	    }
 	    else {
                 rb_encoding *enc;

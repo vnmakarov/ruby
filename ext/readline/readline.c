@@ -92,7 +92,8 @@ static char **readline_attempted_completion_function(const char *text,
                                                      int start, int end);
 
 #define OutputStringValue(str) do {\
-    SafeStringValue(str);\
+    StringValueCStr(str);\
+    rb_check_safe_obj(str);\
     (str) = rb_str_conv_enc((str), rb_enc_get(str), rb_locale_encoding());\
 } while (0)\
 
@@ -164,24 +165,25 @@ getc_body(struct getc_struct *p)
 #if defined(_WIN32)
     {
         INPUT_RECORD ir;
-        int n;
+        DWORD n;
         static int prior_key = '0';
         for (;;) {
+            HANDLE h;
             if (prior_key > 0xff) {
                 prior_key = rl_getc(p->input);
                 return prior_key;
             }
-            if (PeekConsoleInput((HANDLE)_get_osfhandle(p->fd), &ir, 1, &n)) {
+            h = (HANDLE)_get_osfhandle(p->fd);
+            if (PeekConsoleInput(h, &ir, 1, &n)) {
                 if (n == 1) {
                     if (ir.EventType == KEY_EVENT && ir.Event.KeyEvent.bKeyDown) {
                         prior_key = rl_getc(p->input);
                         return prior_key;
                     } else {
-                        ReadConsoleInput((HANDLE)_get_osfhandle(p->fd), &ir, 1, &n);
+                        ReadConsoleInput(h, &ir, 1, &n);
                     }
                 } else {
-                    HANDLE h = (HANDLE)_get_osfhandle(p->fd);
-                    rb_w32_wait_events(&h, 1, INFINITE);
+                    rb_w32_wait_events_blocking(&h, 1, INFINITE);
                 }
             } else {
                 break;
@@ -1994,8 +1996,8 @@ Init_readline(void)
                                readline_s_get_special_prefixes, 0);
 
 #if USE_INSERT_IGNORE_ESCAPE
-    CONST_ID(id_orig_prompt, "orig_prompt");
-    CONST_ID(id_last_prompt, "last_prompt");
+    id_orig_prompt = rb_intern("orig_prompt");
+    id_last_prompt = rb_intern("last_prompt");
 #endif
 
     history = rb_obj_alloc(rb_cObject);
@@ -2076,7 +2078,7 @@ Init_readline(void)
 
     rl_attempted_completion_function = readline_attempted_completion_function;
 #if defined(HAVE_RL_PRE_INPUT_HOOK)
-    rl_pre_input_hook = readline_pre_input_hook;
+    rl_pre_input_hook = (rl_hook_func_t *)readline_pre_input_hook;
 #endif
 #if defined HAVE_RL_CHAR_IS_QUOTED_P
     rl_char_is_quoted_p = &readline_char_is_quoted;

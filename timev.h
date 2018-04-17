@@ -6,14 +6,14 @@ PACKED_STRUCT_UNALIGNED(struct vtm {
     VALUE subsecx; /* 0 <= subsecx < TIME_SCALE.  possibly Rational. */
     VALUE utc_offset; /* -3600 as -01:00 for example.  possibly Rational. */
     const char *zone; /* "JST", "EST", "EDT", etc. */
-    uint16_t yday:9; /* 1..366 */
-    uint8_t mon:4; /* 1..12 */
-    uint8_t mday:5; /* 1..31 */
-    uint8_t hour:5; /* 0..23 */
-    uint8_t min:6; /* 0..59 */
-    uint8_t sec:6; /* 0..60 */
-    uint8_t wday:3; /* 0:Sunday, 1:Monday, ..., 6:Saturday 7:init */
-    uint8_t isdst:2; /* 0:StandardTime 1:DayLightSavingTime 3:init */
+    unsigned int yday:9; /* 1..366 */
+    unsigned int mon:4; /* 1..12 */
+    unsigned int mday:5; /* 1..31 */
+    unsigned int hour:5; /* 0..23 */
+    unsigned int min:6; /* 0..59 */
+    unsigned int sec:6; /* 0..60 */
+    unsigned int wday:3; /* 0:Sunday, 1:Monday, ..., 6:Saturday 7:init */
+    unsigned int isdst:2; /* 0:StandardTime 1:DayLightSavingTime 3:init */
 });
 
 #define TIME_SCALE 1000000000

@@ -1,18 +1,15 @@
-class Thread
-  MUTEX_FOR_THREAD_EXCLUSIVE = Thread::Mutex.new # :nodoc:
-  private_constant :MUTEX_FOR_THREAD_EXCLUSIVE
-
+class << Thread
   # call-seq:
   #    Thread.exclusive { block }   => obj
   #
   # Wraps the block in a single, VM-global Mutex.synchronize, returning the
   # value of the block. A thread executing inside the exclusive section will
   # only block other threads which also use the Thread.exclusive mechanism.
-  def self.exclusive
+  def exclusive(&block) end if false
+  mutex = Mutex.new # :nodoc:
+  define_method(:exclusive) do |&block|
     warn "Thread.exclusive is deprecated, use Thread::Mutex", caller
-    MUTEX_FOR_THREAD_EXCLUSIVE.synchronize{
-      yield
-    }
+    mutex.synchronize(&block)
   end
 end
 
@@ -68,9 +65,10 @@ class IO
   # Note that this method is identical to readpartial
   # except the non-blocking flag is set.
   #
-  # By specifying `exception: false`, the options hash allows you to indicate
+  # By specifying a keyword argument _exception_ to +false+, you can indicate
   # that read_nonblock should not raise an IO::WaitReadable exception, but
-  # return the symbol :wait_readable instead.
+  # return the symbol +:wait_readable+ instead. At EOF, it will return nil
+  # instead of raising EOFError.
   def read_nonblock(len, buf = nil, exception: true)
     __read_nonblock(len, buf, exception)
   end
@@ -126,17 +124,31 @@ class IO
   # according to the kind of the IO object.
   # In such cases, write_nonblock raises <code>Errno::EBADF</code>.
   #
-  # By specifying `exception: false`, the options hash allows you to indicate
+  # By specifying a keyword argument _exception_ to +false+, you can indicate
   # that write_nonblock should not raise an IO::WaitWritable exception, but
-  # return the symbol :wait_writable instead.
+  # return the symbol +:wait_writable+ instead.
   def write_nonblock(buf, exception: true)
     __write_nonblock(buf, exception)
   end
 end
 
+# :stopdoc:
 class Binding
   def irb
     require 'irb'
     irb
   end
+
+  # suppress redefinition warning
+  alias irb irb # :nodoc:
+end
+
+module Kernel
+  def pp(*objs)
+    require 'pp'
+    pp(*objs)
+  end
+
+  # suppress redefinition warning
+  alias pp pp # :nodoc:
 end

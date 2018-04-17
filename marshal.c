@@ -13,8 +13,9 @@
 # error too old GCC
 #endif
 
-#include "internal.h"
+#include "ruby/ruby.h"
 #include "ruby/io.h"
+#include "internal.h"
 #include "ruby/st.h"
 #include "ruby/util.h"
 #include "encindex.h"
@@ -1026,7 +1027,7 @@ rb_marshal_dump_limited(VALUE obj, VALUE port, int limit)
     struct dump_arg *arg;
     VALUE wrapper; /* used to avoid memory leak in case of exception */
 
-    wrapper = TypedData_Make_Struct(rb_cData, struct dump_arg, &dump_arg_data, arg);
+    wrapper = TypedData_Make_Struct(0, struct dump_arg, &dump_arg_data, arg);
     arg->dest = 0;
     arg->symbols = st_init_numtable();
     arg->data    = rb_init_identtable();
@@ -1182,6 +1183,8 @@ r_byte(struct load_arg *arg)
     }
     return c;
 }
+
+NORETURN(static void long_toobig(int size));
 
 static void
 long_toobig(int size)
@@ -1675,13 +1678,13 @@ r_object0(struct load_arg *arg, int *ivp, VALUE extmod)
 	    const char *ptr = RSTRING_PTR(str);
 
 	    if (strcmp(ptr, "nan") == 0) {
-		d = NAN;
+		d = nan("");
 	    }
 	    else if (strcmp(ptr, "inf") == 0) {
-		d = INFINITY;
+		d = HUGE_VAL;
 	    }
 	    else if (strcmp(ptr, "-inf") == 0) {
-		d = -INFINITY;
+		d = -HUGE_VAL;
 	    }
 	    else {
 		char *e;
@@ -1772,7 +1775,7 @@ r_object0(struct load_arg *arg, int *ivp, VALUE extmod)
 	{
 	    long len = r_long(arg);
 
-	    v = rb_hash_new();
+	    v = rb_hash_new_with_size(len);
 	    v = r_entry(v, arg);
 	    arg->readable += (len - 1) * 2;
 	    while (len--) {
@@ -1811,17 +1814,30 @@ r_object0(struct load_arg *arg, int *ivp, VALUE extmod)
 	    arg->readable += (len - 1) * 2;
 	    v = r_entry0(v, idx, arg);
 	    values = rb_ary_new2(len);
-	    for (i=0; i<len; i++) {
-		VALUE n = rb_sym2str(RARRAY_AREF(mem, i));
-		slot = r_symbol(arg);
-
-		if (!rb_str_equal(n, slot)) {
-		    rb_raise(rb_eTypeError, "struct %"PRIsVALUE" not compatible (:%"PRIsVALUE" for :%"PRIsVALUE")",
-			     rb_class_name(klass),
-			     slot, n);
+	    {
+		VALUE keywords = Qfalse;
+		if (RTEST(rb_struct_s_keyword_init(klass))) {
+		    keywords = rb_hash_new();
+		    rb_ary_push(values, keywords);
 		}
-                rb_ary_push(values, r_object(arg));
-		arg->readable -= 2;
+
+		for (i=0; i<len; i++) {
+		    VALUE n = rb_sym2str(RARRAY_AREF(mem, i));
+		    slot = r_symbol(arg);
+
+		    if (!rb_str_equal(n, slot)) {
+			rb_raise(rb_eTypeError, "struct %"PRIsVALUE" not compatible (:%"PRIsVALUE" for :%"PRIsVALUE")",
+				 rb_class_name(klass),
+				 slot, n);
+		    }
+		    if (keywords) {
+			rb_hash_aset(keywords, RARRAY_AREF(mem, i), r_object(arg));
+		    }
+		    else {
+			rb_ary_push(values, r_object(arg));
+		    }
+		    arg->readable -= 2;
+		}
 	    }
             rb_struct_initialize(v, values);
             v = r_leave(v, arg);
@@ -2053,7 +2069,7 @@ rb_marshal_load_with_proc(VALUE port, VALUE proc)
     else {
 	io_needed();
     }
-    wrapper = TypedData_Make_Struct(rb_cData, struct load_arg, &load_arg_data, arg);
+    wrapper = TypedData_Make_Struct(0, struct load_arg, &load_arg_data, arg);
     arg->infection = infection;
     arg->src = port;
     arg->offset = 0;
@@ -2240,7 +2256,7 @@ compat_allocator_table(void)
 #undef RUBY_UNTYPED_DATA_WARNING
 #define RUBY_UNTYPED_DATA_WARNING 0
     compat_allocator_tbl_wrapper =
-	Data_Wrap_Struct(rb_cData, mark_marshal_compat_t, 0, compat_allocator_tbl);
+	Data_Wrap_Struct(0, mark_marshal_compat_t, 0, compat_allocator_tbl);
     rb_gc_register_mark_object(compat_allocator_tbl_wrapper);
     return compat_allocator_tbl;
 }

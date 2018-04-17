@@ -12,9 +12,9 @@
 
 **********************************************************************/
 
+#include "ruby/io.h"
 #include "internal.h"
 #include "ruby/debug.h"
-#include "ruby/io.h"
 #include "gc.h"
 #include "node.h"
 #include "vm_core.h"
@@ -105,7 +105,7 @@ static inline const char *
 obj_type(VALUE obj)
 {
     switch (BUILTIN_TYPE(obj)) {
-#define CASE_TYPE(type) case T_##type: return #type; break
+#define CASE_TYPE(type) case T_##type: return #type
 	CASE_TYPE(NONE);
 	CASE_TYPE(NIL);
 	CASE_TYPE(OBJECT);
@@ -192,6 +192,28 @@ dump_append_string_content(struct dump_config *dc, VALUE obj)
     }
 }
 
+static const char *
+imemo_name(int imemo)
+{
+    switch(imemo) {
+#define TYPE_STR(t) case(imemo_##t): return #t
+	TYPE_STR(env);
+	TYPE_STR(cref);
+	TYPE_STR(svar);
+	TYPE_STR(throw_data);
+	TYPE_STR(ifunc);
+	TYPE_STR(memo);
+	TYPE_STR(ment);
+	TYPE_STR(iseq);
+	TYPE_STR(alloc);
+	TYPE_STR(ast);
+	TYPE_STR(parser_strterm);
+      default:
+	return "unknown";
+#undef TYPE_STR
+    }
+}
+
 static void
 dump_object(VALUE obj, struct dump_config *dc)
 {
@@ -222,11 +244,11 @@ dump_object(VALUE obj, struct dump_config *dc)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_NONE:
-	  dump_append(dc, "}\n");
-	  return;
+	dump_append(dc, "}\n");
+	return;
 
-      case T_NODE:
-	dump_append(dc, ", \"node_type\":\"%s\"", ruby_node_name(nd_type(obj)));
+      case T_IMEMO:
+	dump_append(dc, ", \"imemo_type\":\"%s\"", imemo_name(imemo_type(obj)));
 	break;
 
       case T_SYMBOL:
@@ -476,6 +498,7 @@ objspace_dump_all(int argc, VALUE *argv, VALUE os)
 void
 Init_objspace_dump(VALUE rb_mObjSpace)
 {
+#undef rb_intern
 #if 0
     rb_mObjSpace = rb_define_module("ObjectSpace"); /* let rdoc know */
 #endif

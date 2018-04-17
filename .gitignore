@@ -13,6 +13,7 @@
 *.log
 *.o
 *.obj
+*.old
 *.orig
 *.pdb
 *.rej
@@ -25,17 +26,21 @@
 .*.list
 .*.time
 .DS_Store
+.bundle
 .ccmalloc
 .ext
 .pc
 .ppack
 .svn
 Makefile
-Makefile.old
 cygruby*.def
 extconf.h
 y.output
 y.tab.c
+*.gcda
+*.gcno
+*.gcov
+lcov*.info
 
 # /
 /*-fake.rb
@@ -46,12 +51,8 @@ y.tab.c
 /*.rc
 /*_prelude.c
 /COPYING.LIB
-/ChangeLog-*
-/ChangeLog.pre-alpha
-/ChangeLog.pre1_1
 /Doxyfile
 /GNUmakefile
-/GNUmakefile.old
 /README.atheos
 /README.fat-patch
 /README.v6
@@ -82,6 +83,9 @@ y.tab.c
 /goruby
 /id.[ch]
 /largefile.h
+/lcov-c-out
+/lcov-rb-out
+/lcov-out
 /lex.c
 /libruby*.*
 /miniprelude.c
@@ -97,6 +101,7 @@ y.tab.c
 /ppack
 /prelude.c
 /preview
+/probes.dmyh
 /probes.h
 /rbconfig.rb
 /rename2.h
@@ -108,8 +113,10 @@ y.tab.c
 /ruby-runner
 /ruby-runner.h
 /ruby-man.rd.gz
+/run.gdb
 /sizes.c
 /test.rb
+/test-coverage.dat
 /tmp
 /transdb.h
 /uncommon.mk
@@ -119,6 +126,7 @@ y.tab.c
 /yasmdata.rb
 
 # /benchmark/
+/benchmark/bm_require.data
 /benchmark/bmx_*.rb
 /benchmark/fasta.output.*
 /benchmark/wc.input
@@ -126,7 +134,8 @@ y.tab.c
 /enc/*.def
 /enc/*.exp
 /enc/*.lib
-/enc/unicode/data/*/*.txt
+/enc/jis/props.h
+/enc/unicode/data
 
 # /enc/trans/
 /enc/trans/*.c
@@ -135,16 +144,19 @@ y.tab.c
 /enc/trans/*.lib
 /enc/trans/.time
 
+# /exe/
+/exe/ruby
+/exe/.time
+
 # /ext/
 /ext/extinit.c
+/ext/configure-ext.mk
+/ext/*/exts.mk
 
 # /ext/-test-/win32/dln/
+/ext/-test-/win32/dln/dlntest.dll
 /ext/-test-/win32/dln/dlntest.exp
 /ext/-test-/win32/dln/dlntest.lib
-
-# /ext/dl/callback/
-/ext/dl/callback/callback-*.c
-/ext/dl/callback/callback.c
 
 # /ext/etc/
 /ext/etc/constdefs.h
@@ -154,6 +166,7 @@ y.tab.c
 
 # /ext/rbconfig/
 /ext/rbconfig/sizeof/sizes.c
+/ext/rbconfig/sizeof/limits.c
 
 # /ext/ripper/
 /ext/ripper/eventids1.c
@@ -169,11 +182,11 @@ y.tab.c
 
 # /gems
 /gems/*.gem
+/gems/src
 /gems/*-*
 
-# /spec/
-/spec/mspec
-/spec/rubyspec
+# /spec/bundler
+/.rspec_status
 
 # /tool/
 /tool/config.guess
@@ -182,3 +195,8 @@ y.tab.c
 # /win32/
 /win32/*.ico
 /win32/.time
+
+# MJIT
+/rb_mjit_header.h
+/mjit_config.h
+/include/ruby-*/*/rb_mjit_min_header-*.h

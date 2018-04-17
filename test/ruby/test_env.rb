@@ -122,12 +122,16 @@ class TestEnv < Test::Unit::TestCase
     assert_equal("foo", ENV.fetch("test"))
     ENV.delete("test")
     feature8649 = '[ruby-core:56062] [Feature #8649]'
-    assert_raise_with_message(KeyError, 'key not found: "test"', feature8649) do
+    e = assert_raise_with_message(KeyError, 'key not found: "test"', feature8649) do
       ENV.fetch("test")
     end
+    assert_same(ENV, e.receiver)
+    assert_equal("test", e.key)
     assert_equal("foo", ENV.fetch("test", "foo"))
     assert_equal("bar", ENV.fetch("test") { "bar" })
-    assert_equal("bar", ENV.fetch("test", "foo") { "bar" })
+    EnvUtil.suppress_warning do
+      assert_equal("bar", ENV.fetch("test", "foo") { "bar" })
+    end
     assert_invalid_env {|v| ENV.fetch(v)}
     assert_nothing_raised { ENV.fetch(PATH_ENV, "foo") }
     ENV[PATH_ENV] = ""
@@ -218,6 +222,18 @@ class TestEnv < Test::Unit::TestCase
     assert_nil(ENV.select! {|k, v| IGNORE_CASE ? k.upcase != "TEST" : k != "test" })
   end
 
+  def test_filter_bang
+    h1 = {}
+    ENV.each_pair {|k, v| h1[k] = v }
+    ENV["test"] = "foo"
+    ENV.filter! {|k, v| IGNORE_CASE ? k.upcase != "TEST" : k != "test" }
+    h2 = {}
+    ENV.each_pair {|k, v| h2[k] = v }
+    assert_equal(h1, h2)
+
+    assert_nil(ENV.filter! {|k, v| IGNORE_CASE ? k.upcase != "TEST" : k != "test" })
+  end
+
   def test_keep_if
     h1 = {}
     ENV.each_pair {|k, v| h1[k] = v }
@@ -238,6 +254,21 @@ class TestEnv < Test::Unit::TestCase
   def test_select
     ENV["test"] = "foo"
     h = ENV.select {|k| IGNORE_CASE ? k.upcase == "TEST" : k == "test" }
+    assert_equal(1, h.size)
+    k = h.keys.first
+    v = h.values.first
+    if IGNORE_CASE
+      assert_equal("TEST", k.upcase)
+      assert_equal("FOO", v.upcase)
+    else
+      assert_equal("test", k)
+      assert_equal("foo", v)
+    end
+  end
+
+  def test_filter
+    ENV["test"] = "foo"
+    h = ENV.filter {|k| IGNORE_CASE ? k.upcase == "TEST" : k == "test" }
     assert_equal(1, h.size)
     k = h.keys.first
     v = h.values.first
@@ -427,7 +458,7 @@ class TestEnv < Test::Unit::TestCase
   if /mswin|mingw/ =~ RUBY_PLATFORM
     def test_win32_blocksize
       keys = []
-      len = 32767 - ENV.to_a.flatten.inject(0) {|r,e| r + e.bytesize + 1}
+      len = 32767 - ENV.to_a.flatten.inject(1) {|r,e| r + e.bytesize + 1}
       val = "bar" * 1000
       key = nil
       while (len -= val.size + (key="foo#{len}").size + 2) > 0

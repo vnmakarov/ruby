@@ -258,6 +258,32 @@ module WEBrick
     end
 
     ##
+    # Prepares the HTTPRequest object for use as the
+    # source for IO.copy_stream
+
+    def body_reader
+      @body_tmp = []
+      @body_rd = Fiber.new do
+        body do |buf|
+          @body_tmp << buf
+          Fiber.yield
+        end
+      end
+      @body_rd.resume # grab the first chunk and yield
+      self
+    end
+
+    # for IO.copy_stream.  Note: we may return a larger string than +size+
+    # here; but IO.copy_stream does not care.
+    def readpartial(size, buf = ''.b) # :nodoc
+      res = @body_tmp.shift or raise EOFError, 'end of file reached'
+      buf.replace(res)
+      res.clear
+      @body_rd.resume # get more chunks
+      buf
+    end
+
+    ##
     # Request query as a Hash
 
     def query
@@ -414,9 +440,13 @@ module WEBrick
 
     MAX_URI_LENGTH = 2083 # :nodoc:
 
+    # same as Mongrel, Thin and Puma
+    MAX_HEADER_LENGTH = (112 * 1024) # :nodoc:
+
     def read_request_line(socket)
       @request_line = read_line(socket, MAX_URI_LENGTH) if socket
-      if @request_line.bytesize >= MAX_URI_LENGTH and @request_line[-1, 1] != LF
+      @request_bytes = @request_line.bytesize
+      if @request_bytes >= MAX_URI_LENGTH and @request_line[-1, 1] != LF
         raise HTTPStatus::RequestURITooLarge
       end
       @request_time = Time.now
@@ -435,6 +465,9 @@ module WEBrick
       if socket
         while line = read_line(socket)
           break if /\A(#{CRLF}|#{LF})\z/om =~ line
+          if (@request_bytes += line.bytesize) > MAX_HEADER_LENGTH
+            raise HTTPStatus::RequestEntityTooLarge, 'headers too large'
+          end
           @raw_header << line
         end
       end
@@ -502,12 +535,16 @@ module WEBrick
     def read_chunked(socket, block)
       chunk_size, = read_chunk_size(socket)
       while chunk_size > 0
-        data = read_data(socket, chunk_size) # read chunk-data
-        if data.nil? || data.bytesize != chunk_size
-          raise BadRequest, "bad chunk data size."
-        end
+        begin
+          sz = [ chunk_size, @buffer_size ].min
+          data = read_data(socket, sz) # read chunk-data
+          if data.nil? || data.bytesize != sz
+            raise HTTPStatus::BadRequest, "bad chunk data size."
+          end
+          block.call(data)
+        end while (chunk_size -= sz) > 0
+
         read_line(socket)                    # skip CRLF
-        block.call(data)
         chunk_size, = read_chunk_size(socket)
       end
       read_header(socket)                    # trailer + CRLF

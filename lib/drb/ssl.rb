@@ -226,13 +226,13 @@ module DRb
     #
     # Raises DRbBadScheme or DRbBadURI if +uri+ is not matching or malformed
     def self.parse_uri(uri) # :nodoc:
-      if uri =~ /^drbssl:\/\/(.*?):(\d+)(\?(.*))?$/
+      if /\Adrbssl:\/\/(.*?):(\d+)(\?(.*))?\z/ =~ uri
         host = $1
         port = $2.to_i
         option = $4
         [host, port, option]
       else
-        raise(DRbBadScheme, uri) unless uri =~ /^drbssl:/
+        raise(DRbBadScheme, uri) unless uri.start_with?('drbssl:')
         raise(DRbBadURI, 'can\'t parse uri:' + uri)
       end
     end
@@ -336,7 +336,7 @@ module DRb
       end
       self.class.new(uri, ssl, @config, true)
       rescue OpenSSL::SSL::SSLError
-        warn("#{__FILE__}:#{__LINE__}: warning: #{$!.message} (#{$!.class})") if @config[:verbose]
+        warn("#{$!.message} (#{$!.class})", uplevel: 0) if @config[:verbose]
         retry
       end
     end

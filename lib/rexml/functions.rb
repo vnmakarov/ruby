@@ -8,9 +8,27 @@ module REXML
   # Therefore, in XML, "local-name()" is identical (and actually becomes)
   # "local_name()"
   module Functions
+    @@available_functions = {}
     @@context = nil
     @@namespace_context = {}
     @@variables = {}
+
+    INTERNAL_METHODS = [
+      :namespace_context,
+      :namespace_context=,
+      :variables,
+      :variables=,
+      :context=,
+      :get_namespace,
+      :send,
+    ]
+    class << self
+      def singleton_method_added(name)
+        unless INTERNAL_METHODS.include?(name)
+          @@available_functions[name] = true
+        end
+      end
+    end
 
     def Functions::namespace_context=(x) ; @@namespace_context=x ; end
     def Functions::variables=(x) ; @@variables=x ; end
@@ -68,10 +86,14 @@ module REXML
     # Helper method.
     def Functions::get_namespace( node_set = nil )
       if node_set == nil
-        yield @@context[:node] if defined? @@context[:node].namespace
+        yield @@context[:node] if @@context[:node].respond_to?(:namespace)
       else
         if node_set.respond_to? :each
-          node_set.each { |node| yield node if defined? node.namespace }
+          result = []
+          node_set.each do |node|
+            result << yield(node) if node.respond_to?(:namespace)
+          end
+          result
         elsif node_set.respond_to? :namespace
           yield node_set
         end
@@ -390,9 +412,14 @@ module REXML
       node.node_type == :processing_instruction
     end
 
-    def Functions::method_missing( id )
-      puts "METHOD MISSING #{id.id2name}"
-      XPath.match( @@context[:node], id.id2name )
+    def Functions::send(name, *args)
+      if @@available_functions[name.to_sym]
+        super
+      else
+        # TODO: Maybe, this is not XPath spec behavior.
+        # This behavior must be reconsidered.
+        XPath.match(@@context[:node], name.to_s)
+      end
     end
   end
 end

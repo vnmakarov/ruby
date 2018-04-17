@@ -1,4 +1,4 @@
-# frozen_string_literal: false
+# frozen_string_literal: true
 #--
 # = uri/common.rb
 #
@@ -82,7 +82,7 @@ module URI
     # Escapes the string, replacing all unsafe characters with codes.
     #
     # This method is obsolete and should not be used. Instead, use
-    # CGI.escape, URI.www_form_encode or URI.www_form_encode_component
+    # CGI.escape, URI.encode_www_form or URI.encode_www_form_component
     # depending on your specific use case.
     #
     # == Usage
@@ -100,7 +100,7 @@ module URI
     #   # => "@%3F@%21"
     #
     def escape(*arg)
-      warn "#{caller(1)[0]}: warning: URI.escape is obsolete" if $VERBOSE
+      warn "URI.escape is obsolete", uplevel: 1 if $VERBOSE
       DEFAULT_PARSER.escape(*arg)
     end
     alias encode escape
@@ -114,6 +114,12 @@ module URI
     # +str+::
     #   Unescapes the string.
     #
+    # == Description
+    #
+    # This method is obsolete and should not be used. Instead, use
+    # CGI.unescape, URI.decode_www_form or URI.decode_www_form_component
+    # depending on your specific use case.
+    #
     # == Usage
     #
     #   require 'uri'
@@ -126,7 +132,7 @@ module URI
     #   # => "http://example.com/?a=\t\r"
     #
     def unescape(*arg)
-      warn "#{caller(1)[0]}: warning: URI.unescape is obsolete" if $VERBOSE
+      warn "URI.unescape is obsolete", uplevel: 1 if $VERBOSE
       DEFAULT_PARSER.unescape(*arg)
     end
     alias decode unescape
@@ -294,7 +300,7 @@ module URI
   #   # => ["http://foo.example.com/bla", "mailto:test@example.com"]
   #
   def self.extract(str, schemes = nil, &block)
-    warn "#{caller(1)[0]}: warning: URI.extract is obsolete" if $VERBOSE
+    warn "URI.extract is obsolete", uplevel: 1 if $VERBOSE
     DEFAULT_PARSER.extract(str, schemes, &block)
   end
 
@@ -330,23 +336,23 @@ module URI
   #   end
   #
   def self.regexp(schemes = nil)
-    warn "#{caller(1)[0]}: warning: URI.regexp is obsolete" if $VERBOSE
+    warn "URI.regexp is obsolete", uplevel: 1 if $VERBOSE
     DEFAULT_PARSER.make_regexp(schemes)
   end
 
   TBLENCWWWCOMP_ = {} # :nodoc:
   256.times do |i|
-    TBLENCWWWCOMP_[i.chr] = '%%%02X' % i
+    TBLENCWWWCOMP_[-i.chr] = -('%%%02X' % i)
   end
   TBLENCWWWCOMP_[' '] = '+'
   TBLENCWWWCOMP_.freeze
   TBLDECWWWCOMP_ = {} # :nodoc:
   256.times do |i|
     h, l = i>>4, i&15
-    TBLDECWWWCOMP_['%%%X%X' % [h, l]] = i.chr
-    TBLDECWWWCOMP_['%%%x%X' % [h, l]] = i.chr
-    TBLDECWWWCOMP_['%%%X%x' % [h, l]] = i.chr
-    TBLDECWWWCOMP_['%%%x%x' % [h, l]] = i.chr
+    TBLDECWWWCOMP_[-('%%%X%X' % [h, l])] = -i.chr
+    TBLDECWWWCOMP_[-('%%%x%X' % [h, l])] = -i.chr
+    TBLDECWWWCOMP_[-('%%%X%x' % [h, l])] = -i.chr
+    TBLDECWWWCOMP_[-('%%%x%x' % [h, l])] = -i.chr
   end
   TBLDECWWWCOMP_['+'] = ' '
   TBLDECWWWCOMP_.freeze
@@ -462,7 +468,7 @@ module URI
       if isindex
         if sep.empty?
           val = key
-          key = ''
+          key = +''
         end
         isindex = false
       end
@@ -476,7 +482,7 @@ module URI
       if val
         val.gsub!(/\+|%\h\h/, TBLDECWWWCOMP_)
       else
-        val = ''
+        val = +''
       end
 
       ary << [key, val]

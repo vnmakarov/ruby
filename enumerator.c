@@ -13,6 +13,7 @@
 ************************************************/
 
 #include "internal.h"
+#include "id.h"
 
 /*
  * Document-class: Enumerator
@@ -101,10 +102,16 @@
  *
  */
 VALUE rb_cEnumerator;
-VALUE rb_cLazy;
-static ID id_rewind, id_each, id_new, id_initialize, id_yield, id_call, id_size, id_to_enum;
-static ID id_eqq, id_next, id_result, id_lazy, id_receiver, id_arguments, id_memo, id_method, id_force;
+static VALUE rb_cLazy;
+static ID id_rewind, id_new, id_yield, id_to_enum;
+static ID id_next, id_result, id_lazy, id_receiver, id_arguments, id_memo, id_method, id_force;
 static VALUE sym_each, sym_cycle;
+
+#define id_call idCall
+#define id_each idEach
+#define id_eqq idEqq
+#define id_initialize idInitialize
+#define id_size idSize
 
 VALUE rb_eStopIteration;
 
@@ -390,7 +397,7 @@ enumerator_initialize(int argc, VALUE *argv, VALUE obj)
 	recv = generator_init(generator_allocate(rb_cGenerator), rb_block_proc());
 	if (argc) {
             if (NIL_P(argv[0]) || rb_respond_to(argv[0], id_call) ||
-                (RB_TYPE_P(argv[0], T_FLOAT) && RFLOAT_VALUE(argv[0]) == INFINITY)) {
+                (RB_TYPE_P(argv[0], T_FLOAT) && RFLOAT_VALUE(argv[0]) == HUGE_VAL)) {
                 size = argv[0];
             }
             else {
@@ -1037,6 +1044,22 @@ inspect_enumerator(VALUE obj, VALUE dummy, int recur)
     return str;
 }
 
+static int
+key_symbol_p(VALUE key, VALUE val, VALUE arg)
+{
+    if (SYMBOL_P(key)) return ST_CONTINUE;
+    *(int *)arg = FALSE;
+    return ST_STOP;
+}
+
+static int
+kwd_append(VALUE key, VALUE val, VALUE str)
+{
+    if (!SYMBOL_P(key)) rb_raise(rb_eRuntimeError, "non-symbol key inserted");
+    rb_str_catf(str, "% "PRIsVALUE": %"PRIsVALUE", ", key, val);
+    return ST_CONTINUE;
+}
+
 static VALUE
 append_method(VALUE obj, VALUE str, ID default_method, VALUE default_args)
 {
@@ -1064,15 +1087,28 @@ append_method(VALUE obj, VALUE str, ID default_method, VALUE default_args)
 	const VALUE *argv = RARRAY_CONST_PTR(eargs); /* WB: no new reference */
 
 	if (argc > 0) {
+	    VALUE kwds = Qnil;
+
 	    rb_str_buf_cat2(str, "(");
+
+	    if (RB_TYPE_P(argv[argc-1], T_HASH)) {
+		int all_key = TRUE;
+		rb_hash_foreach(argv[argc-1], key_symbol_p, (VALUE)&all_key);
+		if (all_key) kwds = argv[--argc];
+	    }
 
 	    while (argc--) {
 		VALUE arg = *argv++;
 
 		rb_str_append(str, rb_inspect(arg));
-		rb_str_buf_cat2(str, argc > 0 ? ", " : ")");
+		rb_str_buf_cat2(str, ", ");
 		OBJ_INFECT(str, arg);
 	    }
+	    if (!NIL_P(kwds)) {
+		rb_hash_foreach(kwds, kwd_append, str);
+	    }
+	    rb_str_set_len(str, RSTRING_LEN(str)-2);
+	    rb_str_buf_cat2(str, ")");
 	}
     }
 
@@ -1119,11 +1155,11 @@ enumerator_size(VALUE obj)
 	for (i = 0; i < RARRAY_LEN(e->procs); i++) {
 	    VALUE proc = RARRAY_AREF(e->procs, i);
 	    struct proc_entry *entry = proc_entry_ptr(proc);
-	    lazyenum_size_func *size = entry->fn->size;
-	    if (!size) {
+	    lazyenum_size_func *size_fn = entry->fn->size;
+	    if (!size_fn) {
 		return Qnil;
 	    }
-	    receiver = (*size)(proc, receiver);
+	    receiver = (*size_fn)(proc, receiver);
 	}
 	return receiver;
     }
@@ -1448,6 +1484,8 @@ lazy_init_block_i(RB_BLOCK_CALL_FUNC_ARGLIST(val, m))
 #define LAZY_MEMO_PACKED_P(memo) ((memo)->memo_flags & LAZY_MEMO_PACKED)
 #define LAZY_MEMO_SET_BREAK(memo) ((memo)->memo_flags |= LAZY_MEMO_BREAK)
 #define LAZY_MEMO_SET_VALUE(memo, value) MEMO_V2_SET(memo, value)
+#define LAZY_MEMO_SET_PACKED(memo) ((memo)->memo_flags |= LAZY_MEMO_PACKED)
+#define LAZY_MEMO_RESET_PACKED(memo) ((memo)->memo_flags &= ~LAZY_MEMO_PACKED)
 
 static VALUE
 lazy_init_yielder(VALUE val, VALUE m, int argc, VALUE *argv)
@@ -1743,6 +1781,7 @@ lazy_map_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long memo_inde
 {
     VALUE value = lazyenum_yield_values(proc_entry, result);
     LAZY_MEMO_SET_VALUE(result, value);
+    LAZY_MEMO_RESET_PACKED(result);
     return result;
 }
 
@@ -1913,6 +1952,7 @@ lazy_grep_iter_proc(VALUE proc_entry, struct MEMO *result, VALUE memos, long mem
     if (!RTEST(chain)) return 0;
     value = rb_proc_call_with_block(entry->proc, 1, &(result->memo_value), Qnil);
     LAZY_MEMO_SET_VALUE(result, value);
+    LAZY_MEMO_RESET_PACKED(result);
 
     return result;
 }
@@ -2229,27 +2269,35 @@ lazy_drop_while(VALUE obj)
 }
 
 static VALUE
-lazy_uniq_i(VALUE i, VALUE hash, int argc, const VALUE *argv, VALUE yielder)
+lazy_uniq_i(VALUE i, int argc, const VALUE *argv, VALUE yielder)
 {
+    VALUE hash;
+
+    hash = rb_attr_get(yielder, id_memo);
+    if (NIL_P(hash)) {
+        hash = rb_obj_hide(rb_hash_new());
+        rb_ivar_set(yielder, id_memo, hash);
+    }
+
     if (rb_hash_add_new_element(hash, i, Qfalse))
 	return Qnil;
     return rb_funcallv(yielder, id_yield, argc, argv);
 }
 
 static VALUE
-lazy_uniq_func(RB_BLOCK_CALL_FUNC_ARGLIST(i, hash))
+lazy_uniq_func(RB_BLOCK_CALL_FUNC_ARGLIST(i, m))
 {
     VALUE yielder = (--argc, *argv++);
     i = rb_enum_values_pack(argc, argv);
-    return lazy_uniq_i(i, hash, argc, argv, yielder);
+    return lazy_uniq_i(i, argc, argv, yielder);
 }
 
 static VALUE
-lazy_uniq_iter(RB_BLOCK_CALL_FUNC_ARGLIST(i, hash))
+lazy_uniq_iter(RB_BLOCK_CALL_FUNC_ARGLIST(i, m))
 {
     VALUE yielder = (--argc, *argv++);
     i = rb_yield_values2(argc, argv);
-    return lazy_uniq_i(i, hash, argc, argv, yielder);
+    return lazy_uniq_i(i, argc, argv, yielder);
 }
 
 static VALUE
@@ -2257,9 +2305,8 @@ lazy_uniq(VALUE obj)
 {
     rb_block_call_func *const func =
 	rb_block_given_p() ? lazy_uniq_iter : lazy_uniq_func;
-    VALUE hash = rb_obj_hide(rb_hash_new());
     return lazy_set_method(rb_block_call(rb_cLazy, id_new, 1, &obj,
-					 func, hash),
+					 func, 0),
 			   0, 0);
 }
 
@@ -2366,6 +2413,7 @@ InitVM_Enumerator(void)
     rb_define_method(rb_cLazy, "collect_concat", lazy_flat_map, 0);
     rb_define_method(rb_cLazy, "select", lazy_select, 0);
     rb_define_method(rb_cLazy, "find_all", lazy_select, 0);
+    rb_define_method(rb_cLazy, "filter", lazy_select, 0);
     rb_define_method(rb_cLazy, "reject", lazy_reject, 0);
     rb_define_method(rb_cLazy, "grep", lazy_grep, 1);
     rb_define_method(rb_cLazy, "grep_v", lazy_grep_v, 1);
@@ -2410,16 +2458,11 @@ void
 Init_Enumerator(void)
 {
     id_rewind = rb_intern("rewind");
-    id_each = rb_intern("each");
-    id_call = rb_intern("call");
-    id_size = rb_intern("size");
     id_yield = rb_intern("yield");
     id_new = rb_intern("new");
-    id_initialize = rb_intern("initialize");
     id_next = rb_intern("next");
     id_result = rb_intern("result");
     id_lazy = rb_intern("lazy");
-    id_eqq = rb_intern("===");
     id_receiver = rb_intern("receiver");
     id_arguments = rb_intern("arguments");
     id_memo = rb_intern("memo");

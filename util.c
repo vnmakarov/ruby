@@ -9,6 +9,10 @@
 
 **********************************************************************/
 
+#if defined __MINGW32__ || defined __MINGW64__
+#define MINGW_HAS_SECURE_API 1
+#endif
+
 #include "internal.h"
 
 #include <ctype.h>
@@ -503,11 +507,11 @@ ruby_strdup(const char *str)
 char *
 ruby_getcwd(void)
 {
-#if defined __native_client__
-    char *buf = xmalloc(2);
-    strcpy(buf, ".");
-#elif defined HAVE_GETCWD
+#if defined HAVE_GETCWD
+# undef RUBY_UNTYPED_DATA_WARNING
+# define RUBY_UNTYPED_DATA_WARNING 0
 # if defined NO_GETCWD_MALLOC
+    VALUE guard = Data_Wrap_Struct((VALUE)0, NULL, RUBY_DEFAULT_FREE, NULL);
     int size = 200;
     char *buf = xmalloc(size);
 
@@ -515,17 +519,22 @@ ruby_getcwd(void)
 	int e = errno;
 	if (e != ERANGE) {
 	    xfree(buf);
+	    DATA_PTR(guard) = NULL;
 	    rb_syserr_fail(e, "getcwd");
 	}
 	size *= 2;
+	DATA_PTR(guard) = buf;
 	buf = xrealloc(buf, size);
     }
 # else
+    VALUE guard = Data_Wrap_Struct((VALUE)0, NULL, free, NULL);
     char *buf, *cwd = getcwd(NULL, 0);
+    DATA_PTR(guard) = cwd;
     if (!cwd) rb_sys_fail("getcwd");
     buf = ruby_strdup(cwd);	/* allocate by xmalloc */
     free(cwd);
 # endif
+    DATA_PTR(RB_GC_GUARD(guard)) = NULL;
 #else
 # ifndef PATH_MAX
 #  define PATH_MAX 8192
@@ -736,6 +745,8 @@ ruby_getcwd(void)
 
 #if HAVE_LONG_LONG
 #define Llong LONG_LONG
+#else
+#define NO_LONG_LONG
 #endif
 
 #ifdef DEBUG
@@ -2105,7 +2116,7 @@ break2:
     for (nd = nf = 0; (c = *s) >= '0' && c <= '9'; nd++, s++)
         if (nd < 9)
             y = 10*y + c - '0';
-        else if (nd < 16)
+        else if (nd < DBL_DIG + 2)
             z = 10*z + c - '0';
     nd0 = nd;
 #ifdef USE_LOCALE
@@ -2145,17 +2156,19 @@ break2:
         for (; c >= '0' && c <= '9'; c = *++s) {
 have_dig:
             nz++;
-            if (nd > DBL_DIG * 4) continue;
+            if (nd > DBL_DIG * 4) {
+		continue;
+	    }
             if (c -= '0') {
                 nf += nz;
                 for (i = 1; i < nz; i++)
                     if (nd++ < 9)
                         y *= 10;
-                    else if (nd <= DBL_DIG + 1)
+                    else if (nd <= DBL_DIG + 2)
                         z *= 10;
                 if (nd++ < 9)
                     y = 10*y + c;
-                else if (nd <= DBL_DIG + 1)
+                else if (nd <= DBL_DIG + 2)
                     z = 10*z + c;
                 nz = 0;
             }
@@ -2243,7 +2256,7 @@ ret0:
 
     if (!nd0)
         nd0 = nd;
-    k = nd < DBL_DIG + 1 ? nd : DBL_DIG + 1;
+    k = nd < DBL_DIG + 2 ? nd : DBL_DIG + 2;
     dval(rv) = y;
     if (k > 9) {
 #ifdef SET_INEXACT

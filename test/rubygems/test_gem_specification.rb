@@ -922,7 +922,7 @@ dependencies: []
   end
 
   def test_self_load_relative
-    open 'a-2.gemspec', 'w' do |io|
+    File.open 'a-2.gemspec', 'w' do |io|
       io.write @a2.to_ruby_for_cache
     end
 
@@ -948,6 +948,9 @@ dependencies: []
     @a2.files.clear
 
     assert_equal @a2, spec
+
+  ensure
+    $SAFE = 0
   end
 
   def test_self_load_escape_curly
@@ -1111,7 +1114,7 @@ dependencies: []
   end
 
   def test_self_remove_spec_removed
-    open @a1.spec_file, 'w' do |io|
+    File.open @a1.spec_file, 'w' do |io|
       io.write @a1.to_ruby
     end
 
@@ -1260,7 +1263,7 @@ dependencies: []
       s.version = '1'
     end
 
-    spec.instance_variable_set :@licenses, Object.new.singleton_class
+    spec.instance_variable_set :@licenses, (class << (Object.new);self;end)
     spec.loaded_from = '/path/to/file'
 
     e = assert_raises Gem::FormatException do
@@ -1363,13 +1366,13 @@ dependencies: []
 
     assert_empty @ext.build_args
 
-    open @ext.build_info_file, 'w' do |io|
+    File.open @ext.build_info_file, 'w' do |io|
       io.puts
     end
 
     assert_empty @ext.build_args
 
-    open @ext.build_info_file, 'w' do |io|
+    File.open @ext.build_info_file, 'w' do |io|
       io.puts '--with-foo-dir=wherever'
     end
 
@@ -1385,9 +1388,9 @@ dependencies: []
     extconf_rb = File.join @ext.gem_dir, @ext.extensions.first
     FileUtils.mkdir_p File.dirname extconf_rb
 
-    open extconf_rb, 'w' do |f|
+    File.open extconf_rb, 'w' do |f|
       f.write <<-'RUBY'
-        open 'Makefile', 'w' do |f|
+        File.open 'Makefile', 'w' do |f|
           f.puts "clean:\n\techo clean"
           f.puts "default:\n\techo built"
           f.puts "install:\n\techo installed"
@@ -1435,9 +1438,9 @@ dependencies: []
     extconf_rb = File.join spec.gem_dir, spec.extensions.first
     FileUtils.mkdir_p File.dirname extconf_rb
 
-    open extconf_rb, 'w' do |f|
+    File.open extconf_rb, 'w' do |f|
       f.write <<-'RUBY'
-        open 'Makefile', 'w' do |f|
+        File.open 'Makefile', 'w' do |f|
           f.puts "default:\n\techo built"
           f.puts "install:\n\techo installed"
         end
@@ -1461,6 +1464,7 @@ dependencies: []
 
   def test_build_extensions_extensions_dir_unwritable
     skip 'chmod not supported' if Gem.win_platform?
+    skip 'skipped in root privilege' if Process.uid.zero?
 
     ext_spec
 
@@ -1469,9 +1473,9 @@ dependencies: []
     extconf_rb = File.join @ext.gem_dir, @ext.extensions.first
     FileUtils.mkdir_p File.dirname extconf_rb
 
-    open extconf_rb, 'w' do |f|
+    File.open extconf_rb, 'w' do |f|
       f.write <<-'RUBY'
-        open 'Makefile', 'w' do |f|
+        File.open 'Makefile', 'w' do |f|
           f.puts "clean:\n\techo clean"
           f.puts "default:\n\techo built"
           f.puts "install:\n\techo installed"
@@ -1486,7 +1490,7 @@ dependencies: []
     @ext.build_extensions
     refute_path_exists @ext.extension_dir
   ensure
-    unless ($DEBUG or win_platform?) then
+    unless ($DEBUG or win_platform? or Process.uid.zero?) then
       FileUtils.chmod 0755, File.join(@ext.base_dir, 'extensions')
       FileUtils.chmod 0755, @ext.base_dir
     end
@@ -1502,9 +1506,9 @@ dependencies: []
     extconf_rb = File.join @ext.gem_dir, @ext.extensions.first
     FileUtils.mkdir_p File.dirname extconf_rb
 
-    open extconf_rb, 'w' do |f|
+    File.open extconf_rb, 'w' do |f|
       f.write <<-'RUBY'
-        open 'Makefile', 'w' do |f|
+        File.open 'Makefile', 'w' do |f|
           f.puts "clean:\n\techo clean"
           f.puts "default:\n\techo built"
           f.puts "install:\n\techo installed"
@@ -1551,9 +1555,9 @@ dependencies: []
     extconf_rb = File.join @ext.gem_dir, @ext.extensions.first
     FileUtils.mkdir_p File.dirname extconf_rb
 
-    open extconf_rb, 'w' do |f|
+    File.open extconf_rb, 'w' do |f|
       f.write <<-'RUBY'
-        open 'Makefile', 'w' do |f|
+        File.open 'Makefile', 'w' do |f|
           f.puts "clean:\n\techo clean"
           f.puts "default:\n\techo built"
           f.puts "install:\n\techo installed"
@@ -1586,7 +1590,7 @@ dependencies: []
       refute @ext.contains_requirable_file? 'nonexistent'
     end
 
-    expected = "Ignoring ext-1 because its extensions are not built.  " +
+    expected = "Ignoring ext-1 because its extensions are not built. " +
                "Try: gem pristine ext --version 1\n"
 
     assert_equal expected, err
@@ -2748,14 +2752,6 @@ duplicate dependency on c (>= 1.2.3, development), (~> 1.2) use:
     util_setup_validate
 
     Dir.chdir @tempdir do
-      @a1.email = ""
-
-      use_ui @ui do
-        @a1.validate
-      end
-
-      assert_match "#{w}:  no email specified\n", @ui.error, "error"
-
       @a1.email = "FIxxxXME (your e-mail)".sub(/xxx/, "")
 
       e = assert_raises Gem::InvalidSpecificationException do
@@ -2890,7 +2886,22 @@ duplicate dependency on c (>= 1.2.3, development), (~> 1.2) use:
         @a1.validate
       end
 
-      assert_equal '"over at my cool site" is not a URI', e.message
+      assert_equal '"over at my cool site" is not a valid HTTP URI', e.message
+
+      @a1.homepage = 'ftp://rubygems.org'
+
+      e = assert_raises Gem::InvalidSpecificationException do
+        @a1.validate
+      end
+
+      assert_equal '"ftp://rubygems.org" is not a valid HTTP URI', e.message
+
+      @a1.homepage = 'http://rubygems.org'
+      assert_equal true, @a1.validate
+
+      @a1.homepage = 'https://rubygems.org'
+      assert_equal true, @a1.validate
+
     end
   end
 
@@ -2977,6 +2988,43 @@ Did you mean 'Ruby'?
     warning
   end
 
+  def test_validate_empty_files
+    util_setup_validate
+
+    use_ui @ui do
+      # we have to set all of these for #files to be empty
+      @a1.files = []
+      @a1.test_files = []
+      @a1.executables = []
+
+      @a1.validate
+    end
+
+    assert_match "no files specified", @ui.error
+  end
+
+  def test_validate_empty_homepage
+    util_setup_validate
+
+    use_ui @ui do
+      @a1.homepage = nil
+      @a1.validate
+    end
+
+    assert_match "no homepage specified", @ui.error
+  end
+
+  def test_validate_empty_summary
+    util_setup_validate
+
+    use_ui @ui do
+      @a1.summary = nil
+      @a1.validate
+    end
+
+    assert_match "no summary specified", @ui.error
+  end
+
   def test_validate_name
     util_setup_validate
 
@@ -2985,7 +3033,37 @@ Did you mean 'Ruby'?
       @a1.validate
     end
 
-    assert_equal 'invalid value for attribute name: ":json"', e.message
+    assert_equal 'invalid value for attribute name: ":json" must be a string', e.message
+
+    @a1.name = []
+    e = assert_raises Gem::InvalidSpecificationException do
+      @a1.validate
+    end
+    assert_equal "invalid value for attribute name: \"[]\" must be a string", e.message
+
+    @a1.name = ""
+    e = assert_raises Gem::InvalidSpecificationException do
+      @a1.validate
+    end
+    assert_equal "invalid value for attribute name: \"\" must include at least one letter", e.message
+
+    @a1.name = "12345"
+    e = assert_raises Gem::InvalidSpecificationException do
+      @a1.validate
+    end
+    assert_equal "invalid value for attribute name: \"12345\" must include at least one letter", e.message
+
+    @a1.name = "../malicious"
+    e = assert_raises Gem::InvalidSpecificationException do
+      @a1.validate
+    end
+    assert_equal "invalid value for attribute name: \"../malicious\" can only include letters, numbers, dashes, and underscores", e.message
+
+    @a1.name = "\ba\t"
+    e = assert_raises Gem::InvalidSpecificationException do
+      @a1.validate
+    end
+    assert_equal "invalid value for attribute name: \"\\ba\\t\" can only include letters, numbers, dashes, and underscores", e.message
   end
 
   def test_validate_non_nil
@@ -3222,7 +3300,11 @@ Did you mean 'Ruby'?
     Dir.chdir @tempdir do
       @m1 = quick_gem 'm', '1' do |s|
         s.files = %w[lib/code.rb]
-        s.metadata = { 'one' => "two", 'two' => "three" }
+        s.metadata = {
+          "one"          => "two",
+          "home"         => "three",
+          "homepage_uri" => "https://example.com/user/repo"
+        }
       end
 
       use_ui @ui do
@@ -3299,6 +3381,23 @@ Did you mean 'Ruby'?
     end
   end
 
+  def test_metadata_link_validation_fails
+    util_setup_validate
+
+    Dir.chdir @tempdir do
+      @m2 = quick_gem 'm', '2' do |s|
+        s.files = %w[lib/code.rb]
+        s.metadata = { 'homepage_uri' => 'http:/example.com' }
+      end
+
+      e = assert_raises Gem::InvalidSpecificationException do
+        @m2.validate
+      end
+
+      assert_equal "metadata['homepage_uri'] has invalid link: \"http:/example.com\"", e.message
+    end
+  end
+
   def test_metadata_specs
     valid_ruby_spec = <<-EOF
 # -*- encoding: utf-8 -*-
@@ -3338,9 +3437,9 @@ end
     extconf_rb = File.join @ext.gem_dir, @ext.extensions.first
     FileUtils.mkdir_p File.dirname extconf_rb
 
-    open extconf_rb, 'w' do |f|
+    File.open extconf_rb, 'w' do |f|
       f.write <<-'RUBY'
-        open 'Makefile', 'w' do |f|
+        File.open 'Makefile', 'w' do |f|
           f.puts "clean:\n\techo clean"
           f.puts "default:\n\techo built"
           f.puts "install:\n\techo installed"
@@ -3374,6 +3473,31 @@ end
 
   def test_missing_extensions_eh_none
     refute @a1.missing_extensions?
+  end
+
+  def test_find_all_by_full_name
+    pl = Gem::Platform.new 'i386-linux'
+
+    a1 = util_spec "a", "1"
+    a1_pre = util_spec "a", "1.0.0.pre.1"
+    a_1_platform = util_spec("a", "1") {|s| s.platform = pl }
+    a_b_1 = util_spec "a-b", "1"
+    a_b_1_platform = util_spec("a-b", "1") {|s| s.platform = pl }
+
+    a_b_1_1 = util_spec "a-b-1", "1"
+    a_b_1_1_platform = util_spec("a-b-1", "1") {|s| s.platform = pl }
+
+    install_specs(a1, a1_pre, a_1_platform, a_b_1, a_b_1_platform,
+                  a_b_1_1, a_b_1_1_platform)
+
+    assert_equal [a1], Gem::Specification.find_all_by_full_name("a-1")
+    assert_equal [a1_pre], Gem::Specification.find_all_by_full_name("a-1.0.0.pre.1")
+    assert_equal [a_1_platform], Gem::Specification.find_all_by_full_name("a-1-x86-linux")
+    assert_equal [a_b_1_1], Gem::Specification.find_all_by_full_name("a-b-1-1")
+    assert_equal [a_b_1_1_platform], Gem::Specification.find_all_by_full_name("a-b-1-1-x86-linux")
+
+    assert_equal [], Gem::Specification.find_all_by_full_name("monkeys")
+    assert_equal [], Gem::Specification.find_all_by_full_name("a-1-foo")
   end
 
   def test_find_by_name
