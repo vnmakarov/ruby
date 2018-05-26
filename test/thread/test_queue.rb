@@ -1,6 +1,5 @@
 # frozen_string_literal: false
 require 'test/unit'
-require 'thread'
 require 'tmpdir'
 require 'timeout'
 
@@ -136,7 +135,6 @@ class TestQueue < Test::Unit::TestCase
       total_count = 250
       begin
         assert_normal_exit(<<-"_eom", bug5343, {:timeout => timeout, :chdir=>d})
-          require "thread"
           #{total_count}.times do |i|
             open("test_thr_kill_count", "w") {|f| f.puts i }
             queue = Queue.new
@@ -278,7 +276,7 @@ class TestQueue < Test::Unit::TestCase
     end
 
     q = DumpableQueue.new
-    assert_raise_with_message(TypeError, /internal Array/, bug9674) do
+    assert_raise(TypeError, bug9674) do
       Marshal.dump(q)
     end
   end
@@ -375,7 +373,12 @@ class TestQueue < Test::Unit::TestCase
   def test_blocked_pushers
     q = SizedQueue.new 3
     prod_threads = 6.times.map do |i|
-      thr = Thread.new{q << i}; thr[:pc] = i; thr
+      thr = Thread.new{
+        Thread.current.report_on_exception = false
+        q << i
+      }
+      thr[:pc] = i
+      thr
     end
 
     # wait until some producer threads have finished, and the other 3 are blocked
@@ -415,25 +418,20 @@ class TestQueue < Test::Unit::TestCase
 
   def test_deny_pushers
     [->{Queue.new}, ->{SizedQueue.new 3}].each do |qcreate|
-      prod_threads = nil
       q = qcreate[]
       synq = Queue.new
-      producers_start = Thread.new do
-        prod_threads = 20.times.map do |i|
-          Thread.new{ synq.pop; q << i }
-        end
+      prod_threads = 20.times.map do |i|
+        Thread.new {
+          synq.pop
+          assert_raise(ClosedQueueError) {
+            q << i
+          }
+        }
       end
       q.close
       synq.close # start producer threads
 
-      # wait for all threads to be finished, because of exceptions
-      # NOTE: thr.status will be nil (raised) or false (terminated)
-      sleep 0.01 until prod_threads&.all?{|thr| !thr.status}
-
-      # check that all threads failed to call push
-      prod_threads.each do |thr|
-        assert_kind_of ClosedQueueError, (thr.value rescue $!)
-      end
+      prod_threads.each(&:join)
     end
   end
 
@@ -453,7 +451,10 @@ class TestQueue < Test::Unit::TestCase
   def test_blocked_pushers_empty
     q = SizedQueue.new 3
     prod_threads = 6.times.map do |i|
-      Thread.new{ q << i}
+      Thread.new{
+        Thread.current.report_on_exception = false
+        q << i
+      }
     end
 
     # this ensures that all producer threads call push before close
@@ -547,4 +548,69 @@ class TestQueue < Test::Unit::TestCase
     # don't leak this thread
     assert_nothing_raised{counter.join}
   end
+
+  def test_queue_with_trap
+    assert_in_out_err([], <<-INPUT, %w(INT INT exit), [])
+      q = Queue.new
+      trap(:INT){
+        q.push 'INT'
+      }
+      Thread.new{
+        loop{
+          Process.kill :INT, $$
+        }
+      }
+      puts q.pop
+      puts q.pop
+      puts 'exit'
+    INPUT
+  end
+
+  def test_fork_while_queue_waiting
+    q = Queue.new
+    sq = SizedQueue.new(1)
+    thq = Thread.new { q.pop }
+    thsq = Thread.new { sq.pop }
+    Thread.pass until thq.stop? && thsq.stop?
+
+    pid = fork do
+      exit!(1) if q.num_waiting != 0
+      exit!(2) if sq.num_waiting != 0
+      exit!(6) unless q.empty?
+      exit!(7) unless sq.empty?
+      q.push :child_q
+      sq.push :child_sq
+      exit!(3) if q.pop != :child_q
+      exit!(4) if sq.pop != :child_sq
+      exit!(0)
+    end
+    _, s = Process.waitpid2(pid)
+    assert_predicate s, :success?, 'no segfault [ruby-core:86316] [Bug #14634]'
+
+    q.push :thq
+    sq.push :thsq
+    assert_equal :thq, thq.value
+    assert_equal :thsq, thsq.value
+
+    sq.push(1)
+    th = Thread.new { q.pop; sq.pop }
+    thsq = Thread.new { sq.push(2) }
+    Thread.pass until th.stop? && thsq.stop?
+    pid = fork do
+      exit!(1) if q.num_waiting != 0
+      exit!(2) if sq.num_waiting != 0
+      exit!(3) unless q.empty?
+      exit!(4) if sq.empty?
+      exit!(5) if sq.pop != 1
+      exit!(0)
+    end
+    _, s = Process.waitpid2(pid)
+    assert_predicate s, :success?, 'no segfault [ruby-core:86316] [Bug #14634]'
+
+    assert_predicate thsq, :stop?
+    assert_equal 1, sq.pop
+    assert_same sq, thsq.value
+    q.push('restart th')
+    assert_equal 2, th.value
+  end if Process.respond_to?(:fork)
 end

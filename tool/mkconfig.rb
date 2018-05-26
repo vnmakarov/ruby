@@ -8,13 +8,11 @@
 # avoid warnings with -d.
 $install_name ||= nil
 $so_name ||= nil
-$cross_compiling ||= nil
 $unicode_version ||= nil
 arch = $arch or raise "missing -arch"
 version = $version or raise "missing -version"
 
 srcdir = File.expand_path('../..', __FILE__)
-$:.replace [srcdir+"/lib"] unless $cross_compiling == "yes"
 $:.unshift(".")
 
 require "fileutils"
@@ -64,6 +62,7 @@ File.foreach "config.status" do |line|
     when /^(?:X|(?:MINI|RUN|(?:HAVE_)?BASE|BOOTSTRAP|BTEST)RUBY(?:_COMMAND)?$)/; next
     when /^INSTALLDOC|TARGET$/; next
     when /^DTRACE/; next
+    when /^MJIT_/; next
     when /^(?:MAJOR|MINOR|TEENY)$/; vars[name] = val; next
     when /^LIBRUBY_D?LD/; next
     when /^RUBY_INSTALL_NAME$/; next vars[name] = (install_name = val).dup if $install_name

@@ -22,10 +22,7 @@
 #include <math.h>
 
 /* Use nonzero to print debug info abou the generator.  */
-#define RTL_GEN_DEBUG 0
-
-/* We will use insn_stack_increase from insns_info.inc.  */
-#define USE_INSN_STACK_INCREASE 1
+#define RTL_GEN_DEBUG 1
 
 #include "vm_core.h"
 #include "iseq.h"
@@ -33,6 +30,10 @@
 #include "insns.inc"
 #include "insns_info.inc"
 #include "gc.h"
+
+#ifdef RTL_GEN_DEBUG
+static int rtl_gen_debug_p = FALSE;
+#endif
 
 /* Long jump buffer used to finish the generator work in case of a
    failure.  */
@@ -490,8 +491,10 @@ update_saved_stack_slots(size_t start_stack_slot_index) {
     int changed_p = FALSE;
     
 #if RTL_GEN_DEBUG
-    fprintf(stderr, "     ==Stack union before -- ");
-    print_stack();
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, "     ==Stack union before -- ");
+	print_stack();
+    }
 #endif
     for (i = 0; i < len; i++)
 	if (stack_addr[i].mode == ANY)
@@ -504,13 +507,17 @@ update_saved_stack_slots(size_t start_stack_slot_index) {
 		changed_p = TRUE;
 		VARR_ADDR(char, use_only_temp_result_p)[saved_addr[i].source_insn_pos] = TRUE;
 #if RTL_GEN_DEBUG
-		fprintf(stderr, "     ==Put into temp at pos=%ld\n", saved_addr[i].source_insn_pos);
+		if (rtl_gen_debug_p) {
+		    fprintf(stderr, "     ==Put into temp at pos=%ld\n", saved_addr[i].source_insn_pos);
+		}
 #endif
 	    } else if (stack_addr[i].mode != TEMP) {
 		changed_p = TRUE;
 		VARR_ADDR(char, use_only_temp_result_p)[stack_addr[i].source_insn_pos] = TRUE;
 #if RTL_GEN_DEBUG
-		fprintf(stderr, "     ==Put into temp at pos=%ld\n", stack_addr[i].source_insn_pos);
+		if (rtl_gen_debug_p) {
+		    fprintf(stderr, "     ==Put into temp at pos=%ld\n", stack_addr[i].source_insn_pos);
+		}
 #endif
 	    }
 	    saved_addr[i].mode = TEMP;
@@ -520,8 +527,10 @@ update_saved_stack_slots(size_t start_stack_slot_index) {
 	    change_stack_slot(i, saved_addr[i]);
 	}
 #if RTL_GEN_DEBUG
-    fprintf(stderr, "     ==Stack union after -- ");
-    print_stack();
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, "     ==Stack union after -- ");
+	print_stack();
+    }
 #endif
     return changed_p;
 }
@@ -538,9 +547,11 @@ process_label(int type, size_t label, size_t depth) {
     int prev_type = VARR_ADDR(char, pos_label_type)[label];
 
 #if RTL_GEN_DEBUG
-    assert(depth == VARR_LENGTH(stack_slot, stack));
-    fprintf(stderr, " Processing label %lu, type=%d, depth=%lu\n",
-	    label, type, VARR_LENGTH(stack_slot, stack));
+    if (rtl_gen_debug_p) {
+	assert(depth == VARR_LENGTH(stack_slot, stack));
+	fprintf(stderr, " Processing label %lu, type=%d, depth=%lu\n",
+		label, type, VARR_LENGTH(stack_slot, stack));
+    }
 #endif
     assert(type != NO_LABEL);
     if (prev_type < type)
@@ -550,8 +561,10 @@ process_label(int type, size_t label, size_t depth) {
 	VARR_ADDR(size_t, label_start_stack_slot)[label] = save_stack_slots(depth);
 	stack_on_label_change_p = TRUE;
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "   Setting up stack at Label %lu -- ", label);
-	print_stack();
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "   Setting up stack at Label %lu -- ", label);
+	    print_stack();
+	}
 #endif
     } else {
 	assert(VARR_ADDR(size_t, pos_stack_free)[label] == depth + 1);
@@ -577,7 +590,9 @@ process_label(int type, size_t label, size_t depth) {
 	label_pos_addr[i] = label;
 	VARR_ADDR(char, label_processed_p)[label] = TRUE;
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "   Add label %lu for processing\n", label);
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "   Add label %lu for processing\n", label);
+	}
 #endif
     }
 }
@@ -604,15 +619,15 @@ mark_label_from_hash(VALUE key, VALUE val, VALUE arg) {
    CATCH_BOUND_POS_P too.  */
 static void
 setup_labels_from_catch_table(rb_iseq_t *iseq) {
-    size_t i, j, size, depth;
+    size_t i, j, iseq_size, size, depth;
     const struct iseq_catch_table *table;
     const struct iseq_catch_table_entry *entries;
     char *bound_addr;
     int label_type;
     
     VARR_TRUNC(char, catch_bound_pos_p, 0);
-    size = iseq->body->iseq_size;
-    for (i = 0; i < size; i++)
+    iseq_size = iseq->body->iseq_size;
+    for (i = 0; i < iseq_size; i++)
 	VARR_PUSH(char, catch_bound_pos_p, FALSE);
     table = iseq->body->catch_table;
     if (table == NULL)
@@ -621,15 +636,25 @@ setup_labels_from_catch_table(rb_iseq_t *iseq) {
     entries = table->entries;
     bound_addr = VARR_ADDR(char, catch_bound_pos_p);
     for (i = 0; i < size; i++) {
+	/* See hack for these catch types in compile.c.  */
+	depth = entries[i].sp;
+	/* Currently there might be garbage in the entry.  So ignore it.  */
+	if ((int) depth < 0 || entries[i].start >= iseq_size
+	    || entries[i].end >= iseq_size
+	    || entries[i].cont >= iseq_size)
+	    continue;
+	assert((int) depth >= 0
+	       && entries[i].start < iseq_size
+	       && entries[i].end < iseq_size
+	       && entries[i].cont < iseq_size);
 	bound_addr[entries[i].start] = TRUE;
 	bound_addr[entries[i].end] = TRUE;
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "start=%d, end=%d", entries[i].start, entries[i].end);
-	fprintf(stderr, ", sp=%d, CATCH_TYPE=%d, \n", entries[i].sp, entries[i].type);
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "start=%d, end=%d", entries[i].start, entries[i].end);
+	    fprintf(stderr, ", sp=%d, CATCH_TYPE=%d, \n", entries[i].sp, entries[i].type);
+	}
 #endif
-	/* See hack for these catch types in compile.c.  */
-	depth = entries[i].sp;
-	assert ((int) depth >= 0);
 	label_type = CONT_LABEL;
 	if (entries[i].type == CATCH_TYPE_RESCUE
 	    || entries[i].type == CATCH_TYPE_NEXT
@@ -690,33 +715,37 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
     VARR_ADDR(size_t, pos_stack_free)[pos] = *depth + 1;
     insn = code[pos];
 #if RTL_GEN_DEBUG
-    fprintf(stderr, "+%04lu %s: depth before=%lu", pos, insn_name(insn), *depth);
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, "+%04lu %s: depth before=%lu", pos, insn_name(insn), *depth);
+    }
 #endif
     stack_insn_len = insn_len(insn);
     *depth = insn_stack_increase(*depth, insn, TRUE, &code[pos + 1]);
+    result_p = FALSE;
     switch (insn) {
     case BIN(setlocal):
-    case BIN(setlocal_OP__WC__0):
-    case BIN(setlocal_OP__WC__1):
+    case BIN(setlocal_WC_0):
+    case BIN(setlocal_WC_1):
     case BIN(setspecial):
     case BIN(setinstancevariable):
     case BIN(setclassvariable):
     case BIN(setconstant):
     case BIN(setglobal):
+    case BIN(setblockparam):
     case BIN(nop):
     case BIN(pop):
     case BIN(branchif):
+    case BIN(branchiftype):
     case BIN(branchunless):
     case BIN(branchnil):
     case BIN(opt_case_dispatch):
     case BIN(jump):
     case BIN(opt_call_c_function):
-    case BIN(trace):
     case BIN(setn):
     case BIN(swap):
     case BIN(reverse):
     case BIN(adjuststack):
-	result_p = FALSE;
+    case BIN(tracecoverage):
 	assert(VARR_LENGTH(stack_slot, stack) >= *depth);
 	trunc_stack(*depth);
 	break;
@@ -731,11 +760,14 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
 	break;
     }
 #if RTL_GEN_DEBUG
-    processed_label_p = FALSE;
+    if (rtl_gen_debug_p) {
+	processed_label_p = FALSE;
+    }
 #endif
     temp_only_p = VARR_ADDR(char, use_only_temp_result_p)[pos];
     switch (insn) {
     case BIN(branchif):
+    case BIN(branchiftype):
     case BIN(branchunless):
     case BIN(branchnil):
     case BIN(getinlinecache):
@@ -743,8 +775,10 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
 	if (result_p)
 	    push_val(TEMP, 0, pos);
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "\n");
-	processed_label_p = TRUE;
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "\n");
+	    processed_label_p = TRUE;
+	}
 #endif
 	process_label(BRANCH_LABEL, code[pos + 1] + pos + stack_insn_len, *depth);
 	break;
@@ -755,8 +789,10 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
 	struct label_arg arg;
 		
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "\n");
-	processed_label_p = TRUE;
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "\n");
+	    processed_label_p = TRUE;
+	}
 #endif
 	arg.incr = incr;
 	arg.depth = *depth;
@@ -782,39 +818,31 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
 	else
 	    push_val(VAL, code[pos + 1], pos);
 	break;
-    case BIN(putobject_OP_INT2FIX_O_0_C_):
+    case BIN(putobject_INT2FIX_0_):
 	if (temp_only_p)
 	    push_val(TEMP, 0, pos);
 	else
 	    push_val(VAL, INT2FIX(0), pos);
 	break;
-    case BIN(putobject_OP_INT2FIX_O_1_C_):
+    case BIN(putobject_INT2FIX_1_):
 	if (temp_only_p)
 	    push_val(TEMP, 0, pos);
 	else
 	    push_val(VAL, INT2FIX(1), pos);
 	break;
-#if 0
-    case BIN(putstring):
-	if (temp_only_p)
-	    push_val(TEMP, 0, pos);
-	else
-	    push_val(STR, code[pos + 1], pos);
-	break;
-#endif
     case BIN(getlocal):
 	if (code[pos + 2] != 0 || temp_only_p)
 	    push_val(TEMP, 0, pos);
 	else
 	    push_val(LOC, code[pos + 1], pos);
 	break;
-    case BIN(getlocal_OP__WC__0):
+    case BIN(getlocal_WC_0):
 	if (temp_only_p)
 	    push_val(TEMP, 0, pos);
 	else
 	    push_val(LOC, code[pos + 1], pos);
 	break;
-    case BIN(getlocal_OP__WC__1):
+    case BIN(getlocal_WC_1):
 	push_val(TEMP, 0, pos);
 	break;
     case BIN(setlocal):
@@ -822,7 +850,7 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
 	if (code[pos + 2] != 0)
 	    break;
 	/* Fall through */
-    case BIN(setlocal_OP__WC__0):
+    case BIN(setlocal_WC_0):
 	prepare_local_assign(code[pos + 1], make_temp);
 	break;
     case BIN(setn): {
@@ -921,8 +949,10 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
 	break;
     }
 #if RTL_GEN_DEBUG
-    fprintf(stderr, processed_label_p ? " After insn " : ", after ");
-    print_stack();
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, processed_label_p ? " After insn " : ", after ");
+	print_stack();
+    }
 #endif
     assert(*depth == VARR_LENGTH(stack_slot, stack));
 }
@@ -937,13 +967,18 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
     VALUE insn;
     size_t pos, start_pos, stack_insn_len, depth;
     int niter;
+#if 1
+    unsigned int *curr_insn_info_pos;
+#endif
 #if RTL_GEN_DEBUG
     int type;
 #endif
 
 #if RTL_GEN_DEBUG
-    for (pos = 0; pos < size; pos += insn_len(code[pos]))
-	rb_iseq_disasm_insn(0, code, pos, iseq, 0);
+    if (rtl_gen_debug_p) {
+	for (pos = 0; pos < size; pos += insn_len(code[pos]))
+	    rb_iseq_disasm_insn(0, code, pos, iseq, 0, -1);
+    }
 #endif
     VARR_TRUNC(size_t, pos_stack_free, 0);
     VARR_TRUNC(size_t, label_pos_stack, 0);
@@ -959,22 +994,34 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
 	VARR_PUSH(char, use_only_temp_result_p, FALSE);
 	VARR_PUSH(size_t, label_start_stack_slot, 0);
     }
+#if 0
+    for (pos = 0, curr_insn_info_pos = iseq->body->insns_info.positions; pos < size; pos += stack_insn_len) {
+	if (*curr_insn_info_pos == pos) {
+	    VARR_ADDR(char, use_only_temp_result_p)[pos] = TRUE;
+	    curr_insn_info_pos++;
+	}
+	insn = code[pos];
+	stack_insn_len = insn_len(insn);
+    }
+#endif
     setup_labels_from_catch_table(iseq);
     niter = 0;
     do {
 	niter++;
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "+++++++++++++++Iteration = %d\n", niter);
-	type = BRANCH_LABEL;
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "+++++++++++++++Iteration = %d\n", niter);
+	    type = BRANCH_LABEL;
+	}
 #endif
 	stack_on_label_change_p = FALSE;
 	pos = 0;
 	depth = 0;
 	while (TRUE) {
 #if RTL_GEN_DEBUG
-	    {
+	    if (rtl_gen_debug_p) {
 		size_t i;
-	    
+		
 		fprintf(stderr, "---Start at %lu(%d) label stack=", pos, type);
 		for (i = 0; i < VARR_LENGTH(size_t, label_pos_stack); i++) {
 		    size_t p = VARR_ADDR(size_t, label_pos_stack)[i];
@@ -986,7 +1033,9 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
 	    for (start_pos = pos; pos < size;) {
 		if (pos != start_pos && VARR_ADDR(char, pos_label_type)[pos] != NO_LABEL) {
 #if RTL_GEN_DEBUG
-		    fprintf(stderr, "Achieving label %lu(%d) by fall through\n", pos, type);
+		    if (rtl_gen_debug_p) {
+			fprintf(stderr, "Achieving label %lu(%d) by fall through\n", pos, type);
+		    }
 #endif
 		    assert(depth + 1 == VARR_ADDR(size_t, pos_stack_free)[pos]);
 		    if (update_saved_stack_slots(VARR_ADDR(size_t, label_start_stack_slot)[pos]))
@@ -994,7 +1043,9 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
 		    else if (VARR_ADDR(char, label_processed_p)[pos])
 			break;
 #if RTL_GEN_DEBUG
-		    type = VARR_ADDR(char, pos_label_type)[pos];
+		    if (rtl_gen_debug_p) {
+			type = VARR_ADDR(char, pos_label_type)[pos];
+		    }
 #endif
 		}
 		insn = code[pos];
@@ -1005,13 +1056,17 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
 		pos += stack_insn_len;
 	    }
 #if RTL_GEN_DEBUG
-	    print_label_pos_stack();
+	    if (rtl_gen_debug_p) {
+		print_label_pos_stack();
+	    }
 #endif
 	    if (VARR_LENGTH(size_t, label_pos_stack) == 0)
 		break;
 	    pos = VARR_POP(size_t, label_pos_stack);
 #if RTL_GEN_DEBUG
-	    type = VARR_ADDR(char, pos_label_type)[pos];
+	    if (rtl_gen_debug_p) {
+		type = VARR_ADDR(char, pos_label_type)[pos];
+	    }
 #endif
 	    depth = VARR_ADDR(size_t, pos_stack_free)[pos];
 	    assert(depth > 0);
@@ -1055,33 +1110,31 @@ static VARR(VALUE) *iseq_rtl;
 static void
 append_vals(int argc, ...) {
     va_list argv;
+    int i;
 
-    if (argc > 0) {
-	int i;
+    assert (argc > 0);
+    va_start(argv, argc);
+    for (i = 0; i < argc; i++) {
+	VALUE v = va_arg(argv, VALUE);
 	
-	va_start(argv, argc);
-	for (i = 0; i < argc; i++) {
-	    VALUE v = va_arg(argv, VALUE);
-
-	    VARR_PUSH(VALUE, iseq_rtl, v);
-	}
-	va_end(argv);
+	VARR_PUSH(VALUE, iseq_rtl, v);
     }
+    va_end(argv);
 }
 
 /* Auxiliary append macros.  */
-#define APPEND1(op1) append_vals(1, (VALUE) (op1))
-#define APPEND2(op1, op2) append_vals(2, (VALUE) (op1), (VALUE) (op2))
-#define APPEND3(op1, op2, op3) \
-    append_vals(3, (VALUE) (op1), (VALUE) (op2), (VALUE) (op3))
-#define APPEND4(op1, op2, op3, op4) \
-    append_vals(4, (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4))
-#define APPEND5(op1, op2, op3, op4, op5) \
-    append_vals(5, (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4), (VALUE) (op5))
-#define APPEND6(op1, op2, op3, op4, op5, op6) \
-    append_vals(6, (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4), (VALUE) (op5), (VALUE) (op6))
-#define APPEND7(op1, op2, op3, op4, op5, op6, op7) \
-    append_vals(7, (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4), (VALUE) (op5), (VALUE) (op6), (VALUE) (op7))
+#define APPEND_INSN_OP0(insn_id) append_vals(1, (VALUE) (insn_id))
+#define APPEND_INSN_OP1(insn_id, op1) append_vals(2, (VALUE) (insn_id), (VALUE) (op1))
+#define APPEND_INSN_OP2(insn_id, op1, op2) \
+    append_vals(3, (VALUE) (insn_id), (VALUE) (op1), (VALUE) (op2))
+#define APPEND_INSN_OP3(insn_id, op1, op2, op3) \
+    append_vals(4, (VALUE) (insn_id), (VALUE) (op1), (VALUE) (op2), (VALUE) (op3))
+#define APPEND_INSN_OP4(insn_id, op1, op2, op3, op4)		\
+    append_vals(5, (VALUE) (insn_id), (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4))
+#define APPEND_INSN_OP5(insn_id, op1, op2, op3, op4, op5)		\
+    append_vals(6, (VALUE) (insn_id), (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4), (VALUE) (op5))
+#define APPEND_INSN_OP6(insn_id, op1, op2, op3, op4, op5, op6)		\
+    append_vals(7, (VALUE) (insn_id), (VALUE) (op1), (VALUE) (op2), (VALUE) (op3), (VALUE) (op4), (VALUE) (op5), (VALUE) (op6))
 
 /* Push a slot describing temp var with index RES to the emulated VM
    stack.  */
@@ -1119,11 +1172,11 @@ to_var(stack_slot slot, vindex_t top) {
     if (slot.mode == LOC)
 	return slot.u.loc;
     else if (slot.mode == SELF)
-	APPEND2(BIN(self2var), top);
+	APPEND_INSN_OP1(BIN(self2var), top);
     else if (slot.mode == VAL)
-	APPEND3(BIN(val2temp), top, slot.u.val);
+	APPEND_INSN_OP2(BIN(val2temp), top, slot.u.val);
     else if (slot.mode == STR)
-	APPEND3(BIN(str2var), top, slot.u.str);
+	APPEND_INSN_OP2(BIN(str2var), top, slot.u.str);
     return top;
 }
 
@@ -1134,15 +1187,15 @@ static void
 to_temp(stack_slot *slot, vindex_t res, int stack_p) {
     assert(slot->mode != TEMP || res == slot->u.temp);
     if (slot->mode == LOC) {
-	APPEND3(BIN(loc2temp), res, slot->u.loc);
+	APPEND_INSN_OP2(BIN(loc2temp), res, slot->u.loc);
 	if (stack_p)
 	    prepare_stack_slot_rewrite(slot);
     } else if (slot->mode == SELF) {
-	APPEND2(BIN(self2var), res);
+	APPEND_INSN_OP1(BIN(self2var), res);
     } else if (slot->mode == VAL) {
-	APPEND3(BIN(val2temp), res, slot->u.val);
+	APPEND_INSN_OP2(BIN(val2temp), res, slot->u.val);
     } else if (slot->mode == STR) {
-	APPEND3(BIN(str2var), res, slot->u.str);
+	APPEND_INSN_OP2(BIN(str2var), res, slot->u.str);
     }
     slot->mode = TEMP;
 #ifndef NDEBUG
@@ -1189,9 +1242,9 @@ get_local(lindex_t idx, rb_num_t level, int temp_only_p) {
 	vindex_t res = new_top_stack_temp_var();
 	
 	if (level == 0)
-	    APPEND3(BIN(loc2temp), res, idx);
+	    APPEND_INSN_OP2(BIN(loc2temp), res, idx);
 	else
-	    APPEND4(BIN(uploc2temp), res, idx, level);
+	    APPEND_INSN_OP3(BIN(uploc2temp), res, idx, level);
     }
 }
 
@@ -1212,41 +1265,41 @@ set_local(lindex_t idx, rb_num_t level) {
 	prepare_local_assign(idx, move_to_temp);
     if (slot.mode == SELF) {
 	if (level == 0)
-	    APPEND2(BIN(self2var), idx);
+	    APPEND_INSN_OP1(BIN(self2var), idx);
 	else {
 	    vindex_t op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	    
-	    APPEND2(BIN(self2var), op);
-	    APPEND4(BIN(var2uploc), idx, op, level);
+	    APPEND_INSN_OP1(BIN(self2var), op);
+	    APPEND_INSN_OP3(BIN(var2uploc), idx, op, level);
 	}
     } else if (slot.mode == VAL) {
 	if (level == 0)
-	    APPEND3(BIN(val2loc), idx, slot.u.val);
+	    APPEND_INSN_OP2(BIN(val2loc), idx, slot.u.val);
 	else
-	    APPEND4(BIN(val2uploc), idx, slot.u.val, level);
+	    APPEND_INSN_OP3(BIN(val2uploc), idx, slot.u.val, level);
     } else if (slot.mode == STR) {
 	if (level == 0) 
-	    APPEND3(BIN(str2var), idx, slot.u.str);
+	    APPEND_INSN_OP2(BIN(str2var), idx, slot.u.str);
 	else {
 	    vindex_t op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	    
-	    APPEND3(BIN(str2var), op, slot.u.str);
-	    APPEND4(BIN(var2uploc), idx, op, level);
+	    APPEND_INSN_OP2(BIN(str2var), op, slot.u.str);
+	    APPEND_INSN_OP3(BIN(var2uploc), idx, op, level);
 	}
     } else if (slot.mode == TEMP) {
 	vindex_t op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	
 	assert(op == slot.u.temp);
 	if (level == 0)
-	    APPEND3(BIN(temp2loc), idx, op);
+	    APPEND_INSN_OP2(BIN(temp2loc), idx, op);
 	else
-	    APPEND4(BIN(var2uploc), idx, op, level);
+	    APPEND_INSN_OP3(BIN(var2uploc), idx, op, level);
     } else {
 	assert(slot.mode == LOC);
 	if (level == 0)
-	    APPEND3(BIN(loc2loc), idx, slot.u.loc);
+	    APPEND_INSN_OP2(BIN(loc2loc), idx, slot.u.loc);
 	else
-	    APPEND4(BIN(var2uploc), idx, slot.u.loc, level);
+	    APPEND_INSN_OP3(BIN(var2uploc), idx, slot.u.loc, level);
     }
 }
 
@@ -1259,7 +1312,7 @@ putobject(VALUE v, int temp_only_p) {
     if (temp_only_p) {
 	vindex_t res = new_top_stack_temp_var();
 	
-	APPEND3(BIN(val2temp), res, v);
+	APPEND_INSN_OP2(BIN(val2temp), res, v);
     } else {
 	slot.mode = VAL;
 	slot.u.val = v;
@@ -1298,9 +1351,9 @@ specialized_load(enum ruby_vminsn_type res_insn, const VALUE *args, int arg2_p) 
     vindex_t res = new_top_stack_temp_var();
     
     if (arg2_p)
-	APPEND4(res_insn, res, args[0], args[1]);
+	APPEND_INSN_OP3(res_insn, res, args[0], args[1]);
     else
-	APPEND3(res_insn, res, args[0]);
+	APPEND_INSN_OP2(res_insn, res, args[0]);
 }
 
 /* Generate (one or more) RTL insns for a special store stack insn
@@ -1314,7 +1367,7 @@ specialized_store(enum ruby_vminsn_type res_insn, const VALUE *args) {
     slot = pop_stack_slot();
     op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
     op = to_var(slot, op);
-    APPEND3(res_insn, args[0], op);
+    APPEND_INSN_OP2(res_insn, args[0], op);
 }
 
 /* Return call data without kwarg corresponding to call info CI of
@@ -1389,20 +1442,20 @@ generate_call(rb_iseq_t *iseq, const VALUE *args, VALUE block) {
     cd = get_cd(iseq, ci, cc);
     if (slot.mode == SELF) {
 	if (block == 0 && ! stack_block_p)
-	    APPEND3(BIN(simple_call_self), cd, cd->call_start);
+	    APPEND_INSN_OP2(BIN(simple_call_self), cd, cd->call_start);
 	else
-	    APPEND4(BIN(call_self), cd, cd->call_start, block);
+	    APPEND_INSN_OP3(BIN(call_self), cd, cd->call_start, block);
     } else if (slot.mode == LOC) {
 	if (block == 0 && ! stack_block_p)
-	    APPEND4(BIN(simple_call_recv), cd, cd->call_start, slot.u.loc);
+	    APPEND_INSN_OP3(BIN(simple_call_recv), cd, cd->call_start, slot.u.loc);
 	else
-	    APPEND5(BIN(call_recv), cd, cd->call_start, block, slot.u.loc);
+	    APPEND_INSN_OP4(BIN(call_recv), cd, cd->call_start, block, slot.u.loc);
     } else {
 	to_temp(&slot, cd->call_start, FALSE);
 	if (block == 0 && ! stack_block_p)
-	    APPEND3(BIN(simple_call), cd, cd->call_start);
+	    APPEND_INSN_OP2(BIN(simple_call), cd, cd->call_start);
 	else
-	    APPEND4(BIN(call), cd, cd->call_start, block);
+	    APPEND_INSN_OP3(BIN(call), cd, cd->call_start, block);
     }
     new_top_stack_temp_var();
 }
@@ -1421,20 +1474,20 @@ generate_unary_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_
     cd = get_cd(iseq, ci, cc);
     if (slot.mode == SELF) {
 	op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-	APPEND2(BIN(self2var), op);
+	APPEND_INSN_OP1(BIN(self2var), op);
     } else if (slot.mode == VAL) {
 	op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-	APPEND3(BIN(val2temp), op, slot.u.val);
+	APPEND_INSN_OP2(BIN(val2temp), op, slot.u.val);
     } else if (slot.mode == STR) {
 	op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-	APPEND3(BIN(str2var), op, slot.u.str);
+	APPEND_INSN_OP2(BIN(str2var), op, slot.u.str);
     } else {
 	assert(slot.mode == LOC || slot.mode == TEMP);
 	assert(slot.mode != TEMP || slot.u.temp == -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
 	op = slot.mode == LOC ? slot.u.loc : -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
     }
     res = new_top_stack_temp_var();
-    APPEND4(res_insn, cd, res, op);
+    APPEND_INSN_OP3(res_insn, cd, res, op);
 }
 
 /* Return a variant of insn INSN_ID with an immediate operand (fixnum
@@ -1465,9 +1518,9 @@ make_imm_id(enum ruby_vminsn_type insn_id, int fixnum_p, int flonum_p) {
 }
 
 /* Generate RTL insns for operands of general RTL insn RES_INSN from
-   an ISEQ binary operator insn whose operands are in ARGS.  Return
-   RTL insn operands and call data through RES, OP, OP2, and CD.
-   Return RTL insn code which will be actually used.  */
+   an ISEQ binary operator insn whose call related operands are in
+   ARGS.  Return RTL insn operands and call data through RES, OP, OP2,
+   and CD.  Return RTL insn code which will be actually used.  */
 static enum ruby_vminsn_type
 get_binary_ops(rb_iseq_t *iseq, enum ruby_vminsn_type res_insn, const VALUE *args,
 	       vindex_t *res, vindex_t *op, VALUE *op2, struct rb_call_data **cd) {
@@ -1483,7 +1536,7 @@ get_binary_ops(rb_iseq_t *iseq, enum ruby_vminsn_type res_insn, const VALUE *arg
     *op = to_var(slot, *res);
     if (slot2.mode == SELF) {
 	*op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
-	APPEND2(BIN(self2var), *op2);
+	APPEND_INSN_OP1(BIN(self2var), *op2);
     } else if (slot2.mode == VAL) {
 	imm_insn = BIN(nop);
 	if (FIXNUM_P(slot2.u.val))
@@ -1495,7 +1548,7 @@ get_binary_ops(rb_iseq_t *iseq, enum ruby_vminsn_type res_insn, const VALUE *arg
 	    res_insn = imm_insn;
 	} else {
 	    *op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
-	    APPEND3(BIN(val2temp), *op2, slot2.u.val);
+	    APPEND_INSN_OP2(BIN(val2temp), *op2, slot2.u.val);
 	}
     } else if (slot2.mode == STR) {
 	imm_insn = make_imm_id(res_insn, FALSE, FALSE);
@@ -1504,7 +1557,7 @@ get_binary_ops(rb_iseq_t *iseq, enum ruby_vminsn_type res_insn, const VALUE *arg
 	    res_insn = imm_insn;
 	} else {
 	    *op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
-	    APPEND3(BIN(str2var), *op2, slot2.u.str);
+	    APPEND_INSN_OP2(BIN(str2var), *op2, slot2.u.str);
 	}
     } else {
 	assert(slot2.mode == LOC || slot2.mode == TEMP);
@@ -1547,9 +1600,9 @@ generate_bin_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_in
     res_insn = get_binary_ops(iseq, res_insn, args, &res, &op, &op2, &cd);
     push_temp_result(res);
     if (res == op && (vindex_t) op2 + 1 == op && (simple_insn = get_simple_insn(res_insn)) != BIN(nop))
-	APPEND3(simple_insn, cd, res);
+	APPEND_INSN_OP2(simple_insn, cd, res);
     else
-	APPEND5(res_insn, cd, res, op, op2);
+	APPEND_INSN_OP4(res_insn, cd, res, op, op2);
 }
 
 /* Return an RTL compare branch insn code.  The original RTL compare
@@ -1593,19 +1646,25 @@ tune_stack_slot(size_t pos, size_t n) {
     
     assert(VARR_ADDR(char, pos_label_type)[pos] != NO_LABEL);
 #if RTL_GEN_DEBUG
-    fprintf(stderr, "   ==Adjusting stack slot %lu -- before:", (long unsigned) n);
-    print_stack_slot(&slots_addr[n]);
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, "   ==Adjusting stack slot %lu -- before:", (long unsigned) n);
+	print_stack_slot(&slots_addr[n]);
+    }
 #endif
     if (saved_slots_addr[n].mode != TEMP || slots_addr[n].mode == TEMP || slots_addr[n].mode == ANY) {
 #if RTL_GEN_DEBUG
-	fprintf(stderr, " -- no change\n");
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, " -- no change\n");
+	}
 #endif
     } else {
 	to_temp(&slots_addr[n], -(vindex_t) n - 1, TRUE);
 #if RTL_GEN_DEBUG
-	fprintf(stderr, ", after:");
-	print_stack_slot(&slots_addr[n]);
-	fprintf(stderr, "\n");
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, ", after:");
+	    print_stack_slot(&slots_addr[n]);
+	    fprintf(stderr, "\n");
+	}
 #endif
     }
     assert(slots_addr[n].mode == ANY || saved_slots_addr[n].mode == ANY
@@ -1635,14 +1694,18 @@ tune_stack(size_t pos, int label_type, int restore_p) {
 	    slot.mode = TEMP;
 	    slot.u.temp = -(vindex_t) i - 1;
 #if RTL_GEN_DEBUG
-	    fprintf(stderr, "-->Changing ANY on TEMP (%ld)\n", slot.u.temp);
+	    if (rtl_gen_debug_p) {
+		fprintf(stderr, "-->Changing ANY on TEMP (%ld)\n", slot.u.temp);
+	    }
 #endif
 	  }
 	  push_stack_slot(slot);
 	}
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "-->Restoring stack at pos %lu. ", (long unsigned) pos);
-	print_stack();
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "-->Restoring stack at pos %lu. ", (long unsigned) pos);
+	    print_stack();
+	}
 #endif
 	return;
     }
@@ -1671,16 +1734,16 @@ generate_rel_op(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_vminsn
 
     if (VARR_ADDR(char, pos_label_type)[pos] != NO_LABEL
 	|| (next_insn != BIN(branchif) && next_insn != BIN(branchunless))) {
-	generate_bin_op(iseq, args, res_insn);
+	generate_bin_op(iseq, (res_insn == BIN(ne) ? args + 2 : args), res_insn);
 	return len;
     }
-    res_insn = get_binary_ops(iseq, res_insn, args, &res, &op, &op2, &cd);
+    res_insn = get_binary_ops(iseq, res_insn, (res_insn == BIN(ne) ? args + 2 : args), &res, &op, &op2, &cd);
     bt_p = next_insn == BIN(branchif);
     res_insn = get_bcmp_insn(res_insn, bt_p);
     dest = code[pos + len + 1] + pos + len + next_insn_len;
     tune_stack(dest, BRANCH_LABEL, FALSE);
-    APPEND7(res_insn, bt_p ? BIN(cont_btcmp) : BIN(cont_bfcmp),
-	    dest, cd, res, op, op2);
+    APPEND_INSN_OP6(res_insn, bt_p ? BIN(cont_btcmp) : BIN(cont_bfcmp),
+		    dest, cd, res, op, op2);
     loc.next_insn_pc = VARR_LENGTH(VALUE, iseq_rtl);
     loc.offset = 5;
     VARR_PUSH(branch_target_loc, branch_target_locs, loc);
@@ -1688,8 +1751,8 @@ generate_rel_op(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_vminsn
 }
 
 /* Generate RTL insns from ISEQ stack insn opt_aref (STR == Qnil in
-   this case) or opt_aref_with (STR is the last arg) whose operands
-   are in ARGS.  */
+   this case) or opt_aref_with (STR is the first operand) whose call
+   related operands are in ARGS.  */
 static void
 generate_aset_op(rb_iseq_t *iseq, const VALUE *args, VALUE str) {
     CALL_INFO ci = (CALL_INFO) args[0];
@@ -1704,6 +1767,10 @@ generate_aset_op(rb_iseq_t *iseq, const VALUE *args, VALUE str) {
     slot3 = pop_stack_slot();
     if (str == Qnil)
 	slot2 = pop_stack_slot();
+    else { /* to remove warnings */
+	slot2.mode = VAL;
+	slot2.u.val = 1;
+    }
     slot = pop_stack_slot();
     res = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
     cd = get_cd(iseq, ci, cc);
@@ -1715,7 +1782,7 @@ generate_aset_op(rb_iseq_t *iseq, const VALUE *args, VALUE str) {
 	res_insn = imm_insn;
     } else if (slot2.mode == SELF) {
 	op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
-	APPEND2(BIN(self2var), op2);
+	APPEND_INSN_OP1(BIN(self2var), op2);
     } else if (slot2.mode == VAL) {
 	imm_insn = BIN(nop);
 	if (FIXNUM_P(slot2.u.val))
@@ -1727,18 +1794,18 @@ generate_aset_op(rb_iseq_t *iseq, const VALUE *args, VALUE str) {
 	    res_insn = imm_insn;
 	} else {
 	    op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
-	    APPEND3(BIN(val2temp), op2, slot2.u.val);
+	    APPEND_INSN_OP2(BIN(val2temp), op2, slot2.u.val);
 	}
     } else if (slot2.mode == STR) {
 	op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
-	APPEND3(BIN(str2var), op2, slot2.u.str);
+	APPEND_INSN_OP2(BIN(str2var), op2, slot2.u.str);
     } else {
 	assert(slot2.mode == LOC || slot2.mode == TEMP);
 	assert(slot2.mode != TEMP || slot2.u.temp == -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2);
 	op2 = slot2.mode == LOC ? slot2.u.loc : -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
     }
     op3 = to_var(slot3, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2 - (str == Qnil ? 1 : 0));
-    APPEND5(res_insn, cd, op, op2, op3);
+    APPEND_INSN_OP4(res_insn, cd, op, op2, op3);
 #ifndef NDEBUG
     if (slot3.mode == TEMP)
 	slot3.u.temp = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
@@ -1791,19 +1858,19 @@ generate_leave(void) {
 
     slot = VARR_LAST(stack_slot, stack);
     if (slot.mode == SELF) {
-	APPEND2(BIN(self2var), op);
-	APPEND2(BIN(temp_ret), op);
+	APPEND_INSN_OP1(BIN(self2var), op);
+	APPEND_INSN_OP1(BIN(temp_ret), op);
     } else if (slot.mode == VAL) {
-	APPEND2(BIN(val_ret), slot.u.val);
+	APPEND_INSN_OP1(BIN(val_ret), slot.u.val);
     } else if (slot.mode == STR) {
-	APPEND3(BIN(str2var), op, slot.u.str);
-	APPEND2(BIN(temp_ret), op);
+	APPEND_INSN_OP2(BIN(str2var), op, slot.u.str);
+	APPEND_INSN_OP1(BIN(temp_ret), op);
     } else if (slot.mode == TEMP) {
 	assert(slot.u.temp == op);
-	APPEND2(BIN(temp_ret), op);
+	APPEND_INSN_OP1(BIN(temp_ret), op);
     } else {
 	assert(slot.mode == LOC);
-	APPEND2(BIN(loc_ret), slot.u.loc);
+	APPEND_INSN_OP1(BIN(loc_ret), slot.u.loc);
     }
 }
 
@@ -1830,8 +1897,10 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	unreachable_code_p = TRUE;
     if (label_type != NO_LABEL) {
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "Label %lu, type = %d, depth = %lu\n",
-		pos, label_type, VARR_LENGTH(stack_slot, stack));
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "Label %lu, type = %d, depth = %lu\n",
+		    pos, label_type, VARR_LENGTH(stack_slot, stack));
+	}
 #endif
 	tune_stack(pos, label_type, unreachable_code_p);
 	unreachable_code_p = FALSE;
@@ -1839,20 +1908,24 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
     rtl_insn_start = VARR_LENGTH(VALUE, iseq_rtl);
     VARR_ADDR(size_t, new_insn_offsets)[pos] = rtl_insn_start;
 #if RTL_GEN_DEBUG
-    fprintf(stderr, "*%04lu %s%s - ", pos, insn_name(insn), (unreachable_code_p && label_type == NO_LABEL ? " unreachable" : ""));
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, "*%04lu %s%s - ", pos, insn_name(insn), (unreachable_code_p && label_type == NO_LABEL ? " unreachable" : ""));
+    }
 #endif
     if (unreachable_code_p) {
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "\n");
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "\n");
+	}
 #endif
 	if (VARR_ADDR(char, catch_bound_pos_p)[pos])
-	    APPEND1(BIN(nop));
+	    APPEND_INSN_OP0(BIN(nop));
 	return pos + stack_insn_len;
     }
     temp_only_p = VARR_ADDR(char, use_only_temp_result_p)[pos];
     switch (insn) {
     case BIN(getlocal):
-      get_local(code[pos + 1], code[pos + 2], temp_only_p);
+	get_local(code[pos + 1], code[pos + 2], temp_only_p);
 	break;
     case BIN(setlocal):
 	set_local(code[pos + 1], code[pos + 2]);
@@ -1872,14 +1945,14 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	slot = pop_stack_slot();
 	if (slot.mode == VAL) {
 	    op = slot.u.val;
-	    APPEND4(BIN(val2ivar), code[pos + 1], code[pos + 2], op);
+	    APPEND_INSN_OP3(BIN(val2ivar), code[pos + 1], code[pos + 2], op);
 	} else {
 	    op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	    op = to_var(slot, op);
 	    if (op < 0)
-	      APPEND4(BIN(temp2ivar), code[pos + 1], code[pos + 2], op);
+	      APPEND_INSN_OP3(BIN(temp2ivar), code[pos + 1], code[pos + 2], op);
 	    else
-	      APPEND4(BIN(loc2ivar), code[pos + 1], code[pos + 2], op);
+	      APPEND_INSN_OP3(BIN(loc2ivar), code[pos + 1], code[pos + 2], op);
 	}
 	break;
     }
@@ -1895,10 +1968,10 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	slot = pop_stack_slot();
 	res = new_top_stack_temp_var();
 	if (slot.mode == VAL && (slot.u.val == Qnil || slot.u.val == rb_cObject)) {
-	    APPEND4(BIN(const_ld_val), code[pos + 1], res, slot.u.val);
+	    APPEND_INSN_OP3(BIN(const_ld_val), code[pos + 1], res, slot.u.val);
 	} else {
 	    op = to_var(slot, res);
-	    APPEND4(BIN(const2var), code[pos + 1], res, op);
+	    APPEND_INSN_OP3(BIN(const2var), code[pos + 1], res, op);
 	}
 	break;
     }
@@ -1911,7 +1984,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	slot = pop_stack_slot();
 	op1 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	op1 = to_var(slot, op1);
-	APPEND4(BIN(var2const), code[pos + 1], op1, op2);
+	APPEND_INSN_OP3(BIN(var2const), code[pos + 1], op1, op2);
 	break;
     }
     case BIN(getglobal):
@@ -1927,7 +2000,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	if (temp_only_p) {
 	    vindex_t res = new_top_stack_temp_var();
 
-	    APPEND2(BIN(self2var), res);
+	    APPEND_INSN_OP1(BIN(self2var), res);
 	} else {
 	    slot.mode = SELF;
 	    push_stack_slot(slot);
@@ -1942,19 +2015,30 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
       	vindex_t res;
 	
 	res = new_top_stack_temp_var();
-	APPEND3(insn == BIN(putspecialobject) ? BIN(specialobj2var) : BIN(iseq2var),
-		res, code[pos + 1]);
+	APPEND_INSN_OP2(insn == BIN(putspecialobject) ? BIN(specialobj2var) : BIN(iseq2var),
+			res, code[pos + 1]);
+	break;
+    }
+    case BIN(getblockparam):
+    case BIN(getblockparamproxy): {
+	vindex_t res;
+	
+	res = new_top_stack_temp_var();
+	APPEND_INSN_OP3(insn == BIN(getblockparam) ? BIN(get_block_param) : BIN(get_block_param_proxy),
+			res, code[pos + 1], code[pos + 2]);
+	break;
+    }
+    case BIN(setblockparam): {
+	vindex_t op;
+	
+	op = get_var();
+	APPEND_INSN_OP3(BIN(set_block_param), code[pos + 1], code[pos + 2], op);
 	break;
     }
     case BIN(putstring): {
-#if 0
-	slot.mode = STR;
-	slot.u.str = code[pos + 1];
-	push_stack_slot(slot);
-#else
 	vindex_t res = new_top_stack_temp_var();
-	APPEND3(BIN(str2var), res, code[pos + 1]);
-#endif
+
+	APPEND_INSN_OP2(BIN(str2var), res, code[pos + 1]);
 	break;
     }
     case BIN(concatstrings): {
@@ -1963,15 +2047,16 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	
 	put_args_on_stack(cnt);
 	res = new_top_stack_temp_var();
-	APPEND3(BIN(concat_strings), res, cnt);
+	APPEND_INSN_OP2(BIN(concat_strings), res, cnt);
 	break;
     }
     case BIN(tostring): {
-	vindex_t op, res;
+	vindex_t op1, op2, res;
 
-	op = get_var();
+	get_2vars(&op1, &op2);
+	assert(op2 < 0);
 	res = new_top_stack_temp_var();
-	APPEND3(BIN(to_string), res, op);
+	APPEND_INSN_OP3(BIN(to_string), res, op1, op2);
 	break;
     }
     case BIN(freezestring): {
@@ -1982,7 +2067,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	str_op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	to_temp(&slot, str_op, FALSE);
 	push_stack_slot(slot);
-	APPEND3(BIN(freeze_string), str_op, debug_info);
+	APPEND_INSN_OP2(BIN(freeze_string), str_op, debug_info);
 	break;
     }
     case BIN(toregexp): {
@@ -1992,7 +2077,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	
 	put_args_on_stack(cnt);
 	res = new_top_stack_temp_var();
-	APPEND4(BIN(to_regexp), res, opt, cnt);
+	APPEND_INSN_OP3(BIN(to_regexp), res, opt, cnt);
 	break;
     }
     case BIN(newarray):
@@ -2002,7 +2087,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	
 	put_args_on_stack(cnt);
 	res = new_top_stack_temp_var();
-	APPEND4(insn == BIN(newarray) ? BIN(make_array) : BIN(make_hash), res, res, cnt);
+	APPEND_INSN_OP3(insn == BIN(newarray) ? BIN(make_array) : BIN(make_hash), res, res, cnt);
 	break;
     }
     case BIN(duparray): {
@@ -2010,7 +2095,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	vindex_t res;
 
 	res = new_top_stack_temp_var();
-	APPEND3(BIN(clone_array), res, ary);
+	APPEND_INSN_OP2(BIN(clone_array), res, ary);
 	break;
     }
     case BIN(expandarray): {
@@ -2026,7 +2111,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	ary = get_var();
 	for (i = 0; i < cnt; i++)
 	    new_top_stack_temp_var();
-	APPEND4(BIN(spread_array), ary, num, flag);
+	APPEND_INSN_OP3(BIN(spread_array), ary, num, flag);
 	break;
     }
     case BIN(concatarray): {
@@ -2034,7 +2119,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 
 	get_2vars(&op1, &op2);
 	res = new_top_stack_temp_var();
-	APPEND4(BIN(concat_array), res, op1, op2);
+	APPEND_INSN_OP3(BIN(concat_array), res, op1, op2);
 	break;
     }
     case BIN(splatarray): {
@@ -2043,7 +2128,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 
 	op = get_var();
 	res = new_top_stack_temp_var();
-	APPEND4(BIN(splat_array), res, op, flag);
+	APPEND_INSN_OP3(BIN(splat_array), res, op, flag);
 	break;
     }
     case BIN(newrange): {
@@ -2052,7 +2137,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 
 	get_2vars(&op1, &op2);
 	res = new_top_stack_temp_var();
-	APPEND5(BIN(make_range), res, op1, op2, flag);
+	APPEND_INSN_OP4(BIN(make_range), res, op1, op2, flag);
 	break;
     }
     case BIN(pop):
@@ -2065,7 +2150,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	op = - (vindex_t) VARR_LENGTH(stack_slot, stack);
 	if (slot.mode == TEMP) {
 	    assert(slot.u.temp == op);
-	    APPEND3(BIN(temp2temp), op - 1, op);
+	    APPEND_INSN_OP2(BIN(temp2temp), op - 1, op);
 #ifndef NDEBUG
 	    slot.u.temp = op - 1;
 #endif
@@ -2085,7 +2170,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	    slot = VARR_ADDR(stack_slot, stack)[opi];
 	    if (slot.mode == TEMP) {
 		assert(slot.u.temp == -opi - 1);
-		APPEND3(BIN(temp2temp), - (vindex_t) VARR_LENGTH(stack_slot, stack) - 1, - opi - 1);
+		APPEND_INSN_OP2(BIN(temp2temp), - (vindex_t) VARR_LENGTH(stack_slot, stack) - 1, - opi - 1);
 #ifndef NDEBUG
 		slot.u.temp = - (vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 #endif
@@ -2103,21 +2188,21 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	op = - (vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	if (slot.mode != TEMP || slot2.mode != TEMP) {
 	    if (slot2.mode == TEMP) {
-		APPEND3(BIN(temp2temp), op, op - 1);
+		APPEND_INSN_OP2(BIN(temp2temp), op, op - 1);
 #ifndef NDEBUG
 		slot2.u.temp = op;
 #endif
 	    }
 	    push_stack_slot(slot2);
 	    if (slot.mode == TEMP) {
-		APPEND3(BIN(temp2temp), op - 1, op);
+		APPEND_INSN_OP2(BIN(temp2temp), op - 1, op);
 #ifndef NDEBUG
 		slot.u.temp = op - 1;
 #endif
 	    }
 	    push_stack_slot(slot);
 	} else {
-	    APPEND3(BIN(var_swap), op, op - 1);
+	    APPEND_INSN_OP2(BIN(var_swap), op, op - 1);
 	    push_stack_slot(slot);
 	    push_stack_slot(slot2);
 	}
@@ -2127,7 +2212,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	rb_num_t n = code[pos + 1];
 
 	put_on_stack(n);
-	APPEND3(BIN(temp_reverse), n, -(vindex_t) (VARR_LENGTH(stack_slot, stack) - n) - 1);
+	APPEND_INSN_OP2(BIN(temp_reverse), n, -(vindex_t) (VARR_LENGTH(stack_slot, stack) - n) - 1);
 	break;
     }
     case BIN(reput):
@@ -2145,7 +2230,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	slot = VARR_ADDR(stack_slot, stack)[opi];
 	if (slot.mode == TEMP) {
 	    assert(slot.u.temp == -opi - 1);
-	    APPEND3(BIN(temp2temp), - (vindex_t) VARR_LENGTH(stack_slot, stack) - 1, - opi - 1);
+	    APPEND_INSN_OP2(BIN(temp2temp), - (vindex_t) VARR_LENGTH(stack_slot, stack) - 1, - opi - 1);
 #ifndef NDEBUG
 	    slot.u.temp = - (vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 #endif
@@ -2171,7 +2256,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	change_stack_slot(i, slot);
 	//to_temp(nth_slot, -i - 1, TRUE);
 	if (slot.mode == TEMP)
-	    APPEND3(BIN(temp2temp), -i - 1, - (vindex_t) VARR_LENGTH(stack_slot, stack));
+	    APPEND_INSN_OP2(BIN(temp2temp), -i - 1, - (vindex_t) VARR_LENGTH(stack_slot, stack));
 	break;
     }
     case BIN(adjuststack): {
@@ -2198,7 +2283,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	    insn = BIN(defined_p);
 	}
 	res = new_top_stack_temp_var();
-	APPEND6(insn, res, op, code[pos + 1], code[pos + 2], code[pos + 3]);
+	APPEND_INSN_OP5(insn, res, op, code[pos + 1], code[pos + 2], code[pos + 3]);
 	break;
     }
     case BIN(checkmatch): {
@@ -2211,14 +2296,14 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	op1 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	op1 = to_var(slot, op1);
 	res = new_top_stack_temp_var();
-	APPEND5(BIN(check_match), res, op1, op2, code[pos + 1]);
+	APPEND_INSN_OP4(BIN(check_match), res, op1, op2, code[pos + 1]);
 	break;
     }
     case BIN(checkkeyword): {
 	vindex_t res;
 	
 	res = new_top_stack_temp_var();
-	APPEND4(BIN(check_keyword), res, code[pos + 1], code[pos + 2]);
+	APPEND_INSN_OP3(BIN(check_keyword), res, code[pos + 1], code[pos + 2]);
 	/* ??? combining with branch */
 	break;
     }
@@ -2232,19 +2317,20 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	op1 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	op1 = to_var(slot, op1);
 	res = new_top_stack_temp_var();
-	APPEND7(BIN(define_class), code[pos + 1], code[pos + 2], code[pos + 3],
-		op1, op2, res);
+	APPEND_INSN_OP6(BIN(define_class), code[pos + 1], code[pos + 2], code[pos + 3],
+			op1, op2, res);
 	break;
     }
     case BIN(send):
 	generate_call(iseq, &code[pos + 1], code[pos + 3]);
 	break;
-    case BIN(opt_str_freeze): {
+    case BIN(opt_str_freeze):
+    case BIN(opt_str_uminus): {
 	VALUE str = code[pos + 1];
 	vindex_t res;
 	
 	res = new_top_stack_temp_var();
-	APPEND3(BIN(str_freeze_call), res, str);
+	APPEND_INSN_OP2(insn == BIN(opt_str_freeze) ? BIN(str_freeze_call) : BIN(str_uminus), res, str);
 	break;
     }
     case BIN(opt_newarray_max):
@@ -2257,7 +2343,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	start = new_top_stack_temp_var();
 	res_insn = (insn == BIN(opt_newarray_max)
 		    ? BIN(new_array_max) : BIN(new_array_min));
-	APPEND4(res_insn, start, start, num);
+	APPEND_INSN_OP3(res_insn, start, start, num);
 	break;
     }
     case BIN(opt_send_without_block):
@@ -2276,10 +2362,10 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	slot = pop_stack_slot();
 	cd = get_cd(iseq, ci, cc);
 	if (slot.mode == VAL) {
-	    APPEND5(BIN(call_super_val), cd, cd->call_start, block, slot.u.val);
+	    APPEND_INSN_OP4(BIN(call_super_val), cd, cd->call_start, block, slot.u.val);
 	} else {
 	    assert (slot.mode == TEMP);
-	    APPEND5(BIN(call_super), cd, cd->call_start, block, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
+	    APPEND_INSN_OP4(BIN(call_super), cd, cd->call_start, block, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
 	}
 	push_temp_result(cd->call_start);
 	break;
@@ -2292,7 +2378,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	args_num = ci->orig_argc;
 	put_args_on_stack(args_num);
 	cd = get_cd(iseq, ci, NULL);
-	APPEND3(BIN(call_block), cd, cd->call_start);
+	APPEND_INSN_OP2(BIN(call_block), cd, cd->call_start);
 	new_top_stack_temp_var();
 	break;
     }
@@ -2307,12 +2393,12 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	   stack.  */
 	slot = VARR_LAST(stack_slot, stack);
 	if (slot.mode == VAL) {
-	    APPEND3(BIN(raise_except_val), slot.u.val, throw_state);
+	    APPEND_INSN_OP2(BIN(raise_except_val), slot.u.val, throw_state);
 	} else {
 	    vindex_t op = -(vindex_t) VARR_LENGTH(stack_slot, stack);
 
 	    op = to_var(slot, op);
-	    APPEND3(BIN(raise_except), op, throw_state);
+	    APPEND_INSN_OP2(BIN(raise_except), op, throw_state);
 	}
 	break;
     }
@@ -2321,16 +2407,14 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	
 	if (code[dest] == BIN(leave)) {
 	    generate_leave();
-	} else if (code[dest] == BIN(trace)
-		   && code[dest + insn_len(BIN(trace))] == BIN(leave)) {
-	    APPEND2(code[dest], code[dest + 1]);
-	    generate_leave();
 	} else {
 #if RTL_GEN_DEBUG
-	    fprintf(stderr, "\n");
+	    if (rtl_gen_debug_p) {
+		fprintf(stderr, "\n");
+	    }
 #endif
 	    tune_stack(dest, BRANCH_LABEL, FALSE);
-	    APPEND2(BIN(goto), dest);
+	    APPEND_INSN_OP1(BIN(goto), dest);
 	    loc.next_insn_pc = VARR_LENGTH(VALUE, iseq_rtl);
 	    loc.offset = 1;
 	    VARR_PUSH(branch_target_loc, branch_target_locs, loc);
@@ -2338,23 +2422,32 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	break;
     }
     case BIN(branchif):
+    case BIN(branchiftype):
     case BIN(branchunless):
     case BIN(branchnil): {
 	vindex_t op;
 	size_t dest;
 	enum ruby_vminsn_type res_insn;
 
-	res_insn = insn == BIN(branchif) ? BIN(bt) : insn == BIN(branchunless) ? BIN(bf) : BIN(bnil);
+	res_insn = (insn == BIN(branchif) ? BIN(bt) : insn == BIN(branchunless) ? BIN(bf)
+		    : insn == BIN(branchiftype) ? BIN(btype) : BIN(bnil));
 	slot = pop_stack_slot();
 	op = to_var(slot, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
 	dest = code[pos + 1] + pos + stack_insn_len;
 #if RTL_GEN_DEBUG
-	fprintf(stderr, "\n");
+	if (rtl_gen_debug_p) {
+	    fprintf(stderr, "\n");
+	}
 #endif
 	tune_stack(dest, BRANCH_LABEL, FALSE);
-	APPEND3(res_insn, dest, op);
+	if (insn == BIN(branchiftype)) {
+	  APPEND_INSN_OP3(res_insn, dest, code[pos + 1], op);
+	  loc.offset = 3;
+	} else {
+	  APPEND_INSN_OP2(res_insn, dest, op);
+	  loc.offset = 2;
+	}
 	loc.next_insn_pc = VARR_LENGTH(VALUE, iseq_rtl);
-	loc.offset = 2;
 	VARR_PUSH(branch_target_loc, branch_target_locs, loc);
 	break;
     }
@@ -2372,10 +2465,10 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	    && VARR_ADDR(char, pos_label_type)[pos + stack_insn_len + next_insn_len] == NO_LABEL
 	    && (next_next_insn_len = insn_len(next_next_insn)) + next_insn_len == code[pos + 1]
 	    && code[pos + 2] == code[pos + stack_insn_len + next_insn_len + 1] /* ic */) {
-	    APPEND5(BIN(const_cached_val_ld), res, Qnil, code[pos + stack_insn_len + 1] /* id */, code[pos + 2] /* ic */);
+	    APPEND_INSN_OP4(BIN(const_cached_val_ld), res, Qnil, code[pos + stack_insn_len + 1] /* id */, code[pos + 2] /* ic */);
 	    stack_insn_len += next_insn_len + next_next_insn_len;
 	} else {
-	    APPEND4(BIN(get_inline_cache), code[pos + 1] + pos + stack_insn_len, res, code[pos + 2]);
+	    APPEND_INSN_OP3(BIN(get_inline_cache), code[pos + 1] + pos + stack_insn_len, res, code[pos + 2]);
 	    loc.next_insn_pc = VARR_LENGTH(VALUE, iseq_rtl);
 	    loc.offset = 3;
 	    VARR_PUSH(branch_target_loc, branch_target_locs, loc);
@@ -2388,14 +2481,14 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	
 	slot = pop_stack_slot();
 	op = to_var(slot, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
-	APPEND3(BIN(set_inline_cache), op, code[pos + 1]);
+	APPEND_INSN_OP2(BIN(set_inline_cache), op, code[pos + 1]);
 	push_temp_result(op);
 	break;
     }
     case BIN(once): {
 	vindex_t res = new_top_stack_temp_var();
 	
-	APPEND4(BIN(run_once), res, code[pos + 1], code[pos + 2]);
+	APPEND_INSN_OP3(BIN(run_once), res, code[pos + 1], code[pos + 2]);
 	break;
     }
     case BIN(opt_case_dispatch): {
@@ -2405,14 +2498,14 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	struct hash_label_transform_arg arg;
 
 	hash = rb_hash_dup(hash);
-	rb_iseq_add_mark_object(iseq, hash);
+	iseq_add_mark_object_compile_time(iseq, hash);
 	arg.hash = hash;
 	arg.map_p = FALSE;
 	arg.decr = -incr;
 	change_hash_values(hash, &arg);
 	slot = pop_stack_slot();
 	op = to_var(slot, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
-	APPEND4(BIN(case_dispatch), op, hash, code[pos + 2] + incr);
+	APPEND_INSN_OP3(BIN(case_dispatch), op, hash, code[pos + 2] + incr);
 	loc.next_insn_pc = VARR_LENGTH(VALUE, iseq_rtl);
 	loc.offset = 1;
 	VARR_PUSH(branch_target_loc, branch_target_locs, loc);
@@ -2464,13 +2557,13 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	generate_aset_op(iseq, &code[pos + 1], Qnil);
 	break;
     case BIN(opt_aset_with):
-	generate_aset_op(iseq, &code[pos + 1], code[pos + 3]);
+	generate_aset_op(iseq, &code[pos + 2], code[pos + 1]);
 	break;
     case BIN(opt_aref_with):
 	slot.mode = STR;
-	slot.u.str = code[pos + 3];
+	slot.u.str = code[pos + 1];
 	push_stack_slot(slot);
-	generate_bin_op(iseq, &code[pos + 1], BIN(ind));
+	generate_bin_op(iseq, &code[pos + 2], BIN(ind));
 	break;
     case BIN(opt_length):
 	generate_unary_op(iseq, &code[pos + 1], BIN(length));
@@ -2487,6 +2580,16 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
     case BIN(opt_not):
 	generate_unary_op(iseq, &code[pos + 1], BIN(not));
 	break;
+    case BIN(intern): {
+	vindex_t op, res;
+
+	slot = pop_stack_slot();
+	op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
+	op = to_var(slot, op);
+	res = new_top_stack_temp_var();
+	APPEND_INSN_OP2(BIN(str2sym), res, op);
+	break;
+    }
     case BIN(opt_regexpmatch1): {
 	VALUE regexp = code[pos + 1];
 	vindex_t res, op;
@@ -2494,7 +2597,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	slot = pop_stack_slot();
 	op = to_var(slot, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
 	res = new_top_stack_temp_var();
-	APPEND4(BIN(regexp_match1), res, regexp, op);
+	APPEND_INSN_OP3(BIN(regexp_match1), res, regexp, op);
     	break;
     }
     case BIN(opt_regexpmatch2): {
@@ -2510,7 +2613,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	cd = get_cd(iseq, ci, cc);
 	op = to_var(slot, res);
 	op2 = to_var(slot2, res - 1);
-	APPEND5(BIN(regexp_match2), cd, res, op, op2);
+	APPEND_INSN_OP4(BIN(regexp_match2), cd, res, op, op2);
 	push_temp_result(res);
 	break;
     }
@@ -2518,47 +2621,47 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_v
 	vindex_t args_num = iseq->body->param.size + 1;
 
 	put_on_stack(args_num);
-	APPEND3(BIN(call_c_func), code[pos + 1], args_num);
+	APPEND_INSN_OP2(BIN(call_c_func), code[pos + 1], args_num);
 	break;
     }
     case BIN(bitblt):
     case BIN(answer):
 	assert(FALSE);
 	break;
+    case BIN(tracecoverage):
+	APPEND_INSN_OP2(BIN(trace_coverage), code[pos + 1], code[pos + 2]);
+	break;
     case BIN(nop):
 	if (VARR_ADDR(char, catch_bound_pos_p)[pos])
-	    APPEND1(BIN(nop));
+	    APPEND_INSN_OP0(BIN(nop));
 	break;
-    case BIN(trace): {
-	rb_num_t nf = code[pos + 1];
-	
-	APPEND2(BIN(trace), nf);
-	break;
-    }
-    case BIN(getlocal_OP__WC__0):
+    case BIN(getlocal_WC_0):
 	get_local(code[pos + 1], 0, temp_only_p);
 	break;
-    case BIN(getlocal_OP__WC__1):
+    case BIN(getlocal_WC_1):
 	get_local(code[pos + 1], 1, temp_only_p);
 	break;
-    case BIN(setlocal_OP__WC__0):
+    case BIN(setlocal_WC_0):
 	set_local(code[pos + 1], 0);
 	break;
-    case BIN(setlocal_OP__WC__1):
+    case BIN(setlocal_WC_1):
 	set_local(code[pos + 1], 1);
 	break;
-    case BIN(putobject_OP_INT2FIX_O_0_C_):
+    case BIN(putobject_INT2FIX_0_):
 	putobject(INT2FIX(0), temp_only_p);
 	break;
-    case BIN(putobject_OP_INT2FIX_O_1_C_):
+    case BIN(putobject_INT2FIX_1_):
 	putobject(INT2FIX(1), temp_only_p);
 	break;
     default:
+	assert(FALSE);
 	break;
     }
 #if RTL_GEN_DEBUG
-    fprintf(stderr, " After ");
-    print_stack();
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, " After ");
+	print_stack();
+    }
 #endif
     return pos + stack_insn_len;
 }
@@ -2578,7 +2681,9 @@ translate(rb_iseq_t *iseq){
     for (pos = 0; pos < size; pos++)
 	VARR_PUSH(size_t, new_insn_offsets, 0);
 #if RTL_GEN_DEBUG
-    fprintf(stderr, "++++++++++++++Translating\n");
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, "++++++++++++++Translating\n");
+    }
 #endif
     unreachable_code_p = FALSE;
     for (prev_insn = BIN(nop), pos = 0; pos < size; prev_insn = insn) {
@@ -2592,16 +2697,34 @@ translate(rb_iseq_t *iseq){
    we failed to do this.  */
 static int
 create_rtl_line_table(rb_iseq_t *iseq) {
-    size_t i, size;
-    struct iseq_line_info_entry *table;
+    size_t i, size, rtl_size, pos, prev_pos;
+    struct iseq_insn_info_entry *entries;
+    unsigned int *positions;
     
-    iseq->body->rtl_line_info_size = size = iseq->body->line_info_size;
-    iseq->body->rtl_line_info_table = table = ALLOC_N(struct iseq_line_info_entry, size);
-    if (table == NULL)
+    size = iseq->body->insns_info.size;
+    for (i = rtl_size = prev_pos = 0; i < size; i++, prev_pos = pos) {
+      pos = VARR_ADDR(size_t, new_insn_offsets)[iseq->body->insns_info.positions[i]];
+      if (i == 0 || pos != prev_pos)
+	rtl_size++;
+    }
+    iseq->body->rtl_insns_info.size = rtl_size;
+    if ((iseq->body->rtl_insns_info.body = entries = ALLOC_N(struct iseq_insn_info_entry, rtl_size)) == NULL)
 	return FALSE;
-    MEMMOVE(table, iseq->body->line_info_table, struct iseq_line_info_entry, size);
-    for (i = 0; i < size; i++)
-	table[i].position = VARR_ADDR(size_t, new_insn_offsets)[table[i].position];
+    if ((positions = iseq->body->rtl_insns_info.positions = ALLOC_N(unsigned int, rtl_size)) == NULL) {
+	free(entries);
+	return FALSE;
+    }
+    for (i = rtl_size = prev_pos = 0; i < size; i++, prev_pos = pos) {
+	pos = VARR_ADDR(size_t, new_insn_offsets)[iseq->body->insns_info.positions[i]];
+	if (i != 0 && pos == prev_pos) {
+	    entries[rtl_size - 1].events |= iseq->body->insns_info.body[i].events;
+	    entries[rtl_size - 1].line_no = iseq->body->insns_info.body[i].line_no;
+	    continue;
+	}
+	positions[rtl_size] = pos;
+	entries[rtl_size] = iseq->body->insns_info.body[i];
+	rtl_size++;
+    }
     return TRUE;
 }
 
@@ -2616,7 +2739,6 @@ create_rtl_catch_table(rb_iseq_t *iseq) {
     struct iseq_catch_table_entry *rtl_entries;
     const size_t *addr;
     
-    iseq->body->except_p = FALSE;
     table = iseq->body->catch_table;
     if (table == NULL)
 	return TRUE;
@@ -2629,10 +2751,13 @@ create_rtl_catch_table(rb_iseq_t *iseq) {
     rtl_entries = rtl_table->entries;
     addr = VARR_ADDR(size_t, new_insn_offsets);
     for (i = 0; i < size; i++) {
-	if (entries[i].type != CATCH_TYPE_NEXT
-	    && entries[i].type != CATCH_TYPE_REDO)
-	    iseq->body->except_p = TRUE;
 	rtl_entries[i] = entries[i];
+	/* Currently there might be garbage in the entry.  So don't
+	   translate it.  */
+	if (entries[i].start >= iseq->body->iseq_size
+	    || entries[i].end >= iseq->body->iseq_size
+	    || entries[i].cont >= iseq->body->iseq_size)
+	    continue;
 	rtl_entries[i].start = addr[rtl_entries[i].start];
 	rtl_entries[i].end = addr[rtl_entries[i].end];
 	rtl_entries[i].cont = addr[rtl_entries[i].cont];
@@ -2684,15 +2809,17 @@ rtl_gen(rb_iseq_t *iseq) {
 	return FALSE;
     initialize_loc_stack_count(iseq);
 #if RTL_GEN_DEBUG
-    fprintf(stderr, "------------%s@%s------------\n",
-	    RSTRING_PTR(iseq->body->location.label), RSTRING_PTR(rb_iseq_path(iseq)));
+    if (rtl_gen_debug_p) {
+	fprintf(stderr, "------------%s@%s------------\n",
+		RSTRING_PTR(iseq->body->location.label), RSTRING_PTR(rb_iseq_path(iseq)));
+    }
 #endif
     /* First pass on stack insns:  */
     find_stack_values_on_labels(iseq);
     /* Second pass on stack insns: */
     translate(iseq);
+    iseq->body->rtl_encoded = ALLOC_N(VALUE, VARR_LENGTH(VALUE, iseq_rtl));
     iseq->body->rtl_size = VARR_LENGTH(VALUE, iseq_rtl);
-    iseq->body->rtl_encoded = ALLOC_N(VALUE, iseq->body->rtl_size);
     iseq->body->temp_vars_num = max_stack_depth;
     if (iseq->body->rtl_encoded == NULL)
       return FALSE;
@@ -2726,6 +2853,9 @@ rtl_gen(rb_iseq_t *iseq) {
    to do this.  */
 int
 rtl_gen_init(void) {
+#if RTL_GEN_DEBUG
+    rtl_gen_debug_p = getenv("MRI_RTL_GEN_DEBUG") != NULL;
+#endif
     if (RUBY_SETJMP(rtl_gen_jump_buf) != 0)
 	return FALSE;
     VARR_CREATE(branch_target_loc, branch_target_locs, 0);

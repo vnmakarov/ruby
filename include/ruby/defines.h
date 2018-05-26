@@ -29,10 +29,6 @@ extern "C" {
 #ifndef PUREFUNC
 # define PUREFUNC(x) x
 #endif
-#define NORETURN_STYLE_NEW 1
-#ifndef NORETURN
-# define NORETURN(x) x
-#endif
 #ifndef DEPRECATED
 # define DEPRECATED(x) x
 #endif
@@ -70,6 +66,17 @@ extern "C" {
         (__GNUC_MINOR__ == (minor) && __GNUC_PATCHLEVEL__ >= (patchlevel))))))
 # else
 #  define GCC_VERSION_SINCE(major, minor, patchlevel) 0
+# endif
+#endif
+#ifndef GCC_VERSION_BEFORE
+# if defined(__GNUC__) && !defined(__INTEL_COMPILER) && !defined(__clang__)
+#  define GCC_VERSION_BEFORE(major, minor, patchlevel) \
+    ((__GNUC__ < (major)) ||  \
+     ((__GNUC__ == (major) && \
+       ((__GNUC_MINOR__ < (minor)) || \
+        (__GNUC_MINOR__ == (minor) && __GNUC_PATCHLEVEL__ <= (patchlevel))))))
+# else
+#  define GCC_VERSION_BEFORE(major, minor, patchlevel) 0
 # endif
 #endif
 
@@ -127,6 +134,9 @@ extern "C" {
 #endif
 #ifdef HAVE_STDINT_H
 # include <stdint.h>
+#endif
+#ifdef HAVE_STDALIGN_H
+# include <stdalign.h>
 #endif
 #ifdef HAVE_UNISTD_H
 # include <unistd.h>
@@ -263,12 +273,27 @@ void xfree(void*);
 #define RUBY_FUNC_EXPORTED
 #endif
 
+/* These macros are used for functions which are exported only for MJIT
+   and NOT ensured to be exported in future versions. */
+#define MJIT_FUNC_EXPORTED RUBY_FUNC_EXPORTED
+#define MJIT_SYMBOL_EXPORT_BEGIN RUBY_SYMBOL_EXPORT_BEGIN
+#define MJIT_SYMBOL_EXPORT_END RUBY_SYMBOL_EXPORT_END
+
 #ifndef RUBY_EXTERN
 #define RUBY_EXTERN extern
 #endif
 
 #ifndef EXTERN
-#define EXTERN RUBY_EXTERN	/* deprecated */
+# if defined __GNUC__
+#   define EXTERN _Pragma("message \"EXTERN is deprecated, use RUBY_EXTERN instead\""); \
+    RUBY_EXTERN
+# elif defined _MSC_VER
+#   define EXTERN __pragma(message(__FILE__"("STRINGIZE(__LINE__)"): warning: "\
+				   "EXTERN is deprecated, use RUBY_EXTERN instead")); \
+    RUBY_EXTERN
+# else
+#   define EXTERN <-<-"EXTERN is deprecated, use RUBY_EXTERN instead"->->
+# endif
 #endif
 
 #ifndef RUBY_MBCHAR_MAXSIZE
@@ -354,6 +379,31 @@ void rb_ia64_flushrs(void);
 # else
 #   define PACKED_STRUCT_UNALIGNED(x) x
 # endif
+#endif
+
+#ifndef RUBY_ALIGNAS
+#define RUBY_ALIGNAS(x) /* x */
+#endif
+
+#ifdef RUBY_ALIGNOF
+/* OK, take that definition */
+#elif defined(__cplusplus) && (__cplusplus >= 201103L)
+#define RUBY_ALIGNOF alignof
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#define RUBY_ALIGNOF _Alignof
+#else
+#define RUBY_ALIGNOF(type) ((size_t)offsetof(struct { char f1; type f2; }, f2))
+#endif
+
+#define NORETURN_STYLE_NEW 1
+#ifdef NORETURN
+/* OK, take that definition */
+#elif defined(__cplusplus) && (__cplusplus >= 201103L)
+#define NORETURN(x) [[ noreturn ]] x
+#elif defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
+#define NORETURN(x) _Noreturn x
+#else
+#define NORETURN(x) x
 #endif
 
 RUBY_SYMBOL_EXPORT_END

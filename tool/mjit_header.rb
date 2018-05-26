@@ -34,7 +34,7 @@ end
 # Return a regex describing a GCC/LLVM function header
 def get_func_header_regex
   attr_regex = get_attr_regex
-  /\A[^\[{(]*\((#{attr_regex}|[^()])*\)(\s*#{attr_regex})*\s*/
+  /\A((#{attr_regex})|[^\[{(])*\((#{attr_regex}|[^()])*\)(\s*#{attr_regex})*\s*/
 end
 
 # Given DECL return the name of it, nil if failed

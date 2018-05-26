@@ -1,4 +1,4 @@
-# frozen_string_literal: false
+# frozen_string_literal: true
 $DEBUG_RDOC = nil
 
 # :main: README.rdoc
@@ -65,7 +65,7 @@ module RDoc
   ##
   # RDoc version you are using
 
-  VERSION = '5.0.0'
+  VERSION = '6.0.3'
 
   ##
   # Method visibilities
@@ -125,8 +125,6 @@ module RDoc
 
   autoload :RDoc,           'rdoc/rdoc'
 
-  autoload :TestCase,       'rdoc/test_case'
-
   autoload :CrossReference, 'rdoc/cross_reference'
   autoload :ERBIO,          'rdoc/erbio'
   autoload :ERBPartial,     'rdoc/erb_partial'
@@ -148,13 +146,12 @@ module RDoc
 
   autoload :KNOWN_CLASSES,  'rdoc/known_classes'
 
-  autoload :RubyLex,        'rdoc/ruby_lex'
-  autoload :RubyToken,      'rdoc/ruby_token'
+  autoload :RipperStateLex, 'rdoc/parser/ripper_state_lex'
   autoload :TokenStream,    'rdoc/token_stream'
 
   autoload :Comment,        'rdoc/comment'
 
-  autoload :I18n,           'rdoc/i18n'
+  require 'rdoc/i18n'
 
   # code objects
   #

@@ -1,5 +1,5 @@
 # encoding: utf-8
-# frozen_string_literal: false
+# frozen_string_literal: true
 
 require "optparse"
 require "rbconfig"
@@ -900,7 +900,8 @@ module MiniTest
         puts "Finished%s %ss in %.6fs, %.4f tests/s, %.4f assertions/s.\n" %
              [(@repeat_count ? "(#{count}/#{@repeat_count}) " : ""), type,
                t, @test_count.fdiv(t), @assertion_count.fdiv(t)]
-      end while @repeat_count && count < @repeat_count && report.empty?
+      end while @repeat_count && count < @repeat_count &&
+                report.empty? && failures.zero? && errors.zero?
 
       output.sync = old_sync if sync
 
@@ -955,7 +956,9 @@ module MiniTest
         puts if @verbose
         $stdout.flush
 
-        leakchecker.check("#{inst.class}\##{inst.__name__}")
+        unless RubyVM::MJIT.enabled? # compiler process is wrongly considered as leaked
+          leakchecker.check("#{inst.class}\##{inst.__name__}")
+        end
 
         inst._assertions
       }
@@ -1020,6 +1023,7 @@ module MiniTest
       @verbose = false
       @mutex = Thread::Mutex.new
       @info_signal = Signal.list['INFO']
+      @repeat_count = nil
     end
 
     def synchronize # :nodoc:

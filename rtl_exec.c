@@ -2,7 +2,7 @@
 
   rtl_exec.c - Code for executing RTL (Register Transfer Language) insns
 
-  Copyright (C) 2017 Vladimir Makarov vmakarov@redhat.com
+  Copyright (C) 2017, 2018 Vladimir Makarov vmakarov@redhat.com
 
 **********************************************************************/
 
@@ -102,32 +102,32 @@ var_assign(rb_control_frame_t *cfp, VALUE *res, ptrdiff_t res_ind, VALUE v)
     }
 }
 
-/* Execute the current iseq ISEQ of TH and return the result.  The
+/* Execute the current iseq ISEQ of EC and return the result.  The
    iseq has BODY, TYPE, and flag EXCEPT_P.  Try to use JIT code first directly if ISEQ
    does not process exceptions.  It is called only from a JIT code.
    To generate a better code MJIT use the function when it knows the
    value of the ISEQ parameters.  */
 static do_inline VALUE
-mjit_vm_exec_0(rb_thread_t *th, rb_iseq_t *iseq,
+mjit_vm_exec_0(rb_execution_context_t *ec, rb_iseq_t *iseq,
 	       struct rb_iseq_constant_body *body, int except_p, int type) {
   VALUE result;
   
   RTL_ASSERT(in_mjit_p);
-  if (except_p || (result = mjit_execute_iseq_0(th, iseq, body, type)) == Qundef)
-      result = vm_exec(th, ! except_p);
+  if (except_p || (result = mjit_exec_iseq(ec, iseq, body, type)) == Qundef)
+      result = vm_exec(ec, except_p);
   return result;
 }
 
 /* See the above function.  We use the function when the current iseq
    is unknown or change.  */
 static do_inline VALUE
-mjit_vm_exec(rb_thread_t *th) {
+mjit_vm_exec(rb_execution_context_t *ec) {
   VALUE result;
-  int except_p = th->cfp->iseq->body->except_p;
+  int except_p = ec->cfp->iseq->body->catch_except_p;
   
   RTL_ASSERT(in_mjit_p);
-  if (except_p || (result = mjit_execute_iseq(th)) == Qundef)
-      result = vm_exec(th, ! except_p);
+  if (except_p || (result = mjit_exec(ec)) == Qundef)
+      result = vm_exec(ec, except_p);
   return result;
 }
 
@@ -146,31 +146,31 @@ set_default_sp(rb_control_frame_t *cfp, VALUE *bp) {
     set_default_sp_0(cfp, bp, cfp->iseq->body->temp_vars_num);
 }
 
-/* Call method given by CALLING, CI, and CC in the current thread TH
+/* Call method given by CALLING, CI, and CC in the current thread EC
    and frame CFP.  Restore the default stack pointer value at the call
    finish.  */
 static do_inline VALUE
-call_method(rb_thread_t *th, rb_control_frame_t *cfp,
+call_method(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	    struct rb_calling_info *calling, CALL_INFO ci, CALL_CACHE cc)
 {
-    VALUE val = (*(cc)->call)(th, cfp, calling, ci, cc);
+    VALUE val = (*(cc)->call)(ec, cfp, calling, ci, cc);
 
     if (val != Qundef)
 	/* The call is finished with value VAL.  */
 	set_default_sp(cfp, RTL_GET_BP(cfp));
     else if (in_mjit_p) {
-	val = mjit_vm_exec(th);
+	val = mjit_vm_exec(ec);
 	set_default_sp(cfp, RTL_GET_BP(cfp));
     }
     return val;
 }
 
 /* Call a RECV simple method (without block and irregular args) given
-   by CI in the current thread TH and frame CFP.  It means preparing
+   by CI in the current thread EC and frame CFP.  It means preparing
    structure CALLING and checking and updating CC (vm_search_method
    call) and calling call_method.  */
 static do_inline VALUE
-call_simple_method(rb_thread_t *th, rb_control_frame_t *cfp,
+call_simple_method(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 		   CALL_INFO ci, CALL_CACHE cc, VALUE *recv)
 {
     struct rb_calling_info calling;
@@ -179,7 +179,7 @@ call_simple_method(rb_thread_t *th, rb_control_frame_t *cfp,
     calling.argc = ci->orig_argc;
     calling.recv = *recv;
     vm_search_method(ci, cc, *recv);
-    return call_method(th, cfp, &calling, ci, cc);
+    return call_method(ec, cfp, &calling, ci, cc);
 }
 
 /* Copy N values of frame CFP variables with starting location FROM to
@@ -317,7 +317,7 @@ val2temp_f(rb_control_frame_t *cfp, VALUE *res, VALUE val)
 /* Check that sp of frame CFP has a default value.  */
 static do_inline void
 check_sp_default(rb_control_frame_t *cfp) {
-    RTL_ASSERT(cfp->sp == RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num);
+    assert(cfp->sp == RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num);
 }
 
 /* Assign string STR to local or temporary variable RES with index
@@ -332,29 +332,27 @@ str2var_f(rb_control_frame_t *cfp, VALUE *res, rindex_t res_ind, VALUE str)
 /* Assign value of const ID of origin KLASS to temporary variable RES
    in frame CFP.  */
 static do_inline void
-const_ld_val_f(rb_thread_t *th, rb_control_frame_t *cfp, ID id,
+const_ld_val_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, ID id,
 	       VALUE *res, VALUE klass)
 {
     check_sp_default(cfp);
-    //    cfp->sp = res;
-    *res = vm_get_ev_const(th, klass, id, 0);
-    //    set_default_sp(cfp, RTL_GET_BP(cfp));
+    *res = vm_get_ev_const(ec, klass, id, 0);
 }
 
 /* The same as above but KLASS_OP is location of the klass value.  */
 static do_inline void
-const2var_f(rb_thread_t *th, rb_control_frame_t *cfp, ID id,
+const2var_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, ID id,
 	    VALUE *res, VALUE *klass_op)
 {
-    const_ld_val_f(th, cfp, id, res, *klass_op);
+    const_ld_val_f(ec, cfp, id, res, *klass_op);
 }
 
 /* It is analogous to const_ld_val but with using cache IC.  */
 static do_inline void
-const_cached_val_ld_f(rb_thread_t *th, rb_control_frame_t *cfp,
+const_cached_val_ld_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 		      VALUE *res, VALUE klass, ID id, IC ic)
 {
-    rb_control_frame_t *reg_cfp = cfp; /* for GET_ISEQ */
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_EP */
 
     check_sp_default(cfp);
     if (ic->ic_serial == GET_GLOBAL_CONSTANT_STATE() &&
@@ -364,14 +362,12 @@ const_cached_val_ld_f(rb_thread_t *th, rb_control_frame_t *cfp,
     else {
 	VALUE v;
 
-	//	cfp->sp = res;
-	v = vm_get_ev_const(th, klass, id, 0);
-	//	set_default_sp(cfp, RTL_GET_BP(cfp));
+	v = vm_get_ev_const(ec, klass, id, 0);
 	*res = v;
 	RTL_ASSERT(ic->ic_value.value != Qundef);
 	ic->ic_value.value = v;
 	ic->ic_cref = vm_get_const_key_cref(GET_EP());
-	VM_ATOMIC_SET(ic->ic_serial, GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count);
+	ic->ic_serial = GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count;
 	ruby_vm_const_missing_count = 0;
     }
 }
@@ -398,9 +394,7 @@ static do_inline int
 get_inline_cache_f(rb_control_frame_t *cfp, VALUE *res, IC ic)
 {
     check_sp_default(cfp);
-    if (ic->ic_serial == GET_GLOBAL_CONSTANT_STATE()
-	&& (ic->ic_cref == NULL
-	    || ic->ic_cref == rb_vm_get_cref(cfp->ep))) {
+    if (vm_ic_hit_p(ic, cfp->ep)) {
 	*res = ic->ic_value.value;
 	return TRUE;
     }
@@ -431,11 +425,7 @@ set_inline_cache_f(rb_control_frame_t *cfp, VALUE *op, IC ic)
     VALUE val = *op;
 
     check_sp_default(cfp);
-    RTL_ASSERT(ic->ic_value.value != Qundef);
-    ic->ic_value.value = val;
-    ic->ic_cref = vm_get_const_key_cref(cfp->ep);
-    VM_ATOMIC_SET(ic->ic_serial, GET_GLOBAL_CONSTANT_STATE() - ruby_vm_const_missing_count);
-    ruby_vm_const_missing_count = 0;
+    vm_ic_update(ic, val, cfp->ep);
 }
 
 /* Assign special object of VALUE_TYPE to temporary variable with
@@ -446,31 +436,19 @@ specialobj2var_f(rb_control_frame_t *cfp, VALUE *res, rb_num_t value_type)
     enum vm_special_object_type type = (enum vm_special_object_type)value_type;
 
     check_sp_default(cfp);
-    switch (type) {
-    case VM_SPECIAL_OBJECT_VMCORE:
-	*res = rb_mRubyVMFrozenCore;
-	break;
-    case VM_SPECIAL_OBJECT_CBASE:
-	*res = vm_get_cbase(cfp->ep);
-	break;
-    case VM_SPECIAL_OBJECT_CONST_BASE:
-	*res = vm_get_const_base(cfp->ep);
-	break;
-    default:
-	rb_bug("putspecialobject insn: unknown value_type");
-  }
+    *res = vm_get_special_object(cfp->ep, type);
 }
 
 /* Assign a special of TYPE with KEY (if TYPE is zero) to temporary
    variable with location RES in frame CFP.  */
 static do_inline void
-special2var_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res,
+special2var_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *res,
 	      rb_num_t key, rb_num_t type)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_LEP */
 
     check_sp_default(cfp);
-    *res = vm_getspecial(th, GET_LEP(), key, type);
+    *res = vm_getspecial(ec, GET_LEP(), key, type);
 }
 
 /* Assign self to local or temporary variable with location RES and index
@@ -592,18 +570,101 @@ val2uploc_f(rb_control_frame_t *cfp, rb_num_t idx, VALUE val, rb_num_t level)
     vm_env_write(ep, -(int) idx, val);
 }
 
-/* Assign value with location FROM of frame CFP of thread TH to a
+static do_inline void
+get_block_param_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *res, lindex_t idx, rb_num_t level)
+{
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_EP */
+    VALUE val;
+    const VALUE *ep = vm_get_ep(GET_EP(), level);
+
+    RTL_ASSERT(VM_ENV_LOCAL_P(ep));
+
+    check_sp_default(cfp);
+    if (!VM_ENV_FLAGS(ep, VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM)) {
+	val = rb_vm_bh_to_procval(ec, VM_ENV_BLOCK_HANDLER(ep));
+	vm_env_write(ep, -(int)idx, val);
+	VM_ENV_FLAGS_SET(ep, VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM);
+    }
+    else {
+	val = *(ep - idx);
+	RB_DEBUG_COUNTER_INC(lvar_get);
+	(void)RB_DEBUG_COUNTER_INC_IF(lvar_get_dynamic, level > 0);
+    }
+    *res = val;
+}
+
+static do_inline void
+set_block_param_f(rb_control_frame_t *cfp, lindex_t idx, rb_num_t level, VALUE *op)
+{
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_EP */
+    VALUE val = *op;
+    const VALUE *ep = vm_get_ep(GET_EP(), level);
+
+    RTL_ASSERT(VM_ENV_LOCAL_P(ep));
+    check_sp_default(cfp);
+    vm_env_write(ep, -(int)idx, val);
+    RB_DEBUG_COUNTER_INC(lvar_set);
+    (void)RB_DEBUG_COUNTER_INC_IF(lvar_set_dynamic, level > 0);
+    VM_ENV_FLAGS_SET(ep, VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM);
+}
+
+static do_inline void
+get_block_param_proxy_f(rb_control_frame_t *cfp, VALUE *res, lindex_t idx, rb_num_t level)
+{
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_EP */
+    VALUE val;
+    const VALUE *ep = vm_get_ep(GET_EP(), level);
+
+    RTL_ASSERT(VM_ENV_LOCAL_P(ep));
+    check_sp_default(cfp);
+    if (!VM_ENV_FLAGS(ep, VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM)) {
+	VALUE block_handler = VM_ENV_BLOCK_HANDLER(ep);
+
+	if (block_handler) {
+	    switch (vm_block_handler_type(block_handler)) {
+	      case block_handler_type_iseq:
+	      case block_handler_type_ifunc:
+		val = rb_block_param_proxy;
+		break;
+	      case block_handler_type_symbol:
+		val = rb_sym_to_proc(VM_BH_TO_SYMBOL(block_handler));
+		goto set;
+	      case block_handler_type_proc:
+		val = VM_BH_TO_PROC(block_handler);
+		goto set;
+	      default:
+		VM_UNREACHABLE(getblockparamproxy);
+	    }
+	}
+	else {
+	    val = Qnil;
+	  set:
+	    vm_env_write(ep, -(int)idx, val);
+	    VM_ENV_FLAGS_SET(ep, VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM);
+	}
+    }
+    else {
+	val = *(ep - idx);
+	RB_DEBUG_COUNTER_INC(lvar_get);
+	(void)RB_DEBUG_COUNTER_INC_IF(lvar_get_dynamic, level > 0);
+    }
+    *res = val;
+}
+
+#if 0
+/* Not used anymore */
+/* Assign value with location FROM of frame CFP of thread EC to a
    local variable with index IDX in previous frame and return from the
    current frame.  */
 static do_inline void
-ret_to_loc_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t idx, VALUE *from)
+ret_to_loc_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, rb_num_t idx, VALUE *from)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_EP, GET_CFP */
     VALUE *ep = cfp->ep;
 
     ep = GET_PREV_EP(ep);
     *get_env_loc_addr(ep, idx) = *from;
-    if (vm_pop_frame(th, GET_CFP(), GET_EP())) {
+    if (vm_pop_frame(ec, GET_CFP(), GET_EP())) {
 	rb_bug("Error in rescue return");
     }
 }
@@ -611,16 +672,17 @@ ret_to_loc_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t idx, VALUE *from
 /* Analogous to ret_to_local_f but assign the value to a temporary
    variable.  */
 static do_inline void
-ret_to_temp_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t idx, VALUE *from)
+ret_to_temp_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, rb_num_t idx, VALUE *from)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_EP, GET_CFP */
     rb_control_frame_t *prev_cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
 
     *get_temp_addr(prev_cfp, idx) = *from;
-    if (vm_pop_frame(th, GET_CFP(), GET_EP())) {
+    if (vm_pop_frame(ec, GET_CFP(), GET_EP())) {
 	rb_bug("Error in rescue return");
     }
 }
+#endif
 
 /* Assign value of local or temporary variable VAL_OP in frame CFP to
    constant ID in class/module in location CBASE_OP.  */
@@ -727,27 +789,26 @@ var2cvar_f(rb_control_frame_t *cfp, ID id, VALUE *val_op)
 /* Assign value of local or temporary variable with location VAL_OP in
    frame CFP to special given by KEY.  */
 static do_inline void
-var2special_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t key,
+var2special_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, rb_num_t key,
 	      VALUE *op)
 {
-    rb_control_frame_t *reg_cfp = cfp; /* for GET_LEP, GET_SELF */
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_LEP */
 
     check_sp_default(cfp);
-    vm_ensure_not_refinement_module(GET_SELF());
-    lep_svar_set(th, GET_LEP(), key, *op);
+    lep_svar_set(ec, GET_LEP(), key, *op);
 }
 
 /* Call without args method given by CD of object RECV in the current
-   thread TH and frame CFP.  Return the call value.  */
+   thread EC and frame CFP.  Return the call value.  */
 static do_inline VALUE
-op1_call(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd, VALUE *recv)
+op1_call(rb_execution_context_t *ec, rb_control_frame_t *cfp, CALL_DATA cd, VALUE *recv)
 {
     VALUE *sp;
 
     sp = get_temp_addr(cfp, cd->call_start);
     sp[0] = *recv;
     cfp->sp = sp + 1;
-    return call_simple_method(th, cfp, &cd->call_info, &cd->call_cache, recv);
+    return call_simple_method(ec, cfp, &cd->call_info, &cd->call_cache, recv);
 }
 
 /* Finish an (arithmetic or compare) operation.  Put VAL into
@@ -756,7 +817,7 @@ op1_call(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd, VALUE *recv)
    code execution and don't use the code anymore (it happens usually
    after global changes, e.g. basic type operation redefinition).  */
 static do_inline int
-op_val_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, VALUE val) {
+op_val_call_end(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *res, VALUE val) {
     if (val == Qundef) {
 	RTL_ASSERT(! in_mjit_p);
 	return 1;
@@ -772,11 +833,11 @@ op_val_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, VALUE val)
 
 /* Like above but without the assignment.  */
 static do_inline int
-op_call_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val) {
+op_call_end(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE val) {
     if (val == Qundef) {
 	if (! in_mjit_p)
 	    return 1;
-	val = mjit_vm_exec(th);
+	val = mjit_vm_exec(ec);
     }
     if (! in_mjit_p)
 	return 0;
@@ -805,14 +866,14 @@ ary_hash_f(ary_empty_p) {return RARRAY_LEN(op) == 0 ? Qtrue : Qfalse;}
 ary_hash_f(hash_empty_p) {return RHASH_EMPTY_P(op) ? Qtrue : Qfalse;;}
 
 /* Common function executing an insn with one operand OP and result
-   RES in frame CFP of thread TH.  The function has a fast execution
+   RES in frame CFP of thread EC.  The function has a fast execution
    path for operand of type string, array, or hash given
    correspondingly by functions STR_OP, ARY_OP, and HASH_OP.  For the
    slow paths use call data CD.  Return non-zero if we started a new
    ISEQ execution (we need to update vm_exec_core regs in this case)
    or we need to cancel the current JITed code..  */
 static do_inline int
-ary_hash_op(rb_thread_t *th, rb_control_frame_t *cfp,
+ary_hash_op(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	    CALL_DATA cd, VALUE *res, VALUE *op,
 	    enum ruby_basic_operators bop,
 	    VALUE (*str_op)(VALUE),
@@ -837,20 +898,20 @@ ary_hash_op(rb_thread_t *th, rb_control_frame_t *cfp,
 	    return 0;
 	}
     }
-    val = op1_call(th, cfp, cd, src);
-    return op_val_call_end(th, cfp, res, val);
+    val = op1_call(ec, cfp, cd, src);
+    return op_val_call_end(ec, cfp, res, val);
 }
 
 /* A call of ary_has_op for operation BOP and suffix SUFF for fast
    path functions. */
-#define ary_hash_call(suff, bop) ary_hash_op(th, cfp, cd,		\
+#define ary_hash_call(suff, bop) ary_hash_op(ec, cfp, cd,		\
 					     res, op, bop,	\
 					     str_ ## suff, ary_ ## suff, \
 					     hash_ ## suff)
 
 /* Header of a function executing 1 operand insn NAME.  */
 #define op1_fun(name) static do_inline int	  \
-                      name ## _f(rb_thread_t *th, \
+                      name ## _f(rb_execution_context_t *ec, \
 				 rb_control_frame_t *cfp,	\
 				 CALL_DATA cd,		\
 				 VALUE *res, VALUE *op)
@@ -867,62 +928,56 @@ op1_fun(succ) {
     VALUE val;
     VALUE *src = op;
 
-    if (SPECIAL_CONST_P(*src)) {
-	if (FIXNUM_P(*src)
-	    && BASIC_OP_UNREDEFINED_P(BOP_SUCC, INTEGER_REDEFINED_OP_FLAG)) {
-	    if (*src != LONG2FIX(FIXNUM_MAX)) {
-		val = *src - 1 + INT2FIX(1);
-	    }
-	    else {
-		val = LONG2NUM(FIXNUM_MAX + 1);
-	    }
-	    *res = val;
-	    return 0;
-	}
-    } else if (RBASIC_CLASS(*src) == rb_cString
-	       && BASIC_OP_UNREDEFINED_P(BOP_SUCC, STRING_REDEFINED_OP_FLAG)) {
-	*res = rb_str_succ(*src);
+    if ((val = vm_opt_succ(*src)) != Qundef) {
+	*res = val;
 	return 0;
     }
-    val = op1_call(th, cfp, cd, src);
-    return op_val_call_end(th, cfp, res, val);
+    val = op1_call(ec, cfp, cd, src);
+    return op_val_call_end(ec, cfp, res, val);
+}
+
+/* Assign value of CFP frame local variable OP to temporary variable
+   RES.  */
+static do_inline void
+str2sym_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op)
+{
+    *res = rb_str_intern(*op);
 }
 
 /* Common function executing not and unot insns with one operand OP
-   and result RES in frame CFP of thread TH.  The function has a fast
+   and result RES in frame CFP of thread EC.  The function has a fast
    execution path for method rb_obj_not.  For the slow paths use call
-   data CD.  If OFFSET is non-zero and we use a fast path, change the
-   current insn at OFFSET to the corresponding speculative insn.
-   Return non-zero if we started a new ISEQ execution (we need to
-   update vm_exec_core regs in this case) or we need to cancel the
-   current JITed code.  */
+   data CD.  If CHANGE_P is non-zero and we use a fast path, change
+   the current insn to the corresponding speculative insn.  Return
+   non-zero if we started a new ISEQ execution (we need to update
+   vm_exec_core regs in this case) or we need to cancel the current
+   JITed code.  */
 static do_inline int
-common_not(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd,
-	   VALUE *res, VALUE *op, int offset) {
+common_not(rb_execution_context_t *ec, rb_control_frame_t *cfp, CALL_DATA cd,
+	   VALUE *res, VALUE *op, int change_p) {
     VALUE val;
     VALUE src = *op;
     CALL_INFO ci = &cd->call_info;
     CALL_CACHE cc = &cd->call_cache;
     extern VALUE rb_obj_not(VALUE obj);
 
-    vm_search_method(ci, cc, src);
-    if (check_cfunc(cc->me, rb_obj_not)) {
-	if (offset != 0)
-	    vm_change_insn(cfp->iseq, cfp->pc - offset, BIN(spec_not));
+    if (vm_method_cfunc_is(ci, cc, src, rb_obj_not)) {
+	if (change_p)
+	    vm_change_insn(cfp->iseq, cfp->pc, BIN(spec_not));
 	val = RTEST(src) ? Qfalse : Qtrue;
 	*res = val;
 	return 0;
     }
-    val = op1_call(th, cfp, cd, op);
-    return op_val_call_end(th, cfp, res, val);
+    val = op1_call(ec, cfp, cd, op);
+    return op_val_call_end(ec, cfp, res, val);
 }
     
 op1_fun(not) {
-    return common_not(th, cfp, cd, res, op, 4);
+    return common_not(ec, cfp, cd, res, op, TRUE);
 }
 
 op1_fun(unot) {
-    return common_not(th, cfp, cd, res, op, 0);
+    return common_not(ec, cfp, cd, res, op, FALSE);
 }
 
 /* Check call cache attributes METHOD_STATE and CLASS_SERIAL for
@@ -945,8 +1000,7 @@ spec_not_f(rb_control_frame_t *cfp, CALL_DATA cd, VALUE *res,
     CALL_CACHE cc = &cd->call_cache;
     
     if (UNLIKELY(check_cc_attr_p(src, cc->method_state, cc->class_serial))) {
-	vm_search_method(ci, cc, src);
-	if (! check_cfunc(cc->me, rb_obj_not)) {
+	if (! vm_method_cfunc_is(ci, cc, src, rb_obj_not)) {
 	    *new_insn = BIN(unot);
 	    return TRUE;
 	}
@@ -957,11 +1011,11 @@ spec_not_f(rb_control_frame_t *cfp, CALL_DATA cd, VALUE *res,
 }
 
 /* Call method given by CD of object RECV with arg OP2 in the current
-   thread TH and frame CFP.  As RECV and OP2 can any local or
+   thread EC and frame CFP.  As RECV and OP2 can any local or
    temporary variables put them on the stack in the order.  Return the
    call value.  */
 static do_inline VALUE
-op2_call(rb_thread_t *th, rb_control_frame_t *cfp,
+op2_call(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	 CALL_DATA cd, VALUE *recv, VALUE op2) {
     VALUE *sp;
 
@@ -970,15 +1024,15 @@ op2_call(rb_thread_t *th, rb_control_frame_t *cfp,
     sp[1] = op2;
     cfp->sp = sp + 2;
     /* Use sp as *recv can be overwritten.  */
-    return call_simple_method(th, cfp, &cd->call_info, &cd->call_cache, sp);
+    return call_simple_method(ec, cfp, &cd->call_info, &cd->call_cache, sp);
 }
 
 /* Call method given by CD of object RECV with args OP2 and OP3 in the
-   current thread TH and frame CFP.  As RECV, OP2, and OP3 can any local or
+   current thread EC and frame CFP.  As RECV, OP2, and OP3 can any local or
    temporary variables put them on the stack in the order.  Return the
    call value.  */
 static do_inline VALUE
-op3_call(rb_thread_t *th, rb_control_frame_t *cfp,
+op3_call(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	 CALL_DATA cd, VALUE *recv, VALUE op2, VALUE op3) {
     VALUE *sp;
 
@@ -988,7 +1042,7 @@ op3_call(rb_thread_t *th, rb_control_frame_t *cfp,
     sp[2] = op3;
     cfp->sp = sp + 3;
     /* Use sp as *recv can be overwritten.  */
-    return call_simple_method(th, cfp, &cd->call_info, &cd->call_cache, sp);
+    return call_simple_method(ec, cfp, &cd->call_info, &cd->call_cache, sp);
 }
 
 /* Header of a function NAME with args a and b implementing a fast
@@ -1038,18 +1092,18 @@ spec_cmpf(spec_float_num_le) {return a <= b;}
 spec_cmpf(spec_float_num_ge) {return a >= b;}
 
 /* Common function executing a comparison of operands OP1 (value
-   location) and OP2 (value) in frame CFP of thread TH.  The function
+   location) and OP2 (value) in frame CFP of thread EC.  The function
    has a fast execution path for operand of type fixnum, float, and
    doubles given correspondingly by functions FIX_NUM_CMP,
    FLOAT_NUM_CMP, and DOUBLE_NUM_CMP.  For the slow paths use call
    data CD.  If OP2_FIXNUM_P or OP2_FLONUM_P is true, it means that
-   value OP2 is of the corresponding type.  If OFFSET is non-zero and
-   we use a fast path, change the current insn at OFFSET to the
+   value OP2 is of the corresponding type.  If CHANGE_P is non-zero
+   and we use a fast path, change the current insn to the
    corresponding speculative insn FIX_INSN_ID or FLO_INSN_ID.  Return
    the comparison result of Qundef if we started a new ISEQ execution
    (we need to update vm_exec_core regs in this case).  */
 static do_inline VALUE
-common_cmp(rb_thread_t *th,
+common_cmp(rb_execution_context_t *ec,
 	   rb_control_frame_t *cfp, CALL_DATA cd,
 	   VALUE *op1, VALUE op2,
 	   enum ruby_basic_operators bop,
@@ -1057,20 +1111,20 @@ common_cmp(rb_thread_t *th,
 	   int (*float_num_cmp)(VALUE, VALUE),
 	   int (*double_num_cmp)(VALUE, VALUE),
 	   int op2_fixnum_p, int op2_flonum_p,
-	   int offset, int fix_insn_id, int flo_insn_id) {
+	   int change_p, int fix_insn_id, int flo_insn_id) {
     int cmp;
     if (((op2_fixnum_p && FIXNUM_P(*op1))
 	 || (! op2_fixnum_p && ! op2_flonum_p && FIXNUM_2_P(*op1, op2)))
 	&& BASIC_OP_UNREDEFINED_P(bop, INTEGER_REDEFINED_OP_FLAG)) {
-	if (offset)
-	    vm_change_insn(cfp->iseq, cfp->pc - offset, fix_insn_id);
+	if (change_p)
+	    vm_change_insn(cfp->iseq, cfp->pc, fix_insn_id);
 	cmp = fix_num_cmp(*op1, op2);
 	return cmp ? Qtrue : Qfalse;
     } else if ((op2_flonum_p && FLONUM_P(*op1)
 	      || (! op2_fixnum_p && ! op2_flonum_p && FLONUM_2_P(*op1, op2)))
 	       && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)) {
-	if (offset)
-	    vm_change_insn(cfp->iseq, cfp->pc - offset, flo_insn_id);
+	if (change_p)
+	    vm_change_insn(cfp->iseq, cfp->pc, flo_insn_id);
 	cmp = float_num_cmp(*op1, op2);
 	return cmp ? Qtrue : Qfalse;
     }
@@ -1114,14 +1168,14 @@ common_cmp(rb_thread_t *th,
 	}
     }
 #endif
-  return op2_call(th, cfp, cd, op1, op2);
+  return op2_call(ec, cfp, cd, op1, op2);
 }
 
 /* As the function above but it also assigns the comparison value to
    temporary variable with location RESif the operation is finished
    (it return zero in this case).  */
 static do_inline int
-do_cmp(rb_thread_t *th,
+do_cmp(rb_execution_context_t *ec,
        rb_control_frame_t *cfp,
        CALL_DATA cd, VALUE *res, VALUE *op1, VALUE op2,
        enum ruby_basic_operators bop,
@@ -1129,37 +1183,37 @@ do_cmp(rb_thread_t *th,
        int (*float_num_cmp)(VALUE, VALUE),
        int (*double_num_cmp)(VALUE, VALUE),
        int op2_fixnum_p, int op2_flonum_p,
-       int offset, int fix_insn_id, int flo_insn_id)
+       int change_p, int fix_insn_id, int flo_insn_id)
 {
-    VALUE val = common_cmp(th, cfp, cd, op1, op2, bop,
+    VALUE val = common_cmp(ec, cfp, cd, op1, op2, bop,
 			   fix_num_cmp, float_num_cmp, double_num_cmp,
 			   op2_fixnum_p, op2_flonum_p,
-			   offset, fix_insn_id, flo_insn_id);
+			   change_p, fix_insn_id, flo_insn_id);
 
-    return op_val_call_end(th, cfp, res, val);
+    return op_val_call_end(ec, cfp, res, val);
 }
 
 /* It is a call of do_cmp when we don't know OP2 type.  */
 static do_inline int
-cmp_op(rb_thread_t *th,
+cmp_op(rb_execution_context_t *ec,
        rb_control_frame_t *cfp,
        CALL_DATA cd, VALUE *res, VALUE *op1, VALUE *op2,
        enum ruby_basic_operators bop,
        int (*fix_num_cmp)(VALUE, VALUE),
        int (*float_num_cmp)(VALUE, VALUE),
        int (*double_num_cmp)(VALUE, VALUE),
-       int offset, int fix_insn_id, int flo_insn_id)
+       int change_p, int fix_insn_id, int flo_insn_id)
 {
     VALUE *src1 = op1, src2 = *op2;
 
-    return do_cmp(th, cfp, cd, res, src1, src2,
+    return do_cmp(ec, cfp, cd, res, src1, src2,
 		  bop, fix_num_cmp, float_num_cmp, double_num_cmp, FALSE, FALSE,
-		  offset, fix_insn_id, flo_insn_id);
+		  change_p, fix_insn_id, flo_insn_id);
 }
 
 /* Header of a function executing 2 operand insn NAME with unknown type of OP2.  */
 #define op2_fun(name) static do_inline int	  \
-                      name ## _f(rb_thread_t *th, \
+                      name ## _f(rb_execution_context_t *ec, \
 				 rb_control_frame_t *cfp, \
 				 CALL_DATA cd,		\
 				 VALUE *res, VALUE *op1, VALUE *op2)
@@ -1167,11 +1221,11 @@ cmp_op(rb_thread_t *th,
 /* A function call implementing a comparison insn (which can change
    the insn to speculative one) with operation BOP and suffix SUFF for
    fast execution path functions. */
-#define cmp_call(suff, bop) cmp_op(th, cfp, cd,				\
+#define cmp_call(suff, bop) cmp_op(ec, cfp, cd,				\
 				   res, op1, op2, bop,		\
 				   fix_num_ ## suff, float_num_ ## suff, \
 				   double_num_ ## suff, \
-				   5, BIN(i ## suff), BIN(f ## suff))
+				   TRUE, BIN(i ## suff), BIN(f ## suff))
 
 /* Definitions of the functions implementing comparison insns which
    can be transformed into a speculative variant.  */
@@ -1185,11 +1239,11 @@ op2_fun(ge) {return cmp_call(ge, BOP_GE);}
 /* A function call implementing a comparison insn (which can not
    change the insn) with operation BOP and suffix SUFF for fast path
    functions. */
-#define ucmp_call(suff, bop) cmp_op(th, cfp, cd, \
+#define ucmp_call(suff, bop) cmp_op(ec, cfp, cd, \
 				    res, op1, op2, bop, \
 				    fix_num_ ## suff, float_num_ ## suff, \
 				    double_num_ ## suff,		\
-				    0, 0, 0)
+				    FALSE, 0, 0)
 
 /* Definitions of the functions implementing unchanging comparison
    insns.  */
@@ -1203,11 +1257,11 @@ op2_fun(uge) {return ucmp_call(ge, BOP_GE);}
 /* A function call implementing a simple (stack) comparison insn
    (which can change the insn to speculative one) with operation BOP
    and suffix SUFF for fast execution path functions. */
-#define scmp_call(suff, bop) cmp_op(th, cfp, cd,				\
+#define scmp_call(suff, bop) cmp_op(ec, cfp, cd,				\
 				    res, op1, op2, bop,			\
 				    fix_num_ ## suff, float_num_ ## suff, \
 				    double_num_ ## suff,		\
-				    3, BIN(si ## suff), BIN(sf ## suff))
+				    TRUE, BIN(si ## suff), BIN(sf ## suff))
 
 /* Definitions of the functions implementing simple comparison insns
    which can be transformed into a speculative variant.  */
@@ -1221,11 +1275,11 @@ op2_fun(sge) {return scmp_call(ge, BOP_GE);}
 /* A function call implementing a simple comparison insn (which can
    not change the insn) with operation BOP and suffix SUFF for fast
    path functions. */
-#define sucmp_call(suff, bop) cmp_op(th, cfp, cd, \
+#define sucmp_call(suff, bop) cmp_op(ec, cfp, cd, \
 				     res, op1, op2, bop,		\
 				     fix_num_ ## suff, float_num_ ## suff, \
 				     double_num_ ## suff,		\
-				     0, 0, 0)
+				     FALSE, 0, 0)
 
 /* Definitions of the functions implementing simple unchanging
    comparison insns.  */
@@ -1239,7 +1293,7 @@ op2_fun(suge) {return sucmp_call(ge, BOP_GE);}
 /* It is analogous to cmp_op with known value of the 2nd operand
    (IMM).  */
 static do_inline int
-cmp_imm_op(rb_thread_t *th,
+cmp_imm_op(rb_execution_context_t *ec,
 	   rb_control_frame_t *cfp,
 	   CALL_DATA cd, VALUE *res, VALUE *op1, VALUE imm,
 	   enum ruby_basic_operators bop,
@@ -1247,29 +1301,29 @@ cmp_imm_op(rb_thread_t *th,
 	   int (*float_num_cmp)(VALUE, VALUE),
 	   int (*double_num_cmp)(VALUE, VALUE),
 	   int fixnum_p, int flonum_p,
-	   int offset, int fix_insn_id, int flo_insn_id)
+	   int change_p, int fix_insn_id, int flo_insn_id)
 {
     VALUE *src1 = op1;
 
-    return do_cmp(th, cfp, cd, res, src1, imm, bop,
+    return do_cmp(ec, cfp, cd, res, src1, imm, bop,
 		  fix_num_cmp, float_num_cmp, double_num_cmp, fixnum_p, flonum_p,
-		  offset, fix_insn_id, flo_insn_id);
+		  change_p, fix_insn_id, flo_insn_id);
 }
 
 /* Analogous to op2_fun but with known second operand (IMM).  */
 #define op2i_fun(name) static do_inline int	     \
-                       name ## _f(rb_thread_t *th, \
+                       name ## _f(rb_execution_context_t *ec, \
 				  rb_control_frame_t *cfp,	\
 				  CALL_DATA cd,	\
 				  VALUE *res, VALUE *op1, VALUE imm)
 
 /* Analogous to cmp_call but with fixnum value IMM as the 2nd
    operand.  */
-#define cmp_fix_call(suff, bop) cmp_imm_op(th, cfp, cd,			\
+#define cmp_fix_call(suff, bop) cmp_imm_op(ec, cfp, cd,			\
 					   res, op1, imm, bop,	\
 					   fix_num_ ## suff, float_num_ ## suff, \
 					   double_num_ ## suff, TRUE, FALSE, \
-					   5, BIN(i ## suff ## i), 0)
+					   TRUE, BIN(i ## suff ## i), 0)
 
 /* Definitions of the functions implementing comparison insns with
    immediate of type fixnum which can be transformed to a speculative
@@ -1284,11 +1338,11 @@ op2i_fun(lei) {return cmp_fix_call(le, BOP_LE);}
 /* A function call implementing a comparison insn (which can not
    change the insn) with operation BOP and suffix SUFF for fast path
    functions and immediate of type fixnum as the 2nd operand.  */
-#define ucmp_fix_call(suff, bop) cmp_imm_op(th, cfp, cd, \
+#define ucmp_fix_call(suff, bop) cmp_imm_op(ec, cfp, cd, \
 					    res, op1, imm, bop, \
 					    fix_num_ ## suff, float_num_ ## suff, \
 					    double_num_ ## suff, TRUE, FALSE, \
-					    0, 0, 0)
+					    FALSE, 0, 0)
 
 /* Definitions of the functions implementing non-changing comparison
    insns with immediate of type fixnum.  */
@@ -1300,11 +1354,11 @@ op2i_fun(ugti) {return ucmp_fix_call(gt, BOP_GT);}
 op2i_fun(ulei) {return ucmp_fix_call(le, BOP_LE);}
 
 /* The same as cmp_fix_call but for immediate of flonum type.  */
-#define cmp_flo_call(suff, bop) cmp_imm_op(th, cfp, cd,			\
+#define cmp_flo_call(suff, bop) cmp_imm_op(ec, cfp, cd,			\
 					   res, op1, imm, bop,	\
 					   fix_num_ ## suff, float_num_ ## suff, \
 					   double_num_ ## suff, FALSE, TRUE, \
-					   5, 0, BIN(f ## suff ## f))
+					   TRUE, 0, BIN(f ## suff ## f))
 
 /* Definitions of changing comparison insns with flonum immediate.  */
 op2i_fun(gef) {return cmp_flo_call(ge, BOP_GE);}
@@ -1315,11 +1369,11 @@ op2i_fun(gtf) {return cmp_flo_call(gt, BOP_GT);}
 op2i_fun(lef) {return cmp_flo_call(le, BOP_LE);}
 
 /* The same as ucmp_fix_call but for immediate of flonum type.  */
-#define ucmp_flo_call(suff, bop) cmp_imm_op(th, cfp, cd, \
+#define ucmp_flo_call(suff, bop) cmp_imm_op(ec, cfp, cd, \
 					    res, op1, imm, bop, \
 					    fix_num_ ## suff, float_num_ ## suff, \
 					    double_num_ ## suff, FALSE, TRUE, \
-					    0, 0, 0)
+					    FALSE, 0, 0)
 
 /* Definitions of unchanging comparison insns with flonum immediate.  */
 op2i_fun(ugef) {return ucmp_flo_call(ge, BOP_GE);}
@@ -1602,22 +1656,22 @@ spec_op2i_dcfun(fgef) {return spec_flo_cmp_imm_call(ge, BOP_GE);}
 
 /* It is a part of goto insn.  */
 static do_inline void
-goto_f(rb_thread_t *th, rb_control_frame_t *cfp) {
+goto_f(rb_execution_context_t *ec, rb_control_frame_t *cfp) {
     check_sp_default(cfp);
     /* Attempt to thread switching.  */
-    RUBY_VM_CHECK_INTS(th);
+    RUBY_VM_CHECK_INTS(ec);
 }
 
 /* It is a part of bf (branch on false) insn.  Return a flag to make a
    jump depending on value of temporary or local variable with
    location OP in frame CFP.  */
 static do_inline int
-bf_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op) {
+bf_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *op) {
     VALUE val = *op;
 
     if (!RTEST(val)) {
 	check_sp_default(cfp);
-	RUBY_VM_CHECK_INTS(th);
+	RUBY_VM_CHECK_INTS(ec);
 	return TRUE;
     }
     return FALSE;
@@ -1626,12 +1680,12 @@ bf_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op) {
 /* Analogous to above but implements a part of bt (branch on true)
    insn.  */
 static do_inline int
-bt_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op) {
+bt_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *op) {
     VALUE val = *op;
 
     if (RTEST(val)) {
 	check_sp_default(cfp);
-	RUBY_VM_CHECK_INTS(th);
+	RUBY_VM_CHECK_INTS(ec);
 	return TRUE;
     }
     return FALSE;
@@ -1640,12 +1694,26 @@ bt_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op) {
 /* Analogous to above but implements a part of bnil (branch on nil)
    insn.  */
 static do_inline int
-bnil_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op) {
+bnil_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *op) {
     VALUE val = *op;
 
     if (NIL_P(val)) {
 	check_sp_default(cfp);
-	RUBY_VM_CHECK_INTS(th);
+	RUBY_VM_CHECK_INTS(ec);
+	return TRUE;
+    }
+    return FALSE;
+}
+
+/* Analogous to above but implements a part of btype (branch on type)
+   insn.  */
+static do_inline int
+btype_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, rb_num_t type, VALUE *op) {
+    VALUE val = *op;
+
+    if (TYPE(val) == (int)type) {
+	check_sp_default(cfp);
+	RUBY_VM_CHECK_INTS(ec);
 	return TRUE;
     }
     return FALSE;
@@ -1655,16 +1723,16 @@ bnil_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op) {
    OP1 and value OP2.  Use fast execution path comparison functions
    FIX_NUM_CMP, FLOAT_NUM_CMP, and DOUBLE_NUM_CMP, otherwise use a
    method call given by call data CD.  Put the comparison result into
-   temporary variable with location RES in frame CFP of thread TH and
+   temporary variable with location RES in frame CFP of thread EC and
    pass it also through VAL.  Undefined VAL in JITed code says to
    cancel the current JITed code.  OP2_FIX_NUM_P and OP2_FLO_NUM_P are
    flags of that OP2 is correspondingly fix or flo num.  In case of
-   non-zero OFFSET and using a fast execution path, change the insn to
+   non-zero CHANGE_P and using a fast execution path, change the insn to
    its speculative variant FIX_INSN_ID or FLO_NUM_ID.  Return a flag
    to make a jump depending on the comparison result and its treatment
    given by TRUE_P. */
 static do_inline int
-do_bcmp(rb_thread_t *th, rb_control_frame_t *cfp,
+do_bcmp(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	CALL_DATA cd, VALUE *res, VALUE *op1, VALUE op2,
 	VALUE *val,
 	int true_p, enum ruby_basic_operators bop,
@@ -1672,12 +1740,12 @@ do_bcmp(rb_thread_t *th, rb_control_frame_t *cfp,
 	int (*float_num_cmp)(VALUE, VALUE),
 	int (*double_num_cmp)(VALUE, VALUE),
 	int op2_fixnum_p, int op2_flonum_p,
-	int offset, int fix_insn_id, int flo_insn_id)
+	int change_p, int fix_insn_id, int flo_insn_id)
 {
-    VALUE v = common_cmp(th, cfp, cd, op1, op2, bop,
+    VALUE v = common_cmp(ec, cfp, cd, op1, op2, bop,
 			 fix_num_cmp, float_num_cmp, double_num_cmp,
 			 op2_fixnum_p, op2_flonum_p,
-			 offset, fix_insn_id, flo_insn_id);
+			 change_p, fix_insn_id, flo_insn_id);
     if (! in_mjit_p) {
 	*val = v;
 	if (v == Qundef)
@@ -1686,7 +1754,7 @@ do_bcmp(rb_thread_t *th, rb_control_frame_t *cfp,
 	return true_p ? RTEST(v) : ! RTEST(v);
     }
     if (v == Qundef) {
-	v = mjit_vm_exec(th);
+	v = mjit_vm_exec(ec);
     }
     if ((cfp->ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_FLAG_CANCEL) == 0)
 	*val = v;
@@ -1698,26 +1766,26 @@ do_bcmp(rb_thread_t *th, rb_control_frame_t *cfp,
 
 /* It is a call of do_bcmp when we don't know OP2 type.  */
 static do_inline int
-bcmp_op(rb_thread_t *th, rb_control_frame_t *cfp,
+bcmp_op(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	CALL_DATA cd, VALUE *res, VALUE *op1, VALUE *op2,
 	VALUE *val,
 	int true_p, enum ruby_basic_operators bop,
 	int (*fix_num_cmp)(VALUE, VALUE),
 	int (*float_num_cmp)(VALUE, VALUE),
 	int (*double_num_cmp)(VALUE, VALUE),
-	int offset, int fix_insn_id, int flo_insn_id)
+	int change_p, int fix_insn_id, int flo_insn_id)
 {
     VALUE *src1 = op1, src2 = *op2;
 
-    return do_bcmp(th, cfp, cd, res, src1, src2, val, true_p, bop,
+    return do_bcmp(ec, cfp, cd, res, src1, src2, val, true_p, bop,
 		   fix_num_cmp, float_num_cmp, double_num_cmp,
-		   FALSE, FALSE, offset, fix_insn_id, flo_insn_id);
+		   FALSE, FALSE, change_p, fix_insn_id, flo_insn_id);
 }
 
 /* Header of a function executing branch and compare insn NAME with
    unknown type of OP2.  */
 #define bcmp_fun(name) static do_inline int \
-                       name ## _f(rb_thread_t *th, \
+                       name ## _f(rb_execution_context_t *ec, \
 				  rb_control_frame_t *cfp,	\
 				  CALL_DATA cd, \
 				  VALUE *res, VALUE *op1, VALUE *op2, \
@@ -1728,9 +1796,9 @@ bcmp_op(rb_thread_t *th, rb_control_frame_t *cfp,
    suffix SUFF for fast execution path functions, and flag TRUE_P to
    treat the comparison result for the branch.  */
 #define bcmp_call(suff, true_p, bop)				\
-  bcmp_op(th, cfp, cd, res, op1, op2, val,	\
+  bcmp_op(ec, cfp, cd, res, op1, op2, val,	\
 	  true_p, bop, fix_num_ ## suff, float_num_ ## suff,	\
-	  double_num_ ## suff, 7, \
+	  double_num_ ## suff, TRUE, \
 	  (true_p) ? BIN(ibt ## suff) : BIN(ibf ## suff),		\
 	  (true_p) ? BIN(fbt ## suff) : BIN(fbf ## suff))
 
@@ -1750,13 +1818,13 @@ bcmp_fun(btge) {return bcmp_call(ge, TRUE, BOP_GE);}
 bcmp_fun(bfge) {return bcmp_call(ge, FALSE, BOP_GE);}
 
 /* Analogous to bcmp_call but for insns which can not be changed. */
-#define ubcmp_call(suff, true_p, bop) bcmp_op(th, cfp, cd,	\
+#define ubcmp_call(suff, true_p, bop) bcmp_op(ec, cfp, cd,	\
 					      res, op1, op2, val, \
 					      true_p, bop,		\
 					      fix_num_ ## suff,		\
 					      float_num_ ## suff,	\
 					      double_num_ ## suff,	\
-					      0, 0, 0)
+					      FALSE, 0, 0)
 
 /* Definitions of the functions implementing comparison and branch
    insns which can not be changed.  */
@@ -1775,7 +1843,7 @@ bcmp_fun(ubfge) {return ubcmp_call(ge, FALSE, BOP_GE);}
 
 /* It is a call of do_bcmp when we know IMM type (fix or flo num).  */
 static do_inline int
-bcmp_imm_op(rb_thread_t *th, rb_control_frame_t *cfp,
+bcmp_imm_op(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	    CALL_DATA cd, VALUE *res, VALUE *op1, VALUE imm,
 	    VALUE *val,
 	    int true_p, enum ruby_basic_operators bop,
@@ -1783,19 +1851,19 @@ bcmp_imm_op(rb_thread_t *th, rb_control_frame_t *cfp,
 	    int (*float_num_cmp)(VALUE, VALUE),
 	    int (*double_num_cmp)(VALUE, VALUE),
 	    int fixnum_p, int flonum_p,
-	    int offset, int fix_insn_id, int flo_insn_id)
+	    int change_p, int fix_insn_id, int flo_insn_id)
 {
     VALUE *src1 = op1;
 
-    return do_bcmp(th, cfp, cd, res, src1, imm, val, true_p, bop,
+    return do_bcmp(ec, cfp, cd, res, src1, imm, val, true_p, bop,
 		   fix_num_cmp, float_num_cmp, double_num_cmp, fixnum_p,
-		   flonum_p, offset, fix_insn_id, flo_insn_id);
+		   flonum_p, change_p, fix_insn_id, flo_insn_id);
 }
 
 /* Header of a function executing branch and compare insn NAME with
    known type of IMM.  */
 #define bcmpi_fun(name) static do_inline int \
-                        name ## _f(rb_thread_t *th, \
+                        name ## _f(rb_execution_context_t *ec, \
 				   rb_control_frame_t *cfp, \
 				   CALL_DATA cd,	\
 				   VALUE *res, VALUE *op1, VALUE imm, \
@@ -1804,9 +1872,9 @@ bcmp_imm_op(rb_thread_t *th, rb_control_frame_t *cfp,
 /* Analogous to bcmp_call but with known the 2nd operand type (fix num
    immediate).  */
 #define bcmp_fix_call(suff, true_p, bop)			 \
-    bcmp_imm_op(th, cfp, cd, res, op1, imm, val,	 \
+    bcmp_imm_op(ec, cfp, cd, res, op1, imm, val,	 \
 		true_p, bop, fix_num_ ## suff, float_num_ ## suff,	\
-		double_num_ ## suff, TRUE, FALSE, 7, \
+		double_num_ ## suff, TRUE, FALSE, TRUE, \
 		(true_p) ? BIN(ibt ## suff ## i) : BIN(ibf ## suff ## i),	\
 		(true_p) ? BIN(fbt ## suff ## f) : BIN(fbf ## suff ## f))
 
@@ -1828,13 +1896,13 @@ bcmpi_fun(bfgei) {return bcmp_fix_call(ge, FALSE, BOP_GE);}
 
 /* Analogous to bcmp_fix_call but for insns which can not be
    changed. */
-#define ubcmp_fix_call(suff, true_p, bop) bcmp_imm_op(th, cfp, cd, \
+#define ubcmp_fix_call(suff, true_p, bop) bcmp_imm_op(ec, cfp, cd, \
 						      res, op1, imm, val, \
 						      true_p, bop,	\
 						      fix_num_ ## suff,	\
 						      float_num_ ## suff, \
 						      double_num_ ## suff, TRUE, FALSE, \
-						      0, 0, 0)
+						      FALSE, 0, 0)
 
 /* Definitions of the functions implementing non-changing comparison
    and branch insns with immediate fix num as the 2nd operand.  */
@@ -1853,9 +1921,9 @@ bcmpi_fun(ubfgei) {return ubcmp_fix_call(ge, FALSE, BOP_GE);}
 
 /* Analogous to bcmp_fix_call but for flo num immediate.  */
 #define bcmp_flo_call(suff, true_p, bop)			\
-  bcmp_imm_op(th, cfp, cd, res, op1, imm, val,	 \
+  bcmp_imm_op(ec, cfp, cd, res, op1, imm, val,	 \
 	      true_p, bop, fix_num_ ## suff, float_num_ ## suff, \
-	      double_num_ ## suff, FALSE, TRUE,	 7, \
+	      double_num_ ## suff, FALSE, TRUE,	 TRUE, \
 	      (true_p) ? BIN(ibt ## suff ## i) : BIN(ibf ## suff ## i),	\
 	      (true_p) ? BIN(fbt ## suff ## f) : BIN(fbf ## suff ## f))
 
@@ -1876,13 +1944,13 @@ bcmpi_fun(btgef) {return bcmp_flo_call(ge, TRUE, BOP_GE);}
 bcmpi_fun(bfgef) {return bcmp_flo_call(ge, FALSE, BOP_GE);}
 
 /* Analogous to ubcmp_fix_call but for flo num immediate.  */
-#define ubcmp_flo_call(suff, true_p, bop) bcmp_imm_op(th, cfp, cd, \
+#define ubcmp_flo_call(suff, true_p, bop) bcmp_imm_op(ec, cfp, cd, \
 						      res, op1, imm, val, \
 						      true_p, bop,	\
 						      fix_num_ ## suff,	\
 						      float_num_ ## suff, \
 						      double_num_ ## suff, FALSE, TRUE, \
-						      0, 0, 0)
+						      FALSE, 0, 0)
 
 /* Definitions of the functions implementing non-changing comparison
    and branch insns with immediate flo num as the 2nd operand.  */
@@ -2189,18 +2257,18 @@ arithmf(double_num_mod) {return float_num_mult(op1, op2);}
 
 
 /* Common function executing an arithmetic operation of operands OP1
-   (value location) and OP2 (value) in frame CFP of thread TH.  The
+   (value location) and OP2 (value) in frame CFP of thread EC.  The
    function has a fast execution path for operand of type fixnum,
    float, and doubles given correspondingly by functions FIX_NUM_OP,
    FLOAT_NUM_OP, and DOUBLE_NUM_OP.  For the slow paths use call data
    CD.  If OP2_FIXNUM_P or OP2_FLONUM_P is true, it means that value
-   OP2 is of the corresponding type.  If OFFSET is non-zero and we
+   OP2 is of the corresponding type.  If CHANGE_P is non-zero and we
    use a fast path, change the current insn to the corresponding
    speculative insn FIX_INSN_ID or FLO_INSN_ID.  Return non zero if we
    started a new ISEQ execution (we need to update vm_exec_core regs
    in this case) or we need to cancel the current JITed code.  */
 static do_inline int
-do_arithm(rb_thread_t *th,
+do_arithm(rb_execution_context_t *ec,
 	  rb_control_frame_t *cfp,
 	  CALL_DATA cd, VALUE *res, VALUE *op1, VALUE op2,
 	  enum ruby_basic_operators bop,
@@ -2208,7 +2276,7 @@ do_arithm(rb_thread_t *th,
 	  VALUE (*float_num_op)(VALUE, VALUE),
 	  VALUE (*double_num_op)(VALUE, VALUE),
 	  int op2_fixnum_p, int op2_flonum_p,
-	  int offset, int fix_insn_id, int flo_insn_id)
+	  int change_p, int fix_insn_id, int flo_insn_id)
 {
     VALUE val;
     
@@ -2218,16 +2286,16 @@ do_arithm(rb_thread_t *th,
 	val = fix_num_op(*op1, op2);
 	if (val != Qundef || (bop != BOP_DIV && bop != BOP_MOD)) {
 	    *res = val;
-	    if (offset != 0)
-		vm_change_insn(cfp->iseq, cfp->pc - offset, fix_insn_id);
+	    if (change_p)
+		vm_change_insn(cfp->iseq, cfp->pc, fix_insn_id);
 	    return 0;
 	}
     } else if ((op2_flonum_p && FLONUM_P(*op1)
 		|| (! op2_fixnum_p && ! op2_flonum_p && FLONUM_2_P(*op1, op2)))
 	       && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)) {
 	*res = float_num_op(*op1, op2);
-	if (offset != 0)
-	    vm_change_insn(cfp->iseq, cfp->pc - offset, flo_insn_id);
+	if (change_p)
+	    vm_change_insn(cfp->iseq, cfp->pc, flo_insn_id);
 	return 0;
     }
     else if (! op2_fixnum_p && ! op2_flonum_p
@@ -2247,36 +2315,36 @@ do_arithm(rb_thread_t *th,
 	    return 0;
 	}
     }
-    val = op2_call(th, cfp, cd, op1, op2);
-    return op_val_call_end(th, cfp, res, val);
+    val = op2_call(ec, cfp, cd, op1, op2);
+    return op_val_call_end(ec, cfp, res, val);
 }
 
 /* It is just a call of do_arithm when we don't know the type of the
    2nd operand.  */
 static do_inline int
-arithm_op(rb_thread_t *th, rb_control_frame_t *cfp,
+arithm_op(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	  CALL_DATA cd, VALUE *res, VALUE *op1, VALUE *op2,
 	  enum ruby_basic_operators bop,
 	  VALUE (*fix_num_op)(VALUE, VALUE),
 	  VALUE (*float_num_op)(VALUE, VALUE),
 	  VALUE (*double_num_op)(VALUE, VALUE),
-	  int offset, int fix_insn_id, int flo_insn_id)
+	  int change_p, int fix_insn_id, int flo_insn_id)
 {
     VALUE *src1 = op1, src2 = *op2;
 
-    return do_arithm(th, cfp, cd, res, src1, src2,
+    return do_arithm(ec, cfp, cd, res, src1, src2,
 		     bop, fix_num_op, float_num_op, double_num_op, FALSE, FALSE,
-		     offset, fix_insn_id, flo_insn_id);
+		     change_p, fix_insn_id, flo_insn_id);
 }
 
 /* A function call implementing an arithmetic operation (which can
    change the insn to speculative one) with operation BOP and suffix
    SUFF for fast execution path functions. */
-#define arithm_call(suff, bop) arithm_op(th, cfp, cd, \
+#define arithm_call(suff, bop) arithm_op(ec, cfp, cd, \
 					 res, op1, op2, bop,	\
 					 fix_num_ ## suff, float_num_ ## suff, \
 					 double_num_ ## suff,		\
-					 5, BIN(i ## suff), BIN(f ## suff))
+					 TRUE, BIN(i ## suff), BIN(f ## suff))
 
 /* Definitions of the functions implementing arithmetic insns which
    can be transformed into a speculative variant.  */
@@ -2289,10 +2357,10 @@ op2_fun(mod) {return arithm_call(mod, BOP_MOD);}
 /* A function call implementing an arithmetic operation (which can not
    change the insn) with operation BOP and suffix SUFF for fast
    execution path functions. */
-#define uarithm_call(suff, bop) arithm_op(th, cfp, cd, \
+#define uarithm_call(suff, bop) arithm_op(ec, cfp, cd, \
 					  res, op1, op2, bop, \
 					  fix_num_ ## suff, float_num_ ## suff, \
-					  double_num_ ## suff, 0, 0, 0)
+					  double_num_ ## suff, FALSE, 0, 0)
 
 /* Definitions of the functions implementing unchanging arithmetic
    insns.  */
@@ -2305,11 +2373,11 @@ op2_fun(umod) {return uarithm_call(mod, BOP_MOD);}
 /* A function call implementing a simple (stack) arithmetic operation
    (which can change the insn to speculative one) with operation BOP
    and suffix SUFF for fast execution path functions. */
-#define sarithm_call(suff, bop) arithm_op(th, cfp, cd, \
+#define sarithm_call(suff, bop) arithm_op(ec, cfp, cd, \
 					  res, op1, op2, bop,	\
 					  fix_num_ ## suff, float_num_ ## suff, \
 					  double_num_ ## suff,		\
-					  3, BIN(si ## suff), BIN(sf ## suff))
+					  TRUE, BIN(si ## suff), BIN(sf ## suff))
 
 /* Definitions of the functions implementing simple arithmetic insns which
    can be transformed into a speculative variant.  */
@@ -2322,10 +2390,10 @@ op2_fun(smod) {return sarithm_call(mod, BOP_MOD);}
 /* A function call implementing a simple (stack) arithmetic operation
    (which can not change the insn) with operation BOP and suffix SUFF
    for fast execution path functions. */
-#define suarithm_call(suff, bop) arithm_op(th, cfp, cd, \
+#define suarithm_call(suff, bop) arithm_op(ec, cfp, cd, \
 					   res, op1, op2, bop,	\
 					   fix_num_ ## suff, float_num_ ## suff, \
-					   double_num_ ## suff, 0, 0, 0)
+					   double_num_ ## suff, FALSE, 0, 0)
 
 /* Definitions of the functions implementing unchanging simple
    arithmetic insns.  */
@@ -2338,29 +2406,29 @@ op2_fun(sumod) {return suarithm_call(mod, BOP_MOD);}
 /* It is analogous to airthm_op with known value of the 2nd operand
    (IMM).  */
 static do_inline int
-arithm_imm_op(rb_thread_t *th, rb_control_frame_t *cfp,
+arithm_imm_op(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	      CALL_DATA cd, VALUE *res, VALUE *op1, VALUE imm,
 	      enum ruby_basic_operators bop,
 	      VALUE (*fix_num_op)(VALUE, VALUE),
 	      VALUE (*float_num_op)(VALUE, VALUE),
 	      VALUE (*double_num_op)(VALUE, VALUE),
 	      int fixnum_p, int flonum_p,
-	      int offset, int fix_insn_id, int flo_insn_id)
+	      int change_p, int fix_insn_id, int flo_insn_id)
 {
     VALUE *src1 = op1;
 
-    return do_arithm(th, cfp, cd, res, src1, imm,
+    return do_arithm(ec, cfp, cd, res, src1, imm,
 		     bop, fix_num_op, float_num_op, double_num_op, fixnum_p, flonum_p,
-		     offset, fix_insn_id, flo_insn_id);
+		     change_p, fix_insn_id, flo_insn_id);
 }
 
 /* Analogous to arithm_call but when the 2nd operand is known to have
    fix num type.  */
-#define arithm_fix_call(suff, bop) arithm_imm_op(th, cfp, cd, \
+#define arithm_fix_call(suff, bop) arithm_imm_op(ec, cfp, cd, \
 						 res, op1, imm, bop, \
 						 fix_num_ ## suff, float_num_ ## suff, \
 						 double_num_ ## suff, TRUE, FALSE, \
-						 5, BIN(i ## suff ## i), 0)
+						 TRUE, BIN(i ## suff ## i), 0)
 
 /* Definitions of the functions implementing arithmetic insns with
    immediate of type fixnum which can be transformed to a speculative
@@ -2374,11 +2442,11 @@ op2i_fun(modi) {return arithm_fix_call(mod, BOP_MOD);}
 /* A function call implementing an arithmetic insn (which can not
    change the insn) with operation BOP and suffix SUFF for fast path
    functions and immediate of type fixnum as the 2nd operand.  */
-#define uarithm_fix_call(suff, bop) arithm_imm_op(th, cfp, cd, \
+#define uarithm_fix_call(suff, bop) arithm_imm_op(ec, cfp, cd, \
 						  res, op1, imm, bop, \
 						  fix_num_ ## suff, float_num_ ## suff, \
 						  double_num_ ## suff, TRUE, FALSE, \
-						  0, 0, 0)
+						  FALSE, 0, 0)
 
 /* Definitions of the functions implementing non-changing arithmetic
    insns with immediate of type fixnum.  */
@@ -2389,11 +2457,11 @@ op2i_fun(udivi) {return uarithm_fix_call(div, BOP_DIV);}
 op2i_fun(umodi) {return uarithm_fix_call(mod, BOP_MOD);}
 
 /* The same as arithm_fix_call but for immediate of flo num type.  */
-#define arithm_flo_call(suff, bop) arithm_imm_op(th, cfp, cd,		\
+#define arithm_flo_call(suff, bop) arithm_imm_op(ec, cfp, cd,		\
 						 res, op1, imm, bop, \
 						 fix_num_ ## suff, float_num_ ## suff, \
 						 double_num_ ## suff, FALSE, TRUE, \
-						 5, 0, BIN(f ## suff ## f))
+						 TRUE, 0, BIN(f ## suff ## f))
 
 /* Definitions of the functions implementing arithmetic insns with
    immediate of type flo num.  The insn can be changed into a
@@ -2405,11 +2473,11 @@ op2i_fun(divf) {return arithm_flo_call(div, BOP_DIV);}
 op2i_fun(modf) {return arithm_flo_call(mod, BOP_MOD);}
 
 /* The same as uarithm_fix_call but for immediate of flonum type.  */
-#define uarithm_flo_call(suff, bop) arithm_imm_op(th, cfp, cd, \
+#define uarithm_flo_call(suff, bop) arithm_imm_op(ec, cfp, cd, \
 						  res, op1, imm, bop, \
 						  fix_num_ ## suff, float_num_ ## suff, \
 						  double_num_ ## suff, FALSE, TRUE, \
-						  0, 0, 0)
+						  FALSE, 0, 0)
 
 /* Definitions of the functions implementing non-changing arithmetic
    insns with immediate of type flo num.  */
@@ -2763,14 +2831,14 @@ spec_op2i_dfun(fdivf) {return spec_flo_arithm_imm_call(div, BOP_DIV);}
 spec_op2i_dfun(fmodf) {return spec_flo_arithm_imm_call(mod, BOP_MOD);}
 
 /* Common function executing operation << for operands SRC1 (value
-   location) and SRC2 (value) in frame CFP of thread TH.  The function
+   location) and SRC2 (value) in frame CFP of thread EC.  The function
    has a fast execution path for operand of type string and array.
    For the slow paths use call data CD.  Assign the result to
    temporary variable with address RES.  Return non zero if we started
    a new ISEQ execution (we need to update vm_exec_core regs in this
    case) or we need to cancel the current JITed code.  */
 static do_inline int
-do_ltlt(rb_thread_t *th, rb_control_frame_t *cfp,
+do_ltlt(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	CALL_DATA cd, VALUE *res, VALUE *src1, VALUE src2)
 {
     VALUE val;
@@ -2789,8 +2857,8 @@ do_ltlt(rb_thread_t *th, rb_control_frame_t *cfp,
 	    return 0;
 	}
     }
-    val = op2_call(th, cfp, cd, src1, src2);
-    return op_val_call_end(th, cfp, res, val);
+    val = op2_call(ec, cfp, cd, src1, src2);
+    return op_val_call_end(ec, cfp, res, val);
 }
 
 /* Definitions of functions implementing << and [] operations
@@ -2800,18 +2868,18 @@ op2_fun(ltlt)
 {
     VALUE *src1 = op1, src2 = *op2;
 
-    return do_ltlt(th, cfp, cd, res, src1, src2);
+    return do_ltlt(ec, cfp, cd, res, src1, src2);
 }
 
 op2i_fun(ltlti)
 {
     VALUE *src1 = op1;
 
-    return do_ltlt(th, cfp, cd, res, src1, imm);
+    return do_ltlt(ec, cfp, cd, res, src1, imm);
 }
 
 /* Common function executing an index operation of operands OP1
-   (object) and OP2 (index) in frame CFP of thread TH.  Assign the
+   (object) and OP2 (index) in frame CFP of thread EC.  Assign the
    result to temporary variable with address RES.  The function has a
    fast execution path for indexing array and hash.  For the slow
    paths use call data CD.  If OP2_FIXNUM_P or OP2_STR_P is true, it
@@ -2822,7 +2890,7 @@ op2i_fun(ltlti)
    vm_exec_core regs in this case) or we need to cancel the current
    JITed code.  */
 static do_inline int
-common_ind(rb_thread_t *th,
+common_ind(rb_execution_context_t *ec,
 	   rb_control_frame_t *cfp, CALL_DATA cd, VALUE *res, VALUE *op1, VALUE op2,
 	   int op2_fixnum_p, int op2_str_p, int ary_insn_id, int hash_insn_id) {
     VALUE val;
@@ -2831,9 +2899,9 @@ common_ind(rb_thread_t *th,
 	if (RBASIC_CLASS(*op1) == rb_cArray
 	    && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, ARRAY_REDEFINED_OP_FLAG))
 	    && (op2_fixnum_p || FIXNUM_P(op2))) {
-	    *res = rb_ary_entry(*op1, FIX2LONG(op2));
+	    *res = rb_ary_entry_internal(*op1, FIX2LONG(op2));
 	    if (ary_insn_id != BIN(nop))
-		vm_change_insn(cfp->iseq, cfp->pc - 5, ary_insn_id);
+		vm_change_insn(cfp->iseq, cfp->pc, ary_insn_id);
 	    return 0;
 	} else if (RBASIC_CLASS(*op1) == rb_cHash
 		   && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_AREF, HASH_REDEFINED_OP_FLAG))
@@ -2841,42 +2909,42 @@ common_ind(rb_thread_t *th,
 	    check_sp_default(cfp);
 	    *res = rb_hash_aref(*op1, op2);
 	    if (hash_insn_id != BIN(nop))
-		vm_change_insn(cfp->iseq, cfp->pc - 5, hash_insn_id);
+		vm_change_insn(cfp->iseq, cfp->pc, hash_insn_id);
 	    return 0;
 	}
     }
-    val = op2_call(th, cfp, cd, op1, (op2_str_p ? rb_str_resurrect(op2) : op2));
-    return op_val_call_end(th, cfp, res, val);
+    val = op2_call(ec, cfp, cd, op1, (op2_str_p ? rb_str_resurrect(op2) : op2));
+    return op_val_call_end(ec, cfp, res, val);
 }
 
 op2_fun(ind)
 {
-    return common_ind(th, cfp, cd, res, op1, *op2, FALSE, FALSE, BIN(aind), BIN(hind));
+    return common_ind(ec, cfp, cd, res, op1, *op2, FALSE, FALSE, BIN(aind), BIN(hind));
 }
 
 op2_fun(uind)
 {
-    return common_ind(th, cfp, cd, res, op1, *op2, FALSE, FALSE, BIN(nop), BIN(nop));
+    return common_ind(ec, cfp, cd, res, op1, *op2, FALSE, FALSE, BIN(nop), BIN(nop));
 }
 
 op2i_fun(indi)
 {
-    return common_ind(th, cfp, cd, res, op1, imm, TRUE, FALSE, BIN(aindi), BIN(hindi));
+    return common_ind(ec, cfp, cd, res, op1, imm, TRUE, FALSE, BIN(aindi), BIN(hindi));
 }
 
 op2i_fun(uindi)
 {
-    return common_ind(th, cfp, cd, res, op1, imm, TRUE, FALSE, BIN(nop), BIN(nop));
+    return common_ind(ec, cfp, cd, res, op1, imm, TRUE, FALSE, BIN(nop), BIN(nop));
 }
 
 op2i_fun(inds)
 {
-    return common_ind(th, cfp, cd, res, op1, imm, FALSE, TRUE, BIN(nop), BIN(hinds));
+    return common_ind(ec, cfp, cd, res, op1, imm, FALSE, TRUE, BIN(nop), BIN(hinds));
 }
 
 op2i_fun(uinds)
 {
-    return common_ind(th, cfp, cd, res, op1, imm, FALSE, TRUE, BIN(nop), BIN(nop));
+    return common_ind(ec, cfp, cd, res, op1, imm, FALSE, TRUE, BIN(nop), BIN(nop));
 }
 
 /* Speculative indexing insns: */
@@ -2957,13 +3025,13 @@ spec_op2i_fun(hinds)
 
 }
 /* Common function executing operation []= for operands OP1, IND, and
-   OP3.  OP1 and OP3 are locations in frame CFP of thread TH.  The
+   OP3.  OP1 and OP3 are locations in frame CFP of thread EC.  The
    function has a fast execution path for operand of type array and
    hash.  For the slow paths use call data CD.  Return non zero if we
    started a new ISEQ execution (we need to update vm_exec_core regs
    in this case) or we need to cancel the current JITed code.  */
 static do_inline int
-common_indset(rb_thread_t *th, rb_control_frame_t *cfp,
+common_indset(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	      CALL_DATA cd, VALUE *op1, VALUE ind, VALUE *op3,
 	      int fixnum_p, int str_p, int ary_insn_id, int hash_insn_id)
 {
@@ -2975,7 +3043,7 @@ common_indset(rb_thread_t *th, rb_control_frame_t *cfp,
 	    && (fixnum_p || FIXNUM_P(ind))) {
 	    rb_ary_store(*recv, FIX2LONG(ind), el);
 	    if (ary_insn_id != BIN(nop))
-		vm_change_insn(cfp->iseq, cfp->pc - 5, ary_insn_id);
+		vm_change_insn(cfp->iseq, cfp->pc, ary_insn_id);
 	    return 0;
 	} else if (RBASIC_CLASS(*recv) == rb_cHash
 		   && BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)
@@ -2983,48 +3051,48 @@ common_indset(rb_thread_t *th, rb_control_frame_t *cfp,
 	    check_sp_default(cfp);
 	    rb_hash_aset(*recv, ind, el);
 	    if (ary_insn_id != BIN(nop))
-		vm_change_insn(cfp->iseq, cfp->pc - 5, hash_insn_id);
+		vm_change_insn(cfp->iseq, cfp->pc, hash_insn_id);
 	    return 0;
 	}
     }
-    val = op3_call(th, cfp, cd, recv, str_p ? rb_str_resurrect(ind) : ind, el);
-    return op_call_end(th, cfp, val);
+    val = op3_call(ec, cfp, cd, recv, str_p ? rb_str_resurrect(ind) : ind, el);
+    return op_call_end(ec, cfp, val);
 }   
 
 static do_inline int
-indset_f(rb_thread_t *th, rb_control_frame_t *cfp,
+indset_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	 CALL_DATA cd, VALUE *op1, VALUE *op2, VALUE *op3) {
-    return common_indset(th, cfp, cd, op1, *op2, op3, FALSE, FALSE, BIN(aindset), BIN(hindset));
+    return common_indset(ec, cfp, cd, op1, *op2, op3, FALSE, FALSE, BIN(aindset), BIN(hindset));
 }
 
 static do_inline int
-uindset_f(rb_thread_t *th, rb_control_frame_t *cfp,
+uindset_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	  CALL_DATA cd, VALUE *op1, VALUE *op2, VALUE *op3) {
-    return common_indset(th, cfp, cd, op1, *op2, op3, FALSE, FALSE, BIN(nop), BIN(nop));
+    return common_indset(ec, cfp, cd, op1, *op2, op3, FALSE, FALSE, BIN(nop), BIN(nop));
 }
 
 static do_inline int
-indseti_f(rb_thread_t *th, rb_control_frame_t *cfp,
+indseti_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	   CALL_DATA cd, VALUE *op1, VALUE imm, VALUE *op3) {
-    return common_indset(th, cfp, cd, op1, imm, op3, TRUE, FALSE, BIN(aindseti), BIN(hindseti));
+    return common_indset(ec, cfp, cd, op1, imm, op3, TRUE, FALSE, BIN(aindseti), BIN(hindseti));
 }
 
 static do_inline int
-uindseti_f(rb_thread_t *th, rb_control_frame_t *cfp,
+uindseti_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	   CALL_DATA cd, VALUE *op1, VALUE imm, VALUE *op3) {
-    return common_indset(th, cfp, cd, op1, imm, op3, TRUE, FALSE, BIN(nop), BIN(nop));
+    return common_indset(ec, cfp, cd, op1, imm, op3, TRUE, FALSE, BIN(nop), BIN(nop));
 }
 
 static do_inline int
-indsets_f(rb_thread_t *th, rb_control_frame_t *cfp,
+indsets_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	  CALL_DATA cd, VALUE *op1, VALUE str, VALUE *op3) {
-    return common_indset(th, cfp, cd, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(hindsets));
+    return common_indset(ec, cfp, cd, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(hindsets));
 }
 
 static do_inline int
-uindsets_f(rb_thread_t *th, rb_control_frame_t *cfp,
+uindsets_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	   CALL_DATA cd, VALUE *op1, VALUE str, VALUE *op3) {
-    return common_indset(th, cfp, cd, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(nop));
+    return common_indset(ec, cfp, cd, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(nop));
 }
 
 /* Speculative []= insns:  */
@@ -3116,21 +3184,19 @@ freeze_string_f(rb_control_frame_t *cfp, VALUE *op, VALUE debug_info) {
     VALUE str = *op;
 
     check_sp_default(cfp);
-    if (!NIL_P(debug_info)) {
-	rb_ivar_set(str, id_debug_created_info, debug_info);
-    }
-    rb_str_freeze(str);
+    vm_freezestring(str, debug_info);
 }
 
 /* Convert a value in location OP to a string representation and put
    result to temporary variable with location RES in frame CFP.  */
 static do_inline void
-to_string_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op) {
-    VALUE val = *op;
+to_string_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE *op2) {
+    VALUE val = *op1, str = *op2;
+    VALUE rb_obj_as_string_result(VALUE str, VALUE obj);
 
     /* rb_obj_as_string can use the stack -- so setup the right stack top.  */
     check_sp_default(cfp);
-    *res = rb_obj_as_string(val);
+    *res = rb_obj_as_string_result(str, val);
 }
 
 /* Concat CNT strings from temporary variables with start location
@@ -3148,16 +3214,13 @@ concat_strings_f(rb_control_frame_t *cfp, VALUE *start, rb_num_t cnt)
 static do_inline void
 to_regexp_f(rb_control_frame_t *cfp, sindex_t start, rb_num_t opt, rb_num_t cnt)
 {
-    rb_num_t i;
     VALUE *res = get_temp_addr(cfp, start);
     VALUE rb_reg_new_ary(VALUE ary, int options);
+    VALUE rb_ary_tmp_new_from_values(VALUE, long, const VALUE *);
     VALUE ary;
 
     check_sp_default(cfp);
-    ary = rb_ary_tmp_new(cnt);
-    for (i = 0; i < cnt; i++) {
-	rb_ary_store(ary, i, res[i]);
-    }
+    ary = rb_ary_tmp_new_from_values(0, cnt, res);
     *res = rb_reg_new_ary(ary, (int)opt);
     rb_ary_clear(ary);
 }
@@ -3167,23 +3230,23 @@ to_regexp_f(rb_control_frame_t *cfp, sindex_t start, rb_num_t opt, rb_num_t cnt)
    RES in frame CFP.  Value in location OP is an additional arg used
    for some checks.  */
 static do_inline void
-defined_p_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, VALUE *op,
+defined_p_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *res, VALUE *op,
 	    rb_num_t op_type, VALUE obj, VALUE needstr)
 {
     VALUE val = *op;
 
     check_sp_default(cfp);
-    *res = vm_defined(th, cfp, op_type, obj, needstr, val);
+    *res = vm_defined(ec, cfp, op_type, obj, needstr, val);
     set_default_sp(cfp, RTL_GET_BP(cfp));
 }
 
 /* As defined_p but the additional arg is given by value V.  */
 static do_inline void
-val_defined_p_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, VALUE v,
+val_defined_p_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *res, VALUE v,
 		rb_num_t op_type, VALUE obj, VALUE needstr)
 {
     check_sp_default(cfp);
-    *res = vm_defined(th, cfp, op_type, obj, needstr, v);
+    *res = vm_defined(ec, cfp, op_type, obj, needstr, v);
 }
 
 
@@ -3197,6 +3260,16 @@ str_freeze_call_f(rb_control_frame_t *cfp, VALUE *res, VALUE str)
 	     ? str : rb_funcall(rb_str_resurrect(str), idFreeze, 0));
 }
 
+/* Assign the result of uminus method of string STR to temporary
+   variable with location RES in frame CFP.  */
+static do_inline void
+str_uminus_f(rb_control_frame_t *cfp, VALUE *res, VALUE str)
+{
+    check_sp_default(cfp);
+    *res =  (BASIC_OP_UNREDEFINED_P(BOP_UMINUS, STRING_REDEFINED_OP_FLAG)
+	     ? str : rb_funcall(rb_str_resurrect(str), idUMinus, 0));
+}
+
 /* Initiate a call of method with caller ORIG_ARGC and FLAG.  The
    receiver and arguments are in temporary variables starting with
    location with index CALL_START.  If SIMPLE_P is true, a block for
@@ -3205,7 +3278,7 @@ str_freeze_call_f(rb_control_frame_t *cfp, VALUE *res, VALUE str)
    given by RECV.  Put it on the stack (a reserved location) in this
    case.  Return block (if any) of the call through BLOCK_HANDLER.  */
 static do_inline void
-call_setup_0(rb_thread_t *th, rb_control_frame_t *cfp,
+call_setup_0(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	     VALUE *block_handler, int orig_argc, unsigned int flag, sindex_t call_start,
 	     ISEQ blockiseq, VALUE recv, int recv_set_p, int simple_p)
 {
@@ -3219,18 +3292,18 @@ call_setup_0(rb_thread_t *th, rb_control_frame_t *cfp,
     else {
 	if (flag & VM_CALL_ARGS_BLOCKARG)
 	    cfp->sp++;
-	vm_caller_setup_arg_block_0(th, cfp, block_handler, flag, blockiseq, FALSE);
+	vm_caller_setup_arg_block_0(ec, cfp, block_handler, flag, blockiseq, FALSE);
     }
 }
 
 /* Mostly the above but initiate a call of method given by CI using CALLING.  */
 static do_inline void
-call_setup(rb_thread_t *th, rb_control_frame_t *cfp,
+call_setup(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	   struct rb_calling_info *calling, CALL_INFO ci, sindex_t call_start,
 	   ISEQ blockiseq, VALUE recv,
 	   int recv_set_p, int simple_p)
 {
-    call_setup_0(th, cfp, &calling->block_handler, ci->orig_argc, ci->flag, call_start,
+    call_setup_0(ec, cfp, &calling->block_handler, ci->orig_argc, ci->flag, call_start,
 		 blockiseq, recv, recv_set_p, simple_p);
     calling->argc = ci->orig_argc;
     calling->recv = *get_temp_addr(cfp, call_start);
@@ -3239,47 +3312,47 @@ call_setup(rb_thread_t *th, rb_control_frame_t *cfp,
 /* As above but also update CC (if it is obsolete) by calling
    vm_search_method.  */
 static do_inline void
-call_common(rb_thread_t *th, rb_control_frame_t *cfp,
+call_common(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	    struct rb_calling_info *calling, CALL_INFO ci, CALL_CACHE cc, sindex_t call_start,
 	    ISEQ blockiseq, VALUE recv,
 	    int recv_set_p, int simple_p)
 {
-    call_setup(th, cfp, calling, ci, call_start, blockiseq, recv, recv_set_p, simple_p);
+    call_setup(ec, cfp, calling, ci, call_start, blockiseq, recv, recv_set_p, simple_p);
     vm_search_method(ci, cc, calling->recv);
 }
 
 /* Call a method without a block.  */
 static do_inline void
-simple_call_f(rb_thread_t *th, rb_control_frame_t *cfp,
+simple_call_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	      struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start)
 {
-    call_common(th, cfp, calling, &cd->call_info, &cd->call_cache, call_start, NULL, Qundef, FALSE, TRUE);
+    call_common(ec, cfp, calling, &cd->call_info, &cd->call_cache, call_start, NULL, Qundef, FALSE, TRUE);
 }
 
 /* Call a method without a block with putting SELF on the stack.  */
 static do_inline void
-simple_call_self_f(rb_thread_t *th, rb_control_frame_t *cfp,
+simple_call_self_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 		   struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
 
-    call_common(th, cfp, calling, &cd->call_info, &cd->call_cache, call_start, NULL, GET_SELF(), TRUE, TRUE);
+    call_common(ec, cfp, calling, &cd->call_info, &cd->call_cache, call_start, NULL, GET_SELF(), TRUE, TRUE);
 }
 
 /* Call a method without a block with putting value of local or
    temporary variable with location RECV_OP on the stack.  */
 static do_inline void
-simple_call_recv_f(rb_thread_t *th, rb_control_frame_t *cfp,
+simple_call_recv_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 		   struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
 		   VALUE *recv_op)
 {
     VALUE recv = *recv_op;
 
-    call_common(th, cfp, calling, &cd->call_info, &cd->call_cache, call_start, NULL, recv, TRUE, TRUE);
+    call_common(ec, cfp, calling, &cd->call_info, &cd->call_cache, call_start, NULL, recv, TRUE, TRUE);
 }
 
 static do_inline void
-vmcore_call_f(rb_thread_t *th, rb_control_frame_t *cfp,
+vmcore_call_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	      struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
 	      ISEQ blockiseq)
 {
@@ -3289,7 +3362,7 @@ vmcore_call_f(rb_thread_t *th, rb_control_frame_t *cfp,
 
     RTL_ASSERT(ci->orig_argc == 0);
     specialobj2var_f(cfp, get_temp_addr(cfp, call_start), VM_SPECIAL_OBJECT_VMCORE);
-    vm_caller_setup_arg_block(th, cfp, calling, ci, blockiseq, FALSE);
+    vm_caller_setup_arg_block(ec, cfp, calling, ci, blockiseq, FALSE);
     calling->argc = 0;
     calling->recv = *top;
     vm_search_method(ci, cc, calling->recv);
@@ -3297,41 +3370,41 @@ vmcore_call_f(rb_thread_t *th, rb_control_frame_t *cfp,
 
 /* Call a method with block BLOCKISEQ.  */
 static do_inline void
-call_f(rb_thread_t *th, rb_control_frame_t *cfp,
+call_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
        struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
        ISEQ blockiseq)
 {
-    call_common(th, cfp, calling, &cd->call_info, &cd->call_cache, call_start, blockiseq, Qundef, FALSE, FALSE);
+    call_common(ec, cfp, calling, &cd->call_info, &cd->call_cache, call_start, blockiseq, Qundef, FALSE, FALSE);
 }
 
 /* Call a method with block BLOCKISEQ and putting SELF on the stack.  */
 static do_inline void
-call_self_f(rb_thread_t *th, rb_control_frame_t *cfp,
+call_self_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	    struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
 	    ISEQ blockiseq)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
 
-    call_common(th, cfp, calling, &cd->call_info, &cd->call_cache, call_start, blockiseq, GET_SELF(), TRUE, FALSE);
+    call_common(ec, cfp, calling, &cd->call_info, &cd->call_cache, call_start, blockiseq, GET_SELF(), TRUE, FALSE);
 }
 
 /* Call a method with block BLOCKISEQ and putting value of local or
    temporary variable with location RECV_OP on the stack.  */
 static do_inline void
-call_recv_f(rb_thread_t *th, rb_control_frame_t *cfp,
+call_recv_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	    struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
 	    ISEQ blockiseq, VALUE *recv_op)
 {
     VALUE recv = *recv_op;
 
-    call_common(th, cfp, calling, &cd->call_info, &cd->call_cache, call_start, blockiseq, recv, TRUE, FALSE);
+    call_common(ec, cfp, calling, &cd->call_info, &cd->call_cache, call_start, blockiseq, recv, TRUE, FALSE);
 }
 
 /* Called only from JIT code to finish a call insn.  Pass VAL through
    RES.  Return non-zero if we need to cancel JITed code execution and
    don't use the code anymore. */
 static do_inline int
-mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp,
+mjit_call_finish(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 		 unsigned int temp_vars_num, VALUE val, VALUE *res) {
     *res = val;
     if (! mjit_ep_neq_bp_p && cfp->bp != cfp->ep) {
@@ -3347,11 +3420,11 @@ mjit_call_finish(rb_thread_t *th, rb_control_frame_t *cfp,
    Return non-zero if we need to cancel JITed code execution and don't
    use the code anymore. */
 static do_inline int
-mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
+mjit_call_iseq_finish(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 		      rb_iseq_t *iseq, struct rb_iseq_constant_body *body, int except_p,
 		      int type, unsigned int temp_vars_num, VALUE *res) {
-    VALUE v = mjit_vm_exec_0(th, iseq, body, except_p, type);
-    return mjit_call_finish(th, cfp, temp_vars_num, v, res);
+    VALUE v = mjit_vm_exec_0(ec, iseq, body, except_p, type);
+    return mjit_call_finish(ec, cfp, temp_vars_num, v, res);
 }
  
 /* The function is used to implement highly speculative call of method
@@ -3363,7 +3436,7 @@ mjit_call_iseq_finish(rb_thread_t *th, rb_control_frame_t *cfp,
    the result through RES.  To generate a better code MJIT use the
    function when it knows the value of the ISEQ parameters.  */
 static do_inline int
-mjit_iseq_call(rb_thread_t *th, rb_control_frame_t *cfp, const rb_callable_method_entry_t *me,
+mjit_iseq_call(rb_execution_context_t *ec, rb_control_frame_t *cfp, const rb_callable_method_entry_t *me,
 	       rb_iseq_t *iseq, struct rb_iseq_constant_body *body, int except_p, VALUE *pc,
 	       int type, int param_size, int local_size,
 	       unsigned int caller_temp_vars_num, unsigned int stack_max,
@@ -3371,29 +3444,36 @@ mjit_iseq_call(rb_thread_t *th, rb_control_frame_t *cfp, const rb_callable_metho
 	       VALUE recv, int recv_set_p, int simple_p, VALUE *res) {
     VALUE block_handler;
     
-    call_setup_0(th, cfp, &block_handler, argc, flag, call_start,
+    call_setup_0(ec, cfp, &block_handler, argc, flag, call_start,
 		 blockiseq, recv, recv_set_p, simple_p);
-    vm_call_iseq_setup_normal_0(th, cfp, me, iseq, recv, argc, block_handler,
+    vm_call_iseq_setup_normal_0(ec, cfp, me, iseq, recv, argc, block_handler,
 				pc, param_size, local_size, stack_max);
-    return mjit_call_iseq_finish(th, cfp, iseq, body, except_p, type, caller_temp_vars_num, res);
+    return mjit_call_iseq_finish(ec, cfp, iseq, body, except_p, type, caller_temp_vars_num, res);
 }
 
 /* A block call given by call data CD with args in temporary variables
    starting with one with index CALL_START.  */
 static do_inline VALUE
-call_block_f(rb_thread_t *th, rb_control_frame_t *cfp,
+call_block_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	     CALL_DATA cd, sindex_t call_start)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_CFP */
     VALUE *top = get_temp_addr(cfp, call_start);
     CALL_INFO ci = &cd->call_info;
     struct rb_calling_info calling;
+    VALUE block_handler;
 
     calling.argc = ci->orig_argc;
     calling.block_handler = VM_BLOCK_HANDLER_NONE;
-    calling.recv = GET_SELF();
+    calling.recv = Qundef; /* should not be used */
+
+    block_handler = VM_CF_BLOCK_HANDLER(GET_CFP());
+    if (block_handler == VM_BLOCK_HANDLER_NONE) {
+	rb_vm_localjump_error("no block given (yield)", Qnil, 0);
+    }
+
     cfp->sp = top + calling.argc;
-    return vm_invoke_block(th, GET_CFP(), &calling, ci);
+    return vm_invoke_block(ec, GET_CFP(), &calling, ci, block_handler);
 }
 
 /* The corresponding method call of super class with args in temporary
@@ -3401,7 +3481,7 @@ call_block_f(rb_thread_t *th, rb_control_frame_t *cfp,
    BLOCKISEQ.  The call is defined by call data CD and REC_VAL
    (a receiver).  */
 static do_inline void
-call_super_val_f(rb_thread_t *th, rb_control_frame_t *cfp,
+call_super_val_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 		 struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
 		 ISEQ blockiseq, VALUE rec_val)
 {
@@ -3413,18 +3493,18 @@ call_super_val_f(rb_thread_t *th, rb_control_frame_t *cfp,
     *top = rec_val;
     calling->argc = ci->orig_argc;
     cfp->sp = top + calling->argc + 1 + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0);
-    vm_caller_setup_arg_block(th, cfp, calling, ci, blockiseq, TRUE);
+    vm_caller_setup_arg_block(ec, cfp, calling, ci, blockiseq, TRUE);
     calling->recv = GET_SELF();
-    vm_search_super_method(th, GET_CFP(), calling, ci, cc);
+    vm_search_super_method(ec, GET_CFP(), calling, ci, cc);
 }
 
 /* The same as above but reciever value is passed by pointer.  */
 static do_inline void
-call_super_f(rb_thread_t *th, rb_control_frame_t *cfp,
+call_super_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	     struct rb_calling_info *calling, CALL_DATA cd, sindex_t call_start,
 	     ISEQ blockiseq, VALUE *rec_op)
 {
-    call_super_val_f(th, cfp, calling, cd, call_start, blockiseq, *rec_op);
+    call_super_val_f(ec, cfp, calling, cd, call_start, blockiseq, *rec_op);
 }
 
 /* Create a range OP1..OP2 (OP1 and OP2 value locations) and assign
@@ -3446,7 +3526,7 @@ static do_inline void
 make_array_f(rb_control_frame_t *cfp, VALUE *res, sindex_t start, rb_num_t num)
 {
     check_sp_default(cfp);
-    *res = rb_ary_new4((long) num, get_var_addr(cfp, start));
+    *res = rb_ary_new4(num, get_var_addr(cfp, start));
 }
 
 /* Create a hash and assign the result to temporary variable with
@@ -3456,7 +3536,6 @@ static do_inline void
 make_hash_f(rb_control_frame_t *cfp, VALUE *res, sindex_t start, rb_num_t num)
 {
     VALUE val;
-    rb_num_t i;
 
     check_sp_default(cfp);
 #if 0
@@ -3464,16 +3543,12 @@ make_hash_f(rb_control_frame_t *cfp, VALUE *res, sindex_t start, rb_num_t num)
     RUBY_DTRACE_CREATE_HOOK(HASH, num);
 #endif
     
-    val = rb_hash_new();
+    val = rb_hash_new_with_size(num / 2);
 
-    for (i = 0; i < num; i += 2) {
-	VALUE *els = get_var_addr(cfp, start);
-	const VALUE k = els[i];
-	const VALUE v = els[i + 1];
-
-	rb_hash_aset(val, k, v);
+    if (num) {
+	assert(start < 0);
+        rb_hash_bulk_insert(num, get_temp_addr(cfp, start), val);
     }
-
     *res = val;
 }
 
@@ -3537,14 +3612,18 @@ common_new_array_min_max(rb_control_frame_t *cfp, VALUE *res,
 static do_inline void
 new_array_min_f(rb_control_frame_t *cfp, VALUE *res, sindex_t start, rb_num_t num)
 {
-    common_new_array_min_max(cfp, res, start, num, idMin, optimized_min);
+    check_sp_default(cfp);
+    RTL_ASSERT((long) start < 0);
+    *res = vm_opt_newarray_min(num, get_temp_addr(cfp, start));
 }
 
 /* It is just a call of common_new_array_min_max for MAX.  */
 static do_inline void
 new_array_max_f(rb_control_frame_t *cfp, VALUE *res, sindex_t start, rb_num_t num)
 {
-    common_new_array_min_max(cfp, res, start, num, idMax, optimized_max);
+    check_sp_default(cfp);
+    RTL_ASSERT((long) start < 0);
+    *res = vm_opt_newarray_max(num, get_temp_addr(cfp, start));
 }
 
 /* Create a copy of array ARR and assign it to temporary variable with
@@ -3561,10 +3640,10 @@ clone_array_f(rb_control_frame_t *cfp, VALUE *res, VALUE arr)
 static do_inline void
 spread_array_f(rb_control_frame_t *cfp, VALUE *op1, rb_num_t num, rb_num_t flag)
 {
-    VALUE *ary_ptr = op1;
+    VALUE *ary_ptr = op1 + 1;
 
     cfp->sp = ary_ptr;
-    vm_expandarray(cfp, *ary_ptr, num, (int)flag);
+    vm_expandarray(ary_ptr, *op1, num, (int)flag);
     set_default_sp(cfp, RTL_GET_BP(cfp));
 }
 
@@ -3575,16 +3654,9 @@ static do_inline void
 splat_array_f(rb_control_frame_t *cfp, VALUE *res, VALUE *arr, VALUE flag)
 {
     VALUE ary = *arr;
-    VALUE tmp;
 
     check_sp_default(cfp);
-    tmp = rb_check_convert_type(ary, T_ARRAY, "Array", "to_a");
-
-    if (NIL_P(tmp))
-	tmp = rb_ary_new3(1, ary);
-    else if (RTEST(flag))
-	tmp = rb_ary_dup(tmp);
-    *res = tmp;
+    *res = vm_splat_array(flag, ary);
 }
 
 /* Concat two arrays in local or temporary variables in locations OP1
@@ -3594,21 +3666,10 @@ splat_array_f(rb_control_frame_t *cfp, VALUE *res, VALUE *arr, VALUE flag)
 static do_inline void
 concat_array_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE *op2)
 {
-    VALUE tmp1, tmp2, ary1 = *op1, ary2 = *op2;
+    VALUE ary1 = *op1, ary2 = *op2;
 
     check_sp_default(cfp);
-    tmp1 = rb_check_convert_type(ary1, T_ARRAY, "Array", "to_a");
-    tmp2 = rb_check_convert_type(ary2, T_ARRAY, "Array", "to_a");
-
-    if (NIL_P(tmp1))
-	tmp1 = rb_ary_new3(1, ary1);
-
-    if (NIL_P(tmp2))
-	tmp2 = rb_ary_new3(1, ary2);
-
-    if (tmp1 == ary1)
-	tmp1 = rb_ary_dup(ary1);
-    *res = rb_ary_concat(tmp1, tmp2);
+    *res = vm_concat_array(ary1, ary2);
 }
 
 /* Set up RES by Qtrue if bit KEYWORD_INDEX in a value of local
@@ -3618,19 +3679,8 @@ concat_array_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE *op2)
 static do_inline void
 check_keyword_f(rb_control_frame_t *cfp, VALUE *res, rb_num_t kw_bits_index, rb_num_t keyword_index) {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_EP */
-    const VALUE *ep = GET_EP();
-    const VALUE kw_bits = *(ep - kw_bits_index);
-    VALUE val;
 
-    if (FIXNUM_P(kw_bits)) {
-	int bits = FIX2INT(kw_bits);
-	*res = (bits &(0x01 << keyword_index)) ? Qfalse : Qtrue;
-    }
-    else {
-	RTL_ASSERT(RB_TYPE_P(kw_bits, T_HASH));
-	val = rb_hash_has_key(kw_bits, INT2FIX(keyword_index));
-	*res = val ? Qfalse : Qtrue;
-    }
+    *res = vm_check_keyword(kw_bits_index, keyword_index, GET_EP());
 }
 
 /* Return TRUE if bit KEYWORD_INDEX in a value of local variable with
@@ -3638,24 +3688,13 @@ check_keyword_f(rb_control_frame_t *cfp, VALUE *res, rb_num_t kw_bits_index, rb_
    is present in a hash KEYWORD_INDEX.  It means we should jump to the
    destination of insn BKW.  */
 static do_inline int
-bkw_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t kw_bits_index, rb_num_t keyword_index) {
+bkw_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, rb_num_t kw_bits_index, rb_num_t keyword_index) {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_EP */
-    const VALUE *ep = GET_EP();
-    const VALUE kw_bits = *(ep - kw_bits_index);
-    VALUE val;
-
-    if (FIXNUM_P(kw_bits)) {
-	int bits = FIX2INT(kw_bits);
-	val = (bits &(0x01 << keyword_index)) ? Qfalse : Qtrue;
-    }
-    else {
-	RTL_ASSERT(RB_TYPE_P(kw_bits, T_HASH));
-	val = rb_hash_has_key(kw_bits, INT2FIX(keyword_index));
-	val = val ? Qfalse : Qtrue;
-    }
+    VALUE val = vm_check_keyword(kw_bits_index, keyword_index, GET_EP());
+    
     if (RTEST(val)) {
 	check_sp_default(cfp);
-	RUBY_VM_CHECK_INTS(th);
+	RUBY_VM_CHECK_INTS(ec);
 	return TRUE;
     }
     return FALSE;
@@ -3674,36 +3713,20 @@ bkw_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t kw_bits_index, rb_num_t
 
  */
 static do_inline void
-check_match_f(rb_control_frame_t *cfp, VALUE *res,
+check_match_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *res,
 	      VALUE *op1, VALUE *op2, rb_num_t flag)
 {
-    VALUE val, target = *op1, pattern = *op2;
-    enum vm_check_match_type checkmatch_type =
-	(enum vm_check_match_type) (flag & VM_CHECKMATCH_TYPE_MASK);
+    VALUE target = *op1, pattern = *op2;
 
     check_sp_default(cfp);
-    val = Qfalse;
-    if (flag & VM_CHECKMATCH_ARRAY) {
-	long i;
-	for (i = 0; i < RARRAY_LEN(pattern); i++) {
-	    if (RTEST(check_match(RARRAY_AREF(pattern, i), target, checkmatch_type))) {
-		val = Qtrue;
-		break;
-	    }
-	}
-    } else {
-	if (RTEST(check_match(pattern, target, checkmatch_type))) {
-	    val = Qtrue;
-	}
-    }
-    *res = val;
+    *res = vm_check_match(ec, target, pattern, flag);
 }
 
 /* Match and branch.  Operands meaning is the same as for
    check_match_f.  Return TRUE if the result is Qtrue.  It means we
    should jump to the branch destination.  */
 static do_inline int
-bt_match_f(rb_thread_t *th, rb_control_frame_t *cfp,
+bt_match_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	   VALUE *res, VALUE *op1, VALUE *op2, rb_num_t flag)
 {
     VALUE val, target = *op1, pattern = *op2;
@@ -3715,19 +3738,19 @@ bt_match_f(rb_thread_t *th, rb_control_frame_t *cfp,
     if (flag & VM_CHECKMATCH_ARRAY) {
 	int i;
 	for (i = 0; i < RARRAY_LEN(pattern); i++) {
-	    if (RTEST(check_match(RARRAY_AREF(pattern, i), target, checkmatch_type))) {
+	    if (RTEST(check_match(ec, RARRAY_AREF(pattern, i), target, checkmatch_type))) {
 		val = Qtrue;
 		break;
 	    }
 	}
     } else {
-	if (RTEST(check_match(pattern, target, checkmatch_type))) {
+	if (RTEST(check_match(ec, pattern, target, checkmatch_type))) {
 	    val = Qtrue;
 	}
     }
     *res = val;
     if (val == Qtrue) {
-	RUBY_VM_CHECK_INTS(th);
+	RUBY_VM_CHECK_INTS(ec);
 	return TRUE;
     }
     return FALSE;
@@ -3743,11 +3766,7 @@ regexp_match1_f(rb_control_frame_t *cfp, VALUE *res,
     VALUE str = *str_op;
 
     check_sp_default(cfp);
-    if (BASIC_OP_UNREDEFINED_P(BOP_MATCH, REGEXP_REDEFINED_OP_FLAG)) {
-	*res = rb_reg_match(regex, str);
-    } else {
-        *res = rb_funcall(regex, idEqTilde, 1, str);
-    }
+    *res = vm_opt_regexpmatch1(regex, str);
 }
 
 /* Analogous to regexp_match1 but we don't know that value in STR_OP
@@ -3755,18 +3774,17 @@ regexp_match1_f(rb_control_frame_t *cfp, VALUE *res,
    (we need to update vm_exec_core regs in this case) or we need to
    cancel the current JITed code.  */
 static do_inline int
-regexp_match2_f(rb_thread_t *th, rb_control_frame_t *cfp, CALL_DATA cd,
+regexp_match2_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, CALL_DATA cd,
 		VALUE *res, VALUE *str_op, VALUE *regex_op) {
     VALUE v, *str = str_op, regex = *regex_op;
 
     check_sp_default(cfp);
-    if (CLASS_OF(*str) == rb_cString &&
-	BASIC_OP_UNREDEFINED_P(BOP_MATCH, STRING_REDEFINED_OP_FLAG)) {
-	*res = rb_reg_match(regex, *str);
+    if ((v = vm_opt_regexpmatch2(regex, *str)) != Qundef) {
+	*res = v;
 	return 0;
     }
-    v = op2_call(th, cfp, cd, str, regex);
-    return op_val_call_end(th, cfp, res, v);
+    v = op2_call(ec, cfp, cd, str, regex);
+    return op_val_call_end(ec, cfp, res, v);
 }
 
 /* An optimized version for Ruby case with case operand in local or
@@ -3781,60 +3799,39 @@ case_dispatch_f(rb_control_frame_t *cfp, VALUE *op,
     VALUE key = *op;
 
     check_sp_default(cfp);
-    switch(TYPE(key)) {
-    case -1:
-    case T_FIXNUM:
-    case T_FLOAT:
-    case T_SYMBOL:
-    case T_BIGNUM:
-    case T_STRING:
-	if (BASIC_OP_UNREDEFINED_P(BOP_EQQ,
-				   SYMBOL_REDEFINED_OP_FLAG |
-				   INTEGER_REDEFINED_OP_FLAG |
-				   FLOAT_REDEFINED_OP_FLAG |
-				   NIL_REDEFINED_OP_FLAG    |
-				   TRUE_REDEFINED_OP_FLAG   |
-				   FALSE_REDEFINED_OP_FLAG  |
-				   STRING_REDEFINED_OP_FLAG)) {
-	    st_data_t val;
-
-	    if (RB_FLOAT_TYPE_P(key)) {
-		double kval = RFLOAT_VALUE(key);
-		if (!isinf(kval) && modf(kval, &kval) == 0.0) {
-		    key = FIXABLE(kval) ? LONG2FIX((long)kval) : rb_dbl2big(kval);
-		}
-	    }
-	    if (st_lookup(RHASH_TBL_RAW(hash), key, &val)) {
-		return FIX2INT((VALUE) val);
-	    }
-	    else {
-		return else_offset;
-	    }
-	}
-    }
-    return 0;
+    return vm_case_dispatch(hash, else_offset, key);
 }
 
-/* Throw an exception THROWOBJ in frame CFP of thread TH with
+/* Throw an exception THROWOBJ in frame CFP of thread EC with
    additional info THROW_STATE.  */
 static do_inline VALUE
-raise_except_val_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE throwobj,
+raise_except_val_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE throwobj,
 		   rb_num_t throw_state)
 {
     rb_control_frame_t *reg_cfp = cfp; /* for GET_CFP */
 
     check_sp_default(cfp);
-    RUBY_VM_CHECK_INTS(th);
-    return vm_throw(th, GET_CFP(), throw_state, throwobj);
+    RUBY_VM_CHECK_INTS(ec);
+    return vm_throw(ec, GET_CFP(), throw_state, throwobj);
 }
 
 /* As raise_except_val_f but THROWOBJ is in local or temporary
    variable with location OP.  */
 static do_inline VALUE
-raise_except_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op,
+raise_except_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *op,
 	     rb_num_t throw_state)
 {
-    return raise_except_val_f(th, cfp, *op, throw_state);
+    return raise_except_val_f(ec, cfp, *op, throw_state);
+}
+
+static do_inline void
+trace_coverage_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, rb_num_t nf, VALUE data)
+{
+    rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
+    rb_event_flag_t flag = (rb_event_flag_t)nf;
+
+    vm_dtrace(flag, ec);
+    EXEC_EVENT_HOOK(ec, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */, data);
 }
 
 /* Start definition of a class/module with ID and CLASS_ISEQ and
@@ -3842,149 +3839,50 @@ raise_except_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *op,
    locations OP1 and OP2.  STACK_TOP is where the stack top should
    set.  */
 static do_inline void
-define_class(rb_thread_t *th, rb_control_frame_t *cfp, ID id, ISEQ class_iseq, rb_num_t flags,
+define_class(rb_execution_context_t *ec, rb_control_frame_t *cfp, ID id, ISEQ class_iseq, rb_num_t flags,
 	     VALUE *op1, VALUE *op2, sindex_t stack_top)
 {
     VALUE cbase = *op1, super = *op2;
     VALUE klass;
-    rb_vm_defineclass_type_t type = VM_DEFINECLASS_TYPE(flags);
     rb_control_frame_t *reg_cfp = cfp; /* for GET_BLOCK_PTR */
 
     /* Op2 is always on stack.  */
     cfp->sp = get_temp_addr(cfp, stack_top);
-    switch (type) {
-      case VM_DEFINECLASS_TYPE_CLASS:
-	/* val is dummy.  classdef returns class scope value */
+    klass = vm_find_or_create_class_by_id(id, flags, cbase, super);
 
-	if (VM_DEFINECLASS_HAS_SUPERCLASS_P(flags)
-	    && ! RB_TYPE_P(super, T_CLASS)) {
-	    rb_raise(rb_eTypeError, "superclass must be a Class (%"PRIsVALUE" given)",
-		     rb_obj_class(super));
-	}
-
-	vm_check_if_namespace(cbase);
-
-	/* find klass */
-	rb_autoload_load(cbase, id);
-	if ((klass = vm_search_const_defined_class(cbase, id)) != 0) {
-	    /* already exist */
-	    klass = (VM_DEFINECLASS_SCOPED_P(flags) ?
-		     rb_public_const_get_at(klass, id) : rb_const_get_at(klass, id));
-	    if (!RB_TYPE_P(klass, T_CLASS)) {
-		rb_raise(rb_eTypeError, "%"PRIsVALUE" is not a class", rb_id2str(id));
-	    }
-
-	    if (VM_DEFINECLASS_HAS_SUPERCLASS_P(flags)) {
-		VALUE tmp;
-		tmp = rb_class_real(RCLASS_SUPER(klass));
-
-		if (tmp != super) {
-		    rb_raise(rb_eTypeError, "superclass mismatch for class %"PRIsVALUE"",
-		    rb_id2str(id));
-		}
-	    }
-	}
-	else {
-	    /* new class declaration */
-	    if (!VM_DEFINECLASS_HAS_SUPERCLASS_P(flags)) {
-		super = rb_cObject;
-	    }
-	    klass = rb_define_class_id(id, super);
-	    rb_set_class_path_string(klass, cbase, rb_id2str(id));
-	    rb_const_set(cbase, id, klass);
-	    rb_class_inherited(super, klass);
-	}
-	break;
-      case VM_DEFINECLASS_TYPE_SINGLETON_CLASS:
-	/* val is dummy.  classdef returns class scope value */
-	/* super is dummy */
-	klass = rb_singleton_class(cbase);
-	break;
-      case VM_DEFINECLASS_TYPE_MODULE:
-	/* val is dummy.  classdef returns class scope value */
-	/* super is dummy */
-
-	vm_check_if_namespace(cbase);
-
-	/* find klass */
-	if ((klass = vm_search_const_defined_class(cbase, id)) != 0) {
-	    klass = (VM_DEFINECLASS_SCOPED_P(flags) ?
-		     rb_public_const_get_at(klass, id) : rb_const_get_at(klass, id));
-	    /* already exist */
-	    if (!RB_TYPE_P(klass, T_MODULE)) {
-		rb_raise(rb_eTypeError, "%"PRIsVALUE" is not a module", rb_id2str(id));
-	    }
-	}
-	else {
-	    /* new module declaration */
-	    klass = rb_define_module_id(id);
-	    rb_set_class_path_string(klass, cbase, rb_id2str(id));
-	    rb_const_set(cbase, id, klass);
-	}
-	break;
-      default:
-	rb_bug("unknown defineclass type: %d", (int)type);
-    }
     rb_iseq_check(class_iseq);
 
     /* enter scope */
-    vm_push_frame(th, class_iseq, VM_FRAME_MAGIC_CLASS | VM_ENV_FLAG_LOCAL, klass,
-	          GET_BLOCK_HANDLER(),
-	          (VALUE)vm_cref_push(th, klass, NULL, FALSE),
-	          class_iseq->body->rtl_encoded, GET_SP(),
+    vm_push_frame(ec, class_iseq, VM_FRAME_MAGIC_CLASS | VM_ENV_FLAG_LOCAL, klass,
+		  GET_BLOCK_HANDLER(),
+		  (VALUE)vm_cref_push(ec, klass, NULL, FALSE),
+		  class_iseq->body->rtl_encoded, GET_SP(),
 		  class_iseq->body->local_table_size,
 		  class_iseq->body->stack_max);
-
 }
 
 /* This function is called only from JIT code to define a class and assign
    it to temporary variable with location STACK_TOP.  */
 static __attribute__ ((unused)) void
-define_class_f(rb_thread_t *th, rb_control_frame_t *cfp, ID id, ISEQ class_iseq, rb_num_t flags,
+define_class_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, ID id, ISEQ class_iseq, rb_num_t flags,
 	       VALUE *op1, VALUE *op2, sindex_t stack_top) {
-    define_class(th, cfp, id, class_iseq, flags, op1, op2, stack_top);
-    *get_temp_addr(cfp, stack_top) = mjit_vm_exec(th);
+    define_class(ec, cfp, id, class_iseq, flags, op1, op2, stack_top);
+    *get_temp_addr(cfp, stack_top) = mjit_vm_exec(ec);
     set_default_sp(cfp, RTL_GET_BP(cfp));
 }
 
 /* Run ISEQ once storing the result in IC.  Assign the result to local
    or temporary variable location with address RES in frame CFP of
-   thread TH.  */
+   thread EC.  */
 static do_inline void
-run_once_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *res, ISEQ iseq, IC ic)
+run_once_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *res, ISEQ iseq, ISE ise)
 {
-    rb_control_frame_t *reg_cfp = cfp; /* for GET_ISEQ */
-    VALUE val;
-    union iseq_inline_storage_entry *is = (union iseq_inline_storage_entry *)ic;
-    rb_thread_t *thread_done = ((rb_thread_t *)(0x1));
-
     check_sp_default(cfp);
-
- retry_finish:
-    if (is->once.running_thread == thread_done) {
-        val = is->once.value;
-	*res = val;
-    } else if (is->once.running_thread == NULL) {
-        is->once.running_thread = th;
-	val = is->once.value = rb_ensure(vm_once_exec,(VALUE)iseq, vm_once_clear,(VALUE)is);
-	*res = val;
-	/* is->once.running_thread is cleared by vm_once_clear() */
-	is->once.running_thread = thread_done; /* success */
-	rb_iseq_add_mark_object(GET_ISEQ(), val);
-    } else if (is->once.running_thread == th) {
-        /* recursive once */
-        val = vm_once_exec((VALUE)iseq);
-	*res = val;
-    } else {
-	/* waiting for finish */
-	RUBY_VM_CHECK_INTS(th);
-	rb_thread_schedule();
-	goto retry_finish;
-    }
+    *res = vm_once_dispatch(ec, iseq, ise);
 }
 
 static do_inline void
-call_dtrace_hook(rb_thread_t *th) {
+call_dtrace_hook(rb_execution_context_t *ec) {
 #if 0
     /* TODO: Implement dtrace support (symbol visibility and weakness).  */
     if (RUBY_DTRACE_METHOD_ENTRY_ENABLED() ||
@@ -3994,45 +3892,52 @@ call_dtrace_hook(rb_thread_t *th) {
 	
 	switch(flag) {
 	case RUBY_EVENT_CALL:
-	    RUBY_DTRACE_METHOD_ENTRY_HOOK(th, 0, 0);
+	    RUBY_DTRACE_METHOD_ENTRY_HOOK(ec, 0, 0);
 	    break;
 	case RUBY_EVENT_C_CALL:
-	    RUBY_DTRACE_CMETHOD_ENTRY_HOOK(th, 0, 0);
+	    RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, 0, 0);
 	    break;
 	case RUBY_EVENT_RETURN:
-	    RUBY_DTRACE_METHOD_RETURN_HOOK(th, 0, 0);
+	    RUBY_DTRACE_METHOD_RETURN_HOOK(ec, 0, 0);
 	    break;
 	case RUBY_EVENT_C_RETURN:
-	    RUBY_DTRACE_CMETHOD_RETURN_HOOK(th, 0, 0);
+	    RUBY_DTRACE_CMETHOD_RETURN_HOOK(ec, 0, 0);
 	    break;
 	}
     }
 #endif
 }
 
-/* Return value V from frame CFP of thread TH.  Pass the value through
+/* Return value V from frame CFP of thread EC.  Pass the value through
    VAL.  Return a flag to finish vm_exec_core.  */
 static do_inline int
-val_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE v, VALUE *val) {
+val_ret_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE v, VALUE *val) {
     int ret_p;
     
     cfp->sp = RTL_GET_BP(cfp) + 1;
 
-    RUBY_VM_CHECK_INTS(th);
+    if (0&&OPT_CHECKED_RUN) {
+	const VALUE *const bp = vm_base_ptr(cfp);
+	if (cfp->bp != bp) {
+	    vm_stack_consistency_error(ec, cfp, bp);
+	}
+    }
 
-    ret_p = vm_pop_frame(th, cfp, cfp->ep);
-    if (! in_mjit_p && ! ret_p && (cfp = th->cfp)->iseq == 0) {
+    RUBY_VM_CHECK_INTS(ec);
+
+    ret_p = vm_pop_frame(ec, cfp, cfp->ep);
+    if (! in_mjit_p && ! ret_p && (cfp = ec->cfp)->iseq == 0) {
 	/* An exception can result into C function frame when JIT code
 	   is used -- skip the frame.  */
-	ret_p = vm_pop_frame(th, cfp, cfp->ep);
+	ret_p = vm_pop_frame(ec, cfp, cfp->ep);
     }
-    RTL_ASSERT(in_mjit_p || ret_p || th->cfp->iseq);
+    RTL_ASSERT(in_mjit_p || ret_p || ec->cfp->iseq);
     if (! ret_p) {
 	*val = v;
 	return 0;
     } else {
 #if OPT_CALL_THREADED_CODE
-	th->retval = v;
+	rb_ec_thread_ptr(ec)->retval = v;
 	*val = 0;
 #else
 	*val = v;
@@ -4044,18 +3949,18 @@ val_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE v, VALUE *val) {
 /* As val_ret_f but return value is in a temporary variable with
    location RET_OP.  */
 static do_inline int
-temp_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *ret_op, VALUE *val) {
+temp_ret_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *ret_op, VALUE *val) {
     VALUE v = *ret_op;
 
-    return val_ret_f(th, cfp, v, val);
+    return val_ret_f(ec, cfp, v, val);
 }
 
 /* As temp_ret_f but the return value is a local variable.  */
 static do_inline int
-loc_ret_f(rb_thread_t *th, rb_control_frame_t *cfp, VALUE *ret_op, VALUE *val) {
+loc_ret_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *ret_op, VALUE *val) {
     VALUE v = *ret_op;
 
-    return val_ret_f(th, cfp, v, val);
+    return val_ret_f(ec, cfp, v, val);
 }
 
 /* Finish a return by putting VAL on the stack top and restoring the
@@ -4069,7 +3974,7 @@ finish_ret(rb_control_frame_t *cfp, VALUE val) {
 /* Execute trace insn.  It is for non-return traces.  Return TRUE if
    our speculation about equality of EP and BP has changed.  */
 static do_inline int
-trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
+trace_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, rb_num_t nf) {
     rb_event_flag_t flag = (rb_event_flag_t)nf;
     rb_control_frame_t *reg_cfp = cfp; /* for GET_SELF */
 
@@ -4077,7 +3982,7 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
 	/* We are speculating in JITed code that there is no
 	   tracing.  */
 	return FALSE;
-    call_dtrace_hook(th);
+    call_dtrace_hook(ec);
     if (UNLIKELY(ruby_vm_event_flags & flag)) {
 	VALUE data = Qundef;
 
@@ -4091,7 +3996,7 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
 	    else if (vm_exec_insn_address_table[BIN(loc_ret)] == addr)
 		data = *get_loc_addr(reg_cfp, cfp->pc[1]);
 	}
-      EXEC_EVENT_HOOK(th, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
+      EXEC_EVENT_HOOK(ec, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */,
 		      data);
     }
     return ! mjit_ep_neq_bp_p && cfp->ep != cfp->bp;
@@ -4099,45 +4004,45 @@ trace_f(rb_thread_t *th, rb_control_frame_t *cfp, rb_num_t nf) {
 
 /* As mjit_call_finish but when VAL is undefined call mjit_vm_exec. */
 static do_inline int
-mjit_general_call_finish(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
+mjit_general_call_finish(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
     if (val == Qundef) {
-	val = mjit_vm_exec(th);
+	val = mjit_vm_exec(ec);
     }
-    return mjit_call_finish(th, cfp, cfp->iseq->body->temp_vars_num, val, res);
+    return mjit_call_finish(ec, cfp, cfp->iseq->body->temp_vars_num, val, res);
 }
  
 /* Called only from JIT code to implement a call insn and pass the
    call result through RES.  Return non-zero if we need to cancel
    JITed code execution and don't use the code anymore.  */
 static do_inline int
-mjit_call_method(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
+mjit_call_method(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling,
 	         CALL_DATA cd, VALUE *res) {
     CALL_INFO ci = &cd->call_info;
     CALL_CACHE cc = &cd->call_cache;
-    VALUE val = (*(cc)->call)(th, cfp, calling, ci, cc);
+    VALUE val = (*(cc)->call)(ec, cfp, calling, ci, cc);
 
-    return mjit_general_call_finish(th, cfp, val, res);
+    return mjit_general_call_finish(ec, cfp, val, res);
 }
 
 /* Called only from JIT code to implement a call insn and pass the
    call result through RES.  Return non-zero if we need to cancel
    JITed code execution and not to use the code anymore.  */
 static do_inline int
-mjit_call_iseq_normal(rb_thread_t *th, rb_control_frame_t *cfp, struct rb_calling_info *calling,
+mjit_call_iseq_normal(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling,
 		      CALL_DATA cd, int param, int local, VALUE *res) {
     CALL_INFO ci = &cd->call_info;
     CALL_CACHE cc = &cd->call_cache;
-    VALUE val = vm_call_iseq_setup_normal(th, cfp, calling, ci, cc, 0, param, local);
+    VALUE val = vm_call_iseq_setup_normal(ec, cfp, calling, ci, cc, 0, param, local);
 
-    return mjit_general_call_finish(th, cfp, val, res);
+    return mjit_general_call_finish(ec, cfp, val, res);
 }
 
 /* Called only from JIT code to finish a call block insn and pass the
    result through RES.  Return non-zero if we need to cancel JITed
    code execution and don't use the code anymore.  */
 static do_inline int
-mjit_call_block_end(rb_thread_t *th, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
-    return mjit_general_call_finish(th, cfp, val, res);
+mjit_call_block_end(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE val, VALUE *res) {
+    return mjit_general_call_finish(ec, cfp, val, res);
 }
 
 /* Called only from JIT code.  See check_cc_attr_p for more
@@ -4183,7 +4088,7 @@ mjit_call_setivar(VALUE obj, unsigned int index, VALUE val) {
    caller has CALLER_TEMP_VARS_NUM temps.  Return the call result
    through VAL.  */
 static do_inline int
-mjit_call_cfunc(rb_thread_t *th, rb_control_frame_t *cfp,
+mjit_call_cfunc(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 		ID mid, const rb_callable_method_entry_t *me,
 		unsigned int caller_temp_vars_num,
 		int argc, unsigned int flag, struct rb_call_info_kw_arg **kw_arg,
@@ -4191,10 +4096,10 @@ mjit_call_cfunc(rb_thread_t *th, rb_control_frame_t *cfp,
 		VALUE recv, int recv_set_p, int simple_p, VALUE *val) {
     VALUE v, block_handler;
     
-    call_setup_0(th, cfp, &block_handler, argc, flag, call_start,
+    call_setup_0(ec, cfp, &block_handler, argc, flag, call_start,
 		 blockiseq, recv, recv_set_p, simple_p);
-    v = vm_call_cfunc_0(th, cfp, recv, block_handler, argc, flag, kw_arg, mid, me);
-    return mjit_call_finish(th, cfp, caller_temp_vars_num, v, val);
+    v = vm_call_cfunc_0(ec, cfp, recv, block_handler, argc, flag, kw_arg, mid, me);
+    return mjit_call_finish(ec, cfp, caller_temp_vars_num, v, val);
 }
 
 /* NOP insn.  */

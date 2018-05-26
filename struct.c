@@ -23,7 +23,7 @@ const rb_iseq_t *rb_method_for_self_aref(VALUE name, VALUE arg, rb_insn_func_t f
 const rb_iseq_t *rb_method_for_self_aset(VALUE name, VALUE arg, rb_insn_func_t func);
 
 VALUE rb_cStruct;
-static ID id_members, id_back_members;
+static ID id_members, id_back_members, id_keyword_init;
 
 static VALUE struct_alloc(VALUE);
 
@@ -45,6 +45,12 @@ struct_ivar_get(VALUE c, ID id)
 	    return rb_ivar_set(orig, id, ivar);
 	}
     }
+}
+
+VALUE
+rb_struct_s_keyword_init(VALUE klass)
+{
+    return struct_ivar_get(klass, id_keyword_init);
 }
 
 VALUE
@@ -279,7 +285,7 @@ new_struct(VALUE name, VALUE super)
 static void
 define_aref_method(VALUE nstr, VALUE name, VALUE off)
 {
-    rb_control_frame_t *FUNC_FASTCALL(rb_vm_opt_struct_aref)(rb_thread_t *, rb_control_frame_t *);
+    rb_control_frame_t *FUNC_FASTCALL(rb_vm_opt_struct_aref)(rb_execution_context_t *, rb_control_frame_t *);
     const rb_iseq_t *iseq = rb_method_for_self_aref(name, off, rb_vm_opt_struct_aref);
 
     rb_add_method_iseq(nstr, SYM2ID(name), iseq, NULL, METHOD_VISI_PUBLIC);
@@ -288,10 +294,20 @@ define_aref_method(VALUE nstr, VALUE name, VALUE off)
 static void
 define_aset_method(VALUE nstr, VALUE name, VALUE off)
 {
-    rb_control_frame_t *FUNC_FASTCALL(rb_vm_opt_struct_aset)(rb_thread_t *, rb_control_frame_t *);
+    rb_control_frame_t *FUNC_FASTCALL(rb_vm_opt_struct_aset)(rb_execution_context_t *, rb_control_frame_t *);
     const rb_iseq_t *iseq = rb_method_for_self_aset(name, off, rb_vm_opt_struct_aset);
 
     rb_add_method_iseq(nstr, SYM2ID(name), iseq, NULL, METHOD_VISI_PUBLIC);
+}
+
+static VALUE
+rb_struct_s_inspect(VALUE klass)
+{
+    VALUE inspect = rb_class_name(klass);
+    if (RTEST(rb_struct_s_keyword_init(klass))) {
+	rb_str_cat_cstr(inspect, "(keyword_init: true)");
+    }
+    return inspect;
 }
 
 static VALUE
@@ -306,6 +322,7 @@ setup_struct(VALUE nstr, VALUE members)
     rb_define_singleton_method(nstr, "new", rb_class_new_instance, -1);
     rb_define_singleton_method(nstr, "[]", rb_class_new_instance, -1);
     rb_define_singleton_method(nstr, "members", rb_struct_s_members_m, 0);
+    rb_define_singleton_method(nstr, "inspect", rb_struct_s_inspect, 0);
     ptr_members = RARRAY_CONST_PTR(members);
     len = RARRAY_LEN(members);
     for (i=0; i< len; i++) {
@@ -436,10 +453,11 @@ rb_struct_define_under(VALUE outer, const char *name, ...)
 
 /*
  *  call-seq:
- *    Struct.new([class_name] [, member_name]+>)                        -> StructClass
- *    Struct.new([class_name] [, member_name]+>) {|StructClass| block } -> StructClass
- *    StructClass.new(value, ...)                                       -> obj
- *    StructClass[value, ...]                                           -> obj
+ *    Struct.new([class_name] [, member_name]+)                        -> StructClass
+ *    Struct.new([class_name] [, member_name]+, keyword_init: true)    -> StructClass
+ *    Struct.new([class_name] [, member_name]+) {|StructClass| block } -> StructClass
+ *    StructClass.new(value, ...)                                      -> object
+ *    StructClass[value, ...]                                          -> object
  *
  *  The first two forms are used to create a new Struct subclass +class_name+
  *  that can contain a value for each +member_name+.  This subclass can be
@@ -457,6 +475,19 @@ rb_struct_define_under(VALUE outer, const char *name, ...)
  *     Struct::Customer.new("Dave", "123 Main")
  *     #=> #<struct Struct::Customer name="Dave", address="123 Main">
  *
+ *     # Create a structure named by its constant
+ *     Customer = Struct.new(:name, :address)
+ *     #=> Customer
+ *     Customer.new("Dave", "123 Main")
+ *     #=> #<struct Customer name="Dave", address="123 Main">
+ *
+ *  If the optional +keyword_init+ keyword argument is set to +true+,
+ *  .new takes keyword arguments instead of normal arguments.
+ *
+ *     Customer = Struct.new(:name, :address, keyword_init: true)
+ *     Customer.new(name: "Dave", address: "123 Main")
+ *     #=> #<struct Customer name="Dave", address="123 Main">
+ *
  *  If a block is given it will be evaluated in the context of
  *  +StructClass+, passing the created class as a parameter:
  *
@@ -465,7 +496,7 @@ rb_struct_define_under(VALUE outer, const char *name, ...)
  *         "Hello #{name}!"
  *       end
  *     end
- *     Customer.new("Dave", "123 Main").greeting  # => "Hello Dave!"
+ *     Customer.new("Dave", "123 Main").greeting  #=> "Hello Dave!"
  *
  *  This is the recommended way to customize a struct.  Subclassing an
  *  anonymous struct creates an extra anonymous class that will never be used.
@@ -476,17 +507,17 @@ rb_struct_define_under(VALUE outer, const char *name, ...)
  *  Passing more parameters than number of attributes will raise
  *  an ArgumentError.
  *
- *     # Create a structure named by its constant
  *     Customer = Struct.new(:name, :address)
- *     #=> Customer
  *     Customer.new("Dave", "123 Main")
  *     #=> #<struct Customer name="Dave", address="123 Main">
+ *     Customer["Dave"]
+ *     #=> #<struct Customer name="Dave", address=nil>
  */
 
 static VALUE
 rb_struct_s_def(int argc, VALUE *argv, VALUE klass)
 {
-    VALUE name, rest;
+    VALUE name, rest, keyword_init;
     long i;
     VALUE st;
     st_table *tbl;
@@ -500,6 +531,22 @@ rb_struct_s_def(int argc, VALUE *argv, VALUE klass)
 	--argc;
 	++argv;
     }
+
+    if (RB_TYPE_P(argv[argc-1], T_HASH)) {
+	VALUE kwargs[1];
+	static ID keyword_ids[1];
+
+	if (!keyword_ids[0]) {
+	    keyword_ids[0] = rb_intern("keyword_init");
+	}
+	rb_get_kwargs(argv[argc-1], keyword_ids, 0, 1, kwargs);
+	--argc;
+	keyword_init = kwargs[0];
+    }
+    else {
+	keyword_init = Qfalse;
+    }
+
     rest = rb_ident_hash_new();
     RBASIC_CLEAR_CLASS(rest);
     tbl = RHASH_TBL(rest);
@@ -520,6 +567,7 @@ rb_struct_s_def(int argc, VALUE *argv, VALUE klass)
 	st = new_struct(name, klass);
     }
     setup_struct(st, rest);
+    rb_ivar_set(st, id_keyword_init, keyword_init);
     if (rb_block_given_p()) {
 	rb_mod_module_eval(0, 0, st);
     }
@@ -541,6 +589,31 @@ num_members(VALUE klass)
 /*
  */
 
+struct struct_hash_set_arg {
+    VALUE self;
+    VALUE unknown_keywords;
+};
+
+static int rb_struct_pos(VALUE s, VALUE *name);
+
+static int
+struct_hash_set_i(VALUE key, VALUE val, VALUE arg)
+{
+    struct struct_hash_set_arg *args = (struct struct_hash_set_arg *)arg;
+    int i = rb_struct_pos(args->self, &key);
+    if (i < 0) {
+	if (args->unknown_keywords == Qnil) {
+	    args->unknown_keywords = rb_ary_new();
+	}
+	rb_ary_push(args->unknown_keywords, key);
+    }
+    else {
+	rb_struct_modify(args->self);
+	RSTRUCT_SET(args->self, i, val);
+    }
+    return ST_CONTINUE;
+}
+
 static VALUE
 rb_struct_initialize_m(int argc, const VALUE *argv, VALUE self)
 {
@@ -549,14 +622,30 @@ rb_struct_initialize_m(int argc, const VALUE *argv, VALUE self)
 
     rb_struct_modify(self);
     n = num_members(klass);
-    if (n < argc) {
-	rb_raise(rb_eArgError, "struct size differs");
+    if (argc > 0 && RTEST(rb_struct_s_keyword_init(klass))) {
+	struct struct_hash_set_arg arg;
+	if (argc > 2 || !RB_TYPE_P(argv[0], T_HASH)) {
+	    rb_raise(rb_eArgError, "wrong number of arguments (given %d, expected 0)", argc);
+	}
+	rb_mem_clear((VALUE *)RSTRUCT_CONST_PTR(self), n);
+	arg.self = self;
+	arg.unknown_keywords = Qnil;
+	rb_hash_foreach(argv[0], struct_hash_set_i, (VALUE)&arg);
+	if (arg.unknown_keywords != Qnil) {
+	    rb_raise(rb_eArgError, "unknown keywords: %s",
+		     RSTRING_PTR(rb_ary_join(arg.unknown_keywords, rb_str_new2(", "))));
+	}
     }
-    for (i=0; i<argc; i++) {
-	RSTRUCT_SET(self, i, argv[i]);
-    }
-    if (n > argc) {
-	rb_mem_clear((VALUE *)RSTRUCT_CONST_PTR(self)+argc, n-argc);
+    else {
+	if (n < argc) {
+	    rb_raise(rb_eArgError, "struct size differs");
+	}
+	for (i=0; i<argc; i++) {
+	    RSTRUCT_SET(self, i, argv[i]);
+	}
+	if (n > argc) {
+	    rb_mem_clear((VALUE *)RSTRUCT_CONST_PTR(self)+argc, n-argc);
+	}
     }
     return Qnil;
 }
@@ -625,7 +714,7 @@ struct_enum_size(VALUE s, VALUE args, VALUE eobj)
 /*
  *  call-seq:
  *     struct.each {|obj| block }  -> struct
- *     struct.each                 -> an_enumerator
+ *     struct.each                 -> enumerator
  *
  *  Yields the value of each struct member in order.  If no block is given an
  *  enumerator is returned.
@@ -656,7 +745,7 @@ rb_struct_each(VALUE s)
 /*
  *  call-seq:
  *     struct.each_pair {|sym, obj| block }     -> struct
- *     struct.each_pair                         -> an_enumerator
+ *     struct.each_pair                         -> enumerator
  *
  *  Yields the name and value of each struct member in order.  If no block is
  *  given an enumerator is returned.
@@ -747,7 +836,7 @@ inspect_struct(VALUE s, VALUE dummy, int recur)
  *   struct.to_s      -> string
  *   struct.inspect   -> string
  *
- * Describe the contents of this struct in a string.
+ * Returns a description of this struct as a string.
  */
 
 static VALUE
@@ -788,7 +877,7 @@ rb_struct_to_a(VALUE s)
 static VALUE
 rb_struct_to_h(VALUE s)
 {
-    VALUE h = rb_hash_new();
+    VALUE h = rb_hash_new_with_size(RSTRUCT_LEN(s));
     VALUE members = rb_struct_members(s);
     long i;
 
@@ -871,8 +960,8 @@ invalid_struct_pos(VALUE s, VALUE idx)
 
 /*
  *  call-seq:
- *     struct[member]   -> anObject
- *     struct[index]    -> anObject
+ *     struct[member]   -> object
+ *     struct[index]    -> object
  *
  *  Attribute Reference---Returns the value of the given struct +member+ or
  *  the member at the given +index+.   Raises NameError if the +member+ does
@@ -948,7 +1037,7 @@ struct_entry(VALUE s, long n)
 
 /*
  *  call-seq:
- *     struct.values_at(selector, ...)  -> an_array
+ *     struct.values_at(selector, ...)  -> array
  *
  *  Returns the struct member values for each +selector+ as an Array.  A
  *  +selector+ may be either an Integer offset or a Range of offsets (as in
@@ -956,7 +1045,7 @@ struct_entry(VALUE s, long n)
  *
  *     Customer = Struct.new(:name, :address, :zip)
  *     joe = Customer.new("Joe Smith", "123 Maple, Anytown NC", 12345)
- *     joe.values_at 0, 2 #=> ["Joe Smith", 12345]
+ *     joe.values_at(0, 2)   #=> ["Joe Smith", 12345]
  *
  */
 
@@ -968,8 +1057,8 @@ rb_struct_values_at(int argc, VALUE *argv, VALUE s)
 
 /*
  *  call-seq:
- *     struct.select {|i| block }    -> array
- *     struct.select                 -> an_enumerator
+ *     struct.select {|obj| block }  -> array
+ *     struct.select                 -> enumerator
  *
  *  Yields each member value from the struct to the block and returns an Array
  *  containing the member values from the +struct+ for which the given block
@@ -977,7 +1066,7 @@ rb_struct_values_at(int argc, VALUE *argv, VALUE s)
  *
  *     Lots = Struct.new(:a, :b, :c, :d, :e, :f)
  *     l = Lots.new(11, 22, 33, 44, 55, 66)
- *     l.select {|v| (v % 2).zero? }   #=> [22, 44, 66]
+ *     l.select {|v| v.even? }   #=> [22, 44, 66]
  */
 
 static VALUE
@@ -1046,7 +1135,7 @@ rb_struct_equal(VALUE s, VALUE s2)
  * call-seq:
  *   struct.hash   -> integer
  *
- * Returns a hash value based on this struct's contents (see Object#hash).
+ * Returns a hash value based on this struct's contents.
  *
  * See also Object#hash.
  */
@@ -1126,25 +1215,20 @@ rb_struct_size(VALUE s)
     return LONG2FIX(RSTRUCT_LEN(s));
 }
 
-const VALUE*
-rb_struct_ptr(VALUE s)
-{
-    return RSTRUCT_CONST_PTR(s);
-}
-
 /*
  * call-seq:
  *   struct.dig(key, ...)              -> object
  *
- * Extracts the nested value specified by the sequence of <i>idx</i>
+ * Extracts the nested value specified by the sequence of +key+
  * objects by calling +dig+ at each step, returning +nil+ if any
  * intermediate step is +nil+.
  *
- *   klass = Struct.new(:a)
- *   o = klass.new(klass.new({b: [1, 2, 3]}))
+ *   Foo = Struct.new(:a)
+ *   f = Foo.new(Foo.new({b: [1, 2, 3]}))
  *
- *   o.dig(:a, :a, :b, 0)              #=> 1
- *   o.dig(:b, 0)                      #=> nil
+ *   f.dig(:a, :a, :b, 0)    # => 1
+ *   f.dig(:b, 0)            # => nil
+ *   f.dig(:a, :a, :b, :c)   # TypeError: no implicit conversion of Symbol into Integer
  */
 
 static VALUE
@@ -1158,6 +1242,8 @@ rb_struct_dig(int argc, VALUE *argv, VALUE self)
 }
 
 /*
+ *  Document-class: Struct
+ *
  *  A Struct is a convenient way to bundle a number of attributes together,
  *  using accessor methods, without having to write an explicit class.
  *
@@ -1178,7 +1264,7 @@ rb_struct_dig(int argc, VALUE *argv, VALUE self)
  *  See Struct::new for further examples of creating struct subclasses and
  *  instances.
  *
- *  In the method descriptions that follow a "member" parameter refers to a
+ *  In the method descriptions that follow, a "member" parameter refers to a
  *  struct member which is either a quoted string (<code>"name"</code>) or a
  *  Symbol (<code>:name</code>).
  */
@@ -1223,6 +1309,7 @@ Init_Struct(void)
 {
     id_members = rb_intern("__members__");
     id_back_members = rb_intern("__members_back__");
+    id_keyword_init = rb_intern("__keyword_init__");
 
     InitVM(Struct);
 }

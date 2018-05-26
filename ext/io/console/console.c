@@ -14,12 +14,6 @@
 #ifdef HAVE_SYS_IOCTL_H
 #include <sys/ioctl.h>
 #endif
-#ifndef RARRAY_CONST_PTR
-# define RARRAY_CONST_PTR(ary) RARRAY_PTR(ary)
-#endif
-#ifndef HAVE_RB_FUNCALLV
-# define rb_funcallv rb_funcall2
-#endif
 
 #if defined HAVE_TERMIOS_H
 # include <termios.h>
@@ -101,10 +95,6 @@ rb_f_send(int argc, VALUE *argv, VALUE recv)
     }
     return rb_funcallv(recv, vid, argc, argv);
 }
-#endif
-
-#ifndef HAVE_RB_SYM2STR
-# define rb_sym2str(sym) rb_id2str(SYM2ID(sym))
 #endif
 
 typedef struct {
@@ -307,6 +297,14 @@ ttymode(VALUE io, VALUE (*func)(VALUE), void (*setter)(conmode *, void *), void 
  *
  * will read and return a line without echo back and line editing.
  *
+ * The parameter +min+ specifies the minimum number of bytes that
+ * should be received when a read operation is performed. (default: 1)
+ *
+ * The parameter +time+ specifies the timeout in _seconds_ with a
+ * precision of 1/10 of a second. (default: 0)
+ *
+ * Refer to the manual page of termios for further details.
+ *
  * You must require 'io/console' to use this method.
  */
 static VALUE
@@ -323,6 +321,8 @@ console_raw(int argc, VALUE *argv, VALUE io)
  * Enables raw mode.
  *
  * If the terminal mode needs to be back, use io.raw { ... }.
+ *
+ * See IO#raw for details on the parameters.
  *
  * You must require 'io/console' to use this method.
  */
@@ -396,6 +396,8 @@ getc_call(VALUE io)
  *   io.getch(min: nil, time: nil)       -> char
  *
  * Reads and returns a character in raw mode.
+ *
+ * See IO#raw for details on the parameters.
  *
  * You must require 'io/console' to use this method.
  */
@@ -531,6 +533,7 @@ console_set_winsize(VALUE io, VALUE size)
 #if defined _WIN32
     HANDLE wh;
     int newrow, newcol;
+    BOOL ret;
 #endif
     VALUE row, col, xpixel, ypixel;
     const VALUE *sz;
@@ -568,17 +571,21 @@ console_set_winsize(VALUE io, VALUE size)
     if (!GetConsoleScreenBufferInfo(wh, &ws)) {
 	rb_syserr_fail(LAST_ERROR, "GetConsoleScreenBufferInfo");
     }
-    if ((ws.dwSize.X < newcol && (ws.dwSize.X = newcol, 1)) ||
-	(ws.dwSize.Y < newrow && (ws.dwSize.Y = newrow, 1))) {
-	if (!SetConsoleScreenBufferSize(wh, ws.dwSize)) {
-	    rb_syserr_fail(LAST_ERROR, "SetConsoleScreenBufferInfo");
-	}
-    }
+    ws.dwSize.X = newcol;
+    ret = SetConsoleScreenBufferSize(wh, ws.dwSize);
     ws.srWindow.Left = 0;
     ws.srWindow.Top = 0;
-    ws.srWindow.Right = newcol;
-    ws.srWindow.Bottom = newrow;
-    if (!SetConsoleWindowInfo(wh, FALSE, &ws.srWindow)) {
+    ws.srWindow.Right = newcol-1;
+    ws.srWindow.Bottom = newrow-1;
+    if (!SetConsoleWindowInfo(wh, TRUE, &ws.srWindow)) {
+	rb_syserr_fail(LAST_ERROR, "SetConsoleWindowInfo");
+    }
+    /* retry when shrinking buffer after shrunk window */
+    if (!ret && !SetConsoleScreenBufferSize(wh, ws.dwSize)) {
+	rb_syserr_fail(LAST_ERROR, "SetConsoleScreenBufferInfo");
+    }
+    /* remove scrollbar if possible */
+    if (!SetConsoleWindowInfo(wh, TRUE, &ws.srWindow)) {
 	rb_syserr_fail(LAST_ERROR, "SetConsoleWindowInfo");
     }
 #endif

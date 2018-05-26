@@ -268,17 +268,17 @@ class Logger
       @level = severity
     else
       case severity.to_s.downcase
-      when 'debug'.freeze
+      when 'debug'
         @level = DEBUG
-      when 'info'.freeze
+      when 'info'
         @level = INFO
-      when 'warn'.freeze
+      when 'warn'
         @level = WARN
-      when 'error'.freeze
+      when 'error'
         @level = ERROR
-      when 'fatal'.freeze
+      when 'fatal'
         @level = FATAL
-      when 'unknown'.freeze
+      when 'unknown'
         @level = UNKNOWN
       else
         raise ArgumentError, "invalid log level: #{severity}"
@@ -457,7 +457,9 @@ class Logger
     if @logdev.nil? or severity < @level
       return true
     end
-    progname ||= @progname
+    if progname.nil?
+      progname = @progname
+    end
     if message.nil?
       if block_given?
         message = yield
@@ -477,9 +479,7 @@ class Logger
   # device exists, return +nil+.
   #
   def <<(msg)
-    unless @logdev.nil?
-      @logdev.write(msg)
-    end
+    @logdev&.write(msg)
   end
 
   #
@@ -566,7 +566,7 @@ class Logger
   # Close the logging device.
   #
   def close
-    @logdev.close if @logdev
+    @logdev&.close
   end
 
 private
@@ -741,7 +741,7 @@ private
 
     def open_logfile(filename)
       begin
-        open(filename, (File::WRONLY | File::APPEND))
+        File.open(filename, (File::WRONLY | File::APPEND))
       rescue Errno::ENOENT
         create_logfile(filename)
       end
@@ -749,7 +749,7 @@ private
 
     def create_logfile(filename)
       begin
-        logdev = open(filename, (File::WRONLY | File::APPEND | File::CREAT | File::EXCL))
+        logdev = File.open(filename, (File::WRONLY | File::APPEND | File::CREAT | File::EXCL))
         logdev.flock(File::LOCK_EX)
         logdev.sync = true
         add_log_header(logdev)

@@ -51,18 +51,18 @@ static double positive_inf, negative_inf;
 #define f_add3(x,y,z) f_add(f_add(x, y), z)
 #define f_sub3(x,y,z) f_sub(f_sub(x, y), z)
 
-inline static VALUE
+inline static int
 f_cmp(VALUE x, VALUE y)
 {
     if (FIXNUM_P(x) && FIXNUM_P(y)) {
 	long c = FIX2LONG(x) - FIX2LONG(y);
 	if (c > 0)
-	    c = 1;
+	    return 1;
 	else if (c < 0)
-	    c = -1;
-	return INT2FIX(c);
+	    return -1;
+	return 0;
     }
-    return rb_funcall(x, id_cmp, 1, y);
+    return rb_cmpint(rb_funcallv(x, id_cmp, 1, &y), x, y);
 }
 
 inline static VALUE
@@ -2333,6 +2333,9 @@ VALUE date_zone_to_diff(VALUE);
 static int
 offset_to_sec(VALUE vof, int *rof)
 {
+    int try_rational = 1;
+
+  again:
     switch (TYPE(vof)) {
       case T_FIXNUM:
 	{
@@ -2359,10 +2362,11 @@ offset_to_sec(VALUE vof, int *rof)
       default:
 	expect_numeric(vof);
 	vof = f_to_r(vof);
-#ifdef CANONICALIZATION_FOR_MATHN
-	if (!k_rational_p(vof))
-	    return offset_to_sec(vof, rof);
-#endif
+	if (!k_rational_p(vof)) {
+	    if (!try_rational) Check_Type(vof, T_RATIONAL);
+	    try_rational = 0;
+	    goto again;
+	}
 	/* fall through */
       case T_RATIONAL:
 	{
@@ -2371,17 +2375,10 @@ offset_to_sec(VALUE vof, int *rof)
 
 	    vs = day_to_sec(vof);
 
-#ifdef CANONICALIZATION_FOR_MATHN
 	    if (!k_rational_p(vs)) {
-		if (!FIXNUM_P(vs))
-		    return 0;
-		n = FIX2LONG(vs);
-		if (n < -DAY_IN_SECONDS || n > DAY_IN_SECONDS)
-		    return 0;
-		*rof = (int)n;
-		return 1;
+		vn = vs;
+		goto rounded;
 	    }
-#endif
 	    vn = rb_rational_num(vs);
 	    vd = rb_rational_den(vs);
 
@@ -2391,6 +2388,7 @@ offset_to_sec(VALUE vof, int *rof)
 		vn = f_round(vs);
 		if (!f_eqeq_p(vn, vs))
 		    rb_warning("fraction of offset is ignored");
+	      rounded:
 		if (!FIXNUM_P(vn))
 		    return 0;
 		n = FIX2LONG(vn);
@@ -2462,7 +2460,7 @@ date_s__valid_jd_p(int argc, VALUE *argv, VALUE klass)
  *
  *    Date.valid_jd?(2451944)		#=> true
  *
- * See also jd.
+ * See also ::jd.
  */
 static VALUE
 date_s_valid_jd_p(int argc, VALUE *argv, VALUE klass)
@@ -2551,7 +2549,7 @@ date_s__valid_civil_p(int argc, VALUE *argv, VALUE klass)
  *    Date.valid_date?(2001,2,3)	#=> true
  *    Date.valid_date?(2001,2,29)	#=> false
  *
- * See also jd and civil.
+ * See also ::jd and ::civil.
  */
 static VALUE
 date_s_valid_civil_p(int argc, VALUE *argv, VALUE klass)
@@ -2632,7 +2630,7 @@ date_s__valid_ordinal_p(int argc, VALUE *argv, VALUE klass)
  *    Date.valid_ordinal?(2001,34)	#=> true
  *    Date.valid_ordinal?(2001,366)	#=> false
  *
- * See also jd and ordinal.
+ * See also ::jd and ::ordinal.
  */
 static VALUE
 date_s_valid_ordinal_p(int argc, VALUE *argv, VALUE klass)
@@ -2714,7 +2712,7 @@ date_s__valid_commercial_p(int argc, VALUE *argv, VALUE klass)
  *    Date.valid_commercial?(2001,5,6)	#=> true
  *    Date.valid_commercial?(2001,5,8)	#=> false
  *
- * See also jd and commercial.
+ * See also ::jd and ::commercial.
  */
 static VALUE
 date_s_valid_commercial_p(int argc, VALUE *argv, VALUE klass)
@@ -3262,7 +3260,7 @@ static VALUE d_lite_plus(VALUE, VALUE);
  *    Date.jd(2451945)		#=> #<Date: 2001-02-04 ...>
  *    Date.jd(0)		#=> #<Date: -4712-01-01 ...>
  *
- * See also new.
+ * See also ::new.
  */
 static VALUE
 date_s_jd(int argc, VALUE *argv, VALUE klass)
@@ -3312,7 +3310,7 @@ date_s_jd(int argc, VALUE *argv, VALUE klass)
  *    Date.ordinal(2001,34)	#=> #<Date: 2001-02-03 ...>
  *    Date.ordinal(2001,-1)	#=> #<Date: 2001-12-31 ...>
  *
- * See also jd and new.
+ * See also ::jd and ::new.
  */
 static VALUE
 date_s_ordinal(int argc, VALUE *argv, VALUE klass)
@@ -3380,7 +3378,7 @@ date_s_ordinal(int argc, VALUE *argv, VALUE klass)
  *    Date.new(2001,2,3)	#=> #<Date: 2001-02-03 ...>
  *    Date.new(2001,2,-1)	#=> #<Date: 2001-02-28 ...>
  *
- * See also jd.
+ * See also ::jd.
  */
 static VALUE
 date_s_civil(int argc, VALUE *argv, VALUE klass)
@@ -3457,7 +3455,7 @@ date_s_civil(int argc, VALUE *argv, VALUE klass)
  *    Date.commercial(2002)	#=> #<Date: 2001-12-31 ...>
  *    Date.commercial(2001,5,6)	#=> #<Date: 2001-02-03 ...>
  *
- * See also jd and new.
+ * See also ::jd and ::new.
  */
 static VALUE
 date_s_commercial(int argc, VALUE *argv, VALUE klass)
@@ -3631,9 +3629,9 @@ static void set_sg(union DateData *, double);
  * call-seq:
  *    Date.today([start=Date::ITALY])  ->  date
  *
- *    Date.today		#=> #<Date: 2011-06-11 ..>
- *
  * Creates a date object denoting the present day.
+ *
+ *    Date.today   #=> #<Date: 2011-06-11 ...>
  */
 static VALUE
 date_s_today(int argc, VALUE *argv, VALUE klass)
@@ -3679,9 +3677,11 @@ date_s_today(int argc, VALUE *argv, VALUE klass)
 #define ref_hash0(k) rb_hash_aref(hash, k)
 #define del_hash0(k) rb_hash_delete(hash, k)
 
-#define set_hash(k,v) rb_hash_aset(hash, ID2SYM(rb_intern(k)), v)
-#define ref_hash(k) rb_hash_aref(hash, ID2SYM(rb_intern(k)))
-#define del_hash(k) rb_hash_delete(hash, ID2SYM(rb_intern(k)))
+#define sym(x) ID2SYM(rb_intern(x""))
+
+#define set_hash(k,v) set_hash0(sym(k), v)
+#define ref_hash(k) ref_hash0(sym(k))
+#define del_hash(k) del_hash0(sym(k))
 
 static VALUE
 rt_rewrite_frags(VALUE hash)
@@ -3717,8 +3717,6 @@ rt_rewrite_frags(VALUE hash)
     }
     return hash;
 }
-
-#define sym(x) ID2SYM(rb_intern(x))
 
 static VALUE d_lite_year(VALUE);
 static VALUE d_lite_wday(VALUE);
@@ -4236,7 +4234,7 @@ date_s__strptime_internal(int argc, VALUE *argv, VALUE klass,
  *    Date._strptime('2001-02-03', '%Y-%m-%d')
  *				#=> {:year=>2001, :mon=>2, :mday=>3}
  *
- *  See also strptime(3) and strftime.
+ * See also strptime(3) and #strftime.
  */
 static VALUE
 date_s__strptime(int argc, VALUE *argv, VALUE klass)
@@ -4246,7 +4244,7 @@ date_s__strptime(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    Date.strptime([string='-4712-01-01'[, format='%F'[, start=ITALY]]])  ->  date
+ *    Date.strptime([string='-4712-01-01'[, format='%F'[, start=Date::ITALY]]])  ->  date
  *
  * Parses the given representation of date and time with the given
  * template, and creates a date object.  strptime does not support
@@ -4260,7 +4258,7 @@ date_s__strptime(int argc, VALUE *argv, VALUE klass)
  *    Date.strptime('2001 05 6', '%Y %W %u')	#=> #<Date: 2001-02-03 ...>
  *    Date.strptime('sat3feb01', '%a%d%b%y')	#=> #<Date: 2001-02-03 ...>
  *
- * See also strptime(3) and strftime.
+ * See also strptime(3) and #strftime.
  */
 static VALUE
 date_s_strptime(int argc, VALUE *argv, VALUE klass)
@@ -4340,7 +4338,7 @@ date_s__parse(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    Date.parse(string='-4712-01-01'[, comp=true[, start=ITALY]])  ->  date
+ *    Date.parse(string='-4712-01-01'[, comp=true[, start=Date::ITALY]])  ->  date
  *
  * Parses the given representation of date and time, and creates a
  * date object.  This method does not function as a validator.
@@ -4400,7 +4398,7 @@ date_s__iso8601(VALUE klass, VALUE str)
 
 /*
  * call-seq:
- *    Date.iso8601(string='-4712-01-01'[, start=ITALY])  ->  date
+ *    Date.iso8601(string='-4712-01-01'[, start=Date::ITALY])  ->  date
  *
  * Creates a new Date object by parsing from a string according to
  * some typical ISO 8601 formats.
@@ -4443,7 +4441,7 @@ date_s__rfc3339(VALUE klass, VALUE str)
 
 /*
  * call-seq:
- *    Date.rfc3339(string='-4712-01-01T00:00:00+00:00'[, start=ITALY])  ->  date
+ *    Date.rfc3339(string='-4712-01-01T00:00:00+00:00'[, start=Date::ITALY])  ->  date
  *
  * Creates a new Date object by parsing from a string according to
  * some typical RFC 3339 formats.
@@ -4484,7 +4482,7 @@ date_s__xmlschema(VALUE klass, VALUE str)
 
 /*
  * call-seq:
- *    Date.xmlschema(string='-4712-01-01'[, start=ITALY])  ->  date
+ *    Date.xmlschema(string='-4712-01-01'[, start=Date::ITALY])  ->  date
  *
  * Creates a new Date object by parsing from a string according to
  * some typical XML Schema formats.
@@ -4526,8 +4524,8 @@ date_s__rfc2822(VALUE klass, VALUE str)
 
 /*
  * call-seq:
- *    Date.rfc2822(string='Mon, 1 Jan -4712 00:00:00 +0000'[, start=ITALY])  ->  date
- *    Date.rfc822(string='Mon, 1 Jan -4712 00:00:00 +0000'[, start=ITALY])   ->  date
+ *    Date.rfc2822(string='Mon, 1 Jan -4712 00:00:00 +0000'[, start=Date::ITALY])  ->  date
+ *    Date.rfc822(string='Mon, 1 Jan -4712 00:00:00 +0000'[, start=Date::ITALY])   ->  date
  *
  * Creates a new Date object by parsing from a string according to
  * some typical RFC 2822 formats.
@@ -4569,7 +4567,7 @@ date_s__httpdate(VALUE klass, VALUE str)
 
 /*
  * call-seq:
- *    Date.httpdate(string='Mon, 01 Jan -4712 00:00:00 GMT'[, start=ITALY])  ->  date
+ *    Date.httpdate(string='Mon, 01 Jan -4712 00:00:00 GMT'[, start=Date::ITALY])  ->  date
  *
  * Creates a new Date object by parsing from a string according to
  * some RFC 2616 format.
@@ -4611,7 +4609,7 @@ date_s__jisx0301(VALUE klass, VALUE str)
 
 /*
  * call-seq:
- *    Date.jisx0301(string='-4712-01-01'[, start=ITALY])  ->  date
+ *    Date.jisx0301(string='-4712-01-01'[, start=Date::ITALY])  ->  date
  *
  * Creates a new Date object by parsing from a string according to
  * some typical JIS X 0301 formats.
@@ -5380,7 +5378,7 @@ dup_obj_with_new_start(VALUE obj, double sg)
  * call-seq:
  *    d.new_start([start=Date::ITALY])  ->  date
  *
- * Duplicates self and resets its the day of calendar reform.
+ * Duplicates self and resets its day of calendar reform.
  *
  *    d = Date.new(1582,10,15)
  *    d.new_start(Date::JULIAN)		#=> #<Date: 1582-10-05 ...>
@@ -5498,9 +5496,9 @@ d_lite_new_offset(int argc, VALUE *argv, VALUE self)
  * call-seq:
  *    d + other  ->  date
  *
- * Returns a date object pointing other days after self.  The other
- * should be a numeric value.  If the other is flonum, assumes its
- * precision is at most nanosecond.
+ * Returns a date object pointing +other+ days after self.  The other
+ * should be a numeric value.  If the other is a fractional number,
+ * assumes its precision is at most nanosecond.
  *
  *    Date.new(2001,2,3) + 1	#=> #<Date: 2001-02-04 ...>
  *    DateTime.new(2001,2,3) + Rational(1,2)
@@ -5513,8 +5511,10 @@ d_lite_new_offset(int argc, VALUE *argv, VALUE self)
 static VALUE
 d_lite_plus(VALUE self, VALUE other)
 {
+    int try_rational = 1;
     get_d1(self);
 
+  again:
     switch (TYPE(other)) {
       case T_FIXNUM:
 	{
@@ -5724,18 +5724,21 @@ d_lite_plus(VALUE self, VALUE other)
       default:
 	expect_numeric(other);
 	other = f_to_r(other);
-#ifdef CANONICALIZATION_FOR_MATHN
-	if (!k_rational_p(other))
-	    return d_lite_plus(self, other);
-#endif
+	if (!k_rational_p(other)) {
+	    if (!try_rational) Check_Type(other, T_RATIONAL);
+	    try_rational = 0;
+	    goto again;
+	}
 	/* fall through */
       case T_RATIONAL:
 	{
 	    VALUE nth, sf, t;
 	    int jd, df, s;
 
-	    if (wholenum_p(other))
-		return d_lite_plus(self, rb_rational_num(other));
+	    if (wholenum_p(other)) {
+		other = rb_rational_num(other);
+		goto again;
+	    }
 
 	    if (f_positive_p(other))
 		s = +1;
@@ -5883,8 +5886,8 @@ minus_dd(VALUE self, VALUE other)
  *
  * Returns the difference between the two dates if the other is a date
  * object.  If the other is a numeric value, returns a date object
- * pointing other days before self.  If the other is flonum, assumes
- * its precision is at most nanosecond.
+ * pointing +other+ days before self.  If the other is a fractional number,
+ * assumes its precision is at most nanosecond.
  *
  *     Date.new(2001,2,3) - 1	#=> #<Date: 2001-02-02 ...>
  *     DateTime.new(2001,2,3) - Rational(1,2)
@@ -5965,12 +5968,24 @@ d_lite_next(VALUE self)
  * call-seq:
  *    d >> n  ->  date
  *
- * Returns a date object pointing n months after self.  The n should
- * be a numeric value.
+ * Returns a date object pointing +n+ months after self.
+ * The argument +n+ should be a numeric value.
  *
- *    Date.new(2001,2,3) >> 1	#=> #<Date: 2001-03-03 ...>
- *    Date.new(2001,1,31) >> 1	#=> #<Date: 2001-02-28 ...>
- *    Date.new(2001,2,3) >> -2	#=> #<Date: 2000-12-03 ...>
+ *    Date.new(2001,2,3)  >>  1   #=> #<Date: 2001-03-03 ...>
+ *    Date.new(2001,2,3)  >> -2   #=> #<Date: 2000-12-03 ...>
+ *
+ * When the same day does not exist for the corresponding month,
+ * the last day of the month is used instead:
+ *
+ *    Date.new(2001,1,28) >> 1   #=> #<Date: 2001-02-28 ...>
+ *    Date.new(2001,1,31) >> 1   #=> #<Date: 2001-02-28 ...>
+ *
+ * This also results in the following, possibly unexpected, behavior:
+ *
+ *    Date.new(2001,1,31) >> 2         #=> #<Date: 2001-03-31 ...>
+ *    Date.new(2001,1,31) >> 1 >> 1    #=> #<Date: 2001-03-28 ...>
+ *
+ *    Date.new(2001,1,31) >> 1 >> -1   #=> #<Date: 2001-01-28 ...>
  */
 static VALUE
 d_lite_rshift(VALUE self, VALUE other)
@@ -6015,12 +6030,24 @@ d_lite_rshift(VALUE self, VALUE other)
  * call-seq:
  *    d << n  ->  date
  *
- * Returns a date object pointing n months before self.  The n should
- * be a numeric value.
+ * Returns a date object pointing +n+ months before self.
+ * The argument +n+ should be a numeric value.
  *
- *    Date.new(2001,2,3) << 1	#=> #<Date: 2001-01-03 ...>
- *    Date.new(2001,1,31) << 11	#=> #<Date: 2000-02-29 ...>
- *    Date.new(2001,2,3) << -1	#=> #<Date: 2001-03-03 ...>
+ *    Date.new(2001,2,3)  <<  1   #=> #<Date: 2001-01-03 ...>
+ *    Date.new(2001,2,3)  << -2   #=> #<Date: 2001-04-03 ...>
+ *
+ * When the same day does not exist for the corresponding month,
+ * the last day of the month is used instead:
+ *
+ *    Date.new(2001,3,28) << 1   #=> #<Date: 2001-02-28 ...>
+ *    Date.new(2001,3,31) << 1   #=> #<Date: 2001-02-28 ...>
+ *
+ * This also results in the following, possibly unexpected, behavior:
+ *
+ *    Date.new(2001,3,31) << 2         #=> #<Date: 2001-01-31 ...>
+ *    Date.new(2001,3,31) << 1 << 1    #=> #<Date: 2001-01-28 ...>
+ *
+ *    Date.new(2001,3,31) << 1 << -1   #=> #<Date: 2001-03-28 ...>
  */
 static VALUE
 d_lite_lshift(VALUE self, VALUE other)
@@ -6033,7 +6060,9 @@ d_lite_lshift(VALUE self, VALUE other)
  * call-seq:
  *    d.next_month([n=1])  ->  date
  *
- * This method is equivalent to d >> n
+ * This method is equivalent to d >> n.
+ *
+ * See Date#>> for examples.
  */
 static VALUE
 d_lite_next_month(int argc, VALUE *argv, VALUE self)
@@ -6050,7 +6079,9 @@ d_lite_next_month(int argc, VALUE *argv, VALUE self)
  * call-seq:
  *    d.prev_month([n=1])  ->  date
  *
- * This method is equivalent to d << n
+ * This method is equivalent to d << n.
+ *
+ * See Date#<< for examples.
  */
 static VALUE
 d_lite_prev_month(int argc, VALUE *argv, VALUE self)
@@ -6067,7 +6098,13 @@ d_lite_prev_month(int argc, VALUE *argv, VALUE self)
  * call-seq:
  *    d.next_year([n=1])  ->  date
  *
- * This method is equivalent to d >> (n * 12)
+ * This method is equivalent to d >> (n * 12).
+ *
+ *    Date.new(2001,2,3).next_year      #=> #<Date: 2002-02-03 ...>
+ *    Date.new(2008,2,29).next_year     #=> #<Date: 2009-02-28 ...>
+ *    Date.new(2008,2,29).next_year(4)  #=> #<Date: 2012-02-29 ...>
+ *
+ * See also Date#>>.
  */
 static VALUE
 d_lite_next_year(int argc, VALUE *argv, VALUE self)
@@ -6084,7 +6121,13 @@ d_lite_next_year(int argc, VALUE *argv, VALUE self)
  * call-seq:
  *    d.prev_year([n=1])  ->  date
  *
- * This method is equivalent to d << (n * 12)
+ * This method is equivalent to d << (n * 12).
+ *
+ *    Date.new(2001,2,3).prev_year      #=> #<Date: 2000-02-03 ...>
+ *    Date.new(2008,2,29).prev_year     #=> #<Date: 2007-02-28 ...>
+ *    Date.new(2008,2,29).prev_year(4)  #=> #<Date: 2004-02-29 ...>
+ *
+ * See also Date#<<.
  */
 static VALUE
 d_lite_prev_year(int argc, VALUE *argv, VALUE self)
@@ -6114,6 +6157,7 @@ static VALUE
 d_lite_step(int argc, VALUE *argv, VALUE self)
 {
     VALUE limit, step, date;
+    int c;
 
     rb_scan_args(argc, argv, "11", &limit, &step);
 
@@ -6128,25 +6172,22 @@ d_lite_step(int argc, VALUE *argv, VALUE self)
     RETURN_ENUMERATOR(self, argc, argv);
 
     date = self;
-    switch (FIX2INT(f_cmp(step, INT2FIX(0)))) {
-      case -1:
+    c = f_cmp(step, INT2FIX(0));
+    if (c < 0) {
 	while (FIX2INT(d_lite_cmp(date, limit)) >= 0) {
 	    rb_yield(date);
 	    date = d_lite_plus(date, step);
 	}
-	break;
-      case 0:
+    }
+    else if (c == 0) {
 	while (1)
 	    rb_yield(date);
-	break;
-      case 1:
+    }
+    else /* if (c > 0) */ {
 	while (FIX2INT(d_lite_cmp(date, limit)) <= 0) {
 	    rb_yield(date);
 	    date = d_lite_plus(date, step);
 	}
-	break;
-      default:
-	abort();
     }
     return self;
 }
@@ -6201,9 +6242,9 @@ cmp_gen(VALUE self, VALUE other)
     get_d1(self);
 
     if (k_numeric_p(other))
-	return f_cmp(m_ajd(dat), other);
+	return INT2FIX(f_cmp(m_ajd(dat), other));
     else if (k_date_p(other))
-	return f_cmp(m_ajd(dat), f_ajd(other));
+	return INT2FIX(f_cmp(m_ajd(dat), f_ajd(other)));
     return rb_num_coerce_cmp(self, other, rb_intern("<=>"));
 }
 
@@ -6272,11 +6313,11 @@ cmp_dd(VALUE self, VALUE other)
  * should be a date object or a numeric value as an astronomical
  * Julian day number.
  *
- *    Date.new(2001,2,3) <=> Date.new(2001,2,4)	#=> -1
- *    Date.new(2001,2,3) <=> Date.new(2001,2,3)	#=> 0
- *    Date.new(2001,2,3) <=> Date.new(2001,2,2)	#=> 1
- *    Date.new(2001,2,3) <=> Object.new		#=> nil
- *    Date.new(2001,2,3) <=> Rational(4903887,2)#=> 0
+ *    Date.new(2001,2,3) <=> Date.new(2001,2,4)   #=> -1
+ *    Date.new(2001,2,3) <=> Date.new(2001,2,3)   #=> 0
+ *    Date.new(2001,2,3) <=> Date.new(2001,2,2)   #=> 1
+ *    Date.new(2001,2,3) <=> Object.new           #=> nil
+ *    Date.new(2001,2,3) <=> Rational(4903887,2)  #=> 0
  *
  * See also Comparable.
  */
@@ -6404,7 +6445,7 @@ d_lite_hash(VALUE self)
     h[2] = m_df(dat);
     h[3] = m_sf(dat);
     v = rb_memhash(h, sizeof(h));
-    return LONG2FIX(v);
+    return ST2FIX(v);
 }
 
 #include "date_tmx.h"
@@ -6416,8 +6457,8 @@ static VALUE strftimev(const char *, VALUE,
  * call-seq:
  *    d.to_s  ->  string
  *
- * Returns a string in an ISO 8601 format (This method doesn't use the
- * expanded representations).
+ * Returns a string in an ISO 8601 format. (This method doesn't use the
+ * expanded representations.)
  *
  *     Date.new(2001,2,3).to_s	#=> "2001-02-03"
  */
@@ -6691,13 +6732,13 @@ date_strftime_internal(int argc, VALUE *argv, VALUE self,
  *
  * Formats date according to the directives in the given format
  * string.
- * The directives begins with a percent (%) character.
+ * The directives begin with a percent (%) character.
  * Any text not listed as a directive will be passed through to the
  * output string.
  *
- * The directive consists of a percent (%) character,
- * zero or more flags, optional minimum field width,
- * optional modifier and a conversion specifier
+ * A directive consists of a percent (%) character,
+ * zero or more flags, an optional minimum field width,
+ * an optional modifier, and a conversion specifier
  * as follows.
  *
  *    %<flags><width><modifier><conversion>
@@ -6762,7 +6803,7 @@ date_strftime_internal(int argc, VALUE *argv, VALUE self,
  *              %::z - hour, minute and second offset from UTC (e.g. +09:00:00)
  *              %:::z - hour, minute and second offset from UTC
  *                                                (e.g. +09, +09:30, +09:30:30)
- *      %Z - Time zone abbreviation name or something similar information.
+ *      %Z - Equivalent to %:z (e.g. +09:00)
  *
  *    Weekday:
  *      %A - The full weekday name (``Sunday'')
@@ -6807,11 +6848,12 @@ date_strftime_internal(int argc, VALUE *argv, VALUE self,
  *      %T - 24-hour time (%H:%M:%S)
  *      %+ - date(1) (%a %b %e %H:%M:%S %Z %Y)
  *
- * This method is similar to strftime() function defined in ISO C and POSIX.
+ * This method is similar to the strftime() function defined in ISO C
+ * and POSIX.
  * Several directives (%a, %A, %b, %B, %c, %p, %r, %x, %X, %E*, %O* and %Z)
  * are locale dependent in the function.
- * However this method is locale independent.
- * So, the result may differ even if a same format string is used in other
+ * However, this method is locale independent.
+ * So, the result may differ even if the same format string is used in other
  * systems such as C.
  * It is good practice to avoid %x and %X because there are corresponding
  * locale independent representations, %D and %T.
@@ -6859,7 +6901,7 @@ date_strftime_internal(int argc, VALUE *argv, VALUE self,
  *    %GW%V%uT%H%M%z   => 2007W471T0837-0600        Week date and local time and difference from UTC (basic)
  *    %G-W%V-%uT%R%:z  => 2007-W47-1T08:37-06:00    Week date and local time and difference from UTC (extended)
  *
- * See also strftime(3) and strptime.
+ * See also strftime(3) and ::strptime.
  */
 static VALUE
 d_lite_strftime(int argc, VALUE *argv, VALUE self)
@@ -7161,7 +7203,7 @@ date_s__load(VALUE klass, VALUE s)
  * call-seq:
  *    DateTime.jd([jd=0[, hour=0[, minute=0[, second=0[, offset=0[, start=Date::ITALY]]]]]])  ->  datetime
  *
- * Creates a datetime object denoting the given chronological Julian
+ * Creates a DateTime object denoting the given chronological Julian
  * day number.
  *
  *    DateTime.jd(2451944)	#=> #<DateTime: 2001-02-03T00:00:00+00:00 ...>
@@ -7229,7 +7271,7 @@ datetime_s_jd(int argc, VALUE *argv, VALUE klass)
  * call-seq:
  *    DateTime.ordinal([year=-4712[, yday=1[, hour=0[, minute=0[, second=0[, offset=0[, start=Date::ITALY]]]]]]])  ->  datetime
  *
- * Creates a date-time object denoting the given ordinal date.
+ * Creates a DateTime object denoting the given ordinal date.
  *
  *    DateTime.ordinal(2001,34)	#=> #<DateTime: 2001-02-03T00:00:00+00:00 ...>
  *    DateTime.ordinal(2001,34,4,5,6,'+7')
@@ -7305,7 +7347,7 @@ datetime_s_ordinal(int argc, VALUE *argv, VALUE klass)
  *    DateTime.civil([year=-4712[, month=1[, mday=1[, hour=0[, minute=0[, second=0[, offset=0[, start=Date::ITALY]]]]]]]])  ->  datetime
  *    DateTime.new([year=-4712[, month=1[, mday=1[, hour=0[, minute=0[, second=0[, offset=0[, start=Date::ITALY]]]]]]]])    ->  datetime
  *
- * Creates a date-time object denoting the given calendar date.
+ * Creates a DateTime object denoting the given calendar date.
  *
  *    DateTime.new(2001,2,3)	#=> #<DateTime: 2001-02-03T00:00:00+00:00 ...>
  *    DateTime.new(2001,2,3,4,5,6,'+7')
@@ -7403,7 +7445,7 @@ datetime_s_civil(int argc, VALUE *argv, VALUE klass)
  * call-seq:
  *    DateTime.commercial([cwyear=-4712[, cweek=1[, cwday=1[, hour=0[, minute=0[, second=0[, offset=0[, start=Date::ITALY]]]]]]]])  ->  datetime
  *
- * Creates a date-time object denoting the given week date.
+ * Creates a DateTime object denoting the given week date.
  *
  *    DateTime.commercial(2001)	#=> #<DateTime: 2001-01-01T00:00:00+00:00 ...>
  *    DateTime.commercial(2002)	#=> #<DateTime: 2001-12-31T00:00:00+00:00 ...>
@@ -7620,7 +7662,7 @@ datetime_s_nth_kday(int argc, VALUE *argv, VALUE klass)
  * call-seq:
  *    DateTime.now([start=Date::ITALY])  ->  datetime
  *
- * Creates a date-time object denoting the present time.
+ * Creates a DateTime object denoting the present time.
  *
  *    DateTime.now		#=> #<DateTime: 2011-06-11T21:20:44+09:00 ...>
  */
@@ -7669,8 +7711,8 @@ datetime_s_now(int argc, VALUE *argv, VALUE klass)
 	s = 59;
 #ifdef HAVE_STRUCT_TM_TM_GMTOFF
     of = tm.tm_gmtoff;
-#elif defined(HAVE_VAR_TIMEZONE)
-#ifdef HAVE_VAR_ALTZONE
+#elif defined(HAVE_TIMEZONE)
+#ifdef HAVE_ALTZONE
     of = (long)-((tm.tm_isdst > 0) ? altzone : timezone);
 #else
     of = (long)-timezone;
@@ -7823,7 +7865,7 @@ dt_new_by_frags(VALUE klass, VALUE hash, VALUE sg)
  * template, and returns a hash of parsed elements.  _strptime does
  * not support specification of flags and width unlike strftime.
  *
- *  See also strptime(3) and strftime.
+ * See also strptime(3) and #strftime.
  */
 static VALUE
 datetime_s__strptime(int argc, VALUE *argv, VALUE klass)
@@ -7833,10 +7875,10 @@ datetime_s__strptime(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    DateTime.strptime([string='-4712-01-01T00:00:00+00:00'[, format='%FT%T%z'[ ,start=ITALY]]])  ->  datetime
+ *    DateTime.strptime([string='-4712-01-01T00:00:00+00:00'[, format='%FT%T%z'[ ,start=Date::ITALY]]])  ->  datetime
  *
  * Parses the given representation of date and time with the given
- * template, and creates a date object.  strptime does not support
+ * template, and creates a DateTime object.  strptime does not support
  * specification of flags and width unlike strftime.
  *
  *    DateTime.strptime('2001-02-03T04:05:06+07:00', '%Y-%m-%dT%H:%M:%S%z')
@@ -7856,7 +7898,7 @@ datetime_s__strptime(int argc, VALUE *argv, VALUE klass)
  *    DateTime.strptime('sat3feb014pm+7', '%a%d%b%y%H%p%z')
  *				#=> #<DateTime: 2001-02-03T16:00:00+07:00 ...>
  *
- * See also strptime(3) and strftime.
+ * See also strptime(3) and #strftime.
  */
 static VALUE
 datetime_s_strptime(int argc, VALUE *argv, VALUE klass)
@@ -7886,10 +7928,10 @@ datetime_s_strptime(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    DateTime.parse(string='-4712-01-01T00:00:00+00:00'[, comp=true[, start=ITALY]])  ->  datetime
+ *    DateTime.parse(string='-4712-01-01T00:00:00+00:00'[, comp=true[, start=Date::ITALY]])  ->  datetime
  *
  * Parses the given representation of date and time, and creates a
- * date object.  This method does not function as a validator.
+ * DateTime object.  This method does not function as a validator.
  *
  * If the optional second argument is true and the detected year is in
  * the range "00" to "99", makes it full.
@@ -7929,9 +7971,9 @@ datetime_s_parse(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    DateTime.iso8601(string='-4712-01-01T00:00:00+00:00'[, start=ITALY])  ->  datetime
+ *    DateTime.iso8601(string='-4712-01-01T00:00:00+00:00'[, start=Date::ITALY])  ->  datetime
  *
- * Creates a new Date object by parsing from a string according to
+ * Creates a new DateTime object by parsing from a string according to
  * some typical ISO 8601 formats.
  *
  *    DateTime.iso8601('2001-02-03T04:05:06+07:00')
@@ -7963,9 +8005,9 @@ datetime_s_iso8601(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    DateTime.rfc3339(string='-4712-01-01T00:00:00+00:00'[, start=ITALY])  ->  datetime
+ *    DateTime.rfc3339(string='-4712-01-01T00:00:00+00:00'[, start=Date::ITALY])  ->  datetime
  *
- * Creates a new Date object by parsing from a string according to
+ * Creates a new DateTime object by parsing from a string according to
  * some typical RFC 3339 formats.
  *
  *    DateTime.rfc3339('2001-02-03T04:05:06+07:00')
@@ -7993,9 +8035,9 @@ datetime_s_rfc3339(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    DateTime.xmlschema(string='-4712-01-01T00:00:00+00:00'[, start=ITALY])  ->  datetime
+ *    DateTime.xmlschema(string='-4712-01-01T00:00:00+00:00'[, start=Date::ITALY])  ->  datetime
  *
- * Creates a new Date object by parsing from a string according to
+ * Creates a new DateTime object by parsing from a string according to
  * some typical XML Schema formats.
  *
  *    DateTime.xmlschema('2001-02-03T04:05:06+07:00')
@@ -8023,10 +8065,10 @@ datetime_s_xmlschema(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    DateTime.rfc2822(string='Mon, 1 Jan -4712 00:00:00 +0000'[, start=ITALY])  ->  datetime
- *    DateTime.rfc822(string='Mon, 1 Jan -4712 00:00:00 +0000'[, start=ITALY])   ->  datetime
+ *    DateTime.rfc2822(string='Mon, 1 Jan -4712 00:00:00 +0000'[, start=Date::ITALY])  ->  datetime
+ *    DateTime.rfc822(string='Mon, 1 Jan -4712 00:00:00 +0000'[, start=Date::ITALY])   ->  datetime
  *
- * Creates a new Date object by parsing from a string according to
+ * Creates a new DateTime object by parsing from a string according to
  * some typical RFC 2822 formats.
  *
  *     DateTime.rfc2822('Sat, 3 Feb 2001 04:05:06 +0700')
@@ -8054,9 +8096,9 @@ datetime_s_rfc2822(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    DateTime.httpdate(string='Mon, 01 Jan -4712 00:00:00 GMT'[, start=ITALY])  ->  datetime
+ *    DateTime.httpdate(string='Mon, 01 Jan -4712 00:00:00 GMT'[, start=Date::ITALY])  ->  datetime
  *
- * Creates a new Date object by parsing from a string according to
+ * Creates a new DateTime object by parsing from a string according to
  * some RFC 2616 format.
  *
  *    DateTime.httpdate('Sat, 03 Feb 2001 04:05:06 GMT')
@@ -8084,9 +8126,9 @@ datetime_s_httpdate(int argc, VALUE *argv, VALUE klass)
 
 /*
  * call-seq:
- *    DateTime.jisx0301(string='-4712-01-01T00:00:00+00:00'[, start=ITALY])  ->  datetime
+ *    DateTime.jisx0301(string='-4712-01-01T00:00:00+00:00'[, start=Date::ITALY])  ->  datetime
  *
- * Creates a new Date object by parsing from a string according to
+ * Creates a new DateTime object by parsing from a string according to
  * some typical JIS X 0301 formats.
  *
  *    DateTime.jisx0301('H13.02.03T04:05:06+07:00')
@@ -8116,8 +8158,8 @@ datetime_s_jisx0301(int argc, VALUE *argv, VALUE klass)
  * call-seq:
  *    dt.to_s  ->  string
  *
- * Returns a string in an ISO 8601 format (This method doesn't use the
- * expanded representations).
+ * Returns a string in an ISO 8601 format. (This method doesn't use the
+ * expanded representations.)
  *
  *     DateTime.new(2001,2,3,4,5,6,'-7').to_s
  *				#=> "2001-02-03T04:05:06-07:00"
@@ -8134,13 +8176,13 @@ dt_lite_to_s(VALUE self)
  *
  * Formats date according to the directives in the given format
  * string.
- * The directives begins with a percent (%) character.
+ * The directives begin with a percent (%) character.
  * Any text not listed as a directive will be passed through to the
  * output string.
  *
- * The directive consists of a percent (%) character,
- * zero or more flags, optional minimum field width,
- * optional modifier and a conversion specifier
+ * A directive consists of a percent (%) character,
+ * zero or more flags, an optional minimum field width,
+ * an optional modifier, and a conversion specifier
  * as follows.
  *
  *    %<flags><width><modifier><conversion>
@@ -8155,7 +8197,7 @@ dt_lite_to_s(VALUE self)
  *
  * The minimum field width specifies the minimum width.
  *
- * The modifier is "E" and "O".
+ * The modifiers are "E" and "O".
  * They are ignored.
  *
  * Format directives:
@@ -8206,7 +8248,7 @@ dt_lite_to_s(VALUE self)
  *              %::z - hour, minute and second offset from UTC (e.g. +09:00:00)
  *              %:::z - hour, minute and second offset from UTC
  *                                                (e.g. +09, +09:30, +09:30:30)
- *      %Z - Time zone abbreviation name or something similar information.
+ *      %Z - Equivalent to %:z (e.g. +09:00)
  *
  *    Weekday:
  *      %A - The full weekday name (``Sunday'')
@@ -8251,11 +8293,12 @@ dt_lite_to_s(VALUE self)
  *      %T - 24-hour time (%H:%M:%S)
  *      %+ - date(1) (%a %b %e %H:%M:%S %Z %Y)
  *
- * This method is similar to strftime() function defined in ISO C and POSIX.
+ * This method is similar to the strftime() function defined in ISO C
+ * and POSIX.
  * Several directives (%a, %A, %b, %B, %c, %p, %r, %x, %X, %E*, %O* and %Z)
  * are locale dependent in the function.
- * However this method is locale independent.
- * So, the result may differ even if a same format string is used in other
+ * However, this method is locale independent.
+ * So, the result may differ even if the same format string is used in other
  * systems such as C.
  * It is good practice to avoid %x and %X because there are corresponding
  * locale independent representations, %D and %T.
@@ -8303,7 +8346,7 @@ dt_lite_to_s(VALUE self)
  *    %GW%V%uT%H%M%z   => 2007W471T0837-0600        Week date and local time and difference from UTC (basic)
  *    %G-W%V-%uT%R%:z  => 2007-W47-1T08:37-06:00    Week date and local time and difference from UTC (extended)
  *
- * See also strftime(3) and strptime.
+ * See also strftime(3) and ::strptime.
  */
 static VALUE
 dt_lite_strftime(int argc, VALUE *argv, VALUE self)
@@ -8333,8 +8376,8 @@ iso8601_timediv(VALUE self, long n)
  *    dt.iso8601([n=0])    ->  string
  *    dt.xmlschema([n=0])  ->  string
  *
- * This method is equivalent to strftime('%FT%T').  The optional
- * argument n is length of fractional seconds.
+ * This method is equivalent to strftime('%FT%T%:z').
+ * The optional argument +n+ is the number of digits for fractional seconds.
  *
  *    DateTime.parse('2001-02-03T04:05:06.123456789+07:00').iso8601(9)
  *				#=> "2001-02-03T04:05:06.123456789+07:00"
@@ -8356,8 +8399,8 @@ dt_lite_iso8601(int argc, VALUE *argv, VALUE self)
  * call-seq:
  *    dt.rfc3339([n=0])  ->  string
  *
- * This method is equivalent to strftime('%FT%T').  The optional
- * argument n is length of fractional seconds.
+ * This method is equivalent to strftime('%FT%T%:z').
+ * The optional argument +n+ is the number of digits for fractional seconds.
  *
  *    DateTime.parse('2001-02-03T04:05:06.123456789+07:00').rfc3339(9)
  *				#=> "2001-02-03T04:05:06.123456789+07:00"
@@ -8372,8 +8415,8 @@ dt_lite_rfc3339(int argc, VALUE *argv, VALUE self)
  * call-seq:
  *    dt.jisx0301([n=0])  ->  string
  *
- * Returns a string in a JIS X 0301 format.  The optional argument n
- * is length of fractional seconds.
+ * Returns a string in a JIS X 0301 format.
+ * The optional argument +n+ is the number of digits for fractional seconds.
  *
  *    DateTime.parse('2001-02-03T04:05:06.123456789+07:00').jisx0301(9)
  *				#=> "H13.02.03T04:05:06.123456789+07:00"
@@ -8974,8 +9017,6 @@ Init_date_core(void)
 #undef rb_intern
 #define rb_intern(str) rb_intern_const(str)
 
-    assert(fprintf(stderr, "assert() is now active\n"));
-
     id_cmp = rb_intern("<=>");
     id_le_p = rb_intern("<=");
     id_ge_p = rb_intern(">=");
@@ -9003,13 +9044,13 @@ Init_date_core(void)
     /*
      * date and datetime class - Tadayoshi Funaba 1998-2011
      *
-     * 'date' provides two classes Date and DateTime.
+     * 'date' provides two classes: Date and DateTime.
      *
-     * == Terms and definitions
+     * == Terms and Definitions
      *
      * Some terms and definitions are based on ISO 8601 and JIS X 0301.
      *
-     * === calendar date
+     * === Calendar Date
      *
      * The calendar date is a particular day of a calendar year,
      * identified by its ordinal number within a calendar month within
@@ -9017,14 +9058,14 @@ Init_date_core(void)
      *
      * In those classes, this is so-called "civil".
      *
-     * === ordinal date
+     * === Ordinal Date
      *
      * The ordinal date is a particular day of a calendar year identified
      * by its ordinal number within the year.
      *
      * In those classes, this is so-called "ordinal".
      *
-     * === week date
+     * === Week Date
      *
      * The week date is a date identified by calendar week and day numbers.
      *
@@ -9034,15 +9075,15 @@ Init_date_core(void)
      * includes the first Thursday of that year. In the Gregorian
      * calendar, this is equivalent to the week which includes January 4.
      *
-     * In those classes, this so-called "commercial".
+     * In those classes, this is so-called "commercial".
      *
-     * === julian day number
+     * === Julian Day Number
      *
-     * The Julian day number is in elapsed days since noon (Greenwich mean
-     * time) on January 1, 4713 BCE (in the Julian calendar).
+     * The Julian day number is in elapsed days since noon (Greenwich Mean
+     * Time) on January 1, 4713 BCE (in the Julian calendar).
      *
-     * In this document, the astronomical Julian day number is same as the
-     * original Julian day number. And the chronological Julian day
+     * In this document, the astronomical Julian day number is the same as
+     * the original Julian day number. And the chronological Julian day
      * number is a variation of the Julian day number. Its days begin at
      * midnight on local time.
      *
@@ -9052,14 +9093,14 @@ Init_date_core(void)
      *
      * In those classes, those are so-called "ajd" and "jd".
      *
-     * === modified julian day number
+     * === Modified Julian Day Number
      *
      * The modified Julian day number is in elapsed days since midnight
-     * (Coordinated universal time) on November 17, 1858 CE (in the
+     * (Coordinated Universal Time) on November 17, 1858 CE (in the
      * Gregorian calendar).
      *
      * In this document, the astronomical modified Julian day number is
-     * same as the original modified Julian day number. And the
+     * the same as the original modified Julian day number. And the
      * chronological modified Julian day number is a variation of the
      * modified Julian day number. Its days begin at midnight on local
      * time.
@@ -9068,16 +9109,16 @@ Init_date_core(void)
      * appears, it just refers to "chronological modified Julian day
      * number", not the original.
      *
-     * In those classes, this is so-called "mjd".
+     * In those classes, those are so-called "amjd" and "mjd".
      *
      * == Date
      *
-     * A subclass of Object that includes Comparable module and easily handles
-     * date.
+     * A subclass of Object that includes the Comparable module and
+     * easily handles date.
      *
-     * Date object is created with Date::new, Date::jd, Date::ordinal,
+     * A Date object is created with Date::new, Date::jd, Date::ordinal,
      * Date::commercial, Date::parse, Date::strptime, Date::today,
-     * Time#to_date or etc.
+     * Time#to_date, etc.
      *
      *     require 'date'
      *
@@ -9098,7 +9139,7 @@ Init_date_core(void)
      *
      * All date objects are immutable; hence cannot modify themselves.
      *
-     * The concept of this date object can be represented as a tuple
+     * The concept of a date object can be represented as a tuple
      * of the day count, the offset and the day of calendar reform.
      *
      * The day count denotes the absolute position of a temporal
@@ -9113,10 +9154,11 @@ Init_date_core(void)
      * The offset in this class is usually zero, and cannot be
      * specified directly.
      *
-     * An optional argument the day of calendar reform (start) as a
-     * Julian day number, which should be 2298874 to 2426355 or -/+oo.
-     * The default value is Date::ITALY (2299161=1582-10-15).  See
-     * also sample/cal.rb.
+     * A Date object can be created with an optional argument,
+     * the day of calendar reform as a Julian day number, which
+     * should be 2298874 to 2426355 or negative/positive infinity.
+     * The default value is +Date::ITALY+ (2299161=1582-10-15).
+     * See also sample/cal.rb.
      *
      *     $ ruby sample/cal.rb -c it 10 1582
      *         October 1582
@@ -9133,7 +9175,7 @@ Init_date_core(void)
      *     17 18 19 20 21 22 23
      *     24 25 26 27 28 29 30
      *
-     * Date object has various methods. See each reference.
+     * A Date object has various methods. See each reference.
      *
      *     d = Date.parse('3rd Feb 2001')
      *					#=> #<Date: 2001-02-03 ...>
@@ -9181,12 +9223,12 @@ Init_date_core(void)
     rb_define_const(cDate, "ENGLAND", INT2FIX(ENGLAND));
 
     /* The Julian day number of the day of calendar reform for the
-     * proleptic Julian calendar
+     * proleptic Julian calendar.
      */
     rb_define_const(cDate, "JULIAN", DBL2NUM(JULIAN));
 
     /* The Julian day number of the day of calendar reform for the
-     * proleptic Gregorian calendar
+     * proleptic Gregorian calendar.
      */
     rb_define_const(cDate, "GREGORIAN", DBL2NUM(GREGORIAN));
 
@@ -9394,48 +9436,49 @@ Init_date_core(void)
     /*
      * == DateTime
      *
-     * A subclass of Date that easily handles date, hour, minute, second and
-     * offset.
+     * A subclass of Date that easily handles date, hour, minute, second,
+     * and offset.
      *
      * DateTime does not consider any leap seconds, does not track
      * any summer time rules.
      *
-     * DateTime object is created with DateTime::new, DateTime::jd,
+     * A DateTime object is created with DateTime::new, DateTime::jd,
      * DateTime::ordinal, DateTime::commercial, DateTime::parse,
-     * DateTime::strptime, DateTime::now, Time#to_datetime or etc.
+     * DateTime::strptime, DateTime::now, Time#to_datetime, etc.
      *
      *     require 'date'
      *
      *     DateTime.new(2001,2,3,4,5,6)
      *                         #=> #<DateTime: 2001-02-03T04:05:06+00:00 ...>
      *
-     * The last element of day, hour, minute or second can be
+     * The last element of day, hour, minute, or second can be a
      * fractional number. The fractional number's precision is assumed
      * at most nanosecond.
      *
      *     DateTime.new(2001,2,3.5)
      *                         #=> #<DateTime: 2001-02-03T12:00:00+00:00 ...>
      *
-     * An optional argument the offset indicates the difference
+     * An optional argument, the offset, indicates the difference
      * between the local time and UTC. For example, <tt>Rational(3,24)</tt>
      * represents ahead of 3 hours of UTC, <tt>Rational(-5,24)</tt> represents
      * behind of 5 hours of UTC. The offset should be -1 to +1, and
      * its precision is assumed at most second. The default value is
-     * zero(equals to UTC).
+     * zero (equals to UTC).
      *
      *     DateTime.new(2001,2,3,4,5,6,Rational(3,24))
      *                         #=> #<DateTime: 2001-02-03T04:05:06+03:00 ...>
      *
-     * also accepts string form.
+     * The offset also accepts string form:
      *
      *     DateTime.new(2001,2,3,4,5,6,'+03:00')
      *                         #=> #<DateTime: 2001-02-03T04:05:06+03:00 ...>
      *
-     * An optional argument the day of calendar reform (start) denotes
+     * An optional argument, the day of calendar reform (+start+), denotes
      * a Julian day number, which should be 2298874 to 2426355 or
-     * -/+oo.  The default value is +Date::ITALY+ (2299161=1582-10-15).
+     * negative/positive infinity.
+     * The default value is +Date::ITALY+ (2299161=1582-10-15).
      *
-     * DateTime object has various methods. See each reference.
+     * A DateTime object has various methods. See each reference.
      *
      *     d = DateTime.parse('3rd Feb 2001 04:05:06+03:30')
      *                         #=> #<DateTime: 2001-02-03T04:05:06+03:30 ...>
@@ -9462,22 +9505,22 @@ Init_date_core(void)
      * died on the same day in history -
      * so much so that UNESCO named April 23 as
      * {World Book Day because of this fact}[http://en.wikipedia.org/wiki/World_Book_Day].
-     * However because England hadn't yet adopted
+     * However, because England hadn't yet adopted the
      * {Gregorian Calendar Reform}[http://en.wikipedia.org/wiki/Gregorian_calendar#Gregorian_reform]
      * (and wouldn't until {1752}[http://en.wikipedia.org/wiki/Calendar_(New_Style)_Act_1750])
      * their deaths are actually 10 days apart.
      * Since Ruby's Time class implements a
      * {proleptic Gregorian calendar}[http://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar]
-     * and has no concept of calendar reform then there's no way
-     * to express this. This is where DateTime steps in:
+     * and has no concept of calendar reform there's no way
+     * to express this with Time objects. This is where DateTime steps in:
      *
      *     shakespeare = DateTime.iso8601('1616-04-23', Date::ENGLAND)
      *      #=> Tue, 23 Apr 1616 00:00:00 +0000
      *     cervantes = DateTime.iso8601('1616-04-23', Date::ITALY)
      *      #=> Sat, 23 Apr 1616 00:00:00 +0000
      *
-     * Already you can see something's weird - the days of the week
-     * are different, taking this further:
+     * Already you can see something is weird - the days of the week
+     * are different. Taking this further:
      *
      *     cervantes == shakespeare
      *      #=> false

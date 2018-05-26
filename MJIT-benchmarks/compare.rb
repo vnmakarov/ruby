@@ -53,7 +53,8 @@ tests.each do |test|
     N.times do |i|
       IO.popen({"OMR_JIT_OPTIONS" => "-Xjit"}, ["/usr/bin/time", *command[1].split, *test], :err => [:child, :out]) do |io|
         result = io.read
-        if md = /(\d+.\d+)user\s+\d+.\d+system\s+(\d+):(\d+.\d+)elapsed.+\(.+\s+(\d+)maxresident\)/.match(result)
+	if /Traceback/.match(result)
+        elsif md = /(\d+.\d+)user\s+\d+.\d+system\s+(\d+):(\d+.\d+)elapsed.+\(.+\s+(\d+)maxresident\)/.match(result)
           cpu = result[md.begin(1)...md.end(1)].to_f
           elapsed = result[md.begin(2)...md.end(2)].to_i * 60.0 + result[md.begin(3)...md.end(3)].to_f
           peak = result[md.begin(4)...md.end(4)].to_i

@@ -9,6 +9,7 @@
 
 **********************************************************************/
 
+#include "ruby/encoding.h"
 #include "internal.h"
 #include "encindex.h"
 #include "regenc.h"
@@ -660,7 +661,7 @@ load_encoding(const char *name)
 	++s;
     }
     FL_UNSET(enclib, FL_TAINT);
-    OBJ_FREEZE(enclib);
+    enclib = rb_fstring(enclib);
     ruby_verbose = Qfalse;
     ruby_debug = Qfalse;
     errinfo = rb_errinfo();
@@ -722,6 +723,17 @@ rb_enc_find_index(const char *name)
 	}
     }
     return i;
+}
+
+int
+rb_enc_find_index2(const char *name, long len)
+{
+    char buf[ENCODING_NAMELEN_MAX+1];
+
+    if (len > ENCODING_NAMELEN_MAX) return -1;
+    memcpy(buf, name, len);
+    buf[len] = '\0';
+    return rb_enc_find_index(buf);
 }
 
 rb_encoding *
@@ -1150,8 +1162,7 @@ enc_names_i(st_data_t name, st_data_t idx, st_data_t args)
     VALUE *arg = (VALUE *)args;
 
     if ((int)idx == (int)arg[0]) {
-	VALUE str = rb_usascii_str_new2((char *)name);
-	OBJ_FREEZE(str);
+	VALUE str = rb_fstring_cstr((char *)name);
 	rb_ary_push(arg[1], str);
     }
     return ST_CONTINUE;
@@ -1685,8 +1696,7 @@ rb_enc_aliases_enc_i(st_data_t name, st_data_t orig, st_data_t arg)
 	str = rb_fstring_cstr(rb_enc_name(enc));
 	rb_ary_store(ary, idx, str);
     }
-    key = rb_usascii_str_new2((char *)name);
-    OBJ_FREEZE(key);
+    key = rb_fstring_cstr((char *)name);
     rb_hash_aset(aliases, key, str);
     return ST_CONTINUE;
 }

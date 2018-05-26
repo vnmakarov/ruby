@@ -338,7 +338,7 @@ get_rnd(VALUE obj)
 {
     rb_random_t *ptr;
     TypedData_Get_Struct(obj, rb_random_t, &random_data_type, ptr);
-    return ptr;
+    return rand_start(ptr);
 }
 
 static rb_random_t *
@@ -348,7 +348,7 @@ try_get_rnd(VALUE obj)
 	return rand_start(&default_rand);
     }
     if (!rb_typeddata_is_kind_of(obj, &random_data_type)) return NULL;
-    return DATA_PTR(obj);
+    return rand_start(DATA_PTR(obj));
 }
 
 /* :nodoc: */
@@ -447,14 +447,21 @@ fill_random_bytes_urandom(void *seed, size_t size)
 			     O_RDONLY, 0);
     struct stat statbuf;
     ssize_t ret = 0;
+    size_t offset = 0;
 
     if (fd < 0) return -1;
     rb_update_max_fd(fd);
     if (fstat(fd, &statbuf) == 0 && S_ISCHR(statbuf.st_mode)) {
-	ret = read(fd, seed, size);
+	do {
+	    ret = read(fd, ((char*)seed) + offset, size - offset);
+	    if (ret < 0) {
+		close(fd);
+		return -1;
+	    }
+	    offset += (size_t)ret;
+	} while(offset < size);
     }
     close(fd);
-    if (ret < 0 || (size_t)ret < size) return -1;
     return 0;
 }
 #else
@@ -489,12 +496,12 @@ fill_random_bytes_syscall(void *seed, size_t size, int unused)
 	    prov = (HCRYPTPROV)INVALID_HANDLE_VALUE;
 	}
 	old_prov = (HCRYPTPROV)ATOMIC_PTR_CAS(perm_prov, 0, prov);
-	if (LIKELY(!old_prov)) { /* no other threads acquried */
+	if (LIKELY(!old_prov)) { /* no other threads acquired */
 	    if (prov != (HCRYPTPROV)INVALID_HANDLE_VALUE) {
 		rb_gc_register_mark_object(Data_Wrap_Struct(0, 0, release_crypt, &perm_prov));
 	    }
 	}
-	else {			/* another thread acquried */
+	else {			/* another thread acquired */
 	    if (prov != (HCRYPTPROV)INVALID_HANDLE_VALUE) {
 		CryptReleaseContext(prov, 0);
 	    }
@@ -505,7 +512,7 @@ fill_random_bytes_syscall(void *seed, size_t size, int unused)
     CryptGenRandom(prov, size, seed);
     return 0;
 }
-#elif defined __linux__ && defined SYS_getrandom
+#elif defined __linux__ && defined __NR_getrandom
 #include <linux/random.h>
 
 # ifndef GRND_NONBLOCK
@@ -518,16 +525,20 @@ fill_random_bytes_syscall(void *seed, size_t size, int need_secure)
     static rb_atomic_t try_syscall = 1;
     if (try_syscall) {
 	long ret;
+	size_t offset = 0;
 	int flags = 0;
 	if (!need_secure)
 	    flags = GRND_NONBLOCK;
-	errno = 0;
-	ret = syscall(SYS_getrandom, seed, size, flags);
-	if (errno == ENOSYS) {
-	    ATOMIC_SET(try_syscall, 0);
-	    return -1;
-	}
-	if ((size_t)ret == size) return 0;
+	do {
+	    errno = 0;
+	    ret = syscall(__NR_getrandom, ((char*)seed) + offset, size - offset, flags);
+	    if (ret == -1) {
+		ATOMIC_SET(try_syscall, 0);
+		return -1;
+	    }
+	    offset += (size_t)ret;
+	} while(offset < size);
+	return 0;
     }
     return -1;
 }
@@ -603,11 +614,20 @@ random_seed(void)
 }
 
 /*
- * call-seq: Random.raw_seed(size) -> string
+ * call-seq: Random.urandom(size) -> string
  *
- * Returns a raw seed string, using platform providing features.
+ * Returns a string, using platform providing features.
+ * Returned value is expected to be a cryptographically secure
+ * pseudo-random number in binary form.
+ * This method raises a RuntimeError if the feature provided by platform
+ * failed to prepare the result.
  *
- *   Random.raw_seed(8)  #=> "\x78\x41\xBA\xAF\x7D\xEA\xD8\xEA"
+ * In 2017, Linux manpage random(7) writes that "no cryptographic
+ * primitive available today can hope to promise more than 256 bits of
+ * security".  So it might be questionable to pass size > 32 to this
+ * method.
+ *
+ *   Random.urandom(8)  #=> "\x78\x41\xBA\xAF\x7D\xEA\xD8\xEA"
  */
 static VALUE
 random_raw_seed(VALUE self, VALUE size)
@@ -615,7 +635,8 @@ random_raw_seed(VALUE self, VALUE size)
     long n = NUM2ULONG(size);
     VALUE buf = rb_str_new(0, n);
     if (n == 0) return buf;
-    if (fill_random_bytes(RSTRING_PTR(buf), n, FALSE)) return Qnil;
+    if (fill_random_bytes(RSTRING_PTR(buf), n, FALSE))
+	rb_raise(rb_eRuntimeError, "failed to get urandom");
     return buf;
 }
 
@@ -1063,7 +1084,7 @@ random_ulong_limited_big(VALUE obj, rb_random_t *rnd, VALUE vmax)
 static VALUE genrand_bytes(rb_random_t *rnd, long n);
 
 /*
- * call-seq: prng.bytes(size) -> a_string
+ * call-seq: prng.bytes(size) -> string
  *
  * Returns a random binary string containing +size+ bytes.
  *
@@ -1111,6 +1132,19 @@ rb_random_bytes(VALUE obj, long n)
 	return obj_random_bytes(obj, NULL, n);
     }
     return genrand_bytes(rnd, n);
+}
+
+/*
+ * call-seq: Random.bytes(size) -> string
+ *
+ * Returns a random binary string.
+ * The argument +size+ specifies the length of the returned string.
+ */
+static VALUE
+random_s_bytes(VALUE obj, VALUE len)
+{
+    rb_random_t *rnd = rand_start(&default_rand);
+    return genrand_bytes(rnd, NUM2LONG(rb_to_int(len)));
 }
 
 static VALUE
@@ -1344,6 +1378,16 @@ rand_random(int argc, VALUE *argv, VALUE obj, rb_random_t *rnd)
     return rand_range(obj, rnd, vmax);
 }
 
+/*
+ * call-seq:
+ *   prng.random_number      -> float
+ *   prng.random_number(max) -> number
+ *   prng.rand               -> float
+ *   prng.rand(max)          -> number
+ *
+ * Generates formatted random number from raw random bytes.
+ * See Random#rand.
+ */
 static VALUE
 rand_random_number(int argc, VALUE *argv, VALUE obj)
 {
@@ -1457,7 +1501,7 @@ random_s_rand(int argc, VALUE *argv, VALUE obj)
 }
 
 #define SIP_HASH_STREAMING 0
-#define sip_hash24 ruby_sip_hash24
+#define sip_hash13 ruby_sip_hash13
 #if !defined _WIN32 && !defined BYTE_ORDER
 # ifdef WORDS_BIGENDIAN
 #   define BYTE_ORDER BIG_ENDIAN
@@ -1501,7 +1545,7 @@ rb_hash_start(st_index_t h)
 st_index_t
 rb_memhash(const void *ptr, long len)
 {
-    sip_uint64_t h = sip_hash24(seed.key.sip, ptr, len);
+    sip_uint64_t h = sip_hash13(seed.key.sip, ptr, len);
 #ifdef HAVE_UINT64_T
     return (st_index_t)h;
 #else
@@ -1610,19 +1654,24 @@ InitVM_Random(void)
     {
 	/* Direct access to Ruby's Pseudorandom number generator (PRNG). */
 	VALUE rand_default = Init_Random_default();
+	/* The default Pseudorandom number generator.  Used by class
+	 * methods of Random. */
 	rb_define_const(rb_cRandom, "DEFAULT", rand_default);
     }
 
     rb_define_singleton_method(rb_cRandom, "srand", rb_f_srand, -1);
     rb_define_singleton_method(rb_cRandom, "rand", random_s_rand, -1);
+    rb_define_singleton_method(rb_cRandom, "bytes", random_s_bytes, 1);
     rb_define_singleton_method(rb_cRandom, "new_seed", random_seed, 0);
-    rb_define_singleton_method(rb_cRandom, "raw_seed", random_raw_seed, 1);
+    rb_define_singleton_method(rb_cRandom, "urandom", random_raw_seed, 1);
     rb_define_private_method(CLASS_OF(rb_cRandom), "state", random_s_state, 0);
     rb_define_private_method(CLASS_OF(rb_cRandom), "left", random_s_left, 0);
 
     {
+	/* Format raw random number as Random does */
 	VALUE m = rb_define_module_under(rb_cRandom, "Formatter");
 	rb_include_module(rb_cRandom, m);
+	rb_extend_object(rb_cRandom, m);
 	rb_define_method(m, "random_number", rand_random_number, -1);
 	rb_define_method(m, "rand", rand_random_number, -1);
     }

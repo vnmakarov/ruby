@@ -616,8 +616,7 @@ rb_define_class_id(ID id, VALUE super)
  * \return the value \c Class#inherited's returns
  * \pre Each of \a super and \a klass must be a \c Class object.
  */
-RUBY_SYMBOL_EXPORT_BEGIN
-VALUE
+MJIT_FUNC_EXPORTED VALUE
 rb_class_inherited(VALUE super, VALUE klass)
 {
     ID inherited;
@@ -625,7 +624,6 @@ rb_class_inherited(VALUE super, VALUE klass)
     CONST_ID(inherited, "inherited");
     return rb_funcall(super, inherited, 1, klass);
 }
-RUBY_SYMBOL_EXPORT_END
 
 
 /*!
@@ -850,14 +848,23 @@ rb_include_class_new(VALUE module, VALUE super)
 
 static int include_modules_at(const VALUE klass, VALUE c, VALUE module, int search_super);
 
+static void
+ensure_includable(VALUE klass, VALUE module)
+{
+    rb_frozen_class_p(klass);
+    Check_Type(module, T_MODULE);
+    if (!NIL_P(rb_refinement_module_get_refined_class(module))) {
+	rb_raise(rb_eArgError, "refinement module is not allowed");
+    }
+    OBJ_INFECT(klass, module);
+}
+
 void
 rb_include_module(VALUE klass, VALUE module)
 {
     int changed = 0;
 
-    rb_frozen_class_p(klass);
-    Check_Type(module, T_MODULE);
-    OBJ_INFECT(klass, module);
+    ensure_includable(klass, module);
 
     changed = include_modules_at(klass, RCLASS_ORIGIN(klass), module, TRUE);
     if (changed < 0)
@@ -967,9 +974,7 @@ rb_prepend_module(VALUE klass, VALUE module)
     VALUE origin;
     int changed = 0;
 
-    rb_frozen_class_p(klass);
-    Check_Type(module, T_MODULE);
-    OBJ_INFECT(klass, module);
+    ensure_includable(klass, module);
 
     origin = RCLASS_ORIGIN(klass);
     if (origin == klass) {
@@ -1767,31 +1772,23 @@ rb_define_attr(VALUE klass, const char *name, int read, int write)
     rb_attr(klass, rb_intern(name), read, write, FALSE);
 }
 
-int
-rb_obj_basic_to_s_p(VALUE obj)
-{
-    const rb_method_entry_t *me = rb_method_entry(CLASS_OF(obj), rb_intern("to_s"));
-    if (me && me->def && me->def->type == VM_METHOD_TYPE_CFUNC &&
-	me->def->body.cfunc.func == rb_any_to_s)
-	return 1;
-    return 0;
-}
-
-VALUE
+MJIT_FUNC_EXPORTED VALUE
 rb_keyword_error_new(const char *error, VALUE keys)
 {
-    const char *msg = "";
-    VALUE error_message;
+    const VALUE *ptr = RARRAY_CONST_PTR(keys);
+    long i = 0, len = RARRAY_LEN(keys);
+    VALUE error_message = rb_sprintf("%s keyword%.*s", error, len > 1, "s");
 
-    if (RARRAY_LEN(keys) == 1) {
-	keys = RARRAY_AREF(keys, 0);
+    if (len > 0) {
+	rb_str_cat_cstr(error_message, ": ");
+	while (1) {
+	    const VALUE k = ptr[i];
+	    Check_Type(k, T_SYMBOL); /* wrong hash is given to rb_get_kwargs */
+	    rb_str_append(error_message, rb_sym2str(k));
+	    if (++i >= len) break;
+	    rb_str_cat_cstr(error_message, ", ");
+	}
     }
-    else {
-	keys = rb_ary_join(keys, rb_usascii_str_new2(", "));
-	msg = "s";
-    }
-
-    error_message = rb_sprintf("%s keyword%s: %"PRIsVALUE, error, msg, keys);
 
     return rb_exc_new_str(rb_eArgError, error_message);
 }
@@ -1808,15 +1805,12 @@ static void
 unknown_keyword_error(VALUE hash, const ID *table, int keywords)
 {
     st_table *tbl = rb_hash_tbl_raw(hash);
-    VALUE keys;
     int i;
     for (i = 0; i < keywords; i++) {
 	st_data_t key = ID2SYM(table[i]);
 	st_delete(tbl, &key, NULL);
     }
-    keys = rb_funcallv(hash, rb_intern("keys"), 0, 0);
-    if (!RB_TYPE_P(keys, T_ARRAY)) rb_raise(rb_eArgError, "unknown keyword");
-    rb_keyword_error("unknown", keys);
+    rb_keyword_error("unknown", rb_hash_keys(hash));
 }
 
 static int
@@ -1842,6 +1836,9 @@ rb_extract_keywords(VALUE *orighash)
     }
     st_foreach(rb_hash_tbl_raw(hash), separate_symbol, (st_data_t)&parthash);
     *orighash = parthash[1];
+    if (parthash[1] && RBASIC_CLASS(hash) != rb_cHash) {
+	RBASIC_SET_CLASS(parthash[1], RBASIC_CLASS(hash));
+    }
     return parthash[0];
 }
 
@@ -1915,8 +1912,8 @@ rb_scan_args(int argc, const VALUE *argv, const char *fmt, ...)
     va_list vargs;
     int f_var = 0, f_hash = 0, f_block = 0;
     int n_lead = 0, n_opt = 0, n_trail = 0, n_mand;
-    int argi = 0;
-    VALUE hash = Qnil;
+    int argi = 0, last_idx = -1;
+    VALUE hash = Qnil, last_hash = 0;
 
     if (ISDIGIT(*p)) {
 	n_lead = *p - '0';
@@ -1967,7 +1964,8 @@ rb_scan_args(int argc, const VALUE *argv, const char *fmt, ...)
 	    hash = rb_check_hash_type(last);
 	    if (!NIL_P(hash)) {
 		VALUE opts = rb_extract_keywords(&hash);
-		if (!hash) argc--;
+		if (!(last_hash = hash)) argc--;
+		else last_idx = argc - 1;
 		hash = opts ? opts : Qnil;
 	    }
 	}
@@ -1975,14 +1973,14 @@ rb_scan_args(int argc, const VALUE *argv, const char *fmt, ...)
     /* capture leading mandatory arguments */
     for (i = n_lead; i-- > 0; ) {
 	var = va_arg(vargs, VALUE *);
-	if (var) *var = argv[argi];
+	if (var) *var = (argi == last_idx) ? last_hash : argv[argi];
 	argi++;
     }
     /* capture optional arguments */
     for (i = n_opt; i-- > 0; ) {
 	var = va_arg(vargs, VALUE *);
 	if (argi < argc - n_trail) {
-	    if (var) *var = argv[argi];
+	    if (var) *var = (argi == last_idx) ? last_hash : argv[argi];
 	    argi++;
 	}
 	else {
@@ -1995,7 +1993,11 @@ rb_scan_args(int argc, const VALUE *argv, const char *fmt, ...)
 
 	var = va_arg(vargs, VALUE *);
 	if (0 < n_var) {
-	    if (var) *var = rb_ary_new4(n_var, &argv[argi]);
+	    if (var) {
+		int f_last = (last_idx + 1 == argc - n_trail);
+		*var = rb_ary_new4(n_var-f_last, &argv[argi]);
+		if (f_last) rb_ary_push(*var, last_hash);
+	    }
 	    argi += n_var;
 	}
 	else {
@@ -2005,7 +2007,7 @@ rb_scan_args(int argc, const VALUE *argv, const char *fmt, ...)
     /* capture trailing mandatory arguments */
     for (i = n_trail; i-- > 0; ) {
 	var = va_arg(vargs, VALUE *);
-	if (var) *var = argv[argi];
+	if (var) *var = (argi == last_idx) ? last_hash : argv[argi];
 	argi++;
     }
     /* capture an option hash - phase 2: assignment */

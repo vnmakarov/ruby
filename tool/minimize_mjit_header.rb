@@ -153,7 +153,7 @@ while true
   stop_pos = pos_range.begin - 1
   decl = $code[pos_range]
   decl_name = get_decl_name(decl)
-  if  extern_name_hash.has_key?(decl_name) && (decl =~ /#{func_header_regex};/)
+  if extern_name_hash.has_key?(decl_name) && (decl =~ /#{func_header_regex};/)
     decl.sub!(/extern|static|inline/, "")
     STDERR.puts "warning: making declaration of '#{decl_name}' static inline:"
     $code[pos_range] = "static inline " + decl

@@ -160,26 +160,34 @@ class TestProc < Test::Unit::TestCase
       $SAFE += 1
       proc {$SAFE}
     }.call
-    assert_equal(safe, $SAFE)
-    assert_equal(safe + 1, p.call)
-    assert_equal(safe, $SAFE)
 
+    assert_equal(safe + 1, $SAFE)
+    assert_equal(safe + 1, p.call)
+    assert_equal(safe + 1, $SAFE)
+
+    $SAFE = 0
     c.class_eval {define_method(:safe, p)}
     assert_equal(safe, x.safe)
-    assert_equal(safe, x.method(:safe).call)
-    assert_equal(safe, x.method(:safe).to_proc.call)
 
+    $SAFE = 0
     p = proc {$SAFE += 1}
     assert_equal(safe + 1, p.call)
-    assert_equal(safe, $SAFE)
+    assert_equal(safe + 1, $SAFE)
 
+    $SAFE = 0
     c.class_eval {define_method(:inc, p)}
     assert_equal(safe + 1, proc {x.inc; $SAFE}.call)
-    assert_equal(safe, $SAFE)
+    assert_equal(safe + 1, $SAFE)
+
+    $SAFE = 0
     assert_equal(safe + 1, proc {x.method(:inc).call; $SAFE}.call)
-    assert_equal(safe, $SAFE)
+    assert_equal(safe + 1, $SAFE)
+
+    $SAFE = 0
     assert_equal(safe + 1, proc {x.method(:inc).to_proc.call; $SAFE}.call)
-    assert_equal(safe, $SAFE)
+    assert_equal(safe + 1, $SAFE)
+  ensure
+    $SAFE = 0
   end
 
   def m2
@@ -395,6 +403,15 @@ class TestProc < Test::Unit::TestCase
     b = nil
     1.times { x, y, z = 1, 2, 3; [x,y,z]; b = binding }
     assert_equal([1, 2, 3], b.eval("[x, y, z]"))
+  end
+
+  def test_binding_source_location
+    b, expected_location = binding, [__FILE__, __LINE__]
+    assert_equal(expected_location, b.source_location)
+
+    file, lineno = method(:source_location_test).to_proc.binding.source_location
+    assert_match(/^#{ Regexp.quote(__FILE__) }$/, file)
+    assert_equal(@@line_of_source_location_test, lineno, 'Bug #2427')
   end
 
   def test_proc_lambda
@@ -1174,6 +1191,8 @@ class TestProc < Test::Unit::TestCase
     x = proc {}
     x.taint
     assert_predicate(x.to_s, :tainted?)
+    name = "Proc\u{1f37b}"
+    assert_include(EnvUtil.labeled_class(name, Proc).new {}.to_s, name)
   end
 
   @@line_of_source_location_test = __LINE__ + 1
@@ -1322,6 +1341,20 @@ class TestProc < Test::Unit::TestCase
     assert_equal(20, b.eval("b"))
   end
 
+  def test_local_variable_set_wb
+    assert_ruby_status([], <<-'end;', '[Bug #13605]', timeout: 30)
+      b = binding
+      n = 20_000
+
+      n.times do |i|
+        v = rand(2_000)
+        name = "n#{v}"
+        value = Object.new
+        b.local_variable_set name, value
+      end
+    end;
+  end
+
   def test_local_variable_defined?
     b = get_binding
     assert_equal(true, b.local_variable_defined?(:a))
@@ -1356,5 +1389,23 @@ class TestProc < Test::Unit::TestCase
       e = g
       e.each {}
     EOS
+  end
+
+  def test_prepended_call
+    assert_in_out_err([], "#{<<~"begin;"}\n#{<<~'end;'}", ["call"])
+    begin;
+      Proc.prepend Module.new {def call() puts "call"; super; end}
+      def m(&blk) blk.call; end
+      m {}
+    end;
+  end
+
+  def test_refined_call
+    assert_in_out_err([], "#{<<~"begin;"}\n#{<<~'end;'}", ["call"])
+    begin;
+      using Module.new {refine(Proc) {def call() puts "call"; super; end}}
+      def m(&blk) blk.call; end
+      m {}
+    end;
   end
 end

@@ -163,7 +163,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     fetcher = Gem::RemoteFetcher.new nil
     @fetcher = fetcher
     def fetcher.request(uri, request_class, last_modified = nil)
-      raise SocketError, "tarded"
+      raise SocketError, "oops"
     end
 
     uri = 'http://gems.example.com/yaml'
@@ -171,7 +171,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
       fetcher.fetch_size uri
     end
 
-    assert_equal "SocketError: tarded (#{uri})", e.message
+    assert_equal "SocketError: oops (#{uri})", e.message
   end
 
   def test_no_proxy
@@ -230,6 +230,21 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     uri = URI.parse "http://example.com/foo"
     target = MiniTest::Mock.new
     target.expect :target, "badexample.com"
+
+    dns = MiniTest::Mock.new
+    dns.expect :getresource, target, [String, Object]
+
+    fetch = Gem::RemoteFetcher.new nil, dns
+    assert_equal URI.parse("http://example.com/foo"), fetch.api_endpoint(uri)
+
+    target.verify
+    dns.verify
+  end
+
+  def test_api_endpoint_ignores_trans_domain_values_that_end_with_original_in_path
+    uri = URI.parse "http://example.com/foo"
+    target = MiniTest::Mock.new
+    target.expect :target, "evil.com/a.example.com"
 
     dns = MiniTest::Mock.new
     dns.expect :getresource, target, [String, Object]
@@ -416,7 +431,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     assert File.exist?(a1_cache_gem)
   end
 
-  unless win_platform? # File.chmod doesn't work
+  unless win_platform? || Process.uid.zero? # File.chmod doesn't work
     def test_download_local_read_only
       FileUtils.mv @a1_gem, @tempdir
       local_path = File.join @tempdir, @a1.file_name
@@ -540,7 +555,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
       nil
     end
 
-    assert_equal nil, fetcher.fetch_path(@uri + 'foo.gz', Time.at(0))
+    assert_nil fetcher.fetch_path(@uri + 'foo.gz', Time.at(0))
   end
 
   def test_fetch_path_io_error
@@ -606,7 +621,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
       nil
     end
 
-    assert_equal nil, fetcher.fetch_path(URI.parse(@gem_repo), Time.at(0))
+    assert_nil fetcher.fetch_path(URI.parse(@gem_repo), Time.at(0))
   end
 
   def test_implicit_no_proxy

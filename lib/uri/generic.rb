@@ -10,6 +10,8 @@
 #
 
 require 'uri/common'
+autoload :IPSocket, 'socket'
+autoload :IPAddr, 'ipaddr'
 
 module URI
 
@@ -271,7 +273,7 @@ module URI
     #
     # Portion of the path that does make use of the slash '/'.
     # The path typically refers to the absolute path and the opaque part.
-    #  (see RFC2396 Section 3 and 5.2)
+    # (See RFC2396 Section 3 and 5.2.)
     #
     attr_reader :opaque
 
@@ -643,9 +645,9 @@ module URI
     # This method is same as URI::Generic#host except
     # brackets for IPv6 (and future IP) addresses are removed.
     #
-    # u = URI("http://[::1]/bar")
-    # p u.hostname      #=> "::1"
-    # p u.host          #=> "[::1]"
+    #   u = URI("http://[::1]/bar")
+    #   p u.hostname      #=> "::1"
+    #   p u.host          #=> "[::1]"
     #
     def hostname
       v = self.host
@@ -657,10 +659,10 @@ module URI
     # This method is same as URI::Generic#host= except
     # the argument can be bare IPv6 address.
     #
-    # u = URI("http://foo/bar")
-    # p u.to_s                  #=> "http://foo/bar"
-    # u.hostname = "::1"
-    # p u.to_s                  #=> "http://[::1]/bar"
+    #   u = URI("http://foo/bar")
+    #   p u.to_s                  #=> "http://foo/bar"
+    #   u.hostname = "::1"
+    #   p u.to_s                  #=> "http://[::1]/bar"
     #
     # If the argument seems IPv6 address,
     # it is wrapped by brackets.
@@ -944,7 +946,25 @@ module URI
     end
 
     #
-    # Checks if URI has a path
+    # Returns true if URI is hierarchical
+    #
+    # == Description
+    #
+    # URI has components listed in order of decreasing signficance from left to right
+    # see RFC3986 https://tools.ietf.org/html/rfc3986 1.2.3
+    #
+    # == Usage
+    #
+    #   require 'uri'
+    #
+    #   uri = URI.parse("http://my.example.com/")
+    #   => #<URI::HTTP http://my.example.com/>
+    #   uri.hierarchical?
+    #   # => true
+    #   uri = URI.parse("mailto:joe@example.com")
+    #   => #<URI::MailTo mailto:joe@example.com>
+    #   uri.hierarchical?
+    #   # => false
     #
     def hierarchical?
       if @path
@@ -955,7 +975,7 @@ module URI
     end
 
     #
-    # Checks if URI is an absolute one
+    # Returns true if URI has a scheme (e.g. http:// or https://) specified
     #
     def absolute?
       if @scheme
@@ -967,7 +987,7 @@ module URI
     alias absolute absolute?
 
     #
-    # Checks if URI is relative
+    # Returns true if URI does not have a scheme (e.g. http:// or https://) specified
     #
     def relative?
       !absolute?
@@ -977,7 +997,7 @@ module URI
     # returns an Array of the path split on '/'
     #
     def split_path(path)
-      path.split(%r{/+}, -1)
+      path.split("/", -1)
     end
     private :split_path
 
@@ -1152,8 +1172,8 @@ module URI
         return dst.dup
       end
 
-      src_path = src.scan(%r{(?:\A|[^/]+)/})
-      dst_path = dst.scan(%r{(?:\A|[^/]+)/?})
+      src_path = src.scan(%r{[^/]*/})
+      dst_path = dst.scan(%r{[^/]*/?})
 
       # discard same parts
       while !dst_path.empty? && dst_path.first == src_path.first
@@ -1293,7 +1313,17 @@ module URI
     end
 
     #
-    # Returns normalized URI
+    # Returns normalized URI.
+    #
+    #   require 'uri'
+    #
+    #   URI("HTTP://my.EXAMPLE.com").normalize
+    #   #=> #<URI::HTTP http://my.example.com/>
+    #
+    # Normalization here means:
+    #
+    # * scheme and host are converted to lowercase,
+    # * an empty path component is set to "/".
     #
     def normalize
       uri = dup
@@ -1329,7 +1359,7 @@ module URI
       if @opaque
         str << @opaque
       else
-        if @host
+        if @host || %w[file postgres].include?(@scheme)
           str << '//'
         end
         if self.userinfo
@@ -1357,7 +1387,7 @@ module URI
     end
 
     #
-    # Compares to URI's
+    # Compares two URIs
     #
     def ==(oth)
       if self.class == oth.class
@@ -1438,8 +1468,8 @@ module URI
     #
     # == Description
     #
-    #  attempt to parse other URI +oth+
-    #  return [parsed_oth, self]
+    # attempts to parse other URI +oth+,
+    # returns [parsed_oth, self]
     #
     # == Usage
     #
@@ -1505,7 +1535,7 @@ module URI
       elsif name == 'http_proxy'
         unless proxy_uri = env[name]
           if proxy_uri = env[name.upcase]
-            warn 'The environment variable HTTP_PROXY is discouraged.  Use http_proxy.'
+            warn 'The environment variable HTTP_PROXY is discouraged.  Use http_proxy.', uplevel: 1
           end
         end
       else
@@ -1517,7 +1547,6 @@ module URI
       end
 
       if self.hostname
-        require 'socket'
         begin
           addr = IPSocket.getaddress(self.hostname)
           return nil if /\A127\.|\A::1\z/ =~ addr
@@ -1527,23 +1556,26 @@ module URI
 
       name = 'no_proxy'
       if no_proxy = env[name] || env[name.upcase]
-        no_proxy.scan(/(?!\.)([^:,\s]+)(?::(\d+))?/) {|host, port|
-          if (!port || self.port == port.to_i)
-            if /(\A|\.)#{Regexp.quote host}\z/i =~ self.host
-              return nil
-            else
-              require 'ipaddr'
-              return nil if
-                begin
-                  IPAddr.new(host)
-                rescue IPAddr::InvalidAddressError
-                  next
-                end.include?(self.host)
-            end
-          end
-        }
+        return nil unless URI::Generic.use_proxy?(self.hostname, addr, self.port, no_proxy)
       end
       URI.parse(proxy_uri)
+    end
+
+    def self.use_proxy?(hostname, addr, port, no_proxy) # :nodoc:
+      no_proxy.scan(/(?!\.)([^:,\s]+)(?::(\d+))?/) {|p_host, p_port|
+        if !p_port || port == p_port.to_i
+          if /(\A|\.)#{Regexp.quote p_host}\z/i =~ hostname
+            return false
+          elsif addr
+            begin
+              return false if IPAddr.new(p_host).include?(addr)
+            rescue IPAddr::InvalidAddressError
+              next
+            end
+          end
+        end
+      }
+      true
     end
   end
 end

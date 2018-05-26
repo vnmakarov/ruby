@@ -1,13 +1,25 @@
 # -*- makefile-gmake -*-
 gnumake = yes
+override gnumake_recursive := $(if $(findstring n,$(firstword $(MFLAGS))),,+)
+override mflags := $(filter-out -j%,$(MFLAGS))
+MSPECOPT += $(if $(filter -j%,$(MFLAGS)),-j)
 
-CHECK_TARGETS := exam love check%
-TEST_TARGETS := $(filter check test check% test% btest%,$(MAKECMDGOALS))
-TEST_TARGETS += $(subst check,test-all,$(patsubst check-%,test-%,$(TEST_TARGETS)))
-TEST_TARGETS := $(patsubst test-%,yes-test-%,$(patsubst btest-%,yes-btest-%,$(TEST_TARGETS)))
-TEST_DEPENDS := $(if $(TEST_TARGETS),$(filter all main exts,$(MAKECMDGOALS)))
-TEST_DEPENDS += $(if $(filter $(CHECK_TARGETS),$(MAKECMDGOALS)),main)
-TEST_DEPENDS += $(if $(filter main,$(TEST_DEPENDS)),$(if $(filter all,$(INSTALLDOC)),docs))
+CHECK_TARGETS := great exam love check test check% test% btest%
+# expand test targets, and those dependents
+TEST_TARGETS := $(filter $(CHECK_TARGETS),$(MAKECMDGOALS))
+TEST_DEPENDS := $(filter-out commit $(TEST_TARGETS),$(MAKECMDGOALS))
+TEST_TARGETS := $(patsubst great,exam,$(TEST_TARGETS))
+TEST_DEPENDS := $(filter-out great $(TEST_TARGETS),$(TEST_DEPENDS))
+TEST_TARGETS := $(patsubst exam,check test-rubyspec,$(TEST_TARGETS))
+TEST_TARGETS := $(patsubst test-rubyspec,test-spec,$(TEST_TARGETS))
+TEST_DEPENDS := $(filter-out exam $(TEST_TARGETS),$(TEST_DEPENDS))
+TEST_TARGETS := $(patsubst love,check,$(TEST_TARGETS))
+TEST_DEPENDS := $(filter-out love $(TEST_TARGETS),$(TEST_DEPENDS))
+TEST_TARGETS := $(patsubst check,test test-testframework test-almost,$(patsubst check-%,test test-%,$(TEST_TARGETS)))
+TEST_DEPENDS := $(filter-out check $(TEST_TARGETS),$(TEST_DEPENDS))
+TEST_TARGETS := $(patsubst test,btest-ruby test-knownbug test-basic,$(TEST_TARGETS))
+TEST_DEPENDS := $(filter-out test $(TEST_TARGETS),$(TEST_DEPENDS))
+TEST_DEPENDS += $(if $(filter great exam love check,$(MAKECMDGOALS)),all exts)
 
 ifneq ($(filter -O0 -Od,$(optflags)),)
 override XCFLAGS := $(filter-out -D_FORTIFY_SOURCE=%,$(XCFLAGS))
@@ -36,25 +48,25 @@ define archcmd
 %.i: %.$(1).i
 endef
 
-$(foreach arch,$(filter -arch=%,$(subst -arch ,-arch=,$(ARCH_FLAG))),\
+$(foreach arch,$(arch_flags),\
 	$(eval $(call archcmd,$(patsubst -arch=%,%,$(value arch)),$(patsubst -arch=%,-arch %,$(value arch)))))
 endif
 
-ifneq ($(filter $(CHECK_TARGETS) test,$(MAKECMDGOALS)),)
-yes-test-basic: $(TEST_DEPENDS) yes-test-knownbug
-yes-test-knownbug: $(TEST_DEPENDS) yes-btest-ruby
-yes-btest-ruby: $(TEST_DEPENDS)
-endif
-ifneq ($(filter $(CHECK_TARGETS),$(MAKECMDGOALS)) $(filter yes-test-all,$(TEST_TARGETS)),)
-yes-test-testframework yes-test-almost yes-test-ruby: $(filter-out %test-all %test-ruby check%,$(TEST_TARGETS)) \
-	yes-test-basic
-endif
-ifneq ($(filter $(CHECK_TARGETS),$(MAKECMDGOALS))$(if $(filter test-all,$(MAKECMDGOALS)),$(filter test-knownbug,$(MAKECMDGOALS))),)
-yes-test-testframework yes-test-almost yes-test-ruby: yes-test-knownbug
-yes-test-almost: yes-test-testframework
+.PHONY: $(addprefix yes-,$(TEST_TARGETS))
+
+ifneq ($(filter-out btest%,$(TEST_TARGETS)),)
+$(addprefix yes-,$(TEST_TARGETS)): $(TEST_DEPENDS)
 endif
 
-$(TEST_TARGETS): $(TEST_DEPENDS)
+ORDERED_TEST_TARGETS := $(filter $(TEST_TARGETS), \
+	btest-ruby test-knownbug test-basic \
+	test-testframework test-ruby test-almost test-all \
+	test-spec \
+	)
+prev_test := $(if $(filter test-spec,$(ORDERED_TEST_TARGETS)),test-spec-precheck)
+$(foreach test,$(ORDERED_TEST_TARGETS), \
+	$(eval yes-$(value test) no-$(value test): $(value prev_test)); \
+	$(eval prev_test := $(value test)))
 
 ifneq ($(if $(filter install,$(MAKECMDGOALS)),$(filter uninstall,$(MAKECMDGOALS))),)
 install-targets := $(filter install uninstall,$(MAKECMDGOALS))
@@ -66,17 +78,15 @@ install-prereq: uninstall
 uninstall sudo-precheck: all $(if $(filter all,$(INSTALLDOC)),docs)
 endif
 
-ifneq ($(filter exam,$(MAKECMDGOALS)),)
-test-rubyspec: check
-yes-test-all no-test-all: test
-endif
-
 ifneq ($(filter love,$(MAKECMDGOALS)),)
 showflags: up
 sudo-precheck: test yes-test-testframework no-test-testframework
 install-prereq: sudo-precheck
 yes-test-all no-test-all: install
 yes-test-almost no-test-almost: install
+endif
+ifneq ($(filter great,$(MAKECMDGOALS)),)
+love: test-rubyspec
 endif
 
 $(srcdir)/missing/des_tables.c: $(srcdir)/missing/crypt.c
@@ -125,3 +135,40 @@ $(SCRIPTBINDIR)%$(EXEEXT): bin/% $(STUBPROGRAM) \
 $(TIMESTAMPDIR)/.exec.time:
 	$(Q) mkdir exec
 	$(Q) exit > $@
+
+.PHONY: commit
+commit: $(if $(filter commit,$(MAKECMDGOALS)),$(filter-out commit,$(MAKECMDGOALS)))
+	@$(BASERUBY) -C "$(srcdir)" -I./tool -rvcs -e 'VCS.detect(".").commit'
+	$(Q)$(MAKE) $(mflags) Q=$(Q) srcs_vpath='$(srcdir)/' REVISION_FORCE=PHONY update-src srcs all-incs
+
+ifeq ($(words $(filter update-gems extract-gems,$(MAKECMDGOALS))),2)
+extract-gems: update-gems
+endif
+
+ifeq ($(filter 0 1,$(words $(arch_flags))),)
+$(foreach x,$(patsubst -arch=%,%,$(arch_flags)), \
+	  $(eval $$(MJIT_HEADER:.h=)-$(value x).h \
+		 $$(MJIT_MIN_HEADER:.h=)-$(value x).h \
+		 $$(TIMESTAMPDIR)/$$(MJIT_HEADER:.h=)-$(value x).time \
+		 : ARCH_FLAG := -arch $(value x)))
+
+$(foreach x,$(patsubst -arch=%,%,$(arch_flags)), \
+	$(eval $$(MJIT_HEADER:.h=)-$(value x).h: \
+		$$(TIMESTAMPDIR)/$$(MJIT_HEADER:.h=)-$(value x).time))
+
+mjit_min_headers := $(patsubst -arch=%,$(MJIT_MIN_HEADER:.h=-%.h),$(arch_flags))
+$(MJIT_MIN_HEADER): $(mjit_min_headers) $(PREP)
+	@ set -e; set $(patsubst -arch=%,%,$(arch_flags)); \
+	cd $(@D); h=$(@F:.h=); \
+	exec > $(@F).new; \
+	echo '#if 0'; \
+	for arch; do\
+	  echo "#elif defined __$${arch}__"; \
+	  echo "# include \"$$h-$$arch.h\""; \
+	done; \
+	echo "#else"; echo "# error unsupported platform"; echo "#endif"
+	$(IFCHANGE) $@ $@.new
+	$(Q) $(MAKEDIRS) $(MJIT_HEADER_INSTALL_DIR)
+	$(Q) $(MAKE_LINK) $@ $(MJIT_HEADER_INSTALL_DIR)/$(@F)
+
+endif

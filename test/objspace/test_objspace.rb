@@ -45,7 +45,7 @@ class TestObjSpace < Test::Unit::TestCase
     argf.inplace_mode = nil
     size = ObjectSpace.memsize_of(argf)
     argf.inplace_mode = "inplace_mode_suffix"
-    assert_equal(size + 20, ObjectSpace.memsize_of(argf))
+    assert_equal(size, ObjectSpace.memsize_of(argf))
   end
 
   def test_memsize_of_all
@@ -61,9 +61,19 @@ class TestObjSpace < Test::Unit::TestCase
     res = ObjectSpace.count_objects_size
     assert_not_empty(res)
     assert_operator(res[:TOTAL], :>, 0)
+  end
+
+  def test_count_objects_size_with_hash
     arg = {}
     ObjectSpace.count_objects_size(arg)
     assert_not_empty(arg)
+    arg = {:TOTAL => 1 }
+    ObjectSpace.count_objects_size(arg)
+    assert_not_empty(arg)
+  end
+
+  def test_count_objects_size_with_wrong_type
+    assert_raise(TypeError) { ObjectSpace.count_objects_size(0) }
   end
 
   def test_count_nodes
@@ -277,6 +287,23 @@ class TestObjSpace < Test::Unit::TestCase
     assert_match /"value":"foobar\h+"/, dump
   end
 
+  def test_dump_includes_imemo_type
+    assert_in_out_err(%w[-robjspace], "#{<<-"begin;"}\n#{<<-'end;'}") do |output, error|
+      begin;
+        def dump_my_heap_please
+          ObjectSpace.dump_all(output: :stdout)
+        end
+
+        dump_my_heap_please
+      end;
+      heap = output.find_all { |l|
+        obj = JSON.parse(l)
+        obj['type'] == "IMEMO" && obj['imemo_type']
+      }
+      assert_operator heap.length, :>, 0
+    end
+  end
+
   def test_dump_all_full
     assert_in_out_err(%w[-robjspace], "#{<<-"begin;"}\n#{<<-'end;'}") do |output, error|
       begin;
@@ -402,13 +429,18 @@ class TestObjSpace < Test::Unit::TestCase
   end
 
   def test_count_symbols
-    syms = (1..128).map{|i| ("xyzzy#{i}" * 128).to_sym}
-    c = Class.new{define_method(syms[-1]){}}
+    assert_separately(%w[-robjspace], "#{<<~';;;'}")
+    h0 = ObjectSpace.count_symbols
+
+    syms = (1..128).map{|i| ("xyzzy#{i}_#{Process.pid}_#{rand(1_000_000)}_" * 128).to_sym}
+    syms << Class.new{define_method(syms[-1]){}}
 
     h = ObjectSpace.count_symbols
-    assert_operator h[:mortal_dynamic_symbol],   :>=, 128, h.inspect
-    assert_operator h[:immortal_dynamic_symbol], :>=, 1, h.inspect
-    assert_operator h[:immortal_static_symbol],  :>=, Object.methods.size, h.inspect
-    assert_equal h[:immortal_symbol], h[:immortal_dynamic_symbol] + h[:immortal_static_symbol], h.inspect
+    m = proc {h0.inspect + "\n" + h.inspect}
+    assert_equal 127, h[:mortal_dynamic_symbol] - h0[:mortal_dynamic_symbol],   m
+    assert_equal 1, h[:immortal_dynamic_symbol] - h0[:immortal_dynamic_symbol], m
+    assert_operator h[:immortal_static_symbol],  :>=, Object.methods.size, m
+    assert_equal h[:immortal_symbol], h[:immortal_dynamic_symbol] + h[:immortal_static_symbol], m
+    ;;;
   end
 end

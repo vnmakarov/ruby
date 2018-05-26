@@ -145,15 +145,6 @@ ruby_getaddrinfo__darwin(const char *nodename, const char *servname,
 #define getaddrinfo(node,serv,hints,res) ruby_getaddrinfo__darwin((node),(serv),(hints),(res))
 #endif
 
-#ifndef GETADDRINFO_EMU
-struct getaddrinfo_arg
-{
-    const char *node;
-    const char *service;
-    const struct addrinfo *hints;
-    struct addrinfo **res;
-};
-
 #ifdef HAVE_INET_PTON
 static int
 parse_numeric_port(const char *service, int *portp)
@@ -181,6 +172,15 @@ parse_numeric_port(const char *service, int *portp)
     return 1;
 }
 #endif
+
+#ifndef GETADDRINFO_EMU
+struct getaddrinfo_arg
+{
+    const char *node;
+    const char *service;
+    const struct addrinfo *hints;
+    struct addrinfo **res;
+};
 
 static void *
 nogvl_getaddrinfo(void *arg)
@@ -726,10 +726,8 @@ static void
 addrinfo_mark(void *ptr)
 {
     rb_addrinfo_t *rai = ptr;
-    if (rai) {
-        rb_gc_mark(rai->inspectname);
-        rb_gc_mark(rai->canonname);
-    }
+    rb_gc_mark(rai->inspectname);
+    rb_gc_mark(rai->canonname);
 }
 
 #define addrinfo_free RUBY_TYPED_DEFAULT_FREE

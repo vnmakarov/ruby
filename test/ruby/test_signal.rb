@@ -83,10 +83,12 @@ class TestSignal < Test::Unit::TestCase
     assert_raise_with_message(ArgumentError, /\u{30eb 30d3 30fc}/) { SignalException.new("\u{30eb 30d3 30fc}") }
     Signal.list.each do |signm, signo|
       next if signm == "EXIT"
-      assert_equal(SignalException.new(signm).signo, signo)
-      assert_equal(SignalException.new(signm.to_sym).signo, signo)
-      assert_equal(SignalException.new(signo).signo, signo)
+      assert_equal(signo, SignalException.new(signm).signo, signm)
+      assert_equal(signo, SignalException.new(signm.to_sym).signo, signm)
+      assert_equal(signo, SignalException.new(signo).signo, signo)
     end
+    e = assert_raise(ArgumentError) {SignalException.new("-SIGEXIT")}
+    assert_not_match(/SIG-SIG/, e.message)
   end
 
   def test_interrupt
@@ -164,6 +166,8 @@ class TestSignal < Test::Unit::TestCase
       assert_raise(ArgumentError) { Signal.trap("XXXXXXXXXX", "SIG_DFL") }
 
       assert_raise_with_message(ArgumentError, /\u{30eb 30d3 30fc}/) { Signal.trap("\u{30eb 30d3 30fc}", "SIG_DFL") }
+
+      assert_raise(ArgumentError) { Signal.trap("EXIT\0") {} }
     ensure
       Signal.trap(:INT, oldtrap) if oldtrap
     end
@@ -241,7 +245,7 @@ class TestSignal < Test::Unit::TestCase
 EOS
 
         signame = Marshal.load(child)
-        assert_equal(signame, "INT")
+        assert_equal("INT", signame)
       end
     end
   end if Process.respond_to?(:kill)
@@ -306,5 +310,19 @@ EOS
     a = Signal.list.keys.map(&:object_id).sort
     b = Signal.list.keys.map(&:object_id).sort
     assert_equal a, b
+  end
+
+  def test_self_stop
+    assert_ruby_status([], <<-'end;')
+      begin
+        fork{
+          sleep 1
+          Process.kill(:CONT, Process.ppid)
+        }
+        Process.kill(:STOP, Process.pid)
+      rescue NotImplementedError
+        # ok
+      end
+    end;
   end
 end
