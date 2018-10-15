@@ -143,10 +143,11 @@ static inline void VARR_OP(T,trunc)(VARR(T) *varr_, size_t size_) {            \
 static inline void VARR_OP(T,expand)(VARR(T) *varr_, size_t size_) {	       \
     VARR_ASSERT(varr_  && varr_->varr, "expand", T);			       \
     if (varr_->size < size_) {						       \
-	varr_->varr = (T *) xrealloc(varr_->varr, sizeof(T) * 3 * size_ / 2);  \
+	size_ += size_ / 2;						       \
+	varr_->varr = (T *) xrealloc(varr_->varr, sizeof(T) * size_);	       \
         if (varr_->varr == NULL) varr_malloc_failure();			       \
+	varr_->size = size_;						       \
     }                                                                          \
-    varr_->size = size_;						       \
 }									       \
 									       \
 static inline void VARR_OP(T, push)(VARR(T) *varr_, T obj_) {	               \
@@ -249,12 +250,12 @@ static VARR(size_t) *loc_stack_count;
 
 /* Initiate LOC_STACK_COUNT and MAX_STACK_DEPTH.  */
 static void
-initialize_loc_stack_count(rb_iseq_t *iseq) {
+initialize_loc_stack_count(void) {
     size_t i, size;
     
     max_stack_depth = 0;
     VARR_TRUNC(size_t, loc_stack_count, 0);
-    size = iseq->body->local_table_size + VM_ENV_DATA_SIZE;
+    size = curr_iseq->body->local_table_size + VM_ENV_DATA_SIZE;
     for (i = 0; i < size; i++)
 	VARR_PUSH(size_t, loc_stack_count, 0);
 }
@@ -618,10 +619,10 @@ mark_label_from_hash(VALUE key, VALUE val, VALUE arg) {
     return ST_CONTINUE;
 }
 
-/* Process continuation labels from ISEQ catch table.  Set up
-   CATCH_BOUND_POS_P too.  */
+/* Process continuation labels from the current iseq catch table.  Set
+   up CATCH_BOUND_POS_P too.  */
 static void
-setup_labels_from_catch_table(rb_iseq_t *iseq) {
+setup_labels_from_catch_table(void) {
     size_t i, j, iseq_size, size, depth;
     const struct iseq_catch_table *table;
     const struct iseq_catch_table_entry *entries;
@@ -629,10 +630,10 @@ setup_labels_from_catch_table(rb_iseq_t *iseq) {
     int label_type;
     
     VARR_TRUNC(char, catch_bound_pos_p, 0);
-    iseq_size = iseq->body->iseq_size;
+    iseq_size = curr_iseq->body->iseq_size;
     for (i = 0; i < iseq_size; i++)
 	VARR_PUSH(char, catch_bound_pos_p, FALSE);
-    table = iseq->body->catch_table;
+    table = curr_iseq->body->catch_table;
     if (table == NULL)
 	return;
     size = table->size;
@@ -1014,12 +1015,12 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
 }
 
 /* Calculate the emulated VM stack values and depth at each label in
-   the stack insn sequence ISEQ.  It is a forward dataflow
+   the current iseq stack insn sequence.  It is a forward dataflow
    problem.  */
 static void
-find_stack_values_on_labels(rb_iseq_t *iseq) {
-    const VALUE *code = iseq->body->iseq_encoded;
-    size_t size = iseq->body->iseq_size;
+find_stack_values_on_labels(void) {
+    const VALUE *code = curr_iseq->body->iseq_encoded;
+    size_t size = curr_iseq->body->iseq_size;
     VALUE insn;
     size_t pos, start_pos, stack_insn_len, depth;
     int niter;
@@ -1030,7 +1031,7 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
 #if RTL_GEN_DEBUG
     if (rtl_gen_debug_p) {
 	for (pos = 0; pos < size; pos += insn_len(code[pos]))
-	    rb_iseq_disasm_insn(0, code, pos, iseq, 0, -1);
+	    rb_iseq_disasm_insn(0, code, pos, curr_iseq, 0, -1);
     }
 #endif
     VARR_TRUNC(size_t, pos_stack_free, 0);
@@ -1050,7 +1051,7 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
 #if 0
     unsigned int *curr_insn_info_pos;
     
-    for (pos = 0, curr_insn_info_pos = iseq->body->insns_info.positions; pos < size; pos += stack_insn_len) {
+    for (pos = 0, curr_insn_info_pos = curr_iseq->body->insns_info.positions; pos < size; pos += stack_insn_len) {
 	if (*curr_insn_info_pos == pos) {
 	    VARR_ADDR(char, use_only_temp_result_p)[pos] = TRUE;
 	    curr_insn_info_pos++;
@@ -1059,7 +1060,7 @@ find_stack_values_on_labels(rb_iseq_t *iseq) {
 	stack_insn_len = insn_len(insn);
     }
 #endif
-    setup_labels_from_catch_table(iseq);
+    setup_labels_from_catch_table();
     niter = 0;
     do {
 	niter++;
@@ -1454,48 +1455,48 @@ specialized_store(enum ruby_vminsn_type res_insn, const VALUE *args) {
 }
 
 /* Return call data without kwarg corresponding to call info CI of
-   ISEQ.  Return NULL if CI is not for a call without kwarg.  */
+   the current iseq.  Return NULL if CI is not for a call without kwarg.  */
 static struct rb_call_data *
-get_cd_data(rb_iseq_t *iseq, CALL_INFO ci) {
-    size_t ci_size = iseq->body->ci_size;
-    struct rb_call_info *ci_entries = iseq->body->ci_entries;
+get_cd_data(CALL_INFO ci) {
+    size_t ci_size = curr_iseq->body->ci_size;
+    struct rb_call_info *ci_entries = curr_iseq->body->ci_entries;
     
     if (ci < ci_entries || (ci_entries + ci_size) <= ci)
 	return NULL;
-    return &iseq->body->cd_entries[ci - ci_entries];
+    return &curr_iseq->body->cd_entries[ci - ci_entries];
 }
 
-/* Return call data with kwarg corresponding to call info CI of ISEQ.
-   Return NULL if CI is not for call with kwarg.  */
+/* Return call data with kwarg corresponding to call info CI of the
+   current iseq.  Return NULL if CI is not for call with kwarg.  */
 static struct rb_call_data_with_kwarg *
-get_cd_data_with_kw_arg(rb_iseq_t *iseq, CALL_INFO ci) {
+get_cd_data_with_kw_arg(CALL_INFO ci) {
     struct rb_call_info_with_kwarg * cikw = (struct rb_call_info_with_kwarg *) ci;
-    size_t ci_size = iseq->body->ci_size;
-    size_t cikw_size = iseq->body->ci_kw_size;
+    size_t ci_size = curr_iseq->body->ci_size;
+    size_t cikw_size = curr_iseq->body->ci_kw_size;
     struct rb_call_info_with_kwarg *cikw_entries
-	= (struct rb_call_info_with_kwarg *) (iseq->body->ci_entries + ci_size);
+	= (struct rb_call_info_with_kwarg *) (curr_iseq->body->ci_entries + ci_size);
     struct rb_call_data_with_kwarg *cdkw_entries
-	= (struct rb_call_data_with_kwarg *) (iseq->body->cd_entries + ci_size);
+	= (struct rb_call_data_with_kwarg *) (curr_iseq->body->cd_entries + ci_size);
     
     if (cikw < cikw_entries || (cikw_entries + cikw_size) <= cikw)
 	return NULL;
     return &cdkw_entries[cikw - cikw_entries];
 }
 
-/* Return call data corresponding to call info CI of ISEQ.  */
+/* Return call data corresponding to call info CI of the current iseq.  */
 static struct rb_call_data *
-get_cd(rb_iseq_t *iseq, CALL_INFO ci, CALL_CACHE cc) {
+get_cd(CALL_INFO ci, CALL_CACHE cc) {
     struct rb_call_data *cd;
     struct rb_call_data_with_kwarg *cdkw;
 
-    if ((cd = get_cd_data(iseq, ci)) != NULL) {
+    if ((cd = get_cd_data(ci)) != NULL) {
 	cd->call_info = *ci;
 	if (cc != NULL)
 	    cd->call_cache = *cc;
 	cd->call_start = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	return cd;
     }
-    if ((cdkw = get_cd_data_with_kw_arg(iseq, ci)) != NULL) {
+    if ((cdkw = get_cd_data_with_kw_arg(ci)) != NULL) {
 	cdkw->call_info = *ci;
 	if (cc != NULL)
 	    cdkw->call_cache = *cc;
@@ -1507,11 +1508,11 @@ get_cd(rb_iseq_t *iseq, CALL_INFO ci, CALL_CACHE cc) {
     return NULL; /* to remove a compiler warning */
 }
 
-/* Generate RTL insns from an ISEQ stack insn call whose operands are
-   in ARGS.  BLOCK is a block in the call.  Zero means no block in the
-   call.  */
+/* Generate RTL insns from the current iseq stack insn call whose
+   operands are in ARGS.  BLOCK is a block in the call.  Zero means no
+   block in the call.  */
 static void
-generate_call(rb_iseq_t *iseq, const VALUE *args, VALUE block) {
+generate_call(const VALUE *args, VALUE block) {
     CALL_INFO ci = (CALL_INFO) args[0];
     CALL_CACHE cc = (CALL_CACHE) args[1];
     struct rb_call_data *cd;
@@ -1522,7 +1523,7 @@ generate_call(rb_iseq_t *iseq, const VALUE *args, VALUE block) {
     args_num = ci->orig_argc + (stack_block_p ? 1: 0);
     put_args_on_stack(args_num);
     slot = pop_stack_slot();
-    cd = get_cd(iseq, ci, cc);
+    cd = get_cd(ci, cc);
     if (slot.mode == SELF) {
 	if (block == 0 && ! stack_block_p)
 	    APPEND_INSN_OP2(BIN(simple_call_self), cd, cd->call_start);
@@ -1543,10 +1544,10 @@ generate_call(rb_iseq_t *iseq, const VALUE *args, VALUE block) {
     new_top_stack_temp_var();
 }
 
-/* Generate RTL insns from an ISEQ unary operator insn whose operands
-   are in ARGS.  The corresponding RTL insn code is RES_INSN.  */
+/* Generate RTL insns from unary operator insn whose operands are in
+   ARGS.  The corresponding RTL insn code is RES_INSN.  */
 static void
-generate_unary_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_insn) {
+generate_unary_op(const VALUE *args, enum ruby_vminsn_type res_insn) {
     CALL_INFO ci = (CALL_INFO) args[0];
     CALL_CACHE cc = (CALL_CACHE) args[1];
     struct rb_call_data *cd;
@@ -1554,7 +1555,7 @@ generate_unary_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_
     stack_slot slot;
     
     slot = pop_stack_slot();
-    cd = get_cd(iseq, ci, cc);
+    cd = get_cd(ci, cc);
     if (slot.mode == SELF) {
 	op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
 	APPEND_INSN_OP1(BIN(self2var), op);
@@ -1601,11 +1602,11 @@ make_imm_id(enum ruby_vminsn_type insn_id, int fixnum_p, int flonum_p) {
 }
 
 /* Generate RTL insns for operands of general RTL insn RES_INSN from
-   an ISEQ binary operator insn whose call related operands are in
-   ARGS.  Return RTL insn operands and call data through RES, OP, OP2,
-   and CD.  Return RTL insn code which will be actually used.  */
+   an binary operator insn whose call related operands are in ARGS.
+   Return RTL insn operands and call data through RES, OP, OP2, and
+   CD.  Return RTL insn code which will be actually used.  */
 static enum ruby_vminsn_type
-get_binary_ops(rb_iseq_t *iseq, enum ruby_vminsn_type res_insn, const VALUE *args,
+get_binary_ops(enum ruby_vminsn_type res_insn, const VALUE *args,
 	       vindex_t *res, vindex_t *op, VALUE *op2, struct rb_call_data **cd) {
     CALL_INFO ci = (CALL_INFO) args[0];
     CALL_CACHE cc = (CALL_CACHE) args[1];
@@ -1615,7 +1616,7 @@ get_binary_ops(rb_iseq_t *iseq, enum ruby_vminsn_type res_insn, const VALUE *arg
     slot2 = pop_stack_slot();
     slot = pop_stack_slot();
     *res = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-    *cd = get_cd(iseq, ci, cc);
+    *cd = get_cd(ci, cc);
     *op = to_var(slot, *res);
     if (slot2.mode == SELF) {
 	*op2 = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
@@ -1670,17 +1671,16 @@ get_simple_insn (enum ruby_vminsn_type insn_id) {
     }
 }
 
-/* Generate RTL insns from an ISEQ binary operator insn whose operands
-   are in ARGS.  The corresponding general RTL insn code is
-   RES_INSN. */
+/* Generate RTL insns from a binary operator insn whose operands are
+   in ARGS.  The corresponding general RTL insn code is RES_INSN. */
 static void
-generate_bin_op(rb_iseq_t *iseq, const VALUE *args, enum ruby_vminsn_type res_insn) {
+generate_bin_op(const VALUE *args, enum ruby_vminsn_type res_insn) {
     enum ruby_vminsn_type simple_insn;
     struct rb_call_data *cd;
     vindex_t op, res;
     VALUE op2;
     
-    res_insn = get_binary_ops(iseq, res_insn, args, &res, &op, &op2, &cd);
+    res_insn = get_binary_ops(res_insn, args, &res, &op, &op2, &cd);
     push_temp_result(res);
     if (res == op && (vindex_t) op2 + 1 == op && (simple_insn = get_simple_insn(res_insn)) != BIN(nop))
 	APPEND_INSN_OP2(simple_insn, cd, res);
@@ -1798,13 +1798,13 @@ tune_stack(size_t pos, int label_type, int restore_p) {
     }
 }
 
-/* Generate RTL insns from ISEQ stack comparison insn in CODE at
+/* Generate RTL insns from a stack comparison insn in CODE at
    position POS.  The corresponding general RTL comparison insn code
    is RES_INSN.  Combine with the next branch insn if possible.
    Return position of the next stack insn should be processed after
    that.  */
 static size_t
-generate_rel_op(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_vminsn_type res_insn) {
+generate_rel_op(const VALUE *code, size_t pos, enum ruby_vminsn_type res_insn) {
     int bt_p;
     size_t len = insn_len(code[pos]);
     const VALUE *args = &code[pos + 1];
@@ -1817,10 +1817,10 @@ generate_rel_op(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_vminsn
 
     if (VARR_ADDR(char, pos_label_type)[pos] != NO_LABEL
 	|| (next_insn != BIN(branchif) && next_insn != BIN(branchunless))) {
-	generate_bin_op(iseq, (res_insn == BIN(ne) ? args + 2 : args), res_insn);
+	generate_bin_op((res_insn == BIN(ne) ? args + 2 : args), res_insn);
 	return len;
     }
-    res_insn = get_binary_ops(iseq, res_insn, (res_insn == BIN(ne) ? args + 2 : args), &res, &op, &op2, &cd);
+    res_insn = get_binary_ops(res_insn, (res_insn == BIN(ne) ? args + 2 : args), &res, &op, &op2, &cd);
     bt_p = next_insn == BIN(branchif);
     res_insn = get_bcmp_insn(res_insn, bt_p);
     dest = code[pos + len + 1] + pos + len + next_insn_len;
@@ -1833,11 +1833,11 @@ generate_rel_op(rb_iseq_t *iseq, const VALUE *code, size_t pos, enum ruby_vminsn
     return len + next_insn_len;
 }
 
-/* Generate RTL insns from ISEQ stack insn opt_aref (STR == Qnil in
+/* Generate RTL insns from a stack insn opt_aref (STR == Qnil in
    this case) or opt_aref_with (STR is the first operand) whose call
    related operands are in ARGS.  */
 static void
-generate_aset_op(rb_iseq_t *iseq, const VALUE *args, VALUE str) {
+generate_aset_op(const VALUE *args, VALUE str) {
     CALL_INFO ci = (CALL_INFO) args[0];
     CALL_CACHE cc = (CALL_CACHE) args[1];
     struct rb_call_data *cd;
@@ -1856,7 +1856,7 @@ generate_aset_op(rb_iseq_t *iseq, const VALUE *args, VALUE str) {
     }
     slot = pop_stack_slot();
     res = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-    cd = get_cd(iseq, ci, cc);
+    cd = get_cd(ci, cc);
     op = to_var(slot, res);
     if (str != Qnil) {
 	imm_insn = make_imm_id(res_insn, FALSE, FALSE);
@@ -1960,13 +1960,14 @@ generate_leave(void) {
 /* True if we are currently processing an unreachable stack insn.  */
 static int unreachable_code_p;
 
-/* Generate (zero or more) RTL insns for stack insn of ISEQ at
-   position POS in CODE.  The stack insn was not modified for direct
-   threading so far.  Update CURR_SOURCE_INSN_POS to the position of
-   the next stack insn should be processed after that.  The previous
-   insn (or nop if it is the first insn) is passed by PREV_INSN.  */ 
+/* Generate (zero or more) RTL insns for stack insn of the current
+   iseq at the current position in CODE.  The stack insn was not
+   modified for direct threading so far.  Update CURR_SOURCE_INSN_POS
+   to the position of the next stack insn should be processed after
+   that.  The previous insn (or nop if it is the first insn) is passed
+   by PREV_INSN.  */ 
 static void
-translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type prev_insn) {
+translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
     VALUE insn;
     size_t stack_insn_len;
     stack_slot slot;
@@ -2435,7 +2436,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
 	break;
     }
     case BIN(send):
-	generate_call(iseq, &code[pos + 1], code[pos + 3]);
+	generate_call(&code[pos + 1], code[pos + 3]);
 	break;
     case BIN(opt_str_freeze):
     case BIN(opt_str_uminus): {
@@ -2460,7 +2461,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
 	break;
     }
     case BIN(opt_send_without_block):
-	generate_call(iseq, &code[pos + 1], 0);
+	generate_call(&code[pos + 1], 0);
 	break;
     case BIN(invokesuper): {
 	CALL_INFO ci = (CALL_INFO) code[pos + 1];
@@ -2473,7 +2474,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
 	args_num = ci->orig_argc + (stack_block_p ? 1: 0);
 	put_args_on_stack(args_num);
 	slot = pop_stack_slot();
-	cd = get_cd(iseq, ci, cc);
+	cd = get_cd(ci, cc);
 	if (slot.mode == VAL) {
 	    APPEND_INSN_OP4(BIN(call_super_val), cd, cd->call_start, block, slot.u.val);
 	} else {
@@ -2490,7 +2491,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
     
 	args_num = ci->orig_argc;
 	put_args_on_stack(args_num);
-	cd = get_cd(iseq, ci, NULL);
+	cd = get_cd(ci, NULL);
 	APPEND_INSN_OP2(BIN(call_block), cd, cd->call_start);
 	new_top_stack_temp_var();
 	break;
@@ -2611,7 +2612,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
 	struct hash_label_transform_arg arg;
 
 	hash = rb_hash_dup(hash);
-	iseq_add_mark_object_compile_time(iseq, hash);
+	iseq_add_mark_object_compile_time(curr_iseq, hash);
 	arg.hash = hash;
 	arg.map_p = FALSE;
 	arg.decr = -incr;
@@ -2628,71 +2629,71 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
 	break;
     }
     case BIN(opt_plus):
-	generate_bin_op(iseq, &code[pos + 1], BIN(plus));
+	generate_bin_op(&code[pos + 1], BIN(plus));
 	break;
     case BIN(opt_minus):
-	generate_bin_op(iseq, &code[pos + 1], BIN(minus));
+	generate_bin_op(&code[pos + 1], BIN(minus));
 	break;
     case BIN(opt_mult):
-	generate_bin_op(iseq, &code[pos + 1], BIN(mult));
+	generate_bin_op(&code[pos + 1], BIN(mult));
 	break;
     case BIN(opt_div):
-	generate_bin_op(iseq, &code[pos + 1], BIN(div));
+	generate_bin_op(&code[pos + 1], BIN(div));
 	break;
     case BIN(opt_mod):
-	generate_bin_op(iseq, &code[pos + 1], BIN(mod));
+	generate_bin_op(&code[pos + 1], BIN(mod));
 	break;
     case BIN(opt_eq):
-	stack_insn_len = generate_rel_op(iseq, code, pos, BIN(eq));
+	stack_insn_len = generate_rel_op(code, pos, BIN(eq));
 	break;
     case BIN(opt_neq):
-	stack_insn_len = generate_rel_op(iseq, code, pos, BIN(ne));
+	stack_insn_len = generate_rel_op(code, pos, BIN(ne));
 	break;
     case BIN(opt_lt):
-	stack_insn_len = generate_rel_op(iseq, code, pos, BIN(lt));
+	stack_insn_len = generate_rel_op(code, pos, BIN(lt));
 	break;
     case BIN(opt_le):
-	stack_insn_len = generate_rel_op(iseq, code, pos, BIN(le));
+	stack_insn_len = generate_rel_op(code, pos, BIN(le));
 	break;
     case BIN(opt_gt):
-	stack_insn_len = generate_rel_op(iseq, code, pos, BIN(gt));
+	stack_insn_len = generate_rel_op(code, pos, BIN(gt));
 	break;
     case BIN(opt_ge):
-	stack_insn_len = generate_rel_op(iseq, code, pos, BIN(ge));
+	stack_insn_len = generate_rel_op(code, pos, BIN(ge));
 	break;
     case BIN(opt_ltlt):
-	generate_bin_op(iseq, &code[pos + 1], BIN(ltlt));
+	generate_bin_op(&code[pos + 1], BIN(ltlt));
 	break;
     case BIN(opt_aref):
-	generate_bin_op(iseq, &code[pos + 1], BIN(ind));
+	generate_bin_op(&code[pos + 1], BIN(ind));
 	break;
     case BIN(opt_aset):
-	generate_aset_op(iseq, &code[pos + 1], Qnil);
+	generate_aset_op(&code[pos + 1], Qnil);
 	break;
     case BIN(opt_aset_with):
-	generate_aset_op(iseq, &code[pos + 2], code[pos + 1]);
+	generate_aset_op(&code[pos + 2], code[pos + 1]);
 	break;
     case BIN(opt_aref_with):
 	slot.mode = STR;
 	slot.source_insn_pos = pos;
 	slot.u.str = code[pos + 1];
 	push_stack_slot(slot);
-	generate_bin_op(iseq, &code[pos + 2], BIN(ind));
+	generate_bin_op(&code[pos + 2], BIN(ind));
 	break;
     case BIN(opt_length):
-	generate_unary_op(iseq, &code[pos + 1], BIN(length));
+	generate_unary_op(&code[pos + 1], BIN(length));
 	break;
     case BIN(opt_size):
-	generate_unary_op(iseq, &code[pos + 1], BIN(size));
+	generate_unary_op(&code[pos + 1], BIN(size));
 	break;
     case BIN(opt_empty_p):
-	generate_unary_op(iseq, &code[pos + 1], BIN(empty_p));
+	generate_unary_op(&code[pos + 1], BIN(empty_p));
 	break;
     case BIN(opt_succ):
-	generate_unary_op(iseq, &code[pos + 1], BIN(succ));
+	generate_unary_op(&code[pos + 1], BIN(succ));
 	break;
     case BIN(opt_not):
-	generate_unary_op(iseq, &code[pos + 1], BIN(not));
+	generate_unary_op(&code[pos + 1], BIN(not));
 	break;
     case BIN(intern): {
 	vindex_t op, res;
@@ -2724,7 +2725,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
 	slot2 = pop_stack_slot();
 	slot = pop_stack_slot();
 	res = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-	cd = get_cd(iseq, ci, cc);
+	cd = get_cd(ci, cc);
 	op = to_var(slot, res);
 	op2 = to_var(slot2, res - 1);
 	APPEND_INSN_OP4(BIN(regexp_match2), cd, res, op, op2);
@@ -2732,7 +2733,7 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
 	break;
     }
     case BIN(opt_call_c_function): {
-	vindex_t args_num = iseq->body->param.size + 1;
+	vindex_t args_num = curr_iseq->body->param.size + 1;
 
 	put_on_stack(args_num);
 	APPEND_INSN_OP2(BIN(call_c_func), code[pos + 1], args_num);
@@ -2780,10 +2781,10 @@ translate_stack_insn(rb_iseq_t *iseq, const VALUE *code, enum ruby_vminsn_type p
     curr_source_insn_pos += stack_insn_len;
 }
 
-/* Generate RTL insns from stack insns of ISEQ.  */
+/* Generate RTL insns from stack insns of the current iseq.  */
 static void
-translate(rb_iseq_t *iseq){
-    const VALUE *code = iseq->body->iseq_encoded;
+translate(void){
+    const VALUE *code = curr_iseq->body->iseq_encoded;
     int line_no = -1;
     size_t pos, i, size;
     enum ruby_vminsn_type insn, prev_insn;
@@ -2795,11 +2796,11 @@ translate(rb_iseq_t *iseq){
     VARR_TRUNC(int, source_pos2line, 0);
     VARR_TRUNC(unsigned, rtl_insn_event_positions, 0);
     VARR_TRUNC(event_t, rtl_insn_events, 0);
-    size = iseq->body->iseq_size;
+    size = curr_iseq->body->iseq_size;
     for (pos = i = 0; pos < size; pos++) {
 	VARR_PUSH(size_t, new_insn_offsets, 0);
-	if (i < iseq->body->insns_info.size && pos == iseq->body->insns_info.positions[i]) {
-	    line_no = iseq->body->insns_info.body[i].line_no;
+	if (i < curr_iseq->body->insns_info.size && pos == curr_iseq->body->insns_info.positions[i]) {
+	    line_no = curr_iseq->body->insns_info.body[i].line_no;
 	    i++;
 	}
 	VARR_PUSH(int, source_pos2line, line_no);
@@ -2812,15 +2813,15 @@ translate(rb_iseq_t *iseq){
     unreachable_code_p = FALSE;
     for (prev_insn = BIN(nop), curr_source_insn_pos = 0; curr_source_insn_pos < size; prev_insn = insn) {
 	insn = code[curr_source_insn_pos];
-	translate_stack_insn(iseq, code, prev_insn);
+	translate_stack_insn(code, prev_insn);
     }
     trunc_stack(0);
  }
 
-/* Create an insn info table of the generated RTL of ISEQ.  Return
-   FALSE if we failed to do this.  */
+/* Create an insn info table of the generated RTL of the current iseq.
+   Return FALSE if we failed to do this.  */
 static int
-create_rtl_insn_info_table(rb_iseq_t *iseq) {
+create_rtl_insn_info_table(void) {
     size_t i, nel, pos, next_insn_pos, rtl_insn_info_size;
     int no_event_next_insn_p;
     struct iseq_insn_info_entry *entries;
@@ -2831,16 +2832,16 @@ create_rtl_insn_info_table(rb_iseq_t *iseq) {
 	size_t len, size;
 	
 	fprintf (stderr, "------------------\n");
-	for (pos = 0; pos < iseq->body->iseq_size; pos += len) {
-	    enum ruby_vminsn_type insn = iseq->body->iseq_encoded[pos];
+	for (pos = 0; pos < curr_iseq->body->iseq_size; pos += len) {
+	    enum ruby_vminsn_type insn = curr_iseq->body->iseq_encoded[pos];
 	    
 	    fprintf (stderr, "%lu -> %lu\n", pos, VARR_ADDR(size_t, new_insn_offsets)[pos]);
 	    len = insn_len (insn);
 	}
-	size = iseq->body->insns_info.size;
+	size = curr_iseq->body->insns_info.size;
 	for (i = 0; i < size; i++) {
-	    fprintf (stderr, "pos=%u:lno=%d,events=0x%x\n", iseq->body->insns_info.positions[i],
-		     iseq->body->insns_info.body[i].line_no, iseq->body->insns_info.body[i].events);
+	    fprintf (stderr, "pos=%u:lno=%d,events=0x%x\n", curr_iseq->body->insns_info.positions[i],
+		     curr_iseq->body->insns_info.body[i].line_no, curr_iseq->body->insns_info.body[i].events);
 	}
     }
 #endif
@@ -2856,19 +2857,19 @@ create_rtl_insn_info_table(rb_iseq_t *iseq) {
     for (i = nel = 0; i < rtl_insn_info_size; i++) {
 	pos = VARR_GET(unsigned, rtl_insn_event_positions, i);
 	event = VARR_GET(event_t, rtl_insn_events, i);
-	next_insn_pos = pos + insn_len(iseq->body->rtl_encoded[pos]);
+	next_insn_pos = pos + insn_len(curr_iseq->body->rtl_encoded[pos]);
 	no_event_next_insn_p = (i + 1 < rtl_insn_info_size
 				&& next_insn_pos != VARR_GET(unsigned, rtl_insn_event_positions, i + 1));
 	if ((event.info_entry.events & RUBY_EVENT_LINE)
 	    && (no_event_next_insn_p
-		|| (i + 1 == rtl_insn_info_size && next_insn_pos < iseq->body->rtl_size)))
+		|| (i + 1 == rtl_insn_info_size && next_insn_pos < curr_iseq->body->rtl_size)))
 	    nel++; /* for switch off line event */
     }
-    iseq->body->rtl_insns_info.size = rtl_insn_info_size + nel;
-    if ((iseq->body->rtl_insns_info.body
+    curr_iseq->body->rtl_insns_info.size = rtl_insn_info_size + nel;
+    if ((curr_iseq->body->rtl_insns_info.body
 	 = entries = ALLOC_N(struct iseq_insn_info_entry, rtl_insn_info_size + nel)) == NULL)
 	return FALSE;
-    if ((iseq->body->rtl_insns_info.positions
+    if ((curr_iseq->body->rtl_insns_info.positions
 	 = positions = ALLOC_N(unsigned, rtl_insn_info_size + nel)) == NULL) {
 	free(entries);
 	return FALSE;
@@ -2877,12 +2878,12 @@ create_rtl_insn_info_table(rb_iseq_t *iseq) {
     for (i = nel = 0; i < rtl_insn_info_size; i++) {
 	positions[i + nel] = pos = VARR_GET(unsigned, rtl_insn_event_positions, i);
 	entries[i + nel] = (event = VARR_GET(event_t, rtl_insn_events, i)).info_entry;
-	next_insn_pos = pos + insn_len(iseq->body->rtl_encoded[pos]);
+	next_insn_pos = pos + insn_len(curr_iseq->body->rtl_encoded[pos]);
 	no_event_next_insn_p = (i + 1 < rtl_insn_info_size
 				&& next_insn_pos != VARR_GET(unsigned, rtl_insn_event_positions, i + 1));
 	if ((event.info_entry.events & RUBY_EVENT_LINE)
 	    && (no_event_next_insn_p
-		|| (i + 1 == rtl_insn_info_size && next_insn_pos < iseq->body->rtl_size))) {
+		|| (i + 1 == rtl_insn_info_size && next_insn_pos < curr_iseq->body->rtl_size))) {
 	    nel++; /* for switch off line event */
 	    positions[i + nel] = next_insn_pos;
 	    entries[i + nel].line_no = entries[i + nel - 1].line_no;
@@ -2890,9 +2891,9 @@ create_rtl_insn_info_table(rb_iseq_t *iseq) {
 	}
 	if (entries[i + nel].events & RUBY_EVENT_LINE) {
 	    pos = positions[i + nel];
-	    pos += insn_len(iseq->body->rtl_encoded[pos]);
+	    pos += insn_len(curr_iseq->body->rtl_encoded[pos]);
 	    if ((i + 1 < rtl_insn_info_size && VARR_GET(unsigned, rtl_insn_event_positions, i + 1) != pos)
-		|| (i + 1 == rtl_insn_info_size && pos < iseq->body->rtl_size)) {
+		|| (i + 1 == rtl_insn_info_size && pos < curr_iseq->body->rtl_size)) {
 		nel++;
 		positions[i + nel] = pos;
 		entries[i + nel].line_no = entries[i + nel - 1].line_no;
@@ -2900,19 +2901,20 @@ create_rtl_insn_info_table(rb_iseq_t *iseq) {
 	    }
 	}
     }
-    assert(iseq->body->rtl_insns_info.size == rtl_insn_info_size  + nel);
+    assert(curr_iseq->body->rtl_insns_info.size == rtl_insn_info_size  + nel);
 #if 0
     for (i = 0; i < rtl_insn_info_size + nel; i++)
-	fprintf (stderr, "pos=%u:lno=%d,events=0x%x\n", iseq->body->rtl_insns_info.positions[i],
-		 iseq->body->rtl_insns_info.body[i].line_no, iseq->body->rtl_insns_info.body[i].events);
+	fprintf (stderr, "pos=%u:lno=%d,events=0x%x\n", curr_iseq->body->rtl_insns_info.positions[i],
+		 curr_iseq->body->rtl_insns_info.body[i].line_no, curr_iseq->body->rtl_insns_info.body[i].events);
 #endif
     return TRUE;
 }
 
-/* Create a catch table of the generated RTL of ISEQ.  Return FALSE if
-   we failed to do this.  Set up except_p for ISEQ too.  */
+/* Create a catch table of the generated RTL of the current iseq.
+   Return FALSE if we failed to do this.  Set up except_p for the iseq
+   too.  */
 static int
-create_rtl_catch_table(rb_iseq_t *iseq) {
+create_rtl_catch_table(void) {
     size_t i, size;
     const struct iseq_catch_table *table;
     struct iseq_catch_table *rtl_table;
@@ -2920,11 +2922,11 @@ create_rtl_catch_table(rb_iseq_t *iseq) {
     struct iseq_catch_table_entry *rtl_entries;
     const size_t *addr;
     
-    table = iseq->body->catch_table;
+    table = curr_iseq->body->catch_table;
     if (table == NULL)
 	return TRUE;
     size = table->size;
-    iseq->body->rtl_catch_table = rtl_table = xmalloc(iseq_catch_table_bytes(size));
+    curr_iseq->body->rtl_catch_table = rtl_table = xmalloc(iseq_catch_table_bytes(size));
     if (rtl_table == NULL)
 	return FALSE;
     entries = table->entries;
@@ -2935,9 +2937,9 @@ create_rtl_catch_table(rb_iseq_t *iseq) {
 	rtl_entries[i] = entries[i];
 	/* Currently there might be garbage in the entry.  So don't
 	   translate it.  */
-	if (entries[i].start >= iseq->body->iseq_size
-	    || entries[i].end >= iseq->body->iseq_size
-	    || entries[i].cont >= iseq->body->iseq_size)
+	if (entries[i].start >= curr_iseq->body->iseq_size
+	    || entries[i].end >= curr_iseq->body->iseq_size
+	    || entries[i].cont >= curr_iseq->body->iseq_size)
 	    continue;
 	rtl_entries[i].start = addr[rtl_entries[i].start];
 	rtl_entries[i].end = addr[rtl_entries[i].end];
@@ -2946,29 +2948,29 @@ create_rtl_catch_table(rb_iseq_t *iseq) {
     return TRUE;
 }
 
-/* Create call data for RTL part of ISEQ.  Return FALSE if we failed
-   to do this.  */
+/* Create call data for RTL part of the current iseq.  Return FALSE if
+   we failed to do this.  */
 static int
-create_cd_data(rb_iseq_t *iseq) {
+create_cd_data(void) {
     struct rb_call_data *call_data_addr;
 
     call_data_addr
       = ((struct rb_call_data *)
-	 ruby_xmalloc(sizeof(struct rb_call_data) * iseq->body->ci_size +
-		      sizeof(struct rb_call_data_with_kwarg) * iseq->body->ci_kw_size));
+	 ruby_xmalloc(sizeof(struct rb_call_data) * curr_iseq->body->ci_size +
+		      sizeof(struct rb_call_data_with_kwarg) * curr_iseq->body->ci_kw_size));
     if (call_data_addr == NULL)
 	return FALSE;
-    iseq->body->cd_size = iseq->body->ci_size;
-    iseq->body->cd_entries = call_data_addr;
-    iseq->body->cd_kw_size = iseq->body->ci_kw_size;
+    curr_iseq->body->cd_size = curr_iseq->body->ci_size;
+    curr_iseq->body->cd_entries = call_data_addr;
+    curr_iseq->body->cd_kw_size = curr_iseq->body->ci_kw_size;
     return TRUE;
 }
 
-/* Modify optional param code offsets for generated RTL of ISEQ.  */
+/* Modify optional param code offsets for generated RTL of the current iseq.  */
 static void
-setup_opt_table(rb_iseq_t *iseq) {
-    int i, opt_num = iseq->body->param.opt_num;
-    VALUE *opt_table = iseq->body->param.opt_table;
+setup_opt_table(void) {
+    int i, opt_num = curr_iseq->body->param.opt_num;
+    VALUE *opt_table = curr_iseq->body->param.opt_table;
     
     if (opt_num == 0)
 	return;
@@ -2987,45 +2989,45 @@ rtl_gen(rb_iseq_t *iseq) {
     if (RUBY_SETJMP(rtl_gen_jump_buf) != 0)
 	return FALSE;
     curr_iseq = iseq;
-    if (! create_cd_data(iseq))
+    if (! create_cd_data())
 	return FALSE;
-    initialize_loc_stack_count(iseq);
+    initialize_loc_stack_count();
 #if RTL_GEN_DEBUG
     if (rtl_gen_debug_p) {
 	fprintf(stderr, "------------%s@%s------------\n",
-		RSTRING_PTR(iseq->body->location.label), RSTRING_PTR(rb_iseq_path(iseq)));
+		RSTRING_PTR(curr_iseq->body->location.label), RSTRING_PTR(rb_iseq_path(curr_iseq)));
     }
 #endif
     VARR_TRUNC(long, insn_info_entry_ind, 0);
-    size = iseq->body->iseq_size;
+    size = curr_iseq->body->iseq_size;
     /* Initiate INSN_INFO_ENTRY_IND: */
     for (pos = i = 0; pos < size; pos++) {
 	VARR_PUSH(long, insn_info_entry_ind, -1);
-	if (i < iseq->body->insns_info.size && pos == iseq->body->insns_info.positions[i]) {
+	if (i < curr_iseq->body->insns_info.size && pos == curr_iseq->body->insns_info.positions[i]) {
 	    /* Ignore positions to switch off line events -- we will add them later.  */
-	    if (iseq->body->insns_info.body[i].events != 0
+	    if (curr_iseq->body->insns_info.body[i].events != 0
 		|| i == 0
-		|| (iseq->body->insns_info.body[i - 1].events & RUBY_EVENT_LINE) == 0
-		|| iseq->body->insns_info.body[i - 1].line_no != iseq->body->insns_info.body[i].line_no)
+		|| (curr_iseq->body->insns_info.body[i - 1].events & RUBY_EVENT_LINE) == 0
+		|| curr_iseq->body->insns_info.body[i - 1].line_no != curr_iseq->body->insns_info.body[i].line_no)
 		VARR_SET(long, insn_info_entry_ind, pos, i);
 	    i++;
 	}
     }
     /* First pass on stack insns:  */
-    find_stack_values_on_labels(iseq);
+    find_stack_values_on_labels();
     /* Second pass on stack insns: */
-    translate(iseq);
-    iseq->body->rtl_encoded = ALLOC_N(VALUE, VARR_LENGTH(VALUE, iseq_rtl));
-    iseq->body->rtl_size = VARR_LENGTH(VALUE, iseq_rtl);
-    iseq->body->temp_vars_num = max_stack_depth;
-    if (iseq->body->rtl_encoded == NULL)
+    translate();
+    curr_iseq->body->rtl_encoded = ALLOC_N(VALUE, VARR_LENGTH(VALUE, iseq_rtl));
+    curr_iseq->body->rtl_size = VARR_LENGTH(VALUE, iseq_rtl);
+    curr_iseq->body->temp_vars_num = max_stack_depth;
+    if (curr_iseq->body->rtl_encoded == NULL)
       return FALSE;
-    MEMMOVE(iseq->body->rtl_encoded, VARR_ADDR(VALUE, iseq_rtl), VALUE, iseq->body->rtl_size);
+    MEMMOVE(curr_iseq->body->rtl_encoded, VARR_ADDR(VALUE, iseq_rtl), VALUE, curr_iseq->body->rtl_size);
     /* Change branch destinations:  */
     for (i = 0; i < VARR_LENGTH(branch_target_loc, branch_target_locs); i++) {
 	loc = VARR_ADDR(branch_target_loc, branch_target_locs)[i];
 	if (loc.offset == 0) {
-	    CDHASH hash = iseq->body->rtl_encoded[loc.next_insn_pc - 2];
+	    CDHASH hash = curr_iseq->body->rtl_encoded[loc.next_insn_pc - 2];
 	    struct hash_label_transform_arg arg;
 
 	    arg.hash = hash;
@@ -3035,15 +3037,15 @@ rtl_gen(rb_iseq_t *iseq) {
 	    change_hash_values(hash, &arg);
 	    RB_OBJ_FREEZE(hash);
 	} else {
-	    dest = iseq->body->rtl_encoded[loc.next_insn_pc - loc.offset];
+	    dest = curr_iseq->body->rtl_encoded[loc.next_insn_pc - loc.offset];
 	    new_dest = VARR_ADDR(size_t, new_insn_offsets)[dest];
-	    iseq->body->rtl_encoded[loc.next_insn_pc - loc.offset] = new_dest - loc.next_insn_pc;
+	    curr_iseq->body->rtl_encoded[loc.next_insn_pc - loc.offset] = new_dest - loc.next_insn_pc;
 	}
     }
-    setup_opt_table(iseq);
-    if (! create_rtl_insn_info_table(iseq))
+    setup_opt_table();
+    if (! create_rtl_insn_info_table())
 	return FALSE;
-    return create_rtl_catch_table(iseq);
+    return create_rtl_catch_table();
 }
 
 /* Initiate stack insns to RTL generator.  Return FALSE if we failed
