@@ -4005,13 +4005,30 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *p
 	    reg_cfp->pc--;
 	}
 	if (event = (events & (RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN))) {
+	    VALUE v;
+	    int insn;
+
 	    VM_ASSERT(event == RUBY_EVENT_END ||
 		      event == RUBY_EVENT_RETURN  ||
 		      event == RUBY_EVENT_B_RETURN);
-	    reg_cfp->pc++;
+#if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
+            insn = rb_vm_insn_addr2insn((void *)reg_cfp->pc[0]);
+#else
+            insn = (int)reg_cfp->pc[0];
+#endif
+	    if (insn == BIN(trace_val_ret)) {
+	      v = reg_cfp->pc[1];
+	    } else if (insn == BIN(trace_loc_ret) || insn == BIN(trace_temp_ret)) {
+	      ptrdiff_t offset = reg_cfp->pc[1];
+	      
+	      v = *((offset < 0 ? reg_cfp->bp : reg_cfp->ep) - offset);
+	    } else {
+	      v = TOPN(0);
+	    }
+	    reg_cfp->pc += 2;
 	    vm_dtrace(event, ec);
-	    EXEC_EVENT_HOOK(ec, event, GET_SELF(), 0, 0, 0, TOPN(0));
-	    reg_cfp->pc--;
+	    EXEC_EVENT_HOOK(ec, event, GET_SELF(), 0, 0, 0, v);
+	    reg_cfp->pc -= 2;
 	}
     }
 }

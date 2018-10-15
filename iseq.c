@@ -1569,6 +1569,7 @@ get_insn_info_succinct_bitvector(const rb_iseq_t *iseq, size_t pos, int rtl_p)
 	int index;
 	VM_ASSERT(info->succ_index_table != NULL);
 	index = succ_index_lookup(info->succ_index_table, (int)pos);
+	VM_ASSERT(index > 0);
 	return &insns_info[index-1];
     }
 }

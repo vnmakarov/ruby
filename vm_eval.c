@@ -1311,6 +1311,13 @@ eval_string_with_cref(VALUE self, VALUE src, rb_cref_t *cref, VALUE file, int li
 	rb_exc_raise(ec->errinfo);
     }
 
+#if 0
+    if (getenv("MRI_EVAL_RTL_PRINT"))
+    {
+      VALUE str = rb_iseq_disasm(iseq, *getenv("MRI_EVAL_RTL_PRINT")!=0);
+      printf("%s\n", StringValueCStr(str));
+    }
+#endif
     /* TODO: what the code checking? */
     if (!cref && block.as.captured.code.val) {
 	rb_cref_t *orig_cref = rb_vm_get_cref(vm_block_ep(&block));
@@ -1332,6 +1339,13 @@ eval_string_with_scope(VALUE scope, VALUE src, VALUE file, int line)
 	rb_exc_raise(ec->errinfo);
     }
 
+#if 0
+    if (getenv("MRI_EVAL_RTL_PRINT"))
+    {
+      VALUE str = rb_iseq_disasm(iseq, *getenv("MRI_EVAL_RTL_PRINT")!=0);
+      printf("%s\n", StringValueCStr(str));
+    }
+#endif
     vm_set_eval_stack(ec, iseq, NULL, &bind->block);
 
     /* save new env */
