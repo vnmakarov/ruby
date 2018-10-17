@@ -317,7 +317,7 @@ val2temp_f(rb_control_frame_t *cfp, VALUE *res, VALUE val)
 /* Check that sp of frame CFP has a default value.  */
 static do_inline void
 check_sp_default(rb_control_frame_t *cfp) {
-    assert(cfp->sp == RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num);
+    RTL_ASSERT(cfp->sp == RTL_GET_BP(cfp) + 1 + cfp->iseq->body->temp_vars_num);
 }
 
 /* Assign string STR to local or temporary variable RES with index
