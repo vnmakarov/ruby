@@ -8903,6 +8903,16 @@ ibf_dump_iseq_each(struct ibf_dump *dump, const rb_iseq_t *iseq)
     dump_body.variable.coverage      = Qnil;
     dump_body.variable.original_iseq = Qnil;
 
+    dump_body.rtl_ary_p = FALSE;
+    dump_body.rtl_encoded = NULL;
+    dump_body.rtl_catch_table = NULL;
+    dump_body.cd_entries = NULL;
+    dump_body.rtl_insns_info.body = NULL;
+    dump_body.rtl_insns_info.positions = NULL;
+#if VM_INSN_INFO_TABLE_IMPL == 2
+    dump_body.rtl_insns_info.succ_index_table = NULL;
+#endif
+    
     IBF_W_ALIGN(struct rb_iseq_constant_body);
     return IBF_WV(dump_body);
 }

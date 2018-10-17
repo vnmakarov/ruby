@@ -410,6 +410,7 @@ class TestISeq < Test::Unit::TestCase
       skip e.message if /compile with coverage/ =~ e.message
       raise
     end
+#    p code
     10.times do
       bin2 = iseq.to_binary
       assert_equal(bin, bin2, message(mesg) {diff hexdump(bin), hexdump(bin2)})

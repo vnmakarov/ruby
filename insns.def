@@ -1867,7 +1867,7 @@ val2uploc
 /* Get a block parameter. */
 DEFINE_INSN
 get_block_param
-(tindex_t res, lindex_t idx, rb_num_t level)
+(tindex_t res, sindex_t idx, rb_num_t level)
 ()
 ()
 {
@@ -1877,7 +1877,7 @@ get_block_param
 /* Set block parameter. */
 DEFINE_INSN
 set_block_param
-(lindex_t idx, rb_num_t level, vindex_t op)
+(sindex_t idx, rb_num_t level, vindex_t op)
 ()
 ()
 {
@@ -1889,7 +1889,7 @@ set_block_param
  */
 DEFINE_INSN
 get_block_param_proxy
-(tindex_t res, lindex_t idx, rb_num_t level)
+(tindex_t res, sindex_t idx, rb_num_t level)
 ()
 ()
 {
@@ -2809,7 +2809,7 @@ concat_array
 
 DEFINE_INSN
 check_keyword
-(tindex_t res, vindex_t kw_bits_index, rb_num_t keyword_index)
+(tindex_t res, sindex_t kw_bits_index, rb_num_t keyword_index)
 ()
 ()
 {
@@ -2818,7 +2818,7 @@ check_keyword
 
 DEFINE_INSN
 bkw
-(OFFSET dst, vindex_t kw_bits_index, rb_num_t keyword_index)
+(OFFSET dst, sindex_t kw_bits_index, rb_num_t keyword_index)
 ()
 ()
 {

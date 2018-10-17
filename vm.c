@@ -63,9 +63,8 @@ rb_vm_ep_local_ep(const VALUE *ep)
     return VM_EP_LEP(ep);
 }
 
-PUREFUNC(static inline const VALUE *VM_CF_LEP(const rb_control_frame_t * const cfp));
-static inline const VALUE *
-VM_CF_LEP(const rb_control_frame_t * const cfp)
+PUREFUNC(static inline const VALUE *
+	 VM_CF_LEP(const rb_control_frame_t * const cfp))
 {
     return VM_EP_LEP(cfp->ep);
 }
@@ -76,9 +75,8 @@ VM_CF_PREV_EP(const rb_control_frame_t * const cfp)
     return VM_ENV_PREV_EP(cfp->ep);
 }
 
-PUREFUNC(static do_inline VALUE VM_CF_BLOCK_HANDLER(const rb_control_frame_t * const cfp));
-static do_inline VALUE
-VM_CF_BLOCK_HANDLER(const rb_control_frame_t * const cfp)
+PUREFUNC(static do_inline VALUE
+	 VM_CF_BLOCK_HANDLER(const rb_control_frame_t * const cfp))
 {
     const VALUE *ep = VM_CF_LEP(cfp);
     return VM_ENV_BLOCK_HANDLER(ep);

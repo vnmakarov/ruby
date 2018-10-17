@@ -1087,6 +1087,29 @@ find_stack_values_on_labels(void) {
 	    }
 #endif
 	    for (start_pos = pos; pos < size;) {
+		if (VARR_ADDR(char, catch_bound_pos_p)[pos]) {
+		    size_t i, len = VARR_LENGTH(stack_slot, stack);
+		    stack_slot slot;
+		    
+		    for (i = 0; i < len; i++) {
+			slot = VARR_ADDR(stack_slot, stack)[i];
+			if (slot.mode != TEMP) {
+			    slot.mode = TEMP;
+			    VARR_ADDR(char, use_only_temp_result_p)[slot.source_insn_pos] = TRUE;
+#ifndef NDEBUG
+			    slot.u.temp = -(vindex_t) i - 1;
+#endif
+			    change_stack_slot(i, slot);
+
+#if RTL_GEN_DEBUG
+			    if (rtl_gen_debug_p) {
+				fprintf(stderr, "     ==Make slot %ld temp at catch bound pos=%ld (producer insn pos=%ld)\n",
+					i, pos, slot.source_insn_pos);
+			    }
+#endif
+			}
+		    }
+		}
 		if (pos != start_pos && VARR_ADDR(char, pos_label_type)[pos] != NO_LABEL) {
 #if RTL_GEN_DEBUG
 		    if (rtl_gen_debug_p) {

@@ -466,7 +466,7 @@ class TestJIT < Test::Unit::TestCase
   def test_jit_output
     out, err = eval_with_jit('5.times { puts "MJIT" }', verbose: 1, min_calls: 5)
     assert_equal("MJIT\n" * 5, out)
-    assert_match(/^#{JIT_SUCCESS_PREFIX}: block in <main>@-e:1 -> .+_ruby_mjit_p\d+u\d+\.c$/, err)
+    assert_match(/^#{JIT_SUCCESS_PREFIX}: block in <main>@-e:1 -> .+_ruby_mjit_p\d+u\d+_\d+\.c$/, err)
     assert_match(/^Successful MJIT finish$/, err)
   end
 
@@ -560,7 +560,7 @@ class TestJIT < Test::Unit::TestCase
     end
 
     assert_equal(
-      success_count, actual,
+      success_count <= actual, true,
       "Expected #{success_count} times of JIT success, but succeeded #{actual} times.\n\n"\
       "script:\n#{code_block(script)}\nstderr:\n#{code_block(err)}",
     )

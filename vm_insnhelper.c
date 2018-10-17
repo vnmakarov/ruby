@@ -1572,7 +1572,7 @@ rb_eql_opt(VALUE obj1, VALUE obj2)
 
 extern VALUE vm_call0(rb_execution_context_t *ec, VALUE, ID, int, const VALUE*, const rb_callable_method_entry_t *);
 
-VALUE
+MJIT_FUNC_EXPORTED VALUE
 check_match(rb_execution_context_t *ec, VALUE pattern, VALUE target, enum vm_check_match_type type)
 {
     switch (type) {
