@@ -4,9 +4,7 @@
 
 # tc_features.rb
 #
-#  Created by James Edward Gray II on 2005-10-31.
-#  Copyright 2005 James Edward Gray II. You can redistribute or modify this code
-#  under the terms of Ruby's license.
+# Created by James Edward Gray II on 2005-10-31.
 
 begin
   require "zlib"
@@ -39,12 +37,12 @@ class TestCSV::Features < TestCSV
 
   def setup
     super
-    @sample_data = <<-END_DATA.gsub(/^ +/, "")
-    line,1,abc
-    line,2,"def\nghi"
+    @sample_data = <<-CSV
+line,1,abc
+line,2,"def\nghi"
 
-    line,4,jkl
-    END_DATA
+line,4,jkl
+    CSV
     @csv = CSV.new(@sample_data)
   end
 
@@ -227,12 +225,12 @@ class TestCSV::Features < TestCSV
   end
 
   # reported by Kev Jackson
-  def test_failing_to_escape_col_sep_bug_fix
+  def test_failing_to_escape_col_sep
     assert_nothing_raised(Exception) { CSV.new(String.new, col_sep: "|") }
   end
 
   # reported by Chris Roos
-  def test_failing_to_reset_headers_in_rewind_bug_fix
+  def test_failing_to_reset_headers_in_rewind
     csv = CSV.new("forename,surname", headers: true, return_headers: true)
     csv.each {|row| assert_predicate row, :header_row?}
     csv.rewind
@@ -240,16 +238,16 @@ class TestCSV::Features < TestCSV
   end
 
   # reported by Dave Burt
-  def test_leading_empty_fields_with_multibyte_col_sep_bug_fix
-    data = <<-END_DATA.gsub(/^\s+/, "")
-    <=><=>A<=>B<=>C
-    1<=>2<=>3
-    END_DATA
+  def test_leading_empty_fields_with_multibyte_col_sep
+    data = <<-CSV
+<=><=>A<=>B<=>C
+1<=>2<=>3
+    CSV
     parsed = CSV.parse(data, col_sep: "<=>")
     assert_equal([[nil, nil, "A", "B", "C"], ["1", "2", "3"]], parsed)
   end
 
-  def test_gzip_reader_bug_fix
+  def test_gzip_reader
     zipped = nil
     assert_nothing_raised(NoMethodError) do
       zipped = CSV.new(
@@ -263,7 +261,7 @@ class TestCSV::Features < TestCSV
     zipped.close
   end if defined?(Zlib::GzipReader)
 
-  def test_gzip_writer_bug_fix
+  def test_gzip_writer
     Tempfile.create(%w"temp .gz") {|tempfile|
       tempfile.close
       file = tempfile.path
@@ -313,7 +311,7 @@ class TestCSV::Features < TestCSV
   def test_inspect_encoding_is_ascii_compatible
     csv = CSV.new("one,two,three\n1,2,3\n".encode("UTF-16BE"))
     assert_send([Encoding, :compatible?,
-                 Encoding.find("US-ASCII"), csv.inspect.encoding],
+                  Encoding.find("US-ASCII"), csv.inspect.encoding],
                 "inspect() was not ASCII compatible.")
   end
 
@@ -321,7 +319,7 @@ class TestCSV::Features < TestCSV
     assert_not_nil(CSV::VERSION)
     assert_instance_of(String, CSV::VERSION)
     assert_predicate(CSV::VERSION, :frozen?)
-    assert_match(/\A\d\.\d\.\d\Z/, CSV::VERSION)
+    assert_match(/\A\d\.\d\.\d\z/, CSV::VERSION)
   end
 
   def test_accepts_comment_skip_lines_option
@@ -352,11 +350,13 @@ class TestCSV::Features < TestCSV
   end
 
   def test_comment_rows_are_ignored_with_heredoc
-    c = CSV.new(<<~EOL, skip_lines: ".")
-    1,foo
-    .2,bar
-    3,baz
+    sample_data = <<~EOL
+      1,foo
+      .2,bar
+      3,baz
     EOL
+
+    c = CSV.new(sample_data, skip_lines: ".")
     assert_equal [["1", "foo"], ["3", "baz"]], c.each.to_a
   end
 

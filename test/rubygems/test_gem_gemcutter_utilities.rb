@@ -8,6 +8,8 @@ class TestGemGemcutterUtilities < Gem::TestCase
 
   def setup
     super
+    # below needed for random testing, class property
+    Gem.configuration.disable_default_gem_server = nil
 
     ENV['RUBYGEMS_HOST'] = nil
     Gem.configuration.rubygems_api_key = nil
@@ -177,8 +179,6 @@ class TestGemGemcutterUtilities < Gem::TestCase
   end
 
   def test_sign_in_with_bad_credentials
-    skip 'Always uses $stdin on windows' if Gem.win_platform?
-
     assert_raises Gem::MockGemUi::TermError do
       util_sign_in ['Access Denied.', 403, 'Forbidden']
     end
@@ -188,8 +188,6 @@ class TestGemGemcutterUtilities < Gem::TestCase
   end
 
   def util_sign_in response, host = nil, args = []
-    skip 'Always uses $stdin on windows' if Gem.win_platform?
-
     email    = 'you@example.com'
     password = 'secret'
 

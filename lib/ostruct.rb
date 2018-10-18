@@ -156,7 +156,8 @@ class OpenStruct
     begin
       @modifiable = true
     rescue
-      raise FrozenError, "can't modify frozen #{self.class}", caller(3)
+      exception_class = defined?(FrozenError) ? FrozenError : RuntimeError
+      raise exception_class, "can't modify frozen #{self.class}", caller(3)
     end
     @table
   end
@@ -294,7 +295,7 @@ class OpenStruct
   def delete_field(name)
     sym = name.to_sym
     begin
-      singleton_class.__send__(:remove_method, sym, "#{sym}=")
+      singleton_class.remove_method(sym, "#{sym}=")
     rescue NameError
     end
     @table.delete(sym) do

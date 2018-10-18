@@ -6207,10 +6207,12 @@ rb_big_pow(VALUE x, VALUE y)
 
   again:
     if (y == INT2FIX(0)) return INT2FIX(1);
+    if (y == INT2FIX(1)) return x;
     if (RB_FLOAT_TYPE_P(y)) {
 	d = RFLOAT_VALUE(y);
-	if ((BIGNUM_NEGATIVE_P(x) && !BIGZEROP(x)) && d != round(d))
-	    return rb_funcall(rb_complex_raw1(x), idPow, 1, y);
+	if ((BIGNUM_NEGATIVE_P(x) && !BIGZEROP(x))) {
+	    return rb_dbl_complex_polar(pow(-rb_big2dbl(x), d), d);
+	}
     }
     else if (RB_BIGNUM_TYPE_P(y)) {
 	y = bignorm(y);
@@ -6222,8 +6224,13 @@ rb_big_pow(VALUE x, VALUE y)
     else if (FIXNUM_P(y)) {
 	yy = FIX2LONG(y);
 
-	if (yy < 0)
-	    return rb_funcall(rb_rational_raw1(x), idPow, 1, y);
+        if (yy < 0) {
+            x = rb_big_pow(x, INT2NUM(-yy));
+            if (RB_INTEGER_TYPE_P(x))
+                return rb_rational_raw(INT2FIX(1), x);
+            else
+                return DBL2NUM(1.0 / NUM2DBL(x));
+        }
 	else {
 	    VALUE z = 0;
 	    SIGNED_VALUE mask;
@@ -6936,7 +6943,7 @@ int_pow_tmp3(VALUE x, VALUE y, VALUE m, int nega_flg)
     z = bignew(zn, 1);
     bary_powm_gmp(BDIGITS(z), zn, BDIGITS(x), xn, BDIGITS(y), yn, BDIGITS(m), mn);
     if (nega_flg & BIGNUM_POSITIVE_P(z)) {
-        z = rb_funcall(z, '-', 1, m);
+        z = rb_big_minus(z, m);
     }
     RB_GC_GUARD(x);
     RB_GC_GUARD(y);
@@ -6946,25 +6953,25 @@ int_pow_tmp3(VALUE x, VALUE y, VALUE m, int nega_flg)
     VALUE tmp = LONG2FIX(1L);
     long yy;
 
-    for (/*NOP*/; ! FIXNUM_P(y); y = rb_funcall(y, rb_intern(">>"), 1, LONG2FIX(1L))) {
-        if (RTEST(rb_funcall(y, rb_intern("odd?"), 0))) {
-            tmp = rb_funcall(tmp, '*', 1, x);
+    for (/*NOP*/; ! FIXNUM_P(y); y = rb_big_rshift(y, LONG2FIX(1L))) {
+        if (RTEST(rb_int_odd_p(y))) {
+            tmp = rb_int_mul(tmp, x);
             tmp = rb_int_modulo(tmp, m);
         }
-        x = rb_funcall(x, '*', 1, x);
+        x = rb_int_mul(x, x);
         x = rb_int_modulo(x, m);
     }
     for (yy = FIX2LONG(y); yy; yy >>= 1L) {
         if (yy & 1L) {
-            tmp = rb_funcall(tmp, '*', 1, x);
+            tmp = rb_int_mul(tmp, x);
             tmp = rb_int_modulo(tmp, m);
         }
-        x = rb_funcall(x, '*', 1, x);
+        x = rb_int_mul(x, x);
         x = rb_int_modulo(x, m);
     }
 
-    if (nega_flg && RTEST(rb_funcall(tmp, rb_intern("positive?"), 0))) {
-        tmp = rb_funcall(tmp, '-', 1, m);
+    if (nega_flg && rb_int_positive_p(tmp)) {
+        tmp = rb_int_minus(tmp, m);
     }
     return tmp;
 #endif
@@ -6981,7 +6988,7 @@ int_pow_tmp1(VALUE x, VALUE y, long mm, int nega_flg)
     long tmp = 1L;
     long yy;
 
-    for (/*NOP*/; ! FIXNUM_P(y); y = rb_funcall(y, idGTGT, 1, LONG2FIX(1L))) {
+    for (/*NOP*/; ! FIXNUM_P(y); y = rb_big_rshift(y, LONG2FIX(1L))) {
         if (RTEST(rb_int_odd_p(y))) {
             tmp = (tmp * xx) % mm;
         }
@@ -7017,7 +7024,7 @@ int_pow_tmp2(VALUE x, VALUE y, long mm, int nega_flg)
 # define MUL_MODULO(a, b, c) rb_int_modulo(rb_fix_mul_fix((a), (b)), (c))
 #endif
 
-    for (/*NOP*/; ! FIXNUM_P(y); y = rb_funcall(y, idGTGT, 1, LONG2FIX(1L))) {
+    for (/*NOP*/; ! FIXNUM_P(y); y = rb_big_rshift(y, LONG2FIX(1L))) {
         if (RTEST(rb_int_odd_p(y))) {
             tmp2 = MUL_MODULO(tmp2, xx, m);
         }
@@ -7068,34 +7075,35 @@ rb_int_powm(int const argc, VALUE * const argv, VALUE const num)
         if ( ! RB_INTEGER_TYPE_P(b)) {
             rb_raise(rb_eTypeError, "Integer#pow() 2nd argument not allowed unless a 1st argument is integer");
         }
-        if (rb_num_negative_int_p(b)) {
+        if (rb_int_negative_p(b)) {
             rb_raise(rb_eRangeError, "Integer#pow() 1st argument cannot be negative when 2nd argument specified");
         }
         if (!RB_INTEGER_TYPE_P(m)) {
             rb_raise(rb_eTypeError, "Integer#pow() 2nd argument not allowed unless all arguments are integers");
         }
 
-        if (rb_num_negative_int_p(m)) {
-            m = rb_funcall(m, idUMinus, 0);
+        if (rb_int_negative_p(m)) {
+            m = rb_int_uminus(m);
             nega_flg = 1;
         }
 
-        if (!rb_num_positive_int_p(m)) {
-            rb_num_zerodiv();
-        }
         if (FIXNUM_P(m)) {
             long const half_val = (long)HALF_LONG_MSB;
             long const mm = FIX2LONG(m);
+            if (!mm) rb_num_zerodiv();
             if (mm <= half_val) {
                 return int_pow_tmp1(rb_int_modulo(a, m), b, mm, nega_flg);
-            } else {
+            }
+            else {
                 return int_pow_tmp2(rb_int_modulo(a, m), b, mm, nega_flg);
             }
-        } else if (RB_TYPE_P(m, T_BIGNUM)) {
+        }
+        else {
+            if (rb_bigzero_p(m)) rb_num_zerodiv();
             return int_pow_tmp3(rb_int_modulo(a, m), b, m, nega_flg);
         }
     }
-    UNREACHABLE;
+    UNREACHABLE_RETURN(Qnil);
 }
 
 /*

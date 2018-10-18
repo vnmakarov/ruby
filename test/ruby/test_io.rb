@@ -49,8 +49,8 @@ class TestIO < Test::Unit::TestCase
     end
     flunk("timeout") unless wt.join(10) && rt.join(10)
   ensure
-    w.close unless !w || w.closed?
-    r.close unless !r || r.closed?
+    w&.close
+    r&.close
     (wt.kill; wt.join) if wt
     (rt.kill; rt.join) if rt
     raise we if we
@@ -62,8 +62,8 @@ class TestIO < Test::Unit::TestCase
     begin
       yield r, w
     ensure
-      r.close unless r.closed?
-      w.close unless w.closed?
+      r.close
+      w.close
     end
   end
 
@@ -85,11 +85,16 @@ class TestIO < Test::Unit::TestCase
   end
 
   def trapping_usr2
-    @usr1_rcvd  = 0
-    trap(:USR2) { @usr1_rcvd += 1 }
-    yield
+    @usr2_rcvd  = 0
+    r, w = IO.pipe
+    trap(:USR2) do
+      w.write([@usr2_rcvd += 1].pack('L'))
+    end
+    yield r
   ensure
     trap(:USR2, "DEFAULT")
+    w&.close
+    r&.close
   end
 
   def test_pipe
@@ -545,6 +550,7 @@ class TestIO < Test::Unit::TestCase
     def test_copy_stream_no_busy_wait
       # JIT has busy wait on GC. It's hard to test this with JIT.
       skip "MJIT has busy wait on GC. We can't test this with JIT." if RubyVM::MJIT.enabled?
+      skip "multiple threads already active" if Thread.list.size > 1
 
       msg = 'r58534 [ruby-core:80969] [Backport #13533]'
       IO.pipe do |r,w|
@@ -567,7 +573,6 @@ class TestIO < Test::Unit::TestCase
               w2.nonblock = true
             rescue Errno::EBADF
               skip "nonblocking IO for pipe is not implemented"
-              break
             end
             s = w2.syswrite("a" * 100000)
             t = Thread.new { sleep 0.1; r2.read }
@@ -633,7 +638,7 @@ class TestIO < Test::Unit::TestCase
           assert_equal(bigcontent[30, 40], File.read("bigdst"))
           assert_equal(0, f.pos)
         rescue NotImplementedError
-          #skip "pread(2) is not implemtented."
+          #skip "pread(2) is not implemented."
         end
       }
     }
@@ -865,7 +870,7 @@ class TestIO < Test::Unit::TestCase
         rescue Errno::EBADF
           skip "nonblocking IO for pipe is not implemented"
         end
-        trapping_usr2 do
+        trapping_usr2 do |rd|
           nr = 30
           begin
             pid = fork do
@@ -879,7 +884,7 @@ class TestIO < Test::Unit::TestCase
             nr.times do
               assert_equal megacontent.bytesize, IO.copy_stream("megasrc", s1)
             end
-            assert_equal(1, @usr1_rcvd)
+            assert_equal(1, rd.read(4).unpack1('L'))
           ensure
             s1.close
             _, status = Process.waitpid2(pid) if pid
@@ -1183,10 +1188,11 @@ class TestIO < Test::Unit::TestCase
 
   def test_copy_stream_to_duplex_io
     result = IO.pipe {|a,w|
-      Thread.start {w.puts "yes"; w.close}
+      th = Thread.start {w.puts "yes"; w.close}
       IO.popen([EnvUtil.rubybin, '-pe$_="#$.:#$_"'], "r+") {|b|
         IO.copy_stream(a, b)
         b.close_write
+        assert_join_threads([th])
         b.read
       }
     }
@@ -1859,7 +1865,6 @@ class TestIO < Test::Unit::TestCase
 
   def test_pos
     make_tempfile {|t|
-
       open(t.path, IO::RDWR|IO::CREAT|IO::TRUNC, 0600) do |f|
         f.write "Hello"
         assert_equal(5, f.pos)
@@ -2258,13 +2263,13 @@ class TestIO < Test::Unit::TestCase
 
   def test_reopen_inherit
     mkcdtmpdir {
-      system(EnvUtil.rubybin, '-e', <<"End")
+      system(EnvUtil.rubybin, '-e', <<-"End")
         f = open("out", "w")
         STDOUT.reopen(f)
         STDERR.reopen(f)
         system(#{EnvUtil.rubybin.dump}, '-e', 'STDOUT.print "out"')
         system(#{EnvUtil.rubybin.dump}, '-e', 'STDERR.print "err"')
-End
+      End
       assert_equal("outerr", File.read("out"))
     }
   end
@@ -2325,7 +2330,7 @@ End
       t
     end
   ensure
-    t.close(true) if t and block_given?
+    t&.close(true) if block_given?
   end
 
   def test_reopen_encoding
@@ -2565,7 +2570,6 @@ End
     return unless defined?(Fcntl::F_GETFL)
 
     make_tempfile {|t|
-
       fd = IO.sysopen(t.path, "w")
       assert_kind_of(Integer, fd)
       %w[r r+ w+ a+].each do |mode|
@@ -2683,7 +2687,7 @@ __END__
     end;
     10.times.map do
       Thread.start do
-        assert_in_out_err([], src) {|stdout, stderr|
+        assert_in_out_err([], src, timeout: 20) {|stdout, stderr|
           assert_no_match(/hi.*hi/, stderr.join, bug3585)
         }
       end
@@ -2691,7 +2695,6 @@ __END__
   end
 
   def test_flush_in_finalizer1
-    require 'tempfile'
     bug3910 = '[ruby-dev:42341]'
     tmp = Tempfile.open("bug3910") {|t|
       path = t.path
@@ -2717,7 +2720,6 @@ __END__
   end
 
   def test_flush_in_finalizer2
-    require 'tempfile'
     bug3910 = '[ruby-dev:42341]'
     Tempfile.open("bug3910") {|t|
       path = t.path
@@ -2851,7 +2853,7 @@ __END__
   end
 
   def test_fcntl_lock_linux
-    pad=0
+    pad = 0
     Tempfile.create(self.class.name) do |f|
       r, w = IO.pipe
       pid = fork do
@@ -3160,7 +3162,7 @@ __END__
         f.ioctl(tiocgwinsz, winsize)
       }
     ensure
-      f.close if f
+      f&.close
     end
   end if /^(?:i.?86|x86_64)-linux/ =~ RUBY_PLATFORM
 
@@ -3553,8 +3555,17 @@ __END__
     end
   end if File::BINARY != 0
 
+  def test_exclusive_mode
+    make_tempfile do |t|
+      assert_raise(Errno::EEXIST){ open(t.path, 'wx'){} }
+      assert_raise(ArgumentError){ open(t.path, 'rx'){} }
+      assert_raise(ArgumentError){ open(t.path, 'ax'){} }
+    end
+  end
+
   def test_race_gets_and_close
-    assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}")
+    opt = { signal: :ABRT, timeout: 200 }
+    assert_separately([], "#{<<-"begin;"}\n#{<<-"end;"}", opt)
     bug13076 = '[ruby-core:78845] [Bug #13076]'
     begin;
       10.times do |i|
@@ -3576,9 +3587,9 @@ __END__
           w.close
           r.close
         end
-        assert_nothing_raised(IOError, bug13076) {
-          t.each(&:join)
-        }
+        t.each do |th|
+          assert_same(th, th.join(2), bug13076)
+        end
       end
     end;
   end
@@ -3701,6 +3712,7 @@ __END__
     end
 
     def test_write_no_garbage
+      skip "multiple threads already active" if Thread.list.size > 1
       res = {}
       ObjectSpace.count_objects(res) # creates strings on first call
       [ 'foo'.b, '*' * 24 ].each do |buf|
@@ -3760,4 +3772,94 @@ __END__
       con.close
     end
   end if Socket.const_defined?(:MSG_OOB)
+
+  def test_recycled_fd_close
+    dot = -'.'
+    IO.pipe do |sig_rd, sig_wr|
+      noex = Thread.new do # everything right and never see exceptions :)
+        until sig_rd.wait_readable(0)
+          IO.pipe do |r, w|
+            th = Thread.new { r.read(1) }
+            w.write(dot)
+
+            # XXX not sure why this is needed on Linux, otherwise
+            # the "good" reader thread doesn't always join properly
+            # because the reader never sees the first write
+            if RUBY_PLATFORM =~ /linux/
+              # assert_equal can fail if this is another char...
+              w.write(dot)
+            end
+
+            assert_same th, th.join(15), '"good" reader timeout'
+            assert_equal(dot, th.value)
+          end
+        end
+        sig_rd.read(4)
+      end
+      1000.times do |i| # stupid things and make exceptions:
+        IO.pipe do |r,w|
+          th = Thread.new do
+            begin
+              while r.gets
+              end
+            rescue IOError => e
+              e
+            end
+          end
+          Thread.pass until th.stop?
+
+          # XXX not sure why, this reduces Linux CI failures
+          assert_nil th.join(0.001)
+
+          r.close
+          assert_same th, th.join(30), '"bad" reader timeout'
+          assert_match(/stream closed/, th.value.message)
+        end
+      end
+      sig_wr.write 'done'
+      assert_same noex, noex.join(20), '"good" writer timeout'
+      assert_equal 'done', noex.value ,'r63216'
+    end
+  end
+
+  def test_select_leak
+    skip 'MJIT uses too much memory' if RubyVM::MJIT.enabled?
+    # avoid malloc arena explosion from glibc and jemalloc:
+    env = {
+      'MALLOC_ARENA_MAX' => '1',
+      'MALLOC_ARENA_TEST' => '1',
+      'MALLOC_CONF' => 'narenas:1',
+    }
+    assert_no_memory_leak([env], <<-"end;", <<-"end;", rss: true, timeout: 60)
+      r, w = IO.pipe
+      rset = [r]
+      wset = [w]
+      exc = StandardError.new(-"select used to leak on exception")
+      exc.set_backtrace([])
+      Thread.new { IO.select(rset, wset, nil, 0) }.join
+    end;
+      th = Thread.new do
+        Thread.handle_interrupt(StandardError => :on_blocking) do
+          begin
+            IO.select(rset, wset)
+          rescue
+            retry
+          end while true
+        end
+      end
+      50_000.times do
+        Thread.pass until th.stop?
+        th.raise(exc)
+      end
+      th.kill
+      th.join
+    end;
+  end
+
+  def test_external_encoding_index
+    IO.pipe {|r, w|
+      assert_raise(TypeError) {Marshal.dump(r)}
+      assert_raise(TypeError) {Marshal.dump(w)}
+    }
+  end
 end

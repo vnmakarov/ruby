@@ -539,6 +539,16 @@ describe "Marshal.dump" do
 
   end
 
+  describe "when passed a StringIO" do
+
+    it "should raise an error" do
+      require "stringio"
+
+      lambda { Marshal.dump(StringIO.new) }.should raise_error(TypeError)
+    end
+
+  end
+
   it "raises a TypeError if marshalling a Method instance" do
     lambda { Marshal.dump(Marshal.method(:dump)) }.should raise_error(TypeError)
   end
@@ -554,6 +564,11 @@ describe "Marshal.dump" do
 
   it "raises a TypeError if dumping a MatchData instance" do
     lambda { Marshal.dump(/(.)/.match("foo")) }.should raise_error(TypeError)
+  end
+
+  it "raises a TypeError if dumping a Mutex instance" do
+    m = Mutex.new
+    lambda { Marshal.dump(m) }.should raise_error(TypeError)
   end
 
   it "returns an untainted string if object is untainted" do

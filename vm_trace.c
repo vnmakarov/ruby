@@ -25,6 +25,7 @@
 #include "ruby/debug.h"
 
 #include "vm_core.h"
+#include "mjit.h"
 #include "iseq.h"
 #include "eval_intern.h"
 
@@ -68,6 +69,9 @@ update_global_event_hook(rb_event_flag_t vm_events)
     rb_event_flag_t enabled_iseq_events = ruby_vm_event_enabled_flags & ISEQ_TRACE_EVENTS;
 
     if (new_iseq_events & ~enabled_iseq_events) {
+        /* Stop calling all JIT-ed code. Compiling trace insns is not supported for now. */
+        mjit_call_p = FALSE;
+
 	/* write all ISeqs iff new events are added */
 	rb_iseq_trace_set_all(new_iseq_events | enabled_iseq_events);
     }
@@ -805,6 +809,45 @@ fill_id_and_klass(rb_trace_arg_t *trace_arg)
 }
 
 VALUE
+rb_tracearg_parameters(rb_trace_arg_t *trace_arg)
+{
+    switch(trace_arg->event) {
+      case RUBY_EVENT_CALL:
+      case RUBY_EVENT_RETURN:
+      case RUBY_EVENT_B_CALL:
+      case RUBY_EVENT_B_RETURN: {
+	const rb_control_frame_t *cfp = rb_vm_get_ruby_level_next_cfp(trace_arg->ec, trace_arg->cfp);
+	if (cfp) {
+            int is_proc = 0;
+            if (VM_FRAME_TYPE(cfp) == VM_FRAME_MAGIC_BLOCK && !VM_FRAME_LAMBDA_P(cfp)) {
+                is_proc = 1;
+            }
+	    return rb_iseq_parameters(cfp->iseq, is_proc);
+	}
+	break;
+      }
+      case RUBY_EVENT_C_CALL:
+      case RUBY_EVENT_C_RETURN: {
+	fill_id_and_klass(trace_arg);
+	if (trace_arg->klass && trace_arg->id) {
+	    const rb_method_entry_t *me;
+	    VALUE iclass = Qnil;
+	    me = rb_method_entry_without_refinements(trace_arg->klass, trace_arg->id, &iclass);
+	    return rb_unnamed_parameters(rb_method_entry_arity(me));
+	}
+	break;
+      }
+      case RUBY_EVENT_RAISE:
+      case RUBY_EVENT_LINE:
+      case RUBY_EVENT_CLASS:
+      case RUBY_EVENT_END:
+	rb_raise(rb_eRuntimeError, "not supported by this event");
+	break;
+    }
+    return Qnil;
+}
+
+VALUE
 rb_tracearg_method_id(rb_trace_arg_t *trace_arg)
 {
     fill_id_and_klass(trace_arg);
@@ -917,6 +960,15 @@ static VALUE
 tracepoint_attr_path(VALUE tpval)
 {
     return rb_tracearg_path(get_trace_arg());
+}
+
+/*
+ * Return the parameters of the method or block that the current hook belongs to
+ */
+static VALUE
+tracepoint_attr_parameters(VALUE tpval)
+{
+    return rb_tracearg_parameters(get_trace_arg());
 }
 
 /*
@@ -1502,6 +1554,7 @@ Init_vm_trace(void)
     rb_define_method(rb_cTracePoint, "event", tracepoint_attr_event, 0);
     rb_define_method(rb_cTracePoint, "lineno", tracepoint_attr_lineno, 0);
     rb_define_method(rb_cTracePoint, "path", tracepoint_attr_path, 0);
+    rb_define_method(rb_cTracePoint, "parameters", tracepoint_attr_parameters, 0);
     rb_define_method(rb_cTracePoint, "method_id", tracepoint_attr_method_id, 0);
     rb_define_method(rb_cTracePoint, "callee_id", tracepoint_attr_callee_id, 0);
     rb_define_method(rb_cTracePoint, "defined_class", tracepoint_attr_defined_class, 0);
@@ -1517,12 +1570,6 @@ Init_vm_trace(void)
     Init_postponed_job();
 }
 
-typedef struct rb_postponed_job_struct {
-    unsigned long flags; /* reserved */
-    rb_postponed_job_func_t func;
-    void *data;
-} rb_postponed_job_t;
-
 #define MAX_POSTPONED_JOB                  1000
 #define MAX_POSTPONED_JOB_SPECIAL_ADDITION   24
 
@@ -1530,38 +1577,25 @@ static void
 Init_postponed_job(void)
 {
     rb_vm_t *vm = GET_VM();
-    vm->postponed_job_buffer = ALLOC_N(rb_postponed_job_t, MAX_POSTPONED_JOB);
-    vm->postponed_job_index = 0;
+    vm->postponed_jobs = st_init_numtable();
 }
 
 enum postponed_job_register_result {
-    PJRR_SUCESS      = 0,
-    PJRR_FULL        = 1,
-    PJRR_INTERRUPTED = 2
+    PJRR_SUCCESS     = 0,
+    PJRR_FULL        = 1
 };
 
 static enum postponed_job_register_result
 postponed_job_register(rb_execution_context_t *ec, rb_vm_t *vm,
-		       unsigned int flags, rb_postponed_job_func_t func, void *data, int max, int expected_index)
+		       unsigned int flags, rb_postponed_job_func_t func, void *data, size_t max)
 {
-    rb_postponed_job_t *pjob;
+    if (vm->postponed_jobs->num_entries >= max) return PJRR_FULL;
 
-    if (expected_index >= max) return PJRR_FULL; /* failed */
-
-    if (ATOMIC_CAS(vm->postponed_job_index, expected_index, expected_index+1) == expected_index) {
-	pjob = &vm->postponed_job_buffer[expected_index];
-    }
-    else {
-	return PJRR_INTERRUPTED;
-    }
-
-    pjob->flags = flags;
-    pjob->func = func;
-    pjob->data = data;
+    st_add_direct(vm->postponed_jobs, (st_index_t)func, (st_data_t)data);
 
     RUBY_VM_SET_POSTPONED_JOB_INTERRUPT(ec);
 
-    return PJRR_SUCESS;
+    return PJRR_SUCCESS;
 }
 
 
@@ -1572,11 +1606,9 @@ rb_postponed_job_register(unsigned int flags, rb_postponed_job_func_t func, void
     rb_execution_context_t *ec = GET_EC();
     rb_vm_t *vm = rb_ec_vm_ptr(ec);
 
-  begin:
-    switch (postponed_job_register(ec, vm, flags, func, data, MAX_POSTPONED_JOB, vm->postponed_job_index)) {
-      case PJRR_SUCESS     : return 1;
+    switch (postponed_job_register(ec, vm, flags, func, data, MAX_POSTPONED_JOB )) {
+      case PJRR_SUCCESS    : return 1;
       case PJRR_FULL       : return 0;
-      case PJRR_INTERRUPTED: goto begin;
       default: rb_bug("unreachable\n");
     }
 }
@@ -1587,22 +1619,14 @@ rb_postponed_job_register_one(unsigned int flags, rb_postponed_job_func_t func, 
 {
     rb_execution_context_t *ec = GET_EC();
     rb_vm_t *vm = rb_ec_vm_ptr(ec);
-    rb_postponed_job_t *pjob;
-    int i, index;
 
-  begin:
-    index = vm->postponed_job_index;
-    for (i=0; i<index; i++) {
-	pjob = &vm->postponed_job_buffer[i];
-	if (pjob->func == func) {
-	    RUBY_VM_SET_POSTPONED_JOB_INTERRUPT(ec);
-	    return 2;
-	}
+    if (st_lookup(vm->postponed_jobs, (st_data_t)func, 0)) {
+        RUBY_VM_SET_POSTPONED_JOB_INTERRUPT(ec);
+        return 2;
     }
-    switch (postponed_job_register(ec, vm, flags, func, data, MAX_POSTPONED_JOB + MAX_POSTPONED_JOB_SPECIAL_ADDITION, index)) {
-      case PJRR_SUCESS     : return 1;
+    switch (postponed_job_register(ec, vm, flags, func, data, MAX_POSTPONED_JOB + MAX_POSTPONED_JOB_SPECIAL_ADDITION)) {
+      case PJRR_SUCCESS    : return 1;
       case PJRR_FULL       : return 0;
-      case PJRR_INTERRUPTED: goto begin;
       default: rb_bug("unreachable\n");
     }
 }
@@ -1621,12 +1645,12 @@ rb_postponed_job_flush(rb_vm_t *vm)
     {
 	EC_PUSH_TAG(ec);
 	if (EC_EXEC_TAG() == TAG_NONE) {
-	    int index;
-	    while ((index = vm->postponed_job_index) > 0) {
-		if (ATOMIC_CAS(vm->postponed_job_index, index, index-1) == index) {
-		    rb_postponed_job_t *pjob = &vm->postponed_job_buffer[index-1];
-		    (*pjob->func)(pjob->data);
-		}
+            st_data_t k, v;
+            while (st_shift(vm->postponed_jobs, &k, &v)) {
+                rb_postponed_job_func_t func = (rb_postponed_job_func_t)k;
+                void *arg = (void *)v;
+
+                func(arg);
 	    }
 	}
 	EC_POP_TAG();

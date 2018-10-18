@@ -29,6 +29,12 @@ class TestGemCommandManager < Gem::TestCase
                  e.message
   end
 
+  def test_find_alias_command
+    command = @command_manager.find_command 'i'
+
+    assert_kind_of Gem::Commands::InstallCommand, command
+  end
+
   def test_find_command_ambiguous_exact
     ins_command = Class.new
     Gem::Commands.send :const_set, :InsCommand, ins_command
@@ -114,8 +120,8 @@ class TestGemCommandManager < Gem::TestCase
       assert_equal :both, check_options[:domain]
       assert_equal true, check_options[:wrappers]
       assert_equal Gem::Requirement.default, check_options[:version]
-      assert_equal nil, check_options[:install_dir]
-      assert_equal nil, check_options[:bin_dir]
+      assert_nil   check_options[:install_dir]
+      assert_nil   check_options[:bin_dir]
 
       #check settings
       check_options = nil

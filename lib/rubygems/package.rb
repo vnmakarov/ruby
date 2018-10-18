@@ -107,12 +107,24 @@ class Gem::Package
 
   attr_writer :spec
 
-  def self.build spec, skip_validation=false
+  ##
+  # Permission for directories
+  attr_accessor :dir_mode
+
+  ##
+  # Permission for program files
+  attr_accessor :prog_mode
+
+  ##
+  # Permission for other files
+  attr_accessor :data_mode
+
+  def self.build spec, skip_validation=false, strict_validation=false
     gem_file = spec.file_name
 
     package = new gem_file
     package.spec = spec
-    package.build skip_validation
+    package.build skip_validation, strict_validation
 
     gem_file
   end
@@ -148,7 +160,7 @@ class Gem::Package
   def initialize gem, security_policy # :notnew:
     @gem = gem
 
-    @build_time      = Time.now
+    @build_time      = ENV["SOURCE_DATE_EPOCH"] ? Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc : Time.now
     @checksums       = {}
     @contents        = nil
     @digests         = Hash.new { |h, algorithm| h[algorithm] = {} }
@@ -242,12 +254,14 @@ class Gem::Package
   ##
   # Builds this package based on the specification set by #spec=
 
-  def build skip_validation = false
+  def build skip_validation = false, strict_validation = false
+    raise ArgumentError, "skip_validation = true and strict_validation = true are incompatible" if skip_validation && strict_validation
+
     Gem.load_yaml
     require 'rubygems/security'
 
     @spec.mark_version
-    @spec.validate unless skip_validation
+    @spec.validate true, strict_validation unless skip_validation
 
     setup_signer
 
@@ -334,7 +348,7 @@ EOM
   def extract_files destination_dir, pattern = "*"
     verify unless @spec
 
-    FileUtils.mkdir_p destination_dir
+    FileUtils.mkdir_p destination_dir, :mode => dir_mode && 0700
 
     @gem.with_read_io do |io|
       reader = Gem::Package::TarReader.new io
@@ -361,6 +375,7 @@ EOM
   # extracted.
 
   def extract_tar_gz io, destination_dir, pattern = "*" # :nodoc:
+    directories = [] if dir_mode
     open_tar_gz io do |tar|
       tar.each do |entry|
         next unless File.fnmatch pattern, entry.full_name, File::FNM_DOTMATCH
@@ -370,19 +385,20 @@ EOM
         FileUtils.rm_rf destination
 
         mkdir_options = {}
-        mkdir_options[:mode] = entry.header.mode if entry.directory?
+        mkdir_options[:mode] = dir_mode ? 0700 : (entry.header.mode if entry.directory?)
         mkdir =
           if entry.directory? then
             destination
           else
             File.dirname destination
           end
+        directories << mkdir if directories
 
         mkdir_p_safe mkdir, mkdir_options, destination_dir, entry.full_name
 
         File.open destination, 'wb' do |out|
           out.write entry.read
-          FileUtils.chmod entry.header.mode, destination
+          FileUtils.chmod file_mode(entry.header.mode), destination
         end if entry.file?
 
         File.symlink(entry.header.linkname, destination) if entry.symlink?
@@ -390,6 +406,15 @@ EOM
         verbose destination
       end
     end
+
+    if directories
+      directories.uniq!
+      File.chmod(dir_mode, *directories)
+    end
+  end
+
+  def file_mode(mode) # :nodoc:
+    ((mode & 0111).zero? ? data_mode : prog_mode) || mode
   end
 
   ##
@@ -416,11 +441,8 @@ EOM
     raise Gem::Package::PathError.new(filename, destination_dir) if
       filename.start_with? '/'
 
-    destination_dir = realpath destination_dir
-    destination_dir = File.expand_path destination_dir
-
-    destination = File.join destination_dir, filename
-    destination = File.expand_path destination
+    destination_dir = File.expand_path(File.realpath(destination_dir))
+    destination = File.expand_path(File.join(destination_dir, filename))
 
     raise Gem::Package::PathError.new(destination, destination_dir) unless
       destination.start_with? destination_dir + '/'
@@ -429,15 +451,23 @@ EOM
     destination
   end
 
+  def normalize_path(pathname)
+    if Gem.win_platform?
+      pathname.downcase
+    else
+      pathname
+    end
+  end
+
   def mkdir_p_safe mkdir, mkdir_options, destination_dir, file_name
-    destination_dir = realpath File.expand_path(destination_dir)
+    destination_dir = File.realpath(File.expand_path(destination_dir))
     parts = mkdir.split(File::SEPARATOR)
     parts.reduce do |path, basename|
-      path = realpath path  unless path == ""
+      path = File.realpath(path) unless path == ""
       path = File.expand_path(path + File::SEPARATOR + basename)
       lstat = File.lstat path rescue nil
       if !lstat || !lstat.directory?
-        unless path.start_with? destination_dir and (FileUtils.mkdir path, mkdir_options rescue false)
+        unless normalize_path(path).start_with? normalize_path(destination_dir) and (FileUtils.mkdir path, mkdir_options rescue false)
           raise Gem::Package::PathError.new(file_name, destination_dir)
         end
       end
@@ -455,8 +485,7 @@ EOM
     when 'metadata.gz' then
       args = [entry]
       args << { :external_encoding => Encoding::UTF_8 } if
-        Object.const_defined?(:Encoding) &&
-          Zlib::GzipReader.method(:wrap).arity != 1
+        Zlib::GzipReader.method(:wrap).arity != 1
 
       Zlib::GzipReader.wrap(*args) do |gzio|
         @spec = Gem::Specification.from_yaml gzio.read
@@ -591,7 +620,7 @@ EOM
     end
 
     case file_name
-    when /^metadata(.gz)?$/ then
+    when "metadata", "metadata.gz" then
       load_spec entry
     when 'data.tar.gz' then
       verify_gz entry
@@ -633,16 +662,6 @@ EOM
     end
   rescue Zlib::GzipFile::Error => e
     raise Gem::Package::FormatError.new(e.message, entry.full_name)
-  end
-
-  if File.respond_to? :realpath
-    def realpath file
-      File.realpath file
-    end
-  else
-    def realpath file
-      file
-    end
   end
 
 end

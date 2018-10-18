@@ -258,7 +258,7 @@ loaded_features_index_clear_i(st_data_t key, st_data_t val, st_data_t arg)
     VALUE obj = (VALUE)val;
     if (!SPECIAL_CONST_P(obj)) {
 	rb_ary_free(obj);
-	xfree((void *)obj);
+	ruby_sized_xfree((void *)obj, sizeof(struct RArray));
     }
     return ST_DELETE;
 }
@@ -604,7 +604,7 @@ rb_load_internal0(rb_execution_context_t *ec, VALUE fname, int wrap)
 	    VALUE parser = rb_parser_new();
 	    rb_parser_set_context(parser, NULL, FALSE);
 	    ast = (rb_ast_t *)rb_parser_load_file(parser, fname);
-	    iseq = rb_iseq_new_top(&ast->body, rb_fstring_cstr("<top (required)>"),
+	    iseq = rb_iseq_new_top(&ast->body, rb_fstring_lit("<top (required)>"),
 			    fname, rb_realpath_internal(Qnil, fname, 1), NULL);
 	    rb_ast_dispose(ast);
 	}

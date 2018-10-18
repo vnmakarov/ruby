@@ -271,7 +271,7 @@ class Gem::Indexer
   # List of gem file names to index.
 
   def gem_file_list
-    Dir[File.join(@dest_directory, "gems", '*.gem')]
+    Gem::Util.glob_files_in_dir("*.gem", File.join(@dest_directory, "gems"))
   end
 
   ##
@@ -347,7 +347,7 @@ class Gem::Indexer
     data = Gem.read_binary path
     compressed_data = Gem.read_binary "#{path}.#{extension}"
 
-    unless data == Gem.inflate(compressed_data) then
+    unless data == Gem::Util.inflate(compressed_data) then
       raise "Compressed file #{compressed_path} does not match uncompressed file #{path}"
     end
   end

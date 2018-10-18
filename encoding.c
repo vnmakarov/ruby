@@ -260,11 +260,6 @@ rb_find_encoding(VALUE enc)
     return rb_enc_from_index(idx);
 }
 
-void
-rb_gc_mark_encodings(void)
-{
-}
-
 static int
 enc_table_expand(int newsize)
 {
@@ -761,6 +756,12 @@ enc_capable(VALUE obj)
     }
 }
 
+int
+rb_enc_capable(VALUE obj)
+{
+    return enc_capable(obj);
+}
+
 ID
 rb_id_encoding(void)
 {
@@ -792,24 +793,26 @@ rb_enc_get_index(VALUE obj)
 	obj = rb_sym2str(obj);
     }
     switch (BUILTIN_TYPE(obj)) {
-      as_default:
-      default:
       case T_STRING:
+      case T_SYMBOL:
       case T_REGEXP:
 	i = enc_get_index_str(obj);
 	break;
       case T_FILE:
 	tmp = rb_funcallv(obj, rb_intern("internal_encoding"), 0, 0);
-	if (NIL_P(tmp)) obj = rb_funcallv(obj, rb_intern("external_encoding"), 0, 0);
-	else obj = tmp;
-	if (NIL_P(obj)) break;
+	if (NIL_P(tmp)) {
+	    tmp = rb_funcallv(obj, rb_intern("external_encoding"), 0, 0);
+	}
+	if (is_obj_encoding(tmp)) {
+	    i = enc_check_encoding(tmp);
+	}
+	break;
       case T_DATA:
 	if (is_data_encoding(obj)) {
 	    i = enc_check_encoding(obj);
 	}
-	else {
-	    goto as_default;
-	}
+	break;
+      default:
 	break;
     }
     return i;
@@ -818,6 +821,10 @@ rb_enc_get_index(VALUE obj)
 static void
 enc_set_index(VALUE obj, int idx)
 {
+    if (!enc_capable(obj)) {
+        rb_raise(rb_eArgError, "cannot set encoding on non-encoding capable object");
+    }
+
     if (idx < ENCODING_INLINE_MAX) {
 	ENCODING_SET_INLINED(obj, idx);
 	return;

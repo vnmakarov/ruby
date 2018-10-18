@@ -1,4 +1,4 @@
-require_relative '../../../spec_helper'
+require_relative '../spec_helper'
 require_relative '../fixtures/classes'
 
 describe 'UDPSocket.new' do
@@ -11,7 +11,7 @@ describe 'UDPSocket.new' do
     @socket.should be_an_instance_of(UDPSocket)
   end
 
-  it 'using Fixnum argument' do
+  it 'using Integer argument' do
     @socket = UDPSocket.new(Socket::AF_INET)
     @socket.should be_an_instance_of(UDPSocket)
   end

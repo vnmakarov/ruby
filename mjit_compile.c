@@ -6,6 +6,10 @@
 
 **********************************************************************/
 
+/* NOTE: All functions in this file are executed on MJIT worker. So don't
+   call Ruby methods (C functions that may call rb_funcall) or trigger
+   GC (using ZALLOC, xmalloc, xfree, etc.) in this file. */
+
 #include "internal.h"
 #include "vm_core.h"
 #include "vm_exec.h"
@@ -14,12 +18,16 @@
 #include "insns_info.inc"
 #include "vm_insnhelper.h"
 
+/* Macros to check if a position is already compiled using compile_status.stack_size_for_pos */
+#define NOT_COMPILED_STACK_SIZE -1
+#define ALREADY_COMPILED_P(status, pos) (status->stack_size_for_pos[pos] != NOT_COMPILED_STACK_SIZE)
+
 /* Storage to keep compiler's status.  This should have information
    which is global during one `mjit_compile` call.  Ones conditional
    in each branch should be stored in `compile_branch`.  */
 struct compile_status {
     int success; /* has TRUE if compilation has had no issue */
-    int *compiled_for_pos; /* compiled_for_pos[pos] has TRUE if the pos is compiled */
+    int *stack_size_for_pos; /* stack_size_for_pos[pos] has stack size for the position (otherwise -1) */
     /* If TRUE, JIT-ed code will use local variables to store pushed values instead of
        using VM's stack and moving stack pointer. */
     int local_stack_p;
@@ -39,27 +47,24 @@ struct case_dispatch_var {
     VALUE last_value;
 };
 
-/* Returns iseq from cc if it's available and still not obsoleted. */
-static const rb_iseq_t *
-get_iseq_if_available(CALL_CACHE cc)
+/* Returns TRUE if call cache is still not obsoleted and cc->me->def->type is available. */
+static int
+has_valid_method_type(CALL_CACHE cc)
 {
-    if (GET_GLOBAL_METHOD_STATE() == cc->method_state
-        && mjit_valid_class_serial_p(cc->class_serial)
-        && cc->me && cc->me->def->type == VM_METHOD_TYPE_ISEQ) {
-        return rb_iseq_check(cc->me->def->body.iseq.iseqptr);
-    }
-    return NULL;
+    extern int mjit_valid_class_serial_p(rb_serial_t class_serial);
+    return GET_GLOBAL_METHOD_STATE() == cc->method_state
+        && mjit_valid_class_serial_p(cc->class_serial) && cc->me;
 }
 
 /* Returns TRUE if iseq is inlinable, otherwise NULL. This becomes TRUE in the same condition
-   as CI_SET_FASTPATH (in vm_callee_setup_arg) is called from vm_call_iseq_setup. */
+   as CC_SET_FASTPATH (in vm_callee_setup_arg) is called from vm_call_iseq_setup. */
 static int
 inlinable_iseq_p(CALL_INFO ci, CALL_CACHE cc, const rb_iseq_t *iseq)
 {
     extern int rb_simple_iseq_p(const rb_iseq_t *iseq);
     return iseq != NULL
-        && rb_simple_iseq_p(iseq) && !(ci->flag & VM_CALL_KW_SPLAT) /* top of vm_callee_setup_arg */
-        && (!IS_ARGS_SPLAT(ci) && !IS_ARGS_KEYWORD(ci) && !(METHOD_ENTRY_VISI(cc->me) == METHOD_VISI_PROTECTED)); /* CI_SET_FASTPATH */
+        && rb_simple_iseq_p(iseq) && !(ci->flag & VM_CALL_KW_SPLAT) /* Top of vm_callee_setup_arg. In this case, opt_pc is 0. */
+        && (!IS_ARGS_SPLAT(ci) && !IS_ARGS_KEYWORD(ci) && !(METHOD_ENTRY_VISI(cc->me) == METHOD_VISI_PROTECTED)); /* CC_SET_FASTPATH */
 }
 
 static int
@@ -92,12 +97,12 @@ comment_id(FILE *f, ID id)
     e = RSTRING_END(name);
     fputs("/* :\"", f);
     for (; p < e; ++p) {
-	switch (c = *p) {
-	  case '*': case '/': if (prev != (c ^ ('/' ^ '*'))) break;
-	  case '\\': case '"': fputc('\\', f);
-	}
-	fputc(c, f);
-	prev = c;
+        switch (c = *p) {
+          case '*': case '/': if (prev != (c ^ ('/' ^ '*'))) break;
+          case '\\': case '"': fputc('\\', f);
+        }
+        fputc(c, f);
+        prev = c;
     }
     fputs("\" */", f);
 #endif
@@ -122,6 +127,20 @@ compile_insn(FILE *f, const struct rb_iseq_constant_body *body, const int insn, 
  #include "mjit_compile.inc"
 /*****************/
 
+    /* If next_pos is already compiled and this branch is not finished yet,
+       next instruction won't be compiled in C code next and will need `goto`. */
+    if (!b->finish_p && next_pos < body->iseq_size && ALREADY_COMPILED_P(status, next_pos)) {
+        fprintf(f, "goto label_%d;\n", next_pos);
+
+        /* Verify stack size assumption is the same among multiple branches */
+        if ((unsigned int)status->stack_size_for_pos[next_pos] != b->stack_size) {
+            if (mjit_opts.warnings || mjit_opts.verbose)
+                fprintf(stderr, "MJIT warning: JIT stack assumption is not the same between branches (%d != %u)\n",
+                        status->stack_size_for_pos[next_pos], b->stack_size);
+            status->success = FALSE;
+        }
+    }
+
     return next_pos;
 }
 
@@ -137,19 +156,19 @@ compile_insns(FILE *f, const struct rb_iseq_constant_body *body, unsigned int st
     branch.stack_size = stack_size;
     branch.finish_p = FALSE;
 
-    while (pos < body->iseq_size && !status->compiled_for_pos[pos] && !branch.finish_p) {
+    while (pos < body->iseq_size && !ALREADY_COMPILED_P(status, pos) && !branch.finish_p) {
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
         insn = rb_vm_insn_addr2insn((void *)body->iseq_encoded[pos]);
 #else
         insn = (int)body->iseq_encoded[pos];
 #endif
-        status->compiled_for_pos[pos] = TRUE;
+        status->stack_size_for_pos[pos] = (int)branch.stack_size;
 
         fprintf(f, "\nlabel_%d: /* %s */\n", pos, insn_name(insn));
         pos = compile_insn(f, body, insn, body->iseq_encoded + (pos+1), pos, status, &branch);
         if (status->success && branch.stack_size > body->stack_max) {
             if (mjit_opts.warnings || mjit_opts.verbose)
-                fprintf(stderr, "MJIT warning: JIT stack exceeded its max\n");
+                fprintf(stderr, "MJIT warning: JIT stack size (%d) exceeded its max size (%d)\n", branch.stack_size, body->stack_max);
             status->success = FALSE;
         }
         if (!status->success)
@@ -177,9 +196,13 @@ mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *func
 {
     struct compile_status status;
     status.success = TRUE;
-    status.compiled_for_pos = ZALLOC_N(int, body->iseq_size);
     status.local_stack_p = !body->catch_except_p;
+    status.stack_size_for_pos = (int *)malloc(sizeof(int) * body->iseq_size);
+    if (status.stack_size_for_pos == NULL)
+        return FALSE;
+    memset(status.stack_size_for_pos, NOT_COMPILED_STACK_SIZE, sizeof(int) * body->iseq_size);
 
+    /* For performance, we verify stack size only on compilation time (mjit_compile.inc.erb) without --jit-debug */
     if (!mjit_opts.debug) {
         fprintf(f, "#undef OPT_CHECKED_RUN\n");
         fprintf(f, "#define OPT_CHECKED_RUN 0\n\n");
@@ -198,7 +221,8 @@ mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *func
     fprintf(f, "    static const VALUE *const original_body_iseq = (VALUE *)0x%"PRIxVALUE";\n",
             (VALUE)body->iseq_encoded);
 
-    /* Simulate `opt_pc` in setup_parameters_complex */
+    /* Simulate `opt_pc` in setup_parameters_complex. Other PCs which may be passed by catch tables
+       are not considered since vm_exec doesn't call mjit_exec for catch tables. */
     if (body->param.flags.has_opt) {
         int i;
         fprintf(f, "\n");
@@ -211,15 +235,10 @@ mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *func
         fprintf(f, "    }\n");
     }
 
-    /* ISeq might be used for catch table too. For that usage, this code cancels JIT execution. */
-    fprintf(f, "    if (reg_cfp->pc != original_body_iseq) {\n");
-    fprintf(f, "        return Qundef;\n");
-    fprintf(f, "    }\n");
-
     compile_insns(f, body, 0, 0, &status);
     compile_cancel_handler(f, body, &status);
     fprintf(f, "\n} /* end of %s */\n", funcname);
 
-    xfree(status.compiled_for_pos);
+    free(status.stack_size_for_pos);
     return status.success;
 }

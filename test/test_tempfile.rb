@@ -361,7 +361,7 @@ puts Tempfile.new('foo').path
     f.close
     assert_file.exist?(path)
   ensure
-    f.close if f && !f.closed?
+    f&.close
     File.unlink path if path
   end
 
@@ -400,6 +400,9 @@ puts Tempfile.new('foo').path
     actual = Dir.glob(TRAVERSAL_PATH + '*').count
     assert_equal expect, actual
   ensure
-    t&.close
+    if t
+      t.close
+      File.unlink(t.path)
+    end
   end
 end

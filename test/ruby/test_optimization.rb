@@ -187,6 +187,16 @@ class TestRubyOptimization < Test::Unit::TestCase
     assert_redefine_method('String', '<<', 'assert_equal "b", "a" << "b"')
   end
 
+  def test_fixnum_and
+    assert_equal 1, 1&3
+    assert_redefine_method('Integer', '&', 'assert_equal 3, 1&3')
+  end
+
+  def test_fixnum_or
+    assert_equal 3, 1|3
+    assert_redefine_method('Integer', '|', 'assert_equal 1, 3|1')
+  end
+
   def test_array_plus
     assert_equal [1,2], [1]+[2]
     assert_redefine_method('Array', '+', 'assert_equal [2], [1]+[2]')
@@ -707,7 +717,7 @@ class TestRubyOptimization < Test::Unit::TestCase
   end
 
   def test_clear_unreachable_keyword_args
-    assert_separately [], <<-END, timeout: 20
+    assert_separately [], <<-END, timeout: 30
       script =  <<-EOS
         if true
         else
@@ -763,5 +773,25 @@ class TestRubyOptimization < Test::Unit::TestCase
     result = nil
     assert_equal(42, obj.foo {result = 42})
     assert_equal(42, result)
+  end
+
+  def test_unconditional_branch_to_leave_block
+    assert_valid_syntax("#{<<~"begin;"}\n#{<<~'end;'}")
+    begin;
+      tap {true || tap {}}
+    end;
+  end
+
+  def test_jump_elimination_with_optimized_out_block
+    x = Object.new
+    def x.bug(obj)
+      if obj || obj
+        obj = obj
+      else
+        raise "[ruby-core:87830] [Bug #14897]"
+      end
+      obj
+    end
+    assert_equal(:ok, x.bug(:ok))
   end
 end

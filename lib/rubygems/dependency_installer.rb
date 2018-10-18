@@ -15,6 +15,7 @@ require 'rubygems/deprecate'
 class Gem::DependencyInstaller
 
   include Gem::UserInteraction
+  extend Gem::Deprecate
 
   DEFAULT_OPTIONS = { # :nodoc:
     :env_shebang         => false,
@@ -40,15 +41,6 @@ class Gem::DependencyInstaller
   # Errors from SpecFetcher while searching for remote specifications
 
   attr_reader :errors
-
-  ##
-  #--
-  # TODO remove, no longer used
-
-  attr_reader :gems_to_install # :nodoc:
-
-  extend Gem::Deprecate
-  deprecate :gems_to_install, :none, 2016, 10
 
   ##
   # List of gems installed by #install in alphabetic order
@@ -97,6 +89,9 @@ class Gem::DependencyInstaller
     @build_args          = options[:build_args]
     @build_docs_in_background = options[:build_docs_in_background]
     @install_as_default  = options[:install_as_default]
+    @dir_mode            = options[:dir_mode]
+    @data_mode           = options[:data_mode]
+    @prog_mode           = options[:prog_mode]
 
     # Indicates that we should not try to update any deps unless
     # we absolutely must.
@@ -113,7 +108,7 @@ class Gem::DependencyInstaller
 
   ##
   #--
-  # TODO remove, no longer used
+  # TODO remove at RubyGems 4, no longer used
 
   def add_found_dependencies to_do, dependency_list # :nodoc:
     seen = {}
@@ -163,6 +158,7 @@ class Gem::DependencyInstaller
 
     dependency_list.remove_specs_unsatisfied_by dependencies
   end
+  deprecate :add_found_dependencies, :none, 2018, 12
 
   ##
   # Creates an AvailableSet to install from based on +dep_or_name+ and
@@ -321,7 +317,7 @@ class Gem::DependencyInstaller
   # Gathers all dependencies necessary for the installation from local and
   # remote sources unless the ignore_dependencies was given.
   #--
-  # TODO remove at RubyGems 3
+  # TODO remove at RubyGems 4
 
   def gather_dependencies # :nodoc:
     specs = @available.all_specs
@@ -354,6 +350,7 @@ class Gem::DependencyInstaller
 
     @gems_to_install = dependency_list.dependency_order.reverse
   end
+  deprecate :gather_dependencies, :none, 2018, 12
 
   def in_background what # :nodoc:
     fork_happened = false
@@ -402,7 +399,10 @@ class Gem::DependencyInstaller
       :user_install        => @user_install,
       :wrappers            => @wrappers,
       :build_root          => @build_root,
-      :install_as_default  => @install_as_default
+      :install_as_default  => @install_as_default,
+      :dir_mode            => @dir_mode,
+      :data_mode           => @data_mode,
+      :prog_mode           => @prog_mode,
     }
     options[:install_dir] = @install_dir if @only_install_dir
 
@@ -458,7 +458,7 @@ class Gem::DependencyInstaller
           rescue Gem::Package::FormatError
           end
         end
-      # else This is a dependency. InstallerSet handles this case
+        # else This is a dependency. InstallerSet handles this case
       end
     end
 

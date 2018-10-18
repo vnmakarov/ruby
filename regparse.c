@@ -108,7 +108,7 @@ extern void onig_set_verb_warn_func(OnigWarnFunc f)
   onig_verb_warn = f;
 }
 
-static void CC_DUP_WARN(ScanEnv *env);
+static void CC_DUP_WARN(ScanEnv *env, OnigCodePoint from, OnigCodePoint to);
 
 
 static unsigned int ParseDepthLimit = DEFAULT_PARSE_DEPTH_LIMIT;
@@ -174,7 +174,7 @@ bbuf_clone(BBuf** rto, BBuf* from)
 
 
 #define BITSET_SET_BIT_CHKDUP(bs, pos) do { \
-  if (BITSET_AT(bs, pos)) CC_DUP_WARN(env); \
+  if (BITSET_AT(bs, pos)) CC_DUP_WARN(env, pos, pos); \
   BS_ROOM(bs, pos) |= BS_BIT(pos); \
 } while (0)
 
@@ -1720,7 +1720,7 @@ add_code_range_to_buf0(BBuf** pbuf, ScanEnv* env, OnigCodePoint from, OnigCodePo
   if (inc_n != 1) {
     if (checkdup && from <= data[low*2+1]
 	&& (data[low*2] <= from || data[low*2+1] <= to))
-      CC_DUP_WARN(env);
+      CC_DUP_WARN(env, from, to);
     if (from > data[low*2])
       from = data[low*2];
     if (to < data[(high - 1)*2 + 1])
@@ -2886,14 +2886,18 @@ CLOSE_BRACKET_WITHOUT_ESC_WARN(ScanEnv* env, UChar* c)
 #endif
 
 static void
-CC_DUP_WARN(ScanEnv *env)
+CC_DUP_WARN(ScanEnv *env, OnigCodePoint from ARG_UNUSED, OnigCodePoint to ARG_UNUSED)
 {
   if (onig_warn == onig_null_warn || !RTEST(ruby_verbose)) return ;
 
   if (IS_SYNTAX_BV(env->syntax, ONIG_SYN_WARN_CC_DUP) &&
       !(env->warnings_flag & ONIG_SYN_WARN_CC_DUP)) {
+#ifdef WARN_ALL_CC_DUP
+    onig_syntax_warn(env, "character class has duplicated range: %04x-%04x", from, to);
+#else
     env->warnings_flag |= ONIG_SYN_WARN_CC_DUP;
     onig_syntax_warn(env, "character class has duplicated range");
+#endif
   }
 }
 
@@ -5697,10 +5701,26 @@ static int
 propname2ctype(ScanEnv* env, const char* propname)
 {
   UChar* name = (UChar* )propname;
+  UChar* name_end = name + strlen(propname);
   int ctype = env->enc->property_name_to_ctype(ONIG_ENCODING_ASCII,
-      name, name + strlen(propname));
+      name, name_end);
+  if (ctype < 0) {
+    onig_scan_env_set_error_string(env, ctype, name, name_end);
+  }
   return ctype;
 }
+
+static int
+add_property_to_cc(CClassNode* cc, const char* propname, int not, ScanEnv* env)
+{
+  int ctype = propname2ctype(env, propname);
+  if (ctype < 0) return ctype;
+  return add_ctype_to_cc(cc, ctype, not, 0, env);
+}
+
+extern const OnigCodePoint onigenc_unicode_GCB_ranges_GAZ[];
+extern const OnigCodePoint onigenc_unicode_GCB_ranges_E_Base[];
+extern const OnigCodePoint onigenc_unicode_GCB_ranges_Emoji[];
 
 static int
 node_extended_grapheme_cluster(Node** np, ScanEnv* env)
@@ -5724,6 +5744,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     OnigCodePoint sb_out = (ONIGENC_MBC_MINLEN(env->enc) > 1) ? 0x00 : 0x80;
     int extend = propname2ctype(env, "Grapheme_Cluster_Break=Extend");
 
+    if (extend < 0) goto err;
     /* Prepend*
      * ( RI-sequence | Hangul-Syllable | !Control )
      * ( Grapheme_Extend | SpacingMark )* */
@@ -5734,7 +5755,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     cc = NCCLASS(np1);
     r = add_ctype_to_cc(cc, extend, 0, 0, env);
     if (r != 0) goto err;
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=SpacingMark"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=SpacingMark", 0, env);
     if (r != 0) goto err;
     r = add_code_range(&(cc->mbuf), env, 0x200D, 0x200D);
     if (r != 0) goto err;
@@ -5754,7 +5775,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=Control"), 1, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=Control", 1, env);
     if (r != 0) goto err;
     if (ONIGENC_MBC_MINLEN(env->enc) > 1) {
       BBuf *pbuf2 = NULL;
@@ -5793,7 +5814,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=T"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=T", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(1, REPEAT_INFINITE, 0);
@@ -5810,7 +5831,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=L"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=L", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(1, REPEAT_INFINITE, 0);
@@ -5827,7 +5848,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=T"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=T", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, REPEAT_INFINITE, 0);
@@ -5843,7 +5864,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=LVT"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=LVT", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_list(np1, list2);
@@ -5854,7 +5875,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=L"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=L", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, REPEAT_INFINITE, 0);
@@ -5876,7 +5897,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=T"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=T", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, REPEAT_INFINITE, 0);
@@ -5892,7 +5913,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=V"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=V", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, REPEAT_INFINITE, 0);
@@ -5908,7 +5929,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=LV"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=LV", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_list(np1, list2);
@@ -5919,7 +5940,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=L"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=L", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, REPEAT_INFINITE, 0);
@@ -5941,7 +5962,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=T"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=T", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, REPEAT_INFINITE, 0);
@@ -5957,7 +5978,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=V"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=V", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(1, REPEAT_INFINITE, 0);
@@ -5973,7 +5994,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=L"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=L", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, REPEAT_INFINITE, 0);
@@ -5998,7 +6019,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=E_Modifier"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=E_Modifier", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, 1, 0);
@@ -6030,7 +6051,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=E_Base_GAZ"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=E_Base_GAZ", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_list(np1, list2);
@@ -6064,26 +6085,11 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
     {
-      static const OnigCodePoint ranges[] = {
-	13,
-	0x1F308, 0x1F308,
-	0x1F33E, 0x1F33E,
-	0x1F373, 0x1F373,
-	0x1F393, 0x1F393,
-	0x1F3A4, 0x1F3A4,
-	0x1F3A8, 0x1F3A8,
-	0x1F3EB, 0x1F3EB,
-	0x1F3ED, 0x1F3ED,
-	0x1F4BB, 0x1F4BC,
-	0x1F527, 0x1F527,
-	0x1F52C, 0x1F52C,
-	0x1F680, 0x1F680,
-	0x1F692, 0x1F692,
-      };
+      const OnigCodePoint *ranges = onigenc_unicode_GCB_ranges_GAZ;
       r = add_ctype_to_cc_by_range(cc, -1, 0, env, sb_out, ranges);
       if (r != 0) goto err;
     }
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=Glue_After_Zwj"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=Glue_After_Zwj", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_list(np1, list2);
@@ -6118,13 +6124,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
     {
-      static const OnigCodePoint ranges[] = {
-	4,
-	0x2640, 0x2640,
-	0x2642, 0x2642,
-	0x2695, 0x2696,
-	0x2708, 0x2708,
-      };
+      const OnigCodePoint *ranges = onigenc_unicode_GCB_ranges_Emoji;
       r = add_ctype_to_cc_by_range(cc, -1, 0, env, sb_out, ranges);
       if (r != 0) goto err;
     }
@@ -6170,7 +6170,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=E_Modifier"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=E_Modifier", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, 1, 0);
@@ -6205,23 +6205,13 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
     {
-      static const OnigCodePoint ranges[] = {
-	8,
-	0x1F3C2, 0x1F3C2,
-	0x1F3C7, 0x1F3C7,
-	0x1F3CC, 0x1F3CC,
-	0x1F3F3, 0x1F3F3,
-	0x1F441, 0x1F441,
-	0x1F46F, 0x1F46F,
-	0x1F574, 0x1F574,
-	0x1F6CC, 0x1F6CC,
-      };
+      const OnigCodePoint *ranges = onigenc_unicode_GCB_ranges_E_Base;
       r = add_ctype_to_cc_by_range(cc, -1, 0, env, sb_out, ranges);
       if (r != 0) goto err;
     }
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=E_Base"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=E_Base", 0, env);
     if (r != 0) goto err;
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=E_Base_GAZ"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=E_Base_GAZ", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_list(np1, list2);
@@ -6242,7 +6232,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=E_Modifier"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=E_Modifier", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, 1, 0);
@@ -6258,9 +6248,9 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=Glue_After_Zwj"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=Glue_After_Zwj", 0, env);
     if (r != 0) goto err;
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=E_Base_GAZ"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=E_Base_GAZ", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_list(np1, list2);
@@ -6314,7 +6304,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=Prepend"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=Prepend", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(0, REPEAT_INFINITE, 0);
@@ -6362,7 +6352,7 @@ node_extended_grapheme_cluster(Node** np, ScanEnv* env)
     np1 = node_new_cclass();
     if (IS_NULL(np1)) goto err;
     cc = NCCLASS(np1);
-    r = add_ctype_to_cc(cc, propname2ctype(env, "Grapheme_Cluster_Break=Prepend"), 0, 0, env);
+    r = add_property_to_cc(cc, "Grapheme_Cluster_Break=Prepend", 0, env);
     if (r != 0) goto err;
 
     tmp = node_new_quantifier(1, REPEAT_INFINITE, 0);

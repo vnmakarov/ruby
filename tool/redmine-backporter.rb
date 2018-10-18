@@ -205,7 +205,7 @@ class << Readline
   def readline(prompt = '')
     console = IO.console
     console.binmode
-    ly, lx = console.winsize
+    _, lx = console.winsize
     if /mswin|mingw/ =~ RUBY_PLATFORM or /^(?:vt\d\d\d|xterm)/i =~ ENV["TERM"]
       cls = "\r\e[2K"
     else
@@ -215,7 +215,7 @@ class << Readline
     console.print prompt
     console.flush
     line = ''
-    while 1
+    while true
       case c = console.getch
       when "\r", "\n"
         puts
@@ -329,7 +329,7 @@ def status_char(obj)
 end
 
 console = IO.console
-row, col = console.winsize
+row, = console.winsize
 @query['limit'] = row - 2
 puts "Backporter #{VERSION}".color(bold: true) + " for #{TARGET_VERSION}"
 
@@ -375,6 +375,7 @@ commands = {
     end
     id = "##{i["id"]}".color(*PRIORITIES[i["priority"]["name"]])
     sio = StringIO.new
+    sio.set_encoding("utf-8")
     sio.puts <<eom
 #{i["subject"].color(bold: true, underscore: true)}
 #{i["project"]["name"]} [#{i["tracker"]["name"]} #{id}] #{i["status"]["name"]} (#{i["created_on"]})

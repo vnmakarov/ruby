@@ -242,7 +242,8 @@ str_associated(VALUE str)
  *   H            | String  | hex string (high nibble first)
  *   h            | String  | hex string (low nibble first)
  *   u            | String  | UU-encoded string
- *   M            | String  | quoted printable, MIME encoding (see RFC2045)
+ *   M            | String  | quoted printable, MIME encoding (see also RFC2045)
+ *                |         | (text mode but input must use LF and output LF)
  *   m            | String  | base64 encoded string (see RFC 2045, count is width)
  *                |         | (if count is 0, no line feed are added, see RFC 4648)
  *   P            | String  | pointer to a structure (fixed-length string)
@@ -750,6 +751,7 @@ pack_pack(int argc, VALUE *argv, VALUE ary)
 	    StringValue(from);
 	    ptr = RSTRING_PTR(from);
 	    plen = RSTRING_LEN(from);
+            OBJ_INFECT(res, from);
 
 	    if (len == 0 && type == 'm') {
 		encodes(res, ptr, plen, type, 0);
@@ -777,6 +779,7 @@ pack_pack(int argc, VALUE *argv, VALUE ary)
 
 	  case 'M':		/* quoted-printable encoded string */
 	    from = rb_obj_as_string(NEXTFROM);
+            OBJ_INFECT(res, from);
 	    if (len <= 1)
 		len = 72;
 	    qpencode(res, from, len);
@@ -802,6 +805,7 @@ pack_pack(int argc, VALUE *argv, VALUE ary)
 		}
 		else {
 		    t = StringValuePtr(from);
+                    OBJ_INFECT(res, from);
 		    rb_obj_taint(from);
 		}
 		if (!associates) {
@@ -1185,6 +1189,7 @@ pack_unpack_internal(VALUE str, VALUE fmt, int mode)
 		    len = (send - s) * 8;
 		bits = 0;
 		bitstr = rb_usascii_str_new(0, len);
+                OBJ_INFECT(bitstr, str);
 		t = RSTRING_PTR(bitstr);
 		for (i=0; i<len; i++) {
 		    if (i & 7) bits >>= 1;
@@ -1206,6 +1211,7 @@ pack_unpack_internal(VALUE str, VALUE fmt, int mode)
 		    len = (send - s) * 8;
 		bits = 0;
 		bitstr = rb_usascii_str_new(0, len);
+                OBJ_INFECT(bitstr, str);
 		t = RSTRING_PTR(bitstr);
 		for (i=0; i<len; i++) {
 		    if (i & 7) bits <<= 1;
@@ -1227,6 +1233,7 @@ pack_unpack_internal(VALUE str, VALUE fmt, int mode)
 		    len = (send - s) * 2;
 		bits = 0;
 		bitstr = rb_usascii_str_new(0, len);
+                OBJ_INFECT(bitstr, str);
 		t = RSTRING_PTR(bitstr);
 		for (i=0; i<len; i++) {
 		    if (i & 1)
@@ -1250,6 +1257,7 @@ pack_unpack_internal(VALUE str, VALUE fmt, int mode)
 		    len = (send - s) * 2;
 		bits = 0;
 		bitstr = rb_usascii_str_new(0, len);
+                OBJ_INFECT(bitstr, str);
 		t = RSTRING_PTR(bitstr);
 		for (i=0; i<len; i++) {
 		    if (i & 1)
@@ -1935,7 +1943,7 @@ rb_uv_to_utf8(char buf[6], unsigned long uv)
     }
     rb_raise(rb_eRangeError, "pack(U): value out of range");
 
-    UNREACHABLE;
+    UNREACHABLE_RETURN(Qnil);
 }
 
 static const unsigned long utf8_limits[] = {

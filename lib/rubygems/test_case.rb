@@ -2,7 +2,7 @@
 # TODO: $SAFE = 1
 
 begin
-  gem 'minitest', '~> 4.0'
+  gem 'minitest', '~> 5.0'
 rescue NoMethodError, Gem::LoadError
   # for ruby tests
 end
@@ -13,9 +13,28 @@ else
   require 'rubygems'
 end
 
+# If bundler gemspec exists, add to stubs
+bundler_gemspec = File.expand_path("../../../bundler/bundler.gemspec", __FILE__)
+if File.exist?(bundler_gemspec)
+  Gem::Specification.dirs.unshift File.dirname(bundler_gemspec)
+  Gem::Specification.class_variable_set :@@stubs, nil
+  Gem::Specification.stubs
+  Gem::Specification.dirs.shift
+end
+
 begin
   gem 'minitest'
 rescue Gem::LoadError
+end
+
+begin
+  require 'simplecov'
+  SimpleCov.start do
+    add_filter "/test/"
+    add_filter "/bundler/"
+    add_filter "/lib/rubygems/resolver/molinillo"
+  end
+rescue LoadError
 end
 
 # We have to load these up front because otherwise we'll try to load
@@ -86,7 +105,9 @@ end
 #
 # Tests are always run at a safe level of 1.
 
-class Gem::TestCase < MiniTest::Unit::TestCase
+class Gem::TestCase < (defined?(Minitest::Test) ? Minitest::Test : MiniTest::Unit::TestCase)
+
+  extend Gem::Deprecate
 
   attr_accessor :fetcher # :nodoc:
 
@@ -370,6 +391,11 @@ class Gem::TestCase < MiniTest::Unit::TestCase
       util_set_arch 'i686-darwin8.10.1'
     end
 
+    @orig_hooks = {}
+    %w[post_install_hooks done_installing_hooks post_uninstall_hooks pre_uninstall_hooks pre_install_hooks pre_reset_hooks post_reset_hooks post_build_hooks].each do |name|
+      @orig_hooks[name] = Gem.send(name).dup
+    end
+
     @marshal_version = "#{Marshal::MAJOR_VERSION}.#{Marshal::MINOR_VERSION}"
     @orig_LOADED_FEATURES = $LOADED_FEATURES.dup
   end
@@ -436,6 +462,10 @@ class Gem::TestCase < MiniTest::Unit::TestCase
     Gem::Specification._clear_load_cache
     Gem::Specification.unresolved_deps.clear
     Gem::refresh
+
+    @orig_hooks.each do |name, hooks|
+      Gem.send(name).replace hooks
+    end
 
     @back_ui.close
   end
@@ -593,7 +623,7 @@ class Gem::TestCase < MiniTest::Unit::TestCase
   def mu_pp(obj)
     s = String.new
     s = PP.pp obj, s
-    s = s.force_encoding(Encoding.default_external) if defined? Encoding
+    s = s.force_encoding(Encoding.default_external)
     s.chomp
   end
 
@@ -672,11 +702,13 @@ class Gem::TestCase < MiniTest::Unit::TestCase
   end
 
   ##
-  # TODO:  remove in RubyGems 3.0
+  # TODO:  remove in RubyGems 4.0
 
   def quick_spec name, version = '2' # :nodoc:
     util_spec name, version
   end
+  deprecate :quick_spec, :util_spec, 2018, 12
+
 
   ##
   # Builds a gem from +spec+ and places it in <tt>File.join @gemhome,
@@ -774,7 +806,7 @@ class Gem::TestCase < MiniTest::Unit::TestCase
   ##
   # new_spec is deprecated as it is never used.
   #
-  # TODO:  remove in RubyGems 3.0
+  # TODO:  remove in RubyGems 4.0
 
   def new_spec name, version, deps = nil, *files # :nodoc:
     require 'rubygems/specification'
@@ -815,6 +847,7 @@ class Gem::TestCase < MiniTest::Unit::TestCase
 
     spec
   end
+  deprecate :new_spec, :none, 2018, 12
 
   def new_default_spec(name, version, deps = nil, *files)
     spec = util_spec name, version, deps
@@ -839,7 +872,7 @@ class Gem::TestCase < MiniTest::Unit::TestCase
   # Creates a spec with +name+, +version+.  +deps+ can specify the dependency
   # or a +block+ can be given for full customization of the specification.
 
-  def util_spec name, version = 2, deps = nil # :yields: specification
+  def util_spec name, version = 2, deps = nil, *files # :yields: specification
     raise "deps or block, not both" if deps and block_given?
 
     spec = Gem::Specification.new do |s|
@@ -852,6 +885,8 @@ class Gem::TestCase < MiniTest::Unit::TestCase
       s.summary     = "this is a summary"
       s.description = "This is a test description"
 
+      s.files.push(*files) unless files.empty?
+
       yield s if block_given?
     end
 
@@ -861,6 +896,19 @@ class Gem::TestCase < MiniTest::Unit::TestCase
       deps.keys.sort.each do |n|
         spec.add_dependency n, (deps[n] || '>= 0')
       end
+    end
+
+    unless files.empty? then
+      write_file spec.spec_file do |io|
+        io.write spec.to_ruby_for_cache
+      end
+
+      util_build_gem spec
+
+      cache_file = File.join @tempdir, 'gems', "#{spec.full_name}.gem"
+      FileUtils.mkdir_p File.dirname cache_file
+      FileUtils.mv spec.cache_file, cache_file
+      FileUtils.rm spec.spec_file
     end
 
     Gem::Specification.reset

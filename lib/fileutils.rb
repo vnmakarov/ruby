@@ -1,5 +1,11 @@
 # frozen_string_literal: true
-#
+
+begin
+  require 'rbconfig'
+rescue LoadError
+  # for make mjit-headers
+end
+
 # = fileutils.rb
 #
 # Copyright (c) 2000-2007 Minero Aoki
@@ -83,11 +89,10 @@
 # This module has all methods of FileUtils module, but never changes
 # files/directories.  This equates to passing the <tt>:noop</tt> and
 # <tt>:verbose</tt> flags to methods in FileUtils.
-#
 
 module FileUtils
 
-  VERSION = "1.0.2"
+  VERSION = "1.1.0"
 
   def self.private_module_function(name)   #:nodoc:
     module_function name
@@ -119,8 +124,9 @@ module FileUtils
   #
   def cd(dir, verbose: nil, &block) # :yield: dir
     fu_output_message "cd #{dir}" if verbose
-    Dir.chdir(dir, &block)
+    result = Dir.chdir(dir, &block)
     fu_output_message 'cd -' if verbose and block
+    result
   end
   module_function :cd
 
@@ -516,8 +522,6 @@ module FileUtils
         if destent.exist?
           if destent.directory?
             raise Errno::EEXIST, d
-          else
-            destent.remove_file if rename_cannot_overwrite_file?
           end
         end
         begin
@@ -539,11 +543,6 @@ module FileUtils
 
   alias move mv
   module_function :move
-
-  def rename_cannot_overwrite_file?   #:nodoc:
-    /emx/ =~ RUBY_PLATFORM
-  end
-  private_module_function :rename_cannot_overwrite_file?
 
   #
   # Remove file(s) specified in +list+.  This method cannot remove directories.
@@ -681,22 +680,38 @@ module FileUtils
     unless parent_st.sticky?
       raise ArgumentError, "parent directory is world writable, FileUtils#remove_entry_secure does not work; abort: #{path.inspect} (parent directory mode #{'%o' % parent_st.mode})"
     end
+
     # freeze tree root
     euid = Process.euid
-    File.open(fullpath + '/.') {|f|
-      unless fu_stat_identical_entry?(st, f.stat)
-        # symlink (TOC-to-TOU attack?)
-        File.unlink fullpath
-        return
-      end
-      f.chown euid, -1
-      f.chmod 0700
-      unless fu_stat_identical_entry?(st, File.lstat(fullpath))
-        # TOC-to-TOU attack?
-        File.unlink fullpath
-        return
-      end
-    }
+    dot_file = fullpath + "/."
+    begin
+      File.open(dot_file) {|f|
+        unless fu_stat_identical_entry?(st, f.stat)
+          # symlink (TOC-to-TOU attack?)
+          File.unlink fullpath
+          return
+        end
+        f.chown euid, -1
+        f.chmod 0700
+      }
+    rescue EISDIR # JRuby in non-native mode can't open files as dirs
+      File.lstat(dot_file).tap {|fstat|
+        unless fu_stat_identical_entry?(st, fstat)
+          # symlink (TOC-to-TOU attack?)
+          File.unlink fullpath
+          return
+        end
+        File.chown euid, -1, dot_file
+        File.chmod 0700, dot_file
+      }
+    end
+
+    unless fu_stat_identical_entry?(st, File.lstat(fullpath))
+      # TOC-to-TOU attack?
+      File.unlink fullpath
+      return
+    end
+
     # ---- tree root is frozen ----
     root = Entry_.new(path)
     root.preorder_traverse do |ent|
@@ -797,8 +812,15 @@ module FileUtils
   #
   def compare_stream(a, b)
     bsize = fu_stream_blksize(a, b)
-    sa = String.new(capacity: bsize)
-    sb = String.new(capacity: bsize)
+
+    if RUBY_VERSION > "2.4"
+      sa = String.new(capacity: bsize)
+      sb = String.new(capacity: bsize)
+    else
+      sa = String.new
+      sb = String.new
+    end
+
     begin
       a.read(bsize, sa)
       b.read(bsize, sb)
@@ -1122,8 +1144,11 @@ module FileUtils
   module StreamUtils_
     private
 
-    def fu_windows?
-      /mswin|mingw|bccwin|emx/ =~ RUBY_PLATFORM
+    case (defined?(::RbConfig) ? ::RbConfig::CONFIG['host_os'] : ::RUBY_PLATFORM)
+    when /mswin|mingw/
+      def fu_windows?; true end
+    else
+      def fu_windows?; false end
     end
 
     def fu_copy_stream0(src, dest, blksize = nil)   #:nodoc:

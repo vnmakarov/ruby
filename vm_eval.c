@@ -41,7 +41,7 @@ static VALUE vm_call0_body(rb_execution_context_t* ec, struct rb_calling_info *c
 #ifndef MJIT_HEADER
 
 MJIT_FUNC_EXPORTED VALUE
-vm_call0(rb_execution_context_t *ec, VALUE recv, ID id, int argc, const VALUE *argv, const rb_callable_method_entry_t *me)
+rb_vm_call0(rb_execution_context_t *ec, VALUE recv, ID id, int argc, const VALUE *argv, const rb_callable_method_entry_t *me)
 {
     struct rb_calling_info calling_entry, *calling;
     struct rb_call_info ci_entry;
@@ -83,11 +83,9 @@ vm_call0_cfunc_with_frame(rb_execution_context_t* ec, struct rb_calling_info *ca
 
 	if (len >= 0) rb_check_arity(argc, len, len);
 
-	VM_PROFILE_UP(C2C_CALL);
 	val = (*cfunc->invoker)(cfunc->func, recv, argc, argv);
 
 	CHECK_CFP_CONSISTENCY("vm_call0_cfunc_with_frame");
-	VM_PROFILE_UP(C2C_POPF);
 	rb_vm_pop_frame(ec);
     }
     EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_RETURN, recv, me->def->original_id, mid, me->owner, val);
@@ -206,7 +204,7 @@ vm_call0_body(rb_execution_context_t *ec, struct rb_calling_info *calling, const
 VALUE
 rb_vm_call(rb_execution_context_t *ec, VALUE recv, VALUE id, int argc, const VALUE *argv, const rb_callable_method_entry_t *me)
 {
-    return vm_call0(ec, recv, id, argc, argv, me);
+    return rb_vm_call0(ec, recv, id, argc, argv, me);
 }
 
 static inline VALUE
@@ -231,7 +229,7 @@ vm_call_super(rb_execution_context_t *ec, int argc, const VALUE *argv)
 	return method_missing(recv, id, argc, argv, MISSING_SUPER);
     }
     else {
-	return vm_call0(ec, recv, id, argc, argv, me);
+        return rb_vm_call0(ec, recv, id, argc, argv, me);
     }
 }
 
@@ -299,7 +297,7 @@ rb_call0(rb_execution_context_t *ec,
 	return method_missing(recv, mid, argc, argv, call_status);
     }
     stack_check(ec);
-    return vm_call0(ec, recv, mid, argc, argv, me);
+    return rb_vm_call0(ec, recv, mid, argc, argv, me);
 }
 
 struct rescue_funcall_args {
@@ -417,7 +415,7 @@ rb_check_funcall_default(VALUE recv, ID mid, int argc, const VALUE *argv, VALUE 
 	return ret;
     }
     stack_check(ec);
-    return vm_call0(ec, recv, mid, argc, argv, me);
+    return rb_vm_call0(ec, recv, mid, argc, argv, me);
 }
 
 VALUE
@@ -443,7 +441,7 @@ rb_check_funcall_with_hook(VALUE recv, ID mid, int argc, const VALUE *argv,
     }
     stack_check(ec);
     (*hook)(TRUE, recv, mid, argc, argv, arg);
-    return vm_call0(ec, recv, mid, argc, argv, me);
+    return rb_vm_call0(ec, recv, mid, argc, argv, me);
 }
 
 const char *
@@ -636,7 +634,7 @@ rb_method_missing(int argc, const VALUE *argv, VALUE obj)
 {
     rb_execution_context_t *ec = GET_EC();
     raise_method_missing(ec, argc, argv, obj, ec->method_missing_reason);
-    UNREACHABLE;
+    UNREACHABLE_RETURN(Qnil);
 }
 
 MJIT_FUNC_EXPORTED VALUE
@@ -646,7 +644,7 @@ rb_make_no_method_exception(VALUE exc, VALUE format, VALUE obj,
     VALUE name = argv[0];
 
     if (!format) {
-	format = rb_fstring_cstr("undefined method `%s' for %s%s%s");
+	format = rb_fstring_lit("undefined method `%s' for %s%s%s");
     }
     if (exc == rb_eNoMethodError) {
 	VALUE args = rb_ary_new4(argc - 1, argv + 1);
@@ -678,17 +676,17 @@ raise_method_missing(rb_execution_context_t *ec, int argc, const VALUE *argv, VA
     stack_check(ec);
 
     if (last_call_status & MISSING_PRIVATE) {
-	format = rb_fstring_cstr("private method `%s' called for %s%s%s");
+	format = rb_fstring_lit("private method `%s' called for %s%s%s");
     }
     else if (last_call_status & MISSING_PROTECTED) {
-	format = rb_fstring_cstr("protected method `%s' called for %s%s%s");
+	format = rb_fstring_lit("protected method `%s' called for %s%s%s");
     }
     else if (last_call_status & MISSING_VCALL) {
-	format = rb_fstring_cstr("undefined local variable or method `%s' for %s%s%s");
+	format = rb_fstring_lit("undefined local variable or method `%s' for %s%s%s");
 	exc = rb_eNameError;
     }
     else if (last_call_status & MISSING_SUPER) {
-	format = rb_fstring_cstr("super: no superclass method `%s' for %s%s%s");
+	format = rb_fstring_lit("super: no superclass method `%s' for %s%s%s");
     }
 
     {
@@ -735,7 +733,7 @@ method_missing(VALUE obj, ID id, int argc, const VALUE *argv, enum method_missin
     me = rb_callable_method_entry(klass, idMethodMissing);
     if (!me || METHOD_ENTRY_BASIC(me)) goto missing;
     vm_passed_block_handler_set(ec, block_handler);
-    result = vm_call0(ec, obj, idMethodMissing, argc, argv, me);
+    result = rb_vm_call0(ec, obj, idMethodMissing, argc, argv, me);
     if (work) ALLOCV_END(work);
     return result;
 }
@@ -1433,6 +1431,12 @@ rb_eval_string(const char *str)
     return ruby_eval_string_from_file(str, "eval");
 }
 
+static VALUE
+eval_string_protect(VALUE str)
+{
+    return rb_eval_string((char *)str);
+}
+
 /**
  * Evaluates the given string in an isolated binding.
  *
@@ -1446,7 +1450,7 @@ rb_eval_string(const char *str)
 VALUE
 rb_eval_string_protect(const char *str, int *pstate)
 {
-    return rb_protect((VALUE (*)(VALUE))rb_eval_string, (VALUE)str, pstate);
+    return rb_protect(eval_string_protect, (VALUE)str, pstate);
 }
 
 /**
@@ -1845,7 +1849,7 @@ rb_f_throw(int argc, VALUE *argv)
 
     rb_scan_args(argc, argv, "11", &tag, &value);
     rb_throw_obj(tag, value);
-    UNREACHABLE;
+    UNREACHABLE_RETURN(Qnil);
 }
 
 void

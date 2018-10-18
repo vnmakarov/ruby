@@ -38,17 +38,14 @@ class TestGemUtil < Gem::TestCase
     # impossible to cd into it and its children
     FileUtils.chmod(0666, 'd/e')
 
+    skip 'skipped in root privilege' if Process.uid.zero?
+
     paths = Gem::Util.traverse_parents('d/e/f').to_a
 
     assert_equal File.join(@tempdir, 'd'), paths[0]
     assert_equal @tempdir, paths[1]
-    if File.respond_to?(:realpath)
-      assert_equal File.realpath(Dir.tmpdir), paths[2]
-      assert_equal File.realpath("..", Dir.tmpdir), paths[3]
-    elsif RUBY_PLATFORM !~ /darwin/
-      assert_equal Dir.tmpdir, paths[2]
-      assert_equal '/', paths[3]
-    end
+    assert_equal File.realpath(Dir.tmpdir), paths[2]
+    assert_equal File.realpath("..", Dir.tmpdir), paths[3]
   ensure
     # restore default permissions, allow the directory to be removed
     FileUtils.chmod(0775, 'd/e') unless win_platform?

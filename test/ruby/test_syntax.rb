@@ -46,7 +46,7 @@ class TestSyntax < Test::Unit::TestCase
       assert_raise(ArgumentError, enc.name) {load(f.path)}
     end
   ensure
-    f.close! if f
+    f&.close!
   end
 
   def test_script_lines
@@ -63,7 +63,7 @@ class TestSyntax < Test::Unit::TestCase
       end
     end
   ensure
-    f.close! if f
+    f&.close!
   end
 
   def test_newline_in_block_parameters
@@ -940,7 +940,9 @@ eom
       eval('1 if !//')
     end
     assert_warn('') do
+      verbose_bak, $VERBOSE = $VERBOSE, nil
       eval('1 if !(true..false)')
+      $VERBOSE = verbose_bak
     end
     assert_warning('') do
       eval('1 if !1')

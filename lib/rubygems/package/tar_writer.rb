@@ -106,12 +106,10 @@ class Gem::Package::TarWriter
   def add_file(name, mode) # :yields: io
     check_closed
 
-    raise Gem::Package::NonSeekableIO unless @io.respond_to? :pos=
-
     name, prefix = split_name name
 
     init_pos = @io.pos
-    @io.write "\0" * 512 # placeholder for the header
+    @io.write Gem::Package::TarHeader::EMPTY_HEADER # placeholder for the header
 
     yield RestrictedStream.new(@io) if block_given?
 
@@ -125,7 +123,7 @@ class Gem::Package::TarWriter
 
     header = Gem::Package::TarHeader.new :name => name, :mode => mode,
                                          :size => size, :prefix => prefix,
-                                         :mtime => Time.now
+                                         :mtime => ENV["SOURCE_DATE_EPOCH"] ? Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc : Time.now
 
     @io.write header
     @io.pos = final_pos
@@ -189,8 +187,7 @@ class Gem::Package::TarWriter
         if digest.respond_to? :name then
           digest.name
         else
-          /::([^:]+)$/ =~ digest.class.name
-          $1
+          digest.class.name[/::([^:]+)\z/, 1]
         end
 
       digest_name == signer.digest_name
@@ -220,7 +217,7 @@ class Gem::Package::TarWriter
 
     header = Gem::Package::TarHeader.new(:name => name, :mode => mode,
                                          :size => size, :prefix => prefix,
-                                         :mtime => Time.now).to_s
+                                         :mtime => ENV["SOURCE_DATE_EPOCH"] ? Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc : Time.now).to_s
 
     @io.write header
     os = BoundedStream.new @io, size
@@ -248,7 +245,7 @@ class Gem::Package::TarWriter
                                          :size => 0, :typeflag => "2",
                                          :linkname => target,
                                          :prefix => prefix,
-                                         :mtime => Time.now).to_s
+                                         :mtime => ENV["SOURCE_DATE_EPOCH"] ? Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc : Time.now).to_s
 
     @io.write header
 
@@ -301,7 +298,7 @@ class Gem::Package::TarWriter
     header = Gem::Package::TarHeader.new :name => name, :mode => mode,
                                          :typeflag => "5", :size => 0,
                                          :prefix => prefix,
-                                         :mtime => Time.now
+                                         :mtime => ENV["SOURCE_DATE_EPOCH"] ? Time.at(ENV["SOURCE_DATE_EPOCH"].to_i).utc : Time.now
 
     @io.write header
 

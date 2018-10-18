@@ -118,7 +118,7 @@ rb_f_notimplement(int argc, const VALUE *argv, VALUE obj)
 {
     rb_notimplement();
 
-    UNREACHABLE;
+    UNREACHABLE_RETURN(Qnil);
 }
 
 static void
@@ -539,7 +539,7 @@ rb_method_entry_make(VALUE klass, ID mid, VALUE defined_class, rb_method_visibil
 	}
     }
 
-    rb_frozen_class_p(klass);
+    rb_class_modify_check(klass);
 
     if (FL_TEST(klass, RMODULE_IS_REFINEMENT)) {
 	VALUE refined_class = rb_refinement_module_get_refined_class(klass);
@@ -721,7 +721,7 @@ search_method(VALUE klass, ID id, VALUE *defined_class_ptr)
 {
     rb_method_entry_t *me;
 
-    for (me = 0; klass; klass = RCLASS_SUPER(klass)) {
+    for (; klass; klass = RCLASS_SUPER(klass)) {
 	RB_DEBUG_COUNTER_INC(mc_search_super);
 	if ((me = lookup_method_table(klass, id)) != 0) break;
     }
@@ -985,7 +985,7 @@ remove_method(VALUE klass, ID mid)
     VALUE self = klass;
 
     klass = RCLASS_ORIGIN(klass);
-    rb_frozen_class_p(klass);
+    rb_class_modify_check(klass);
     if (mid == object_id || mid == id__send__ || mid == idInitialize) {
 	rb_warn("removing `%s' may cause serious problems", rb_id2name(mid));
     }
@@ -1198,7 +1198,7 @@ rb_undef(VALUE klass, ID id)
     if (NIL_P(klass)) {
 	rb_raise(rb_eTypeError, "no class to undef method");
     }
-    rb_frozen_class_p(klass);
+    rb_class_modify_check(klass);
     if (id == object_id || id == id__send__ || id == idInitialize) {
 	rb_warn("undefining `%s' may cause serious problems", rb_id2name(id));
     }
@@ -1278,14 +1278,44 @@ rb_mod_undef_method(int argc, VALUE *argv, VALUE mod)
     return mod;
 }
 
+static rb_method_visibility_t
+check_definition_visibility(VALUE mod, int argc, VALUE *argv)
+{
+    const rb_method_entry_t *me;
+    VALUE mid, include_super, lookup_mod = mod;
+    int inc_super;
+    ID id;
+
+    rb_scan_args(argc, argv, "11", &mid, &include_super);
+    id = rb_check_id(&mid);
+    if (!id) return METHOD_VISI_UNDEF;
+
+    if (argc == 1) {
+	inc_super = 1;
+    } else {
+	inc_super = RTEST(include_super);
+	if (!inc_super) {
+	    lookup_mod = RCLASS_ORIGIN(mod);
+	}
+    }
+
+    me = rb_method_entry_without_refinements(lookup_mod, id, NULL);
+    if (me) {
+	if (me->def->type == VM_METHOD_TYPE_NOTIMPLEMENTED) return METHOD_VISI_UNDEF;
+	if (!inc_super && me->owner != mod) return METHOD_VISI_UNDEF;
+	return METHOD_ENTRY_VISI(me);
+    }
+    return METHOD_VISI_UNDEF;
+}
+
 /*
  *  call-seq:
- *     mod.method_defined?(symbol)    -> true or false
- *     mod.method_defined?(string)    -> true or false
+ *     mod.method_defined?(symbol, inherit=true)    -> true or false
+ *     mod.method_defined?(string, inherit=true)    -> true or false
  *
  *  Returns +true+ if the named method is defined by
- *  _mod_ (or its included modules and, if _mod_ is a class,
- *  its ancestors). Public and protected methods are matched.
+ *  _mod_.  If _inherit_ is set, the lookup will also search _mod_'s
+ *  ancestors. Public and protected methods are matched.
  *  String arguments are converted to symbols.
  *
  *     module A
@@ -1306,6 +1336,8 @@ rb_mod_undef_method(int argc, VALUE *argv, VALUE mod)
  *     A.method_defined? :method1              #=> true
  *     C.method_defined? "method1"             #=> true
  *     C.method_defined? "method2"             #=> true
+ *     C.method_defined? "method2", true       #=> true
+ *     C.method_defined? "method2", false      #=> false
  *     C.method_defined? "method3"             #=> true
  *     C.method_defined? "protected_method1"   #=> true
  *     C.method_defined? "method4"             #=> false
@@ -1313,37 +1345,26 @@ rb_mod_undef_method(int argc, VALUE *argv, VALUE mod)
  */
 
 static VALUE
-rb_mod_method_defined(VALUE mod, VALUE mid)
+rb_mod_method_defined(int argc, VALUE *argv, VALUE mod)
 {
-    ID id = rb_check_id(&mid);
-    if (!id || !rb_method_boundp(mod, id, 1)) {
-	return Qfalse;
-    }
-    return Qtrue;
-
+    rb_method_visibility_t visi = check_definition_visibility(mod, argc, argv);
+    return (visi == METHOD_VISI_PUBLIC || visi == METHOD_VISI_PROTECTED) ? Qtrue : Qfalse;
 }
 
 static VALUE
-check_definition(VALUE mod, VALUE mid, rb_method_visibility_t visi)
+check_definition(VALUE mod, int argc, VALUE *argv, rb_method_visibility_t visi)
 {
-    const rb_method_entry_t *me;
-    ID id = rb_check_id(&mid);
-    if (!id) return Qfalse;
-    me = rb_method_entry_without_refinements(mod, id, NULL);
-    if (me) {
-	if (METHOD_ENTRY_VISI(me) == visi) return Qtrue;
-    }
-    return Qfalse;
+    return (check_definition_visibility(mod, argc, argv) == visi) ? Qtrue : Qfalse;
 }
 
 /*
  *  call-seq:
- *     mod.public_method_defined?(symbol)   -> true or false
- *     mod.public_method_defined?(string)   -> true or false
+ *     mod.public_method_defined?(symbol, inherit=true)   -> true or false
+ *     mod.public_method_defined?(string, inherit=true)   -> true or false
  *
  *  Returns +true+ if the named public method is defined by
- *  _mod_ (or its included modules and, if _mod_ is a class,
- *  its ancestors).
+ *  _mod_.  If _inherit_ is set, the lookup will also search _mod_'s
+ *  ancestors.
  *  String arguments are converted to symbols.
  *
  *     module A
@@ -1358,26 +1379,28 @@ check_definition(VALUE mod, VALUE mid, rb_method_visibility_t visi)
  *       def method3()  end
  *     end
  *
- *     A.method_defined? :method1           #=> true
- *     C.public_method_defined? "method1"   #=> true
- *     C.public_method_defined? "method2"   #=> false
- *     C.method_defined? "method2"          #=> true
+ *     A.method_defined? :method1                 #=> true
+ *     C.public_method_defined? "method1"         #=> true
+ *     C.public_method_defined? "method1", true   #=> true
+ *     C.public_method_defined? "method1", false  #=> true
+ *     C.public_method_defined? "method2"         #=> false
+ *     C.method_defined? "method2"                #=> true
  */
 
 static VALUE
-rb_mod_public_method_defined(VALUE mod, VALUE mid)
+rb_mod_public_method_defined(int argc, VALUE *argv, VALUE mod)
 {
-    return check_definition(mod, mid, METHOD_VISI_PUBLIC);
+    return check_definition(mod, argc, argv, METHOD_VISI_PUBLIC);
 }
 
 /*
  *  call-seq:
- *     mod.private_method_defined?(symbol)    -> true or false
- *     mod.private_method_defined?(string)    -> true or false
+ *     mod.private_method_defined?(symbol, inherit=true)    -> true or false
+ *     mod.private_method_defined?(string, inherit=true)    -> true or false
  *
  *  Returns +true+ if the named private method is defined by
- *  _ mod_ (or its included modules and, if _mod_ is a class,
- *  its ancestors).
+ *  _mod_.  If _inherit_ is set, the lookup will also search _mod_'s
+ *  ancestors.
  *  String arguments are converted to symbols.
  *
  *     module A
@@ -1392,26 +1415,28 @@ rb_mod_public_method_defined(VALUE mod, VALUE mid)
  *       def method3()  end
  *     end
  *
- *     A.method_defined? :method1            #=> true
- *     C.private_method_defined? "method1"   #=> false
- *     C.private_method_defined? "method2"   #=> true
- *     C.method_defined? "method2"           #=> false
+ *     A.method_defined? :method1                   #=> true
+ *     C.private_method_defined? "method1"          #=> false
+ *     C.private_method_defined? "method2"          #=> true
+ *     C.private_method_defined? "method2", true    #=> true
+ *     C.private_method_defined? "method2", false   #=> false
+ *     C.method_defined? "method2"                  #=> false
  */
 
 static VALUE
-rb_mod_private_method_defined(VALUE mod, VALUE mid)
+rb_mod_private_method_defined(int argc, VALUE *argv, VALUE mod)
 {
-    return check_definition(mod, mid, METHOD_VISI_PRIVATE);
+    return check_definition(mod, argc, argv, METHOD_VISI_PRIVATE);
 }
 
 /*
  *  call-seq:
- *     mod.protected_method_defined?(symbol)   -> true or false
- *     mod.protected_method_defined?(string)   -> true or false
+ *     mod.protected_method_defined?(symbol, inherit=true)   -> true or false
+ *     mod.protected_method_defined?(string, inherit=true)   -> true or false
  *
  *  Returns +true+ if the named protected method is defined
- *  by _mod_ (or its included modules and, if _mod_ is a
- *  class, its ancestors).
+ *  _mod_.  If _inherit_ is set, the lookup will also search _mod_'s
+ *  ancestors.
  *  String arguments are converted to symbols.
  *
  *     module A
@@ -1426,16 +1451,18 @@ rb_mod_private_method_defined(VALUE mod, VALUE mid)
  *       def method3()  end
  *     end
  *
- *     A.method_defined? :method1              #=> true
- *     C.protected_method_defined? "method1"   #=> false
- *     C.protected_method_defined? "method2"   #=> true
- *     C.method_defined? "method2"             #=> true
+ *     A.method_defined? :method1                    #=> true
+ *     C.protected_method_defined? "method1"         #=> false
+ *     C.protected_method_defined? "method2"         #=> true
+ *     C.protected_method_defined? "method2", true   #=> true
+ *     C.protected_method_defined? "method2", false  #=> false
+ *     C.method_defined? "method2"                   #=> true
  */
 
 static VALUE
-rb_mod_protected_method_defined(VALUE mod, VALUE mid)
+rb_mod_protected_method_defined(int argc, VALUE *argv, VALUE mod)
 {
-    return check_definition(mod, mid, METHOD_VISI_PROTECTED);
+    return check_definition(mod, argc, argv, METHOD_VISI_PROTECTED);
 }
 
 int
@@ -1555,7 +1582,7 @@ rb_alias(VALUE klass, ID alias_name, ID original_name)
 	rb_raise(rb_eTypeError, "no class to make alias");
     }
 
-    rb_frozen_class_p(klass);
+    rb_class_modify_check(klass);
 
   again:
     orig_me = search_method(klass, original_name, &defined_class);
@@ -1913,7 +1940,7 @@ call_method_entry(rb_execution_context_t *ec, VALUE defined_class, VALUE obj, ID
     const rb_callable_method_entry_t *cme =
 	prepare_callable_method_entry(defined_class, id, me);
     VALUE passed_block_handler = vm_passed_block_handler(ec);
-    VALUE result = vm_call0(ec, obj, id, argc, argv, cme);
+    VALUE result = rb_vm_call0(ec, obj, id, argc, argv, cme);
     vm_passed_block_handler_set(ec, passed_block_handler);
     return result;
 }
@@ -2121,10 +2148,10 @@ Init_eval_method(void)
     rb_define_private_method(rb_cModule, "private", rb_mod_private, -1);
     rb_define_private_method(rb_cModule, "module_function", rb_mod_modfunc, -1);
 
-    rb_define_method(rb_cModule, "method_defined?", rb_mod_method_defined, 1);
-    rb_define_method(rb_cModule, "public_method_defined?", rb_mod_public_method_defined, 1);
-    rb_define_method(rb_cModule, "private_method_defined?", rb_mod_private_method_defined, 1);
-    rb_define_method(rb_cModule, "protected_method_defined?", rb_mod_protected_method_defined, 1);
+    rb_define_method(rb_cModule, "method_defined?", rb_mod_method_defined, -1);
+    rb_define_method(rb_cModule, "public_method_defined?", rb_mod_public_method_defined, -1);
+    rb_define_method(rb_cModule, "private_method_defined?", rb_mod_private_method_defined, -1);
+    rb_define_method(rb_cModule, "protected_method_defined?", rb_mod_protected_method_defined, -1);
     rb_define_method(rb_cModule, "public_class_method", rb_mod_public_method, -1);
     rb_define_method(rb_cModule, "private_class_method", rb_mod_private_method, -1);
 

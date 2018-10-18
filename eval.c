@@ -20,6 +20,9 @@
 #include "mjit.h"
 #include "probes.h"
 #include "probes_helper.h"
+#ifdef HAVE_SYS_PRCTL_H
+#include <sys/prctl.h>
+#endif
 
 NORETURN(void rb_raise_jump(VALUE, VALUE));
 
@@ -27,7 +30,8 @@ VALUE rb_eLocalJumpError;
 VALUE rb_eSysStackError;
 
 ID ruby_static_id_signo, ruby_static_id_status;
-static ID id_cause;
+extern ID ruby_static_id_cause;
+#define id_cause ruby_static_id_cause
 
 #define exception_error GET_VM()->special_exceptions[ruby_error_reenter]
 
@@ -52,8 +56,17 @@ ruby_setup(void)
 	return 0;
 
     ruby_init_stack((void *)&state);
+
+    /*
+     * Disable THP early before mallocs happen because we want this to
+     * affect as many future pages as possible for CoW-friendliness
+     */
+#if defined(__linux__) && defined(PR_SET_THP_DISABLE)
+    prctl(PR_SET_THP_DISABLE, 1, 0, 0, 0);
+#endif
     Init_BareVM();
     Init_heap();
+    rb_vm_encoded_insn_data_table_init();
     Init_vm_objects();
 
     EC_PUSH_TAG(GET_EC());
@@ -403,7 +416,7 @@ rb_mod_s_constants(int argc, VALUE *argv, VALUE mod)
  * \ingroup class
  */
 void
-rb_frozen_class_p(VALUE klass)
+rb_class_modify_check(VALUE klass)
 {
     if (SPECIAL_CONST_P(klass)) {
       noclass:
@@ -715,7 +728,7 @@ rb_f_raise(int argc, VALUE *argv)
     }
     rb_raise_jump(rb_make_exception(argc, argv), *cause);
 
-    UNREACHABLE;
+    UNREACHABLE_RETURN(Qnil);
 }
 
 static VALUE
@@ -1939,5 +1952,4 @@ Init_eval(void)
 
     id_signo = rb_intern_const("signo");
     id_status = rb_intern_const("status");
-    id_cause = rb_intern_const("cause");
 }

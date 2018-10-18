@@ -302,6 +302,7 @@ VALUE rb_cRandom;
 #define id_minus '-'
 #define id_plus  '+'
 static ID id_rand, id_bytes;
+NORETURN(static void domain_error(void));
 
 /* :nodoc: */
 static void
@@ -469,12 +470,38 @@ fill_random_bytes_urandom(void *seed, size_t size)
 #endif
 
 #if 0
+#elif defined MAC_OS_X_VERSION_10_7 && MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7
+#include <Security/Security.h>
+
+static int
+fill_random_bytes_syscall(void *seed, size_t size, int unused)
+{
+    int status = SecRandomCopyBytes(kSecRandomDefault, size, seed);
+
+    if (status != errSecSuccess) {
+# if 0
+        CFStringRef s = SecCopyErrorMessageString(status, NULL);
+        const char *m = s ? CFStringGetCStringPtr(s, kCFStringEncodingUTF8) : NULL;
+        fprintf(stderr, "SecRandomCopyBytes failed: %d: %s\n", status,
+                m ? m : "unknown");
+        if (s) CFRelease(s);
+# endif
+        return -1;
+    }
+    return 0;
+}
 #elif defined(HAVE_ARC4RANDOM_BUF)
 static int
 fill_random_bytes_syscall(void *buf, size_t size, int unused)
 {
+#if (defined(__OpenBSD__) && OpenBSD >= 201411) || \
+    (defined(__NetBSD__)  && __NetBSD_Version__ >= 700000000) || \
+    (defined(__FreeBSD__) && __FreeBSD_version >= 1200079)
     arc4random_buf(buf, size);
     return 0;
+#else
+    return -1;
+#endif
 }
 #elif defined(_WIN32)
 static void
@@ -546,27 +573,38 @@ fill_random_bytes_syscall(void *seed, size_t size, int need_secure)
 # define fill_random_bytes_syscall(seed, size, need_secure) -1
 #endif
 
-static int
-fill_random_bytes(void *seed, size_t size, int need_secure)
+int
+ruby_fill_random_bytes(void *seed, size_t size, int need_secure)
 {
     int ret = fill_random_bytes_syscall(seed, size, need_secure);
     if (ret == 0) return ret;
     return fill_random_bytes_urandom(seed, size);
 }
 
+#define fill_random_bytes ruby_fill_random_bytes
+
 static void
 fill_random_seed(uint32_t *seed, size_t cnt)
 {
     static int n = 0;
+#if defined HAVE_CLOCK_GETTIME
+    struct timespec tv;
+#elif defined HAVE_GETTIMEOFDAY
     struct timeval tv;
+#endif
     size_t len = cnt * sizeof(*seed);
 
     memset(seed, 0, len);
 
-    fill_random_bytes(seed, len, TRUE);
+    fill_random_bytes(seed, len, FALSE);
 
+#if defined HAVE_CLOCK_GETTIME
+    clock_gettime(CLOCK_REALTIME, &tv);
+    seed[0] ^= tv.tv_nsec;
+#elif defined HAVE_GETTIMEOFDAY
     gettimeofday(&tv, 0);
     seed[0] ^= tv.tv_usec;
+#endif
     seed[1] ^= (uint32_t)tv.tv_sec;
 #if SIZEOF_TIME_T > SIZEOF_INT
     seed[0] ^= (uint32_t)((time_t)tv.tv_sec >> SIZEOF_INT * CHAR_BIT);
@@ -635,7 +673,7 @@ random_raw_seed(VALUE self, VALUE size)
     long n = NUM2ULONG(size);
     VALUE buf = rb_str_new(0, n);
     if (n == 0) return buf;
-    if (fill_random_bytes(RSTRING_PTR(buf), n, FALSE))
+    if (fill_random_bytes(RSTRING_PTR(buf), n, TRUE))
 	rb_raise(rb_eRuntimeError, "failed to get urandom");
     return buf;
 }
@@ -1150,14 +1188,12 @@ random_s_bytes(VALUE obj, VALUE len)
 static VALUE
 range_values(VALUE vmax, VALUE *begp, VALUE *endp, int *exclp)
 {
-    VALUE end, r;
+    VALUE end;
 
     if (!rb_range_values(vmax, begp, &end, exclp)) return Qfalse;
     if (endp) *endp = end;
-    if (!rb_respond_to(end, id_minus)) return Qfalse;
-    r = rb_funcallv(end, id_minus, 1, begp);
-    if (NIL_P(r)) return Qfalse;
-    return r;
+    if (NIL_P(end)) return Qnil;
+    return rb_check_funcall_default(end, id_minus, 1, begp, Qfalse);
 }
 
 static VALUE
@@ -1196,7 +1232,6 @@ rand_int(VALUE obj, rb_random_t *rnd, VALUE vmax, int restrictive)
     }
 }
 
-NORETURN(static void domain_error(void));
 static void
 domain_error(void)
 {
@@ -1242,6 +1277,7 @@ rand_range(VALUE obj, rb_random_t* rnd, VALUE range)
 
     if ((v = vmax = range_values(range, &beg, &end, &excl)) == Qfalse)
 	return Qfalse;
+    if (NIL_P(v)) domain_error();
     if (!RB_TYPE_P(vmax, T_FLOAT) && (v = rb_check_to_int(vmax), !NIL_P(v))) {
 	long max;
 	vmax = v;

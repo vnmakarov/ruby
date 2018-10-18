@@ -1,10 +1,14 @@
 # frozen_string_literal: true
-require_relative 'version'
+begin
+  require_relative 'lib/webrick/version'
+rescue LoadError
+  # for Ruby core repository
+  require_relative 'version'
+end
 
 Gem::Specification.new do |s|
   s.name = "webrick"
   s.version = WEBrick::VERSION
-  s.date = '2017-12-24'
   s.summary = "HTTP server toolkit"
   s.description = "WEBrick is an HTTP server toolkit that can be configured as an HTTPS server, a proxy server, and a virtual-host server."
 

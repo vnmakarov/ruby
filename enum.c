@@ -142,6 +142,34 @@ enum_grep_v(VALUE obj, VALUE pat)
     return ary;
 }
 
+#define COUNT_BIGNUM IMEMO_FL_USER0
+#define MEMO_V3_SET(m, v) RB_OBJ_WRITE((m), &(m)->u3.value, (v))
+
+static void
+imemo_count_up(struct MEMO *memo)
+{
+    if (memo->flags & COUNT_BIGNUM) {
+	MEMO_V3_SET(memo, rb_int_succ(memo->u3.value));
+    }
+    else if (++memo->u3.cnt == 0) {
+	/* overflow */
+	unsigned long buf[2] = {0, 1};
+	MEMO_V3_SET(memo, rb_big_unpack(buf, 2));
+	memo->flags |= COUNT_BIGNUM;
+    }
+}
+
+static VALUE
+imemo_count_value(struct MEMO *memo)
+{
+    if (memo->flags & COUNT_BIGNUM) {
+	return memo->u3.value;
+    }
+    else {
+	return ULONG2NUM(memo->u3.cnt);
+    }
+}
+
 static VALUE
 count_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, memop))
 {
@@ -150,7 +178,7 @@ count_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, memop))
     ENUM_WANT_SVALUE();
 
     if (rb_equal(i, memo->v1)) {
-	memo->u3.cnt++;
+	imemo_count_up(memo);
     }
     return Qnil;
 }
@@ -161,7 +189,7 @@ count_iter_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, memop))
     struct MEMO *memo = MEMO_CAST(memop);
 
     if (RTEST(rb_yield_values2(argc, argv))) {
-	memo->u3.cnt++;
+	imemo_count_up(memo);
     }
     return Qnil;
 }
@@ -171,7 +199,7 @@ count_all_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, memop))
 {
     struct MEMO *memo = MEMO_CAST(memop);
 
-    memo->u3.cnt++;
+    imemo_count_up(memo);
     return Qnil;
 }
 
@@ -218,7 +246,7 @@ enum_count(int argc, VALUE *argv, VALUE obj)
 
     memo = MEMO_NEW(item, 0, 0);
     rb_block_call(obj, id_each, 0, 0, func, (VALUE)memo);
-    return INT2NUM(memo->u3.cnt);
+    return imemo_count_value(memo);
 }
 
 static VALUE
@@ -286,10 +314,10 @@ find_index_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, memop))
     ENUM_WANT_SVALUE();
 
     if (rb_equal(i, memo->v2)) {
-	MEMO_V1_SET(memo, UINT2NUM(memo->u3.cnt));
+	MEMO_V1_SET(memo, imemo_count_value(memo));
 	rb_iter_break();
     }
-    memo->u3.cnt++;
+    imemo_count_up(memo);
     return Qnil;
 }
 
@@ -299,10 +327,10 @@ find_index_iter_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, memop))
     struct MEMO *memo = MEMO_CAST(memop);
 
     if (RTEST(rb_yield_values2(argc, argv))) {
-	MEMO_V1_SET(memo, UINT2NUM(memo->u3.cnt));
+	MEMO_V1_SET(memo, imemo_count_value(memo));
 	rb_iter_break();
     }
-    memo->u3.cnt++;
+    imemo_count_up(memo);
     return Qnil;
 }
 
@@ -585,38 +613,42 @@ enum_to_a(int argc, VALUE *argv, VALUE obj)
 static VALUE
 enum_to_h_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, hash))
 {
-    VALUE key_value_pair;
     ENUM_WANT_SVALUE();
     rb_thread_check_ints();
-    key_value_pair = rb_check_array_type(i);
-    if (NIL_P(key_value_pair)) {
-	rb_raise(rb_eTypeError, "wrong element type %s (expected array)",
-	    rb_builtin_class_name(i));
-    }
-    if (RARRAY_LEN(key_value_pair) != 2) {
-        rb_raise(rb_eArgError, "element has wrong array length (expected 2, was %ld)",
-	    RARRAY_LEN(key_value_pair));
-    }
-    rb_hash_aset(hash, RARRAY_AREF(key_value_pair, 0), RARRAY_AREF(key_value_pair, 1));
-    return Qnil;
+    return rb_hash_set_pair(hash, i);
+}
+
+static VALUE
+enum_to_h_ii(RB_BLOCK_CALL_FUNC_ARGLIST(i, hash))
+{
+    rb_thread_check_ints();
+    return rb_hash_set_pair(hash, rb_yield_values2(argc, argv));
 }
 
 /*
  *  call-seq:
- *     enum.to_h(*args)  -> hash
+ *     enum.to_h(*args)        -> hash
+ *     enum.to_h(*args) {...}  -> hash
  *
  *  Returns the result of interpreting <i>enum</i> as a list of
  *  <tt>[key, value]</tt> pairs.
  *
  *     %i[hello world].each_with_index.to_h
  *       # => {:hello => 0, :world => 1}
+ *
+ *  If a block is given, the results of the block on each element of
+ *  the enum will be used as pairs.
+ *
+ *     (1..5).to_h {|x| [x, x ** 2]}
+ *       #=> {1=>1, 2=>4, 3=>9, 4=>16, 5=>25}
  */
 
 static VALUE
 enum_to_h(int argc, VALUE *argv, VALUE obj)
 {
     VALUE hash = rb_hash_new();
-    rb_block_call(obj, id_each, argc, argv, enum_to_h_i, hash);
+    rb_block_call_func *iter = rb_block_given_p() ? enum_to_h_ii : enum_to_h_i;
+    rb_block_call(obj, id_each, argc, argv, iter, hash);
     OBJ_INFECT(hash, obj);
     return hash;
 }
@@ -693,7 +725,7 @@ ary_inject_op(VALUE ary, VALUE init, VALUE op)
                 if (FIXNUM_P(e)) {
                     n += FIX2LONG(e); /* should not overflow long type */
                     if (!FIXABLE(n)) {
-                        v = rb_big_plus(LONG2NUM(n), v);
+                        v = rb_big_plus(ULONG2NUM(n), v);
                         n = 0;
                     }
                 }
@@ -910,7 +942,7 @@ first_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, params))
     MEMO_V1_SET(memo, i);
     rb_iter_break();
 
-    UNREACHABLE;
+    UNREACHABLE_RETURN(Qnil);
 }
 
 static VALUE enum_take(VALUE obj, VALUE n);
@@ -1184,6 +1216,12 @@ name##_eqq(RB_BLOCK_CALL_FUNC_ARGLIST(i, memo)) \
 static VALUE \
 enum_##name##_func(VALUE result, struct MEMO *memo)
 
+#define WARN_UNUSED_BLOCK(argc) do { \
+    if ((argc) > 0 && rb_block_given_p()) { \
+        rb_warn("given block not used"); \
+    } \
+} while (0)
+
 DEFINE_ENUMFUNCS(all)
 {
     if (!RTEST(result)) {
@@ -1221,6 +1259,7 @@ static VALUE
 enum_all(int argc, VALUE *argv, VALUE obj)
 {
     struct MEMO *memo = MEMO_ENUM_NEW(Qtrue);
+    WARN_UNUSED_BLOCK(argc);
     rb_block_call(obj, id_each, 0, 0, ENUMFUNC(all), (VALUE)memo);
     return memo->v1;
 }
@@ -1262,6 +1301,7 @@ static VALUE
 enum_any(int argc, VALUE *argv, VALUE obj)
 {
     struct MEMO *memo = MEMO_ENUM_NEW(Qfalse);
+    WARN_UNUSED_BLOCK(argc);
     rb_block_call(obj, id_each, 0, 0, ENUMFUNC(any), (VALUE)memo);
     return memo->v1;
 }
@@ -1400,7 +1440,7 @@ nmin_filter(struct nmin_data *data)
 #undef GETPTR
 #undef SWAP
 
-    data->limit = RARRAY_PTR(data->buf)[store_index*eltsize]; /* the last pivot */
+    data->limit = RARRAY_AREF(data->buf, store_index*eltsize); /* the last pivot */
     data->curlen = data->n;
     rb_ary_resize(data->buf, data->n * eltsize);
 }
@@ -1478,18 +1518,22 @@ rb_nmin_run(VALUE obj, VALUE num, int by, int rev, int ary)
     result = data.buf;
     if (by) {
 	long i;
-	ruby_qsort(RARRAY_PTR(result),
-	           RARRAY_LEN(result)/2,
-		   sizeof(VALUE)*2,
-		   data.cmpfunc, (void *)&data);
-	for (i=1; i<RARRAY_LEN(result); i+=2) {
-	    RARRAY_PTR(result)[i/2] = RARRAY_PTR(result)[i];
-	}
+        RARRAY_PTR_USE(result, ptr, {
+            ruby_qsort(ptr,
+                       RARRAY_LEN(result)/2,
+                       sizeof(VALUE)*2,
+                       data.cmpfunc, (void *)&data);
+            for (i=1; i<RARRAY_LEN(result); i+=2) {
+                ptr[i/2] = ptr[i];
+            }
+        });
 	rb_ary_resize(result, RARRAY_LEN(result)/2);
     }
     else {
-	ruby_qsort(RARRAY_PTR(result), RARRAY_LEN(result), sizeof(VALUE),
-		   data.cmpfunc, (void *)&data);
+        RARRAY_PTR_USE(result, ptr, {
+            ruby_qsort(ptr, RARRAY_LEN(result), sizeof(VALUE),
+                       data.cmpfunc, (void *)&data);
+        });
     }
     if (rev) {
         rb_ary_reverse(result);
@@ -1529,6 +1573,7 @@ enum_one(int argc, VALUE *argv, VALUE obj)
     struct MEMO *memo = MEMO_ENUM_NEW(Qundef);
     VALUE result;
 
+    WARN_UNUSED_BLOCK(argc);
     rb_block_call(obj, id_each, 0, 0, ENUMFUNC(one), (VALUE)memo);
     result = memo->v1;
     if (result == Qundef) return Qfalse;
@@ -1570,6 +1615,8 @@ static VALUE
 enum_none(int argc, VALUE *argv, VALUE obj)
 {
     struct MEMO *memo = MEMO_ENUM_NEW(Qtrue);
+
+    WARN_UNUSED_BLOCK(argc);
     rb_block_call(obj, id_each, 0, 0, ENUMFUNC(none), (VALUE)memo);
     return memo->v1;
 }
@@ -2232,9 +2279,11 @@ enum_member(VALUE obj, VALUE val)
 static VALUE
 each_with_index_i(RB_BLOCK_CALL_FUNC_ARGLIST(i, memo))
 {
-    long n = MEMO_CAST(memo)->u3.cnt++;
+    struct MEMO *m = MEMO_CAST(memo);
+    VALUE n = imemo_count_value(m);
 
-    return rb_yield_values(2, rb_enum_values_pack(argc, argv), INT2NUM(n));
+    imemo_count_up(m);
+    return rb_yield_values(2, rb_enum_values_pack(argc, argv), n);
 }
 
 /*
@@ -3778,6 +3827,25 @@ sum_iter(VALUE i, struct enum_sum_memo *memo)
             memo->float_value = 0;
             goto some_value;
         }
+
+        if (isnan(f)) return;
+        if (isnan(x)) {
+            memo->v = i;
+            memo->f = x;
+            return;
+        }
+        if (isinf(x)) {
+            if (isinf(f) && signbit(x) != signbit(f)) {
+                memo->f = NAN;
+                memo->v = DBL2NUM(f);
+            }
+            else {
+                memo->f = x;
+                memo->v = i;
+            }
+            return;
+        }
+        if (isinf(f)) return;
 
         t = f + x;
         if (fabs(f) >= fabs(x))

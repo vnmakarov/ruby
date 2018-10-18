@@ -195,14 +195,18 @@ ruby_strtoul(const char *str, char **endptr, int base)
 #   define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 
-#if !defined HAVE_BSD_QSORT_R && defined HAVE_QSORT_S
+typedef int (cmpfunc_t)(const void*, const void*, void*);
+
+#if defined HAVE_QSORT_S && defined RUBY_MSVCRT_VERSION
+/* In contrast to its name, Visual Studio qsort_s is incompatible with
+ * C11 in the order of the comparison function's arguments, and same
+ * as BSD qsort_r rather. */
 # define qsort_r(base, nel, size, arg, cmp) qsort_s(base, nel, size, cmp, arg)
 # define cmp_bsd_qsort cmp_ms_qsort
 # define HAVE_BSD_QSORT_R 1
 #endif
-#if defined HAVE_BSD_QSORT_R
-typedef int (cmpfunc_t)(const void*, const void*, void*);
 
+#if defined HAVE_BSD_QSORT_R
 struct bsd_qsort_r_args {
     cmpfunc_t *cmp;
     void *arg;
@@ -223,6 +227,21 @@ ruby_qsort(void* base, const size_t nel, const size_t size, cmpfunc_t *cmp, void
     args.arg = d;
     qsort_r(base, nel, size, &args, cmp_bsd_qsort);
 }
+#elif defined HAVE_QSORT_S
+/* C11 qsort_s has the same arguments as GNU's, but uses
+ * runtime-constraints handler. */
+void
+ruby_qsort(void* base, const size_t nel, const size_t size, cmpfunc_t *cmp, void *d)
+{
+    if (!nel || !size) return;  /* nothing to sort */
+
+    /* get rid of runtime-constraints handler for MT-safeness */
+    if (!base || !cmp) return;
+    if (nel > RSIZE_MAX || size > RSIZE_MAX) return;
+
+    qsort_s(base, nel, size, cmp, d);
+}
+# define HAVE_GNU_QSORT_R 1
 #elif !defined HAVE_GNU_QSORT_R
 /* mm.c */
 
@@ -339,7 +358,6 @@ typedef struct { char *LL, *RR; } stack_node; /* Stack structure for L,l,R,r */
                        ((*cmp)((b),(c),d)<0 ? (b) : ((*cmp)((a),(c),d)<0 ? (c) : (a))) : \
                        ((*cmp)((b),(c),d)>0 ? (b) : ((*cmp)((a),(c),d)<0 ? (a) : (c))))
 
-typedef int (cmpfunc_t)(const void*, const void*, void*);
 void
 ruby_qsort(void* base, const size_t nel, const size_t size, cmpfunc_t *cmp, void *d)
 {
@@ -1324,7 +1342,7 @@ mult(Bigint *a, Bigint *b)
 #else
 #ifdef Pack_32
     for (; xb < xbe; xb++, xc0++) {
-        if (y = *xb & 0xffff) {
+        if ((y = *xb & 0xffff) != 0) {
             x = xa;
             xc = xc0;
             carry = 0;
@@ -1337,7 +1355,7 @@ mult(Bigint *a, Bigint *b)
             } while (x < xae);
             *xc = (ULong)carry;
         }
-        if (y = *xb >> 16) {
+        if ((y = *xb >> 16) != 0) {
             x = xa;
             xc = xc0;
             carry = 0;

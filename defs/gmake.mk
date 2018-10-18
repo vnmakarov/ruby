@@ -10,15 +10,18 @@ TEST_TARGETS := $(filter $(CHECK_TARGETS),$(MAKECMDGOALS))
 TEST_DEPENDS := $(filter-out commit $(TEST_TARGETS),$(MAKECMDGOALS))
 TEST_TARGETS := $(patsubst great,exam,$(TEST_TARGETS))
 TEST_DEPENDS := $(filter-out great $(TEST_TARGETS),$(TEST_DEPENDS))
-TEST_TARGETS := $(patsubst exam,check test-rubyspec,$(TEST_TARGETS))
+TEST_TARGETS := $(patsubst exam,check,$(TEST_TARGETS))
+TEST_TARGETS := $(patsubst check,test-spec test-all,$(TEST_TARGETS))
 TEST_TARGETS := $(patsubst test-rubyspec,test-spec,$(TEST_TARGETS))
-TEST_DEPENDS := $(filter-out exam $(TEST_TARGETS),$(TEST_DEPENDS))
+TEST_DEPENDS := $(filter-out exam check test-spec $(TEST_TARGETS),$(TEST_DEPENDS))
 TEST_TARGETS := $(patsubst love,check,$(TEST_TARGETS))
 TEST_DEPENDS := $(filter-out love $(TEST_TARGETS),$(TEST_DEPENDS))
-TEST_TARGETS := $(patsubst check,test test-testframework test-almost,$(patsubst check-%,test test-%,$(TEST_TARGETS)))
-TEST_DEPENDS := $(filter-out check $(TEST_TARGETS),$(TEST_DEPENDS))
-TEST_TARGETS := $(patsubst test,btest-ruby test-knownbug test-basic,$(TEST_TARGETS))
+TEST_TARGETS := $(patsubst test-all,test test-testframework test-almost,$(patsubst check-%,test test-%,$(TEST_TARGETS)))
+TEST_DEPENDS := $(filter-out test-all $(TEST_TARGETS),$(TEST_DEPENDS))
+TEST_TARGETS := $(patsubst test,test-short,$(TEST_TARGETS))
 TEST_DEPENDS := $(filter-out test $(TEST_TARGETS),$(TEST_DEPENDS))
+TEST_TARGETS := $(patsubst test-short,btest-ruby test-knownbug test-basic,$(TEST_TARGETS))
+TEST_DEPENDS := $(filter-out test-short $(TEST_TARGETS),$(TEST_DEPENDS))
 TEST_DEPENDS += $(if $(filter great exam love check,$(MAKECMDGOALS)),all exts)
 
 ifneq ($(filter -O0 -Od,$(optflags)),)
@@ -139,7 +142,16 @@ $(TIMESTAMPDIR)/.exec.time:
 .PHONY: commit
 commit: $(if $(filter commit,$(MAKECMDGOALS)),$(filter-out commit,$(MAKECMDGOALS)))
 	@$(BASERUBY) -C "$(srcdir)" -I./tool -rvcs -e 'VCS.detect(".").commit'
-	$(Q)$(MAKE) $(mflags) Q=$(Q) srcs_vpath='$(srcdir)/' REVISION_FORCE=PHONY update-src srcs all-incs
+	+$(Q) \
+	{ \
+	  cd "$(srcdir)"; \
+	  sed 's/^@.*@$$//;s/@[A-Za-z_][A-Za-z_0-9]*@//g;/^all-incs:/d' defs/gmake.mk Makefile.in; \
+	  sed 's/{[.;]*$$([a-zA-Z0-9_]*)}//g' common.mk; \
+	} | \
+	$(MAKE) $(mflags) Q=$(Q) srcdir="$(srcdir)" srcs_vpath="$(srcdir)/" CHDIR="$(CHDIR)" \
+		BOOTSTRAPRUBY="$(BOOTSTRAPRUBY)" MINIRUBY="$(BASERUBY)" BASERUBY="$(BASERUBY)" \
+		VCSUP="" ENC_MK=.top-enc.mk REVISION_FORCE=PHONY CONFIGURE="$(CONFIGURE)" -f - \
+		update-src srcs all-incs
 
 ifeq ($(words $(filter update-gems extract-gems,$(MAKECMDGOALS))),2)
 extract-gems: update-gems

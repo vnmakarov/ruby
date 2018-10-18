@@ -360,7 +360,7 @@ module DRb
   # drb remains valid only while that object instance remains alive
   # within the server runtime.
   #
-  # For alternative mechanisms, see DRb::TimerIdConv in rdb/timeridconv.rb
+  # For alternative mechanisms, see DRb::TimerIdConv in drb/timeridconv.rb
   # and DRbNameIdConv in sample/name.rb in the full drb distribution.
   class DRbIdConv
 
@@ -953,6 +953,7 @@ module DRb
     # returned by #open or by #accept, then it closes this particular
     # client-server session.
     def close
+      shutdown
       if @socket
         @socket.close
         @socket = nil
@@ -961,14 +962,8 @@ module DRb
     end
 
     def close_shutdown_pipe
-      if @shutdown_pipe_r && !@shutdown_pipe_r.closed?
-        @shutdown_pipe_r.close
-        @shutdown_pipe_r = nil
-      end
-      if @shutdown_pipe_w && !@shutdown_pipe_w.closed?
-        @shutdown_pipe_w.close
-        @shutdown_pipe_w = nil
-      end
+      @shutdown_pipe_w.close
+      @shutdown_pipe_r.close
     end
     private :close_shutdown_pipe
 
@@ -1001,7 +996,7 @@ module DRb
 
     # Graceful shutdown
     def shutdown
-      @shutdown_pipe_w.close if @shutdown_pipe_w && !@shutdown_pipe_w.closed?
+      @shutdown_pipe_w.close
     end
 
     # Check to see if this connection is alive.

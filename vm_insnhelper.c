@@ -23,7 +23,7 @@
 
 static rb_control_frame_t *vm_get_ruby_level_caller_cfp(const rb_execution_context_t *ec, const rb_control_frame_t *cfp);
 
-VALUE
+MJIT_STATIC VALUE
 ruby_vm_special_exception_copy(VALUE exc)
 {
     VALUE e = rb_obj_alloc(rb_class_real(RBASIC_CLASS(exc)));
@@ -55,8 +55,8 @@ vm_stackoverflow(void)
     ec_stack_overflow(GET_EC(), TRUE);
 }
 
-NORETURN(void rb_ec_stack_overflow(rb_execution_context_t *ec, int crit));
-void
+NORETURN(MJIT_STATIC void rb_ec_stack_overflow(rb_execution_context_t *ec, int crit));
+MJIT_STATIC void
 rb_ec_stack_overflow(rb_execution_context_t *ec, int crit)
 {
     if (crit || rb_during_gc()) {
@@ -255,6 +255,33 @@ vm_push_frame(rb_execution_context_t *ec,
 	SDR();
     }
 
+#if USE_DEBUG_COUNTER
+    RB_DEBUG_COUNTER_INC(frame_push);
+    switch (type & VM_FRAME_MAGIC_MASK) {
+      case VM_FRAME_MAGIC_METHOD: RB_DEBUG_COUNTER_INC(frame_push_method); break;
+      case VM_FRAME_MAGIC_BLOCK:  RB_DEBUG_COUNTER_INC(frame_push_block);  break;
+      case VM_FRAME_MAGIC_CLASS:  RB_DEBUG_COUNTER_INC(frame_push_class);  break;
+      case VM_FRAME_MAGIC_TOP:    RB_DEBUG_COUNTER_INC(frame_push_top);    break;
+      case VM_FRAME_MAGIC_CFUNC:  RB_DEBUG_COUNTER_INC(frame_push_cfunc);  break;
+      case VM_FRAME_MAGIC_IFUNC:  RB_DEBUG_COUNTER_INC(frame_push_ifunc);  break;
+      case VM_FRAME_MAGIC_EVAL:   RB_DEBUG_COUNTER_INC(frame_push_eval);   break;
+      case VM_FRAME_MAGIC_RESCUE: RB_DEBUG_COUNTER_INC(frame_push_rescue); break;
+      case VM_FRAME_MAGIC_DUMMY:  RB_DEBUG_COUNTER_INC(frame_push_dummy);  break;
+      default: rb_bug("unreachable");
+    }
+    {
+        rb_control_frame_t *prev_cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
+        int cur_ruby_frame = VM_FRAME_RUBYFRAME_P(cfp);
+        int pre_ruby_frame = VM_FRAME_RUBYFRAME_P(prev_cfp);
+        if (RUBY_VM_END_CONTROL_FRAME(ec) != prev_cfp) {
+            pre_ruby_frame ? (cur_ruby_frame ? RB_DEBUG_COUNTER_INC(frame_R2R) :
+                                               RB_DEBUG_COUNTER_INC(frame_R2C)):
+                             (cur_ruby_frame ? RB_DEBUG_COUNTER_INC(frame_C2R) :
+                                               RB_DEBUG_COUNTER_INC(frame_C2C));
+        }
+    }
+#endif
+
     return cfp;
 }
 
@@ -287,7 +314,7 @@ vm_pop_frame(rb_execution_context_t *ec, rb_control_frame_t *cfp, const VALUE *e
     return flags & VM_FRAME_FLAG_FINISH;
 }
 
-void
+MJIT_STATIC void
 rb_vm_pop_frame(rb_execution_context_t *ec)
 {
     vm_pop_frame(ec, ec->cfp, ec->cfp->ep);
@@ -310,7 +337,7 @@ rb_arity_error_new(int argc, int min, int max)
     return rb_exc_new3(rb_eArgError, err_mess);
 }
 
-void
+MJIT_STATIC void
 rb_error_arity(int argc, int min, int max)
 {
     rb_exc_raise(rb_arity_error_new(argc, min, max));
@@ -342,7 +369,7 @@ vm_env_write(const VALUE *ep, int index, VALUE v)
     }
 }
 
-VALUE
+MJIT_STATIC VALUE
 rb_vm_bh_to_procval(const rb_execution_context_t *ec, VALUE block_handler)
 {
     if (block_handler == VM_BLOCK_HANDLER_NONE) {
@@ -535,7 +562,7 @@ check_method_entry(VALUE obj, int can_be_svar)
     }
 }
 
-const rb_callable_method_entry_t *
+MJIT_STATIC const rb_callable_method_entry_t *
 rb_vm_frame_method_entry(const rb_control_frame_t *cfp)
 {
     const VALUE *ep = cfp->ep;
@@ -923,28 +950,24 @@ vm_search_const_defined_class(const VALUE cbase, ID id)
     return 0;
 }
 
-#ifndef USE_IC_FOR_IVAR
-#define USE_IC_FOR_IVAR 1
-#endif
-
 ALWAYS_INLINE(static VALUE vm_getivar(VALUE, ID, IC, struct rb_call_cache *, int));
 static inline VALUE
 vm_getivar(VALUE obj, ID id, IC ic, struct rb_call_cache *cc, int is_attr)
 {
-#if USE_IC_FOR_IVAR
+#if OPT_IC_FOR_IVAR
     if (LIKELY(RB_TYPE_P(obj, T_OBJECT))) {
 	VALUE val = Qundef;
-	if (LIKELY(is_attr ?
+        if (LIKELY(is_attr ?
 		   RB_DEBUG_COUNTER_INC_UNLESS(ivar_get_ic_miss_unset, cc->aux.index > 0) :
 		   RB_DEBUG_COUNTER_INC_UNLESS(ivar_get_ic_miss_serial,
 					       ic->ic_serial == RCLASS_SERIAL(RBASIC(obj)->klass)))) {
-	    st_index_t index = !is_attr ? ic->ic_value.index : (cc->aux.index - 1);
+            st_index_t index = !is_attr ? ic->ic_value.index : (cc->aux.index - 1);
 	    if (LIKELY(index < ROBJECT_NUMIV(obj))) {
 		val = ROBJECT_IVPTR(obj)[index];
 	    }
 	}
 	else {
-	    st_data_t index;
+            st_data_t index;
 	    struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
 
 	    if (iv_index_tbl) {
@@ -973,7 +996,7 @@ vm_getivar(VALUE obj, ID id, IC ic, struct rb_call_cache *cc, int is_attr)
     else {
 	RB_DEBUG_COUNTER_INC(ivar_get_ic_miss_noobject);
     }
-#endif	/* USE_IC_FOR_IVAR */
+#endif /* OPT_IC_FOR_IVAR */
     RB_DEBUG_COUNTER_INC(ivar_get_ic_miss);
 
     if (is_attr)
@@ -984,8 +1007,8 @@ vm_getivar(VALUE obj, ID id, IC ic, struct rb_call_cache *cc, int is_attr)
 static inline VALUE
 vm_setivar(VALUE obj, ID id, VALUE val, IC ic, struct rb_call_cache *cc, int is_attr)
 {
-#if USE_IC_FOR_IVAR
-    rb_check_frozen(obj);
+#if OPT_IC_FOR_IVAR
+    rb_check_frozen_internal(obj);
 
     if (LIKELY(RB_TYPE_P(obj, T_OBJECT))) {
 	VALUE klass = RBASIC(obj)->klass;
@@ -1024,7 +1047,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, IC ic, struct rb_call_cache *cc, int is_
     else {
 	RB_DEBUG_COUNTER_INC(ivar_set_ic_miss_noobject);
     }
-#endif	/* USE_IC_FOR_IVAR */
+#endif /* OPT_IC_FOR_IVAR */
     RB_DEBUG_COUNTER_INC(ivar_set_ic_miss);
     return rb_ivar_set(obj, id, val);
 }
@@ -1032,7 +1055,7 @@ vm_setivar(VALUE obj, ID id, VALUE val, IC ic, struct rb_call_cache *cc, int is_
 static inline VALUE
 vm_getinstancevariable(VALUE obj, ID id, IC ic)
 {
-    return vm_getivar(obj, id, ic, 0, 0);
+    return vm_getivar(obj, id, ic, NULL, FALSE);
 }
 
 static inline void
@@ -1063,7 +1086,7 @@ vm_throw_continue(const rb_execution_context_t *ec, VALUE err)
 
 static VALUE
 vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_cfp, enum ruby_tag_type state,
-	       const int flag, const rb_num_t level, const VALUE throwobj)
+               const int flag, const VALUE throwobj)
 {
     const rb_control_frame_t *escape_cfp = NULL;
     const rb_control_frame_t * const eocfp = RUBY_VM_END_CONTROL_FRAME(ec); /* end of control frame pointer */
@@ -1131,12 +1154,7 @@ vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_c
 	}
     }
     else if (state == TAG_RETRY) {
-	rb_num_t i;
 	const VALUE *ep = VM_ENV_PREV_EP(GET_EP());
-
-	for (i = 0; i < level; i++) {
-	    ep = VM_ENV_PREV_EP(ep);
-	}
 
 	escape_cfp = rb_vm_search_cf_from_ep(ec, reg_cfp, ep);
     }
@@ -1221,10 +1239,9 @@ vm_throw(const rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
 {
     const int state = (int)(throw_state & VM_THROW_STATE_MASK);
     const int flag = (int)(throw_state & VM_THROW_NO_ESCAPE_FLAG);
-    const rb_num_t level = throw_state >> VM_THROW_LEVEL_SHIFT;
 
     if (state != 0) {
-	return vm_throw_start(ec, reg_cfp, state, flag, level, throwobj);
+        return vm_throw_start(ec, reg_cfp, state, flag, throwobj);
     }
     else {
 	return vm_throw_continue(ec, throwobj);
@@ -1297,7 +1314,7 @@ vm_expandarray(VALUE *sp, VALUE ary, rb_num_t num, int flag)
 static VALUE vm_call_general(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc);
 
 MJIT_FUNC_EXPORTED void
-vm_search_method_slowpath(const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE klass)
+rb_vm_search_method_slowpath(const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE klass)
 {
     cc->me = rb_callable_method_entry(klass, ci->mid);
     VM_ASSERT(callable_method_entry_p(cc->me));
@@ -1313,6 +1330,9 @@ vm_search_method(const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE 
 {
     VALUE klass = CLASS_OF(recv);
 
+    VM_ASSERT(klass != Qfalse);
+    VM_ASSERT(RBASIC_CLASS(klass) == 0 || rb_obj_is_kind_of(klass, rb_cClass));
+
 #if OPT_INLINE_METHOD_CACHE
     if (LIKELY(RB_DEBUG_COUNTER_INC_UNLESS(mc_global_state_miss,
 					   GET_GLOBAL_METHOD_STATE() == cc->method_state) &&
@@ -1325,7 +1345,7 @@ vm_search_method(const struct rb_call_info *ci, struct rb_call_cache *cc, VALUE 
     }
     RB_DEBUG_COUNTER_INC(mc_inline_miss);
 #endif
-    vm_search_method_slowpath(ci, cc, klass);
+    rb_vm_search_method_slowpath(ci, cc, klass);
 }
 
 static inline int
@@ -1465,7 +1485,7 @@ rb_eql_opt(VALUE obj1, VALUE obj2)
     return opt_eql_func(obj1, obj2, &ci, &cc);
 }
 
-extern VALUE vm_call0(rb_execution_context_t *ec, VALUE, ID, int, const VALUE*, const rb_callable_method_entry_t *);
+extern VALUE rb_vm_call0(rb_execution_context_t *ec, VALUE, ID, int, const VALUE*, const rb_callable_method_entry_t *);
 
 static VALUE
 check_match(rb_execution_context_t *ec, VALUE pattern, VALUE target, enum vm_check_match_type type)
@@ -1482,7 +1502,7 @@ check_match(rb_execution_context_t *ec, VALUE pattern, VALUE target, enum vm_che
 	const rb_callable_method_entry_t *me =
 	    rb_callable_method_entry_with_refinements(CLASS_OF(pattern), idEqq, NULL);
 	if (me) {
-	    return vm_call0(ec, pattern, idEqq, 1, &target, me);
+            return rb_vm_call0(ec, pattern, idEqq, 1, &target, me);
 	}
 	else {
 	    /* fallback to funcall (e.g. method_missing) */
@@ -1560,7 +1580,7 @@ vm_base_ptr(const rb_control_frame_t *cfp)
 #include "vm_args.c"
 
 static inline VALUE vm_call_iseq_setup_2(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc, int opt_pc, int param_size, int local_size);
-static inline VALUE vm_call_iseq_setup_normal(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc, int opt_pc, int param_size, int local_size);
+ALWAYS_INLINE(static VALUE vm_call_iseq_setup_normal(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const rb_callable_method_entry_t *me, int opt_pc, int param_size, int local_size));
 static inline VALUE vm_call_iseq_setup_tailcall(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc, int opt_pc);
 static VALUE vm_call_super_method(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc);
 static VALUE vm_call_method_nome(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc);
@@ -1590,10 +1610,10 @@ vm_call_iseq_setup_normal_0start(rb_execution_context_t *ec, rb_control_frame_t 
     const rb_iseq_t *iseq = def_iseq_ptr(cc->me->def);
     int param = iseq->body->param.size;
     int local = iseq->body->local_table_size;
-    return vm_call_iseq_setup_normal(ec, cfp, calling, ci, cc, 0, param, local);
+    return vm_call_iseq_setup_normal(ec, cfp, calling, cc->me, 0, param, local);
 }
 
-int
+MJIT_STATIC int
 rb_simple_iseq_p(const rb_iseq_t *iseq)
 {
     return iseq->body->param.flags.has_opt == FALSE &&
@@ -1617,7 +1637,7 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
 	    argument_arity_error(ec, iseq, calling->argc, iseq->body->param.lead_num, iseq->body->param.lead_num);
 	}
 
-	CI_SET_FASTPATH(cc, vm_call_iseq_setup_func(ci, param_size, local_size),
+        CC_SET_FASTPATH(cc, vm_call_iseq_setup_func(ci, param_size, local_size),
 			(!IS_ARGS_SPLAT(ci) && !IS_ARGS_KEYWORD(ci) &&
 			 !(METHOD_ENTRY_VISI(cc->me) == METHOD_VISI_PROTECTED)));
 	return 0;
@@ -1642,7 +1662,7 @@ vm_call_iseq_setup_2(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct
 		     int opt_pc, int param_size, int local_size)
 {
     if (LIKELY(!(ci->flag & VM_CALL_TAILCALL))) {
-	return vm_call_iseq_setup_normal(ec, cfp, calling, ci, cc, opt_pc, param_size, local_size);
+        return vm_call_iseq_setup_normal(ec, cfp, calling, cc->me, opt_pc, param_size, local_size);
     }
     else {
 	return vm_call_iseq_setup_tailcall(ec, cfp, calling, ci, cc, opt_pc);
@@ -1650,20 +1670,19 @@ vm_call_iseq_setup_2(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct
 }
 
 static inline VALUE
-vm_call_iseq_setup_normal(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc,
-			  int opt_pc, int param_size, int local_size)
+vm_call_iseq_setup_normal(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const rb_callable_method_entry_t *me,
+                          int opt_pc, int param_size, int local_size)
 {
-    const rb_callable_method_entry_t *me = cc->me;
     const rb_iseq_t *iseq = def_iseq_ptr(me->def);
     VALUE *argv = cfp->sp - calling->argc;
     VALUE *sp = argv + param_size;
     cfp->sp = argv - 1 /* recv */;
 
     vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, calling->recv,
-		  calling->block_handler, (VALUE)me,
-		  iseq->body->iseq_encoded + opt_pc, sp,
-		  local_size - param_size,
-		  iseq->body->stack_max);
+                  calling->block_handler, (VALUE)me,
+                  iseq->body->iseq_encoded + opt_pc, sp,
+                  local_size - param_size,
+                  iseq->body->stack_max);
     return Qundef;
 }
 
@@ -1825,35 +1844,6 @@ call_cfunc_15(VALUE (*func)(ANYARGS), VALUE recv, int argc, const VALUE *argv)
     return (*func)(recv, argv[0], argv[1], argv[2], argv[3], argv[4], argv[5], argv[6], argv[7], argv[8], argv[9], argv[10], argv[11], argv[12], argv[13], argv[14]);
 }
 
-#ifndef VM_PROFILE
-#define VM_PROFILE 0
-#endif
-
-#if VM_PROFILE
-enum {
-    VM_PROFILE_R2C_CALL,
-    VM_PROFILE_R2C_POPF,
-    VM_PROFILE_C2C_CALL,
-    VM_PROFILE_C2C_POPF,
-    VM_PROFILE_COUNT
-};
-static int vm_profile_counter[VM_PROFILE_COUNT];
-#define VM_PROFILE_UP(x) (vm_profile_counter[VM_PROFILE_##x]++)
-#define VM_PROFILE_ATEXIT() atexit(vm_profile_show_result)
-static void
-vm_profile_show_result(void)
-{
-    fprintf(stderr, "VM Profile results: \n");
-    fprintf(stderr, "r->c call: %d\n", vm_profile_counter[VM_PROFILE_R2C_CALL]);
-    fprintf(stderr, "r->c popf: %d\n", vm_profile_counter[VM_PROFILE_R2C_POPF]);
-    fprintf(stderr, "c->c call: %d\n", vm_profile_counter[VM_PROFILE_C2C_CALL]);
-    fprintf(stderr, "c->c popf: %d\n", vm_profile_counter[VM_PROFILE_C2C_POPF]);
-}
-#else
-#define VM_PROFILE_UP(x)
-#define VM_PROFILE_ATEXIT()
-#endif
-
 static inline int
 vm_cfp_consistent_p(rb_execution_context_t *ec, const rb_control_frame_t *reg_cfp)
 {
@@ -1920,7 +1910,6 @@ vm_call_cfunc_with_frame(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp
     if (len >= 0) rb_check_arity(argc, len, len);
 
     reg_cfp->sp -= argc + 1;
-    VM_PROFILE_UP(R2C_CALL);
     val = (*cfunc->invoker)(cfunc->func, recv, argc, reg_cfp->sp + 1);
 
     CHECK_CFP_CONSISTENCY("vm_call_cfunc");
@@ -1944,7 +1933,7 @@ static VALUE
 vm_call_ivar(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
 {
     cfp->sp -= 1;
-    return vm_getivar(calling->recv, cc->me->def->body.attr.id, NULL, cc, 1);
+    return vm_getivar(calling->recv, cc->me->def->body.attr.id, NULL, cc, TRUE);
 }
 
 static VALUE
@@ -1964,7 +1953,7 @@ vm_call_bmethod_body(rb_execution_context_t *ec, struct rb_calling_info *calling
     /* control block frame */
     ec->passed_bmethod_me = cc->me;
     GetProcPtr(cc->me->def->body.proc, proc);
-    val = vm_invoke_bmethod(ec, proc, calling->recv, calling->argc, argv, calling->block_handler);
+    val = rb_vm_invoke_bmethod(ec, proc, calling->recv, calling->argc, argv, calling->block_handler);
 
     return val;
 }
@@ -2253,35 +2242,35 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
 {
     switch (cc->me->def->type) {
       case VM_METHOD_TYPE_ISEQ:
-	CI_SET_FASTPATH(cc, vm_call_iseq_setup, TRUE);
+        CC_SET_FASTPATH(cc, vm_call_iseq_setup, TRUE);
 	return vm_call_iseq_setup(ec, cfp, calling, ci, cc);
 
       case VM_METHOD_TYPE_NOTIMPLEMENTED:
       case VM_METHOD_TYPE_CFUNC:
-	CI_SET_FASTPATH(cc, vm_call_cfunc, TRUE);
+        CC_SET_FASTPATH(cc, vm_call_cfunc, TRUE);
 	return vm_call_cfunc(ec, cfp, calling, ci, cc);
 
       case VM_METHOD_TYPE_ATTRSET:
 	CALLER_SETUP_ARG(cfp, calling, ci);
 	rb_check_arity(calling->argc, 1, 1);
 	cc->aux.index = 0;
-	CI_SET_FASTPATH(cc, vm_call_attrset, !((ci->flag & VM_CALL_ARGS_SPLAT) || (ci->flag & VM_CALL_KWARG)));
+        CC_SET_FASTPATH(cc, vm_call_attrset, !((ci->flag & VM_CALL_ARGS_SPLAT) || (ci->flag & VM_CALL_KWARG)));
 	return vm_call_attrset(ec, cfp, calling, ci, cc);
 
       case VM_METHOD_TYPE_IVAR:
 	CALLER_SETUP_ARG(cfp, calling, ci);
 	rb_check_arity(calling->argc, 0, 0);
 	cc->aux.index = 0;
-	CI_SET_FASTPATH(cc, vm_call_ivar, !(ci->flag & VM_CALL_ARGS_SPLAT));
+        CC_SET_FASTPATH(cc, vm_call_ivar, !(ci->flag & VM_CALL_ARGS_SPLAT));
 	return vm_call_ivar(ec, cfp, calling, ci, cc);
 
       case VM_METHOD_TYPE_MISSING:
 	cc->aux.method_missing_reason = 0;
-	CI_SET_FASTPATH(cc, vm_call_method_missing, TRUE);
+        CC_SET_FASTPATH(cc, vm_call_method_missing, TRUE);
 	return vm_call_method_missing(ec, cfp, calling, ci, cc);
 
       case VM_METHOD_TYPE_BMETHOD:
-	CI_SET_FASTPATH(cc, vm_call_bmethod, TRUE);
+        CC_SET_FASTPATH(cc, vm_call_bmethod, TRUE);
 	return vm_call_bmethod(ec, cfp, calling, ci, cc);
 
       case VM_METHOD_TYPE_ALIAS:
@@ -2292,13 +2281,13 @@ vm_call_method_each_type(rb_execution_context_t *ec, rb_control_frame_t *cfp, st
       case VM_METHOD_TYPE_OPTIMIZED:
 	switch (cc->me->def->body.optimize_type) {
 	  case OPTIMIZED_METHOD_TYPE_SEND:
-	    CI_SET_FASTPATH(cc, vm_call_opt_send, TRUE);
+            CC_SET_FASTPATH(cc, vm_call_opt_send, TRUE);
 	    return vm_call_opt_send(ec, cfp, calling, ci, cc);
 	  case OPTIMIZED_METHOD_TYPE_CALL:
-	    CI_SET_FASTPATH(cc, vm_call_opt_call, TRUE);
+            CC_SET_FASTPATH(cc, vm_call_opt_call, TRUE);
 	    return vm_call_opt_call(ec, cfp, calling, ci, cc);
 	  case OPTIMIZED_METHOD_TYPE_BLOCK_CALL:
-	    CI_SET_FASTPATH(cc, vm_call_opt_block_call, TRUE);
+            CC_SET_FASTPATH(cc, vm_call_opt_block_call, TRUE);
 	    return vm_call_opt_block_call(ec, cfp, calling, ci, cc);
 	  default:
 	    rb_bug("vm_call_method: unsupported optimized method type (%d)",
@@ -2372,7 +2361,7 @@ vm_call_method_nome(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct 
     }
     else {
 	cc->aux.method_missing_reason = stat;
-	CI_SET_FASTPATH(cc, vm_call_method_missing, 1);
+        CC_SET_FASTPATH(cc, vm_call_method_missing, TRUE);
 	return vm_call_method_missing(ec, cfp, calling, ci, cc);
     }
 }
@@ -2393,7 +2382,7 @@ vm_call_method(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_ca
 		if (ci->flag & VM_CALL_VCALL) stat |= MISSING_VCALL;
 
 		cc->aux.method_missing_reason = stat;
-		CI_SET_FASTPATH(cc, vm_call_method_missing, 1);
+                CC_SET_FASTPATH(cc, vm_call_method_missing, TRUE);
 		return vm_call_method_missing(ec, cfp, calling, ci, cc);
 	    }
 	    return vm_call_method_each_type(ec, cfp, calling, ci, cc);
@@ -2465,7 +2454,6 @@ vm_search_super_method(const rb_execution_context_t *ec, rb_control_frame_t *reg
 		       struct rb_calling_info *calling, struct rb_call_info *ci, struct rb_call_cache *cc)
 {
     VALUE current_defined_class, klass;
-    VALUE sigval = TOPN(calling->argc);
     const rb_callable_method_entry_t *me = rb_vm_frame_method_entry(reg_cfp);
 
     if (!me) {
@@ -2491,7 +2479,7 @@ vm_search_super_method(const rb_execution_context_t *ec, rb_control_frame_t *reg
 		 rb_obj_class(calling->recv), m);
     }
 
-    if (me->def->type == VM_METHOD_TYPE_BMETHOD && !sigval) {
+    if (me->def->type == VM_METHOD_TYPE_BMETHOD && (ci->flag & VM_CALL_ZSUPER)) {
 	rb_raise(rb_eRuntimeError,
 		 "implicit argument passing of super from method defined"
 		 " by define_method() is not supported."
@@ -2504,12 +2492,12 @@ vm_search_super_method(const rb_execution_context_t *ec, rb_control_frame_t *reg
     if (!klass) {
 	/* bound instance method of module */
 	cc->aux.method_missing_reason = MISSING_SUPER;
-	CI_SET_FASTPATH(cc, vm_call_method_missing, 1);
+        CC_SET_FASTPATH(cc, vm_call_method_missing, TRUE);
     }
     else {
 	/* TODO: use inline cache */
 	cc->me = rb_callable_method_entry(klass, ci->mid);
-	CI_SET_FASTPATH(cc, vm_call_super_method, 1);
+        CC_SET_FASTPATH(cc, vm_call_super_method, TRUE);
     }
 }
 
@@ -3205,6 +3193,17 @@ vm_find_or_create_class_by_id(ID id,
     }
 }
 
+static VALUE
+vm_opt_str_freeze(VALUE str, int bop, ID id)
+{
+    if (BASIC_OP_UNREDEFINED_P(bop, STRING_REDEFINED_OP_FLAG)) {
+	return str;
+    }
+    else {
+	return Qundef;
+    }
+}
+
 /* this macro is mandatory to use OPTIMIZED_CMP. What a design! */
 #define id_cmp idCmp
 
@@ -3337,7 +3336,7 @@ vm_case_dispatch(CDHASH hash, OFFSET else_offset, VALUE key)
 		}
 	    }
 	    if (st_lookup(RHASH_TBL_RAW(hash), key, &val)) {
-		return FIX2INT((VALUE)val);
+		return FIX2LONG((VALUE)val);
 	    }
 	    else {
 		return else_offset;
@@ -3636,6 +3635,30 @@ vm_opt_ltlt(VALUE recv, VALUE obj)
 }
 
 static VALUE
+vm_opt_and(VALUE recv, VALUE obj)
+{
+    if (FIXNUM_2_P(recv, obj) &&
+        BASIC_OP_UNREDEFINED_P(BOP_AND, INTEGER_REDEFINED_OP_FLAG)) {
+        return LONG2NUM(FIX2LONG(recv) & FIX2LONG(obj));
+    }
+    else {
+        return Qundef;
+    }
+}
+
+static VALUE
+vm_opt_or(VALUE recv, VALUE obj)
+{
+    if (FIXNUM_2_P(recv, obj) &&
+        BASIC_OP_UNREDEFINED_P(BOP_OR, INTEGER_REDEFINED_OP_FLAG)) {
+        return LONG2NUM(FIX2LONG(recv) | FIX2LONG(obj));
+    }
+    else {
+        return Qundef;
+    }
+}
+
+static VALUE
 vm_opt_aref(VALUE recv, VALUE obj)
 {
     if (SPECIAL_CONST_P(recv)) {
@@ -3850,7 +3873,7 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *p
 	VM_ASSERT(vm_event_flags & events);
 
 	/* increment PC because source line is calculated with PC-1 */
-	if (event = (events & (RUBY_EVENT_CLASS | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL))) {
+        if ((event = (events & (RUBY_EVENT_CLASS | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL))) != 0) {
 	    VM_ASSERT(event == RUBY_EVENT_CLASS ||
 		      event == RUBY_EVENT_CALL  ||
 		      event == RUBY_EVENT_B_CALL);
@@ -3865,7 +3888,13 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *p
 	    EXEC_EVENT_HOOK(ec, RUBY_EVENT_LINE, GET_SELF(), 0, 0, 0, Qundef);
 	    reg_cfp->pc--;
 	}
-	if (event = (events & (RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN))) {
+	if (events & RUBY_EVENT_COVERAGE_LINE) {
+	    reg_cfp->pc++;
+	    vm_dtrace(RUBY_EVENT_COVERAGE_LINE, ec);
+	    EXEC_EVENT_HOOK(ec, RUBY_EVENT_COVERAGE_LINE, GET_SELF(), 0, 0, 0, Qundef);
+	    reg_cfp->pc--;
+	}
+        if ((event = (events & (RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN))) != 0) {
 	    VM_ASSERT(event == RUBY_EVENT_END ||
 		      event == RUBY_EVENT_RETURN  ||
 		      event == RUBY_EVENT_B_RETURN);
@@ -3876,3 +3905,36 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *p
 	}
     }
 }
+
+#if VM_CHECK_MODE > 0
+static NORETURN( NOINLINE(
+#if GCC_VERSION_SINCE(4, 3, 0)
+__attribute__((__cold__))
+#endif
+void vm_canary_is_found_dead(enum ruby_vminsn_type i, VALUE c)));
+static VALUE vm_stack_canary;
+
+void
+Init_vm_stack_canary(void)
+{
+    /* This has to be called _after_ our PRNG is properly set up. */
+    int n = ruby_fill_random_bytes(&vm_stack_canary, sizeof vm_stack_canary, false);
+
+    VM_ASSERT(n == 0);
+}
+
+static void
+vm_canary_is_found_dead(enum ruby_vminsn_type i, VALUE c)
+{
+    /* Because a method has already been called, why not call
+     * another one. */
+    const char *insn = rb_insns_name(i);
+    VALUE inspection = rb_inspect(c);
+    const char *str  = StringValueCStr(inspection);
+
+    rb_bug("dead canary found at %s: %s", insn, str);
+}
+
+#else
+void Init_vm_stack_canary(void) { /* nothing to do */ }
+#endif
