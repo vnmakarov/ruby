@@ -136,7 +136,7 @@ describe "Operators" do
     # Guard against the Mathn library
     # TODO: Make these specs not rely on specific behaviour / result values
     # by using mocks.
-    conflicts_with :Prime do
+    guard -> { !defined?(Math.rsqrt) } do
       (2*1/2).should_not == 2*(1/2)
     end
 
@@ -301,8 +301,10 @@ describe "Operators" do
    from = 1
    to = 2
    # These are Range instances, not flip-flop
-   (from..to ? 3 : 4).should == 3
-   (from...to ? 3 : 4).should == 3
+   suppress_warning do
+     (eval("from..to") ? 3 : 4).should == 3
+     (eval("from...to") ? 3 : 4).should == 3
+   end
  end
 
   it "? : is right-associative" do

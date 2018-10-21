@@ -781,7 +781,6 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
     case BIN(nop):
     case BIN(pop):
     case BIN(branchif):
-    case BIN(branchiftype):
     case BIN(branchunless):
     case BIN(branchnil):
     case BIN(opt_case_dispatch):
@@ -824,7 +823,6 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
     }
     switch (insn) {
     case BIN(branchif):
-    case BIN(branchiftype):
     case BIN(branchunless):
     case BIN(branchnil):
     case BIN(getinlinecache):
@@ -1604,7 +1602,7 @@ static enum ruby_vminsn_type
 make_imm_id(enum ruby_vminsn_type insn_id, int fixnum_p, int flonum_p) {
     if (!fixnum_p && !flonum_p)
 	return insn_id == BIN(ind) ? BIN(inds) : insn_id == BIN(indset) ? BIN(indsets): BIN(nop);
-    assert(fixnum_p && !flonum_p || !fixnum_p && flonum_p);
+    assert((fixnum_p && !flonum_p) || (!fixnum_p && flonum_p));
     switch (insn_id) {
     case BIN(plus): return fixnum_p ? BIN(plusi) : BIN(plusf);
     case BIN(minus): return fixnum_p ? BIN(minusi) : BIN(minusf);
@@ -1617,6 +1615,8 @@ make_imm_id(enum ruby_vminsn_type insn_id, int fixnum_p, int flonum_p) {
     case BIN(ge): return fixnum_p ? BIN(gei) : BIN(gef);
     case BIN(div): return fixnum_p ? BIN(divi) : BIN(divf);
     case BIN(mod): return fixnum_p ? BIN(modi) : BIN(modf);
+    case BIN(or): return fixnum_p ? BIN(ori) : BIN(nop);
+    case BIN(and): return fixnum_p ? BIN(andi) : BIN(nop);
     case BIN(ltlt): return fixnum_p ? BIN(ltlti) : BIN(nop);
     case BIN(ind): return fixnum_p ? BIN(indi) : BIN(nop);
     case BIN(indset): return fixnum_p ? BIN(indseti) : BIN(nop);
@@ -1690,6 +1690,8 @@ get_simple_insn (enum ruby_vminsn_type insn_id) {
     case BIN(ge): return BIN(sge);
     case BIN(div): return BIN(sdiv);
     case BIN(mod): return BIN(smod);
+    case BIN(or): return BIN(sor);
+    case BIN(and): return BIN(sand);
     default: return BIN(nop);
     }
 }
@@ -2444,6 +2446,17 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	/* ??? combining with branch */
 	break;
     }
+    case BIN(checktype): {
+	vindex_t op, res;
+	
+	slot = pop_stack_slot();
+	op = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
+	op = to_var(slot, op);
+	res = new_top_stack_temp_var();
+	APPEND_INSN_OP3(BIN(check_type), res, op, code[pos + 1]);
+	/* ??? combining with branch */
+	break;
+    }
     case BIN(defineclass): {
 	vindex_t op1, op2, res;
 	
@@ -2464,10 +2477,13 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
     case BIN(opt_str_freeze):
     case BIN(opt_str_uminus): {
 	VALUE str = code[pos + 1];
+	CALL_INFO ci = (CALL_INFO) code[pos + 2];
+	CALL_CACHE cc = (CALL_CACHE) code[pos + 3];
+	struct rb_call_data *cd = get_cd(ci, cc);
 	vindex_t res;
-	
+
 	res = new_top_stack_temp_var();
-	APPEND_INSN_OP2(insn == BIN(opt_str_freeze) ? BIN(str_freeze_call) : BIN(str_uminus), res, str);
+	APPEND_INSN_OP3(insn == BIN(opt_str_freeze) ? BIN(str_freeze_call) : BIN(str_uminus), cd, res, str);
 	break;
     }
     case BIN(opt_newarray_max):
@@ -2491,7 +2507,7 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	CALL_CACHE cc = (CALL_CACHE) code[pos + 2];
 	VALUE block = code[pos + 3];
 	struct rb_call_data *cd;
-	vindex_t args_num;
+	vindex_t args_num, op;
 	int stack_block_p = ci->flag & VM_CALL_ARGS_BLOCKARG;
 
 	args_num = ci->orig_argc + (stack_block_p ? 1: 0);
@@ -2501,8 +2517,8 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	if (slot.mode == VAL) {
 	    APPEND_INSN_OP4(BIN(call_super_val), cd, cd->call_start, block, slot.u.val);
 	} else {
-	    assert (slot.mode == TEMP);
-	    APPEND_INSN_OP4(BIN(call_super), cd, cd->call_start, block, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
+	    op = to_var(slot, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
+	    APPEND_INSN_OP4(BIN(call_super), cd, cd->call_start, block, op);
 	}
 	push_temp_result(cd->call_start);
 	break;
@@ -2559,15 +2575,13 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	break;
     }
     case BIN(branchif):
-    case BIN(branchiftype):
     case BIN(branchunless):
     case BIN(branchnil): {
 	vindex_t op;
 	size_t dest;
 	enum ruby_vminsn_type res_insn;
 
-	res_insn = (insn == BIN(branchif) ? BIN(bt) : insn == BIN(branchunless) ? BIN(bf)
-		    : insn == BIN(branchiftype) ? BIN(btype) : BIN(bnil));
+	res_insn = (insn == BIN(branchif) ? BIN(bt) : insn == BIN(branchunless) ? BIN(bf) : BIN(bnil));
 	slot = pop_stack_slot();
 	op = to_var(slot, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1);
 	dest = code[pos + 1] + pos + stack_insn_len;
@@ -2577,13 +2591,8 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	}
 #endif
 	tune_stack(dest, BRANCH_LABEL, FALSE);
-	if (insn == BIN(branchiftype)) {
-	  APPEND_INSN_OP3(res_insn, dest, code[pos + 1], op);
-	  loc.offset = 3;
-	} else {
-	  APPEND_INSN_OP2(res_insn, dest, op);
-	  loc.offset = 2;
-	}
+	APPEND_INSN_OP2(res_insn, dest, op);
+	loc.offset = 2;
 	loc.next_insn_pc = VARR_LENGTH(VALUE, iseq_rtl);
 	VARR_PUSH(branch_target_loc, branch_target_locs, loc);
 	break;
@@ -2662,6 +2671,12 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	break;
     case BIN(opt_div):
 	generate_bin_op(&code[pos + 1], BIN(div));
+	break;
+    case BIN(opt_or):
+	generate_bin_op(&code[pos + 1], BIN(or));
+	break;
+    case BIN(opt_and):
+	generate_bin_op(&code[pos + 1], BIN(and));
 	break;
     case BIN(opt_mod):
 	generate_bin_op(&code[pos + 1], BIN(mod));

@@ -27,6 +27,7 @@ require 'rbconfig'
 # +:backtrace+:: See #backtrace
 # +:sources+:: Sets Gem::sources
 # +:verbose+:: See #verbose
+# +:concurrent_downloads+:: See #concurrent_downloads
 #
 # gemrc files may exist in various locations and are read and merged in
 # the following order:
@@ -43,12 +44,13 @@ class Gem::ConfigFile
   DEFAULT_BULK_THRESHOLD = 1000
   DEFAULT_VERBOSITY = true
   DEFAULT_UPDATE_SOURCES = true
+  DEFAULT_CONCURRENT_DOWNLOADS = 8
 
   ##
   # For Ruby packagers to set configuration defaults.  Set in
   # rubygems/defaults/operating_system.rb
 
-  OPERATING_SYSTEM_DEFAULTS = {}
+  OPERATING_SYSTEM_DEFAULTS = Gem.operating_system_defaults
 
   ##
   # For Ruby implementers to set configuration defaults.  Set in
@@ -63,26 +65,7 @@ class Gem::ConfigFile
       require "etc"
       Etc.sysconfdir
     rescue LoadError, NoMethodError
-      begin
-        # TODO: remove after we drop 1.8.7 and 1.9.1
-        require 'Win32API'
-
-        CSIDL_COMMON_APPDATA = 0x0023
-        path = 0.chr * 260
-        if RUBY_VERSION > '1.9' then
-          SHGetFolderPath = Win32API.new 'shell32', 'SHGetFolderPath', 'PLPLP',
-          'L', :stdcall
-          SHGetFolderPath.call nil, CSIDL_COMMON_APPDATA, nil, 1, path
-        else
-          SHGetFolderPath = Win32API.new 'shell32', 'SHGetFolderPath', 'LLLLP',
-          'L'
-          SHGetFolderPath.call 0, CSIDL_COMMON_APPDATA, 0, 1, path
-        end
-
-        path.strip
-      rescue LoadError
-        RbConfig::CONFIG["sysconfdir"] || "/etc"
-      end
+      RbConfig::CONFIG["sysconfdir"] || "/etc"
     end
 
   # :startdoc:
@@ -122,6 +105,11 @@ class Gem::ConfigFile
   # * :loud -- Extra output
 
   attr_accessor :verbose
+
+  ##
+  # Number of gem downloads that should be performed concurrently.
+
+  attr_accessor :concurrent_downloads
 
   ##
   # True if we want to update the SourceInfoCache every time, false otherwise
@@ -196,6 +184,7 @@ class Gem::ConfigFile
     @bulk_threshold = DEFAULT_BULK_THRESHOLD
     @verbose = DEFAULT_VERBOSITY
     @update_sources = DEFAULT_UPDATE_SOURCES
+    @concurrent_downloads = DEFAULT_CONCURRENT_DOWNLOADS
 
     operating_system_config = Marshal.load Marshal.dump(OPERATING_SYSTEM_DEFAULTS)
     platform_config = Marshal.load Marshal.dump(PLATFORM_DEFAULTS)
@@ -219,6 +208,7 @@ class Gem::ConfigFile
     @path                       = @hash[:gempath]                    if @hash.key? :gempath
     @update_sources             = @hash[:update_sources]             if @hash.key? :update_sources
     @verbose                    = @hash[:verbose]                    if @hash.key? :verbose
+    @concurrent_downloads       = @hash[:concurrent_downloads]       if @hash.key? :concurrent_downloads
     @disable_default_gem_server = @hash[:disable_default_gem_server] if @hash.key? :disable_default_gem_server
     @sources                    = @hash[:sources]                    if @hash.key? :sources
 
@@ -433,6 +423,9 @@ if you believe they were disclosed to a third party.
     yaml_hash[:sources] = Gem.sources.to_a
     yaml_hash[:update_sources] = @hash.fetch(:update_sources, DEFAULT_UPDATE_SOURCES)
     yaml_hash[:verbose] = @hash.fetch(:verbose, DEFAULT_VERBOSITY)
+
+    yaml_hash[:concurrent_downloads] =
+      @hash.fetch(:concurrent_downloads, DEFAULT_CONCURRENT_DOWNLOADS)
 
     yaml_hash[:ssl_verify_mode] =
       @hash[:ssl_verify_mode] if @hash.key? :ssl_verify_mode

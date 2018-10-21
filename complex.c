@@ -20,7 +20,11 @@
 #define ZERO INT2FIX(0)
 #define ONE INT2FIX(1)
 #define TWO INT2FIX(2)
+#if USE_FLONUM
 #define RFLOAT_0 DBL2NUM(0)
+#else
+static VALUE RFLOAT_0;
+#endif
 #if defined(HAVE_SIGNBIT) && defined(__GNUC__) && defined(__sun) && \
     !defined(signbit)
 extern int signbit(double);
@@ -540,6 +544,28 @@ f_complex_polar(VALUE klass, VALUE x, VALUE y)
 					  f_mul(x, m_sin(y)));
 }
 
+/* returns a Complex or Float of ang*PI-rotated abs */
+VALUE
+rb_dbl_complex_polar(double abs, double ang)
+{
+    double fi;
+    const double fr = modf(ang, &fi);
+    int pos = fr == +0.5;
+
+    if (pos || fr == -0.5) {
+	if ((modf(fi / 2.0, &fi) != fr) ^ pos) abs = -abs;
+	return rb_complex_new(RFLOAT_0, DBL2NUM(abs));
+    }
+    else if (fr == 0.0) {
+	if (modf(fi / 2.0, &fi) != 0.0) abs = -abs;
+	return DBL2NUM(abs);
+    }
+    else {
+	ang *= M_PI;
+	return rb_complex_new(DBL2NUM(abs * cos(ang)), DBL2NUM(abs * sin(ang)));
+    }
+}
+
 /*
  * call-seq:
  *    Complex.polar(abs[, arg])  ->  complex
@@ -748,6 +774,7 @@ f_divide(VALUE self, VALUE other,
 	 VALUE (*func)(VALUE, VALUE), ID id)
 {
     if (RB_TYPE_P(other, T_COMPLEX)) {
+        VALUE r, n, x, y;
 	int flo;
 	get_dat2(self, other);
 
@@ -755,35 +782,28 @@ f_divide(VALUE self, VALUE other,
 	       RB_FLOAT_TYPE_P(bdat->real) || RB_FLOAT_TYPE_P(bdat->imag));
 
 	if (f_gt_p(f_abs(bdat->real), f_abs(bdat->imag))) {
-	    VALUE r, n;
-
 	    r = (*func)(bdat->imag, bdat->real);
 	    n = f_mul(bdat->real, f_add(ONE, f_mul(r, r)));
 	    if (flo)
 		return f_complex_new2(CLASS_OF(self),
 				      (*func)(self, n),
 				      (*func)(f_negate(f_mul(self, r)), n));
-	    return f_complex_new2(CLASS_OF(self),
-				  (*func)(f_add(adat->real,
-						f_mul(adat->imag, r)), n),
-				  (*func)(f_sub(adat->imag,
-						f_mul(adat->real, r)), n));
+            x = (*func)(f_add(adat->real, f_mul(adat->imag, r)), n);
+            y = (*func)(f_sub(adat->imag, f_mul(adat->real, r)), n);
 	}
 	else {
-	    VALUE r, n;
-
 	    r = (*func)(bdat->real, bdat->imag);
 	    n = f_mul(bdat->imag, f_add(ONE, f_mul(r, r)));
 	    if (flo)
 		return f_complex_new2(CLASS_OF(self),
 				      (*func)(f_mul(self, r), n),
 				      (*func)(f_negate(self), n));
-	    return f_complex_new2(CLASS_OF(self),
-				  (*func)(f_add(f_mul(adat->real, r),
-						adat->imag), n),
-				  (*func)(f_sub(f_mul(adat->imag, r),
-						adat->real), n));
+            x = (*func)(f_add(f_mul(adat->real, r), adat->imag), n);
+            y = (*func)(f_sub(f_mul(adat->imag, r), adat->real), n);
 	}
+        x = rb_rational_canonicalize(x);
+        y = rb_rational_canonicalize(y);
+        return f_complex_new2(CLASS_OF(self), x, y);
     }
     if (k_numeric_p(other) && f_real_p(other)) {
 	get_dat1(self);
@@ -2248,6 +2268,10 @@ Init_Complex(void)
      */
     rb_define_const(rb_cComplex, "I",
 		    f_complex_new_bang2(rb_cComplex, ZERO, ONE));
+
+#if !USE_FLONUM
+    rb_gc_register_mark_object(RFLOAT_0 = DBL2NUM(0.0));
+#endif
 
     rb_provide("complex.so");	/* for backward compatibility */
 }

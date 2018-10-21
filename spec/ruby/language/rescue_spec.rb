@@ -142,6 +142,19 @@ describe "The rescue keyword" do
     ScratchPad.recorded.should == [:standard_error]
   end
 
+  it "rescues the exception in the deepest rescue block declared to handle the appropriate exception type" do
+    begin
+      begin
+        RescueSpecs.raise_standard_error
+      rescue ArgumentError
+      end
+    rescue StandardError => e
+      e.backtrace.first.should include ":in `raise_standard_error'"
+    else
+      fail("exception wasn't handled by the correct rescue block")
+    end
+  end
+
   it "will execute an else block only if no exceptions were raised" do
     result = begin
       ScratchPad << :one
@@ -371,11 +384,23 @@ describe "The rescue keyword" do
   end
 
   it "evaluates rescue expressions only when needed" do
-    invalid_rescuer = Object.new
     begin
-      :foo
-    rescue invalid_rescuer
-    end.should == :foo
+      ScratchPad << :foo
+    rescue -> { ScratchPad << :bar; StandardError }.call
+    end
+
+    ScratchPad.recorded.should == [:foo]
+  end
+
+  it "suppresses exception from block when raises one from rescue expression" do
+    -> {
+      begin
+        raise "from block"
+      rescue (raise "from rescue expression")
+      end
+    }.should raise_error(RuntimeError, "from rescue expression") do |e|
+      e.cause.message.should == "from block"
+    end
   end
 
   it "should splat the handling Error classes" do

@@ -476,6 +476,12 @@ class TestEnumerator < Test::Unit::TestCase
     assert_equal([1], y.yield(1))
     assert_equal([1, 2], y.yield(2))
     assert_equal([1, 2, 3], y.yield(3))
+    assert_equal([1, 2, 3, 4], y.yield(4, 5))
+
+    a = []
+    y = Enumerator::Yielder.new {|*x| a.concat(x) }
+    assert_equal([1], y.yield(1))
+    assert_equal([1, 2, 3], y.yield(2, 3))
 
     assert_raise(LocalJumpError) { Enumerator::Yielder.new }
   end
@@ -632,7 +638,7 @@ class TestEnumerator < Test::Unit::TestCase
     assert_equal 4, (1..10).step(3).size
     assert_equal 3, (1...10).step(3).size
     assert_equal Float::INFINITY, (42..Float::INFINITY).step(2).size
-    assert_raise(ArgumentError){ (1..10).step(-2).size }
+    assert_equal 0, (1..10).step(-2).size
   end
 
   def test_size_for_downup_to

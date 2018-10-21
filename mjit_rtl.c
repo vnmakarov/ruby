@@ -182,6 +182,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(mult):
     case BIN(div):
     case BIN(mod):
+    case BIN(or):
+    case BIN(and):
     case BIN(ltlt):
     case BIN(ind):
     case BIN(eq):
@@ -195,6 +197,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(multi):
     case BIN(divi):
     case BIN(modi):
+    case BIN(ori):
+    case BIN(andi):
     case BIN(plusf):
     case BIN(minusf):
     case BIN(multf):
@@ -223,6 +227,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(umult):
     case BIN(udiv):
     case BIN(umod):
+    case BIN(uor):
+    case BIN(uand):
     case BIN(ueq):
     case BIN(une):
     case BIN(ult):
@@ -234,6 +240,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(umulti):
     case BIN(udivi):
     case BIN(umodi):
+    case BIN(uori):
+    case BIN(uandi):
     case BIN(uplusf):
     case BIN(uminusf):
     case BIN(umultf):
@@ -252,6 +260,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(ugei):
     case BIN(ugef):
     case BIN(regexp_match2):
+    case BIN(str_freeze_call):
+    case BIN(str_uminus):
     case BIN(uind):
     case BIN(uindi):
     case BIN(uinds):
@@ -262,6 +272,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(smult):
     case BIN(sdiv):
     case BIN(smod):
+    case BIN(sor):
+    case BIN(sand):
     case BIN(seq):
     case BIN(sne):
     case BIN(slt):
@@ -275,6 +287,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(sumult):
     case BIN(sudiv):
     case BIN(sumod):
+    case BIN(suor):
+    case BIN(suand):
     case BIN(sueq):
     case BIN(sune):
     case BIN(sult):
@@ -319,6 +333,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(imult):
     case BIN(idiv):
     case BIN(imod):
+    case BIN(ior):
+    case BIN(iand):
     case BIN(aind):
     case BIN(hind):
     case BIN(ieq):
@@ -332,6 +348,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(imulti):
     case BIN(idivi):
     case BIN(imodi):
+    case BIN(iori):
+    case BIN(iandi):
     case BIN(aindi):
     case BIN(hindi):
     case BIN(hinds):
@@ -355,6 +373,8 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(simult):
     case BIN(sidiv):
     case BIN(simod):
+    case BIN(sior):
+    case BIN(siand):
     case BIN(sieq):
     case BIN(sine):
     case BIN(silt):
@@ -586,8 +606,6 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(to_string):
     case BIN(concat_strings):
     case BIN(to_regexp):
-    case BIN(str_freeze_call):
-    case BIN(str_uminus):
     case BIN(make_range):
     case BIN(make_array):
     case BIN(make_hash):
@@ -598,6 +616,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(splat_array):
     case BIN(concat_array):
     case BIN(check_keyword):
+    case BIN(check_type):
     case BIN(regexp_match1):
     case BIN(str2sym):
 	f->result = 1;
@@ -643,6 +662,8 @@ get_safe_insn(VALUE insn) {
     case BIN(mult): case BIN(imult): case BIN(fmult): return BIN(umult);
     case BIN(div): case BIN(idiv): case BIN(fdiv): return BIN(udiv);
     case BIN(mod): case BIN(imod): case BIN(fmod): return BIN(umod);
+    case BIN(or): case BIN(ior): return BIN(uor);
+    case BIN(and): case BIN(iand): return BIN(uand);
     case BIN(eq): case BIN(ieq): case BIN(feq): return BIN(ueq);
     case BIN(ne): case BIN(ine): case BIN(fne): return BIN(une);
     case BIN(lt): case BIN(ilt): case BIN(flt): return BIN(ult);
@@ -654,6 +675,8 @@ get_safe_insn(VALUE insn) {
     case BIN(smult): case BIN(simult): case BIN(sfmult): return BIN(sumult);
     case BIN(sdiv): case BIN(sidiv): case BIN(sfdiv): return BIN(sudiv);
     case BIN(smod): case BIN(simod): case BIN(sfmod): return BIN(sumod);
+    case BIN(sor): case BIN(sior): return BIN(sudiv);
+    case BIN(sand): case BIN(siand): return BIN(sumod);
     case BIN(seq): case BIN(sieq): case BIN(sfeq): return BIN(sueq);
     case BIN(sne): case BIN(sine): case BIN(sfne): return BIN(sune);
     case BIN(slt): case BIN(silt): case BIN(sflt): return BIN(sult);
@@ -665,6 +688,8 @@ get_safe_insn(VALUE insn) {
     case BIN(multi): case BIN(imulti): return BIN(umulti);
     case BIN(divi): case BIN(idivi): return BIN(udivi);
     case BIN(modi): case BIN(imodi): return BIN(umodi);
+    case BIN(ori): case BIN(iori): return BIN(uori);
+    case BIN(andi): case BIN(iandi): return BIN(uandi);
     case BIN(eqi): case BIN(ieqi): return BIN(ueqi);
     case BIN(nei): case BIN(inei): return BIN(unei);
     case BIN(lti): case BIN(ilti): return BIN(ulti);
@@ -1229,8 +1254,8 @@ update_bb_kill_gen_by_insn(FILE *f, const VALUE *code, int local_table_size, str
 	    break;
 	case BIN(var_swap):
 	case BIN(temp_swap):
-	    assert(insn == BIN(var_swap) && (long) code[pos + 1] >= 0 && (long) code[pos + 2] >= 0
-		   || insn == BIN(temp_swap) && (long) code[pos + 1] < 0 && (long) code[pos + 2] < 0);
+	  assert((insn == BIN(var_swap) && (long) code[pos + 1] >= 0 && (long) code[pos + 2] >= 0)
+		 || (insn == BIN(temp_swap) && (long) code[pos + 1] < 0 && (long) code[pos + 2] < 0));
 	    to = get_var_double_num((long) code[pos + 1], local_table_size);
 	    set_bit(bb->kill, to);
 	    reset_bit(bb->gen, to);
@@ -1876,7 +1901,7 @@ translate_iseq_insn(FILE *f, size_t pos, const rb_iseq_t *iseq,
 		fprintf(f, " {\n  %s", generate_set_pc(buf, &code[pos]));
 		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 		fprintf(f, "  if (mjit_call_iseq_normal(ec, cfp, &calling, (void *) 0x%"PRIxVALUE ", %d, %d, %s)) {\n",
-			code[pos + 1], callee_iseq->body->param.size, callee_iseq->body->local_table_size,
+			((CALL_DATA) code[pos + 1])->call_cache.me, callee_iseq->body->param.size, callee_iseq->body->local_table_size,
 			get_op_str(buf, call_start, tcp));
 		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    } else {
@@ -1967,11 +1992,15 @@ update_compile_info_from_insns(const rb_iseq_t *iseq, struct rb_mjit_compile_inf
 	case BIN(mult):
 	case BIN(div):
 	case BIN(mod):
+	case BIN(or):
+	case BIN(and):
 	case BIN(splus):
 	case BIN(sminus):
 	case BIN(smult):
 	case BIN(sdiv):
 	case BIN(smod):
+	case BIN(sor):
+	case BIN(sand):
 	case BIN(fplusf):
 	case BIN(fminusf):
 	case BIN(fmultf):

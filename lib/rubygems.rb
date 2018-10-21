@@ -7,10 +7,9 @@
 #++
 
 require 'rbconfig'
-require 'thread'
 
 module Gem
-  VERSION = "2.7.6"
+  VERSION = "3.0.0.beta1"
 end
 
 # Must be first since it unloads the prelude from 1.9.2
@@ -247,7 +246,7 @@ module Gem
 
   ##
   # Find the full path to the executable for gem +name+.  If the +exec_name+
-  # is not given, the gem's default_executable is chosen, otherwise the
+  # is not given, an exception will be raised, otherwise the
   # specified executable's path is returned.  +requirements+ allows
   # you to specify specific gem versions.
 
@@ -295,7 +294,7 @@ module Gem
 
   ##
   # Find the full path to the executable for gem +name+.  If the +exec_name+
-  # is not given, the gem's default_executable is chosen, otherwise the
+  # is not given, an exception will be raised, otherwise the
   # specified executable's path is returned.  +requirements+ allows
   # you to specify specific gem versions.
   #
@@ -371,11 +370,6 @@ module Gem
     spec = @loaded_specs[gem_name]
     return nil if spec.nil?
     spec.datadir
-  end
-
-  class << self
-    extend Gem::Deprecate
-    deprecate :datadir, "spec.datadir", 2016, 10
   end
 
   ##
@@ -531,8 +525,9 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
   end
 
   def self.find_files_from_load_path glob # :nodoc:
+    glob_with_suffixes = "#{glob}#{Gem.suffix_pattern}"
     $LOAD_PATH.map { |load_path|
-      Dir["#{File.expand_path glob, load_path}#{Gem.suffix_pattern}"]
+      Gem::Util.glob_files_in_dir(glob_with_suffixes, load_path)
     }.flatten.select { |file| File.file? file.untaint }
   end
 
@@ -582,20 +577,9 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
   #++
 
   def self.find_home
-    windows = File::ALT_SEPARATOR
-    if not windows or RUBY_VERSION >= '1.9' then
-      File.expand_path "~"
-    else
-      ['HOME', 'USERPROFILE'].each do |key|
-        return File.expand_path ENV[key] if ENV[key]
-      end
-
-      if ENV['HOMEDRIVE'] && ENV['HOMEPATH'] then
-        File.expand_path "#{ENV['HOMEDRIVE']}#{ENV['HOMEPATH']}"
-      end
-    end
+    Dir.home
   rescue
-    if windows then
+    if Gem.win_platform? then
       File.expand_path File.join(ENV['HOMEDRIVE'] || ENV['SystemDrive'], '/')
     else
       File.expand_path "/"
@@ -604,13 +588,18 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
 
   private_class_method :find_home
 
-  # FIXME deprecate these in 3.0
+  # TODO:  remove in RubyGems 4.0
 
   ##
   # Zlib::GzipReader wrapper that unzips +data+.
 
   def self.gunzip(data)
     Gem::Util.gunzip data
+  end
+
+  class << self
+    extend Gem::Deprecate
+    deprecate :gunzip, "Gem::Util.gunzip", 2018, 12
   end
 
   ##
@@ -620,11 +609,21 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
     Gem::Util.gzip data
   end
 
+  class << self
+    extend Gem::Deprecate
+    deprecate :gzip, "Gem::Util.gzip", 2018, 12
+  end
+
   ##
   # A Zlib::Inflate#inflate wrapper
 
   def self.inflate(data)
     Gem::Util.inflate data
+  end
+
+  class << self
+    extend Gem::Deprecate
+    deprecate :inflate, "Gem::Util.inflate", 2018, 12
   end
 
   ##
@@ -681,44 +680,31 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
     return if @yaml_loaded
     return unless defined?(gem)
 
-    test_syck = ENV['TEST_SYCK']
+    begin
+      gem 'psych', '>= 2.0.0'
+    rescue Gem::LoadError
+      # It's OK if the user does not have the psych gem installed.  We will
+      # attempt to require the stdlib version
+    end
 
-    # Only Ruby 1.8 and 1.9 have syck
-    test_syck = false unless /^1\./ =~ RUBY_VERSION
-
-    unless test_syck
-      begin
-        gem 'psych', '>= 2.0.0'
-      rescue Gem::LoadError
-        # It's OK if the user does not have the psych gem installed.  We will
-        # attempt to require the stdlib version
+    begin
+      # Try requiring the gem version *or* stdlib version of psych.
+      require 'psych'
+    rescue ::LoadError
+      # If we can't load psych, thats fine, go on.
+    else
+      # If 'yaml' has already been required, then we have to
+      # be sure to switch it over to the newly loaded psych.
+      if defined?(YAML::ENGINE) && YAML::ENGINE.yamler != "psych"
+        YAML::ENGINE.yamler = "psych"
       end
 
-      begin
-        # Try requiring the gem version *or* stdlib version of psych.
-        require 'psych'
-      rescue ::LoadError
-        # If we can't load psych, thats fine, go on.
-      else
-        # If 'yaml' has already been required, then we have to
-        # be sure to switch it over to the newly loaded psych.
-        if defined?(YAML::ENGINE) && YAML::ENGINE.yamler != "psych"
-          YAML::ENGINE.yamler = "psych"
-        end
-
-        require 'rubygems/psych_additions'
-        require 'rubygems/psych_tree'
-      end
+      require 'rubygems/psych_additions'
+      require 'rubygems/psych_tree'
     end
 
     require 'yaml'
     require 'rubygems/safe_yaml'
-
-    # If we're supposed to be using syck, then we may have to force
-    # activate it via the YAML::ENGINE API.
-    if test_syck and defined?(YAML::ENGINE)
-      YAML::ENGINE.yamler = "syck" unless YAML::ENGINE.syck?
-    end
 
     # Now that we're sure some kind of yaml library is loaded, pull
     # in our hack to deal with Syck's DefaultKey ugliness.
@@ -1133,8 +1119,9 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
     path = "rubygems_plugin"
 
     files = []
+    glob = "#{path}#{Gem.suffix_pattern}"
     $LOAD_PATH.each do |load_path|
-      globbed = Dir["#{File.expand_path path, load_path}#{Gem.suffix_pattern}"]
+      globbed = Gem::Util.glob_files_in_dir(glob, load_path)
 
       globbed.each do |load_path_file|
         files << load_path_file if File.file?(load_path_file.untaint)
@@ -1225,9 +1212,12 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
 
   class << self
     ##
-    # TODO remove with RubyGems 3.0
+    # TODO remove with RubyGems 4.0
 
     alias detect_gemdeps use_gemdeps # :nodoc:
+
+    extend Gem::Deprecate
+    deprecate :detect_gemdeps, "Gem.use_gemdeps", 2018, 12
   end
 
   # FIX: Almost everywhere else we use the `def self.` way of defining class
@@ -1358,7 +1348,6 @@ An Array (#{env.inspect}) was passed in from #{caller[3]}
   autoload :ConfigFile,         'rubygems/config_file'
   autoload :Dependency,         'rubygems/dependency'
   autoload :DependencyList,     'rubygems/dependency_list'
-  autoload :DependencyResolver, 'rubygems/resolver'
   autoload :Installer,          'rubygems/installer'
   autoload :Licenses,           'rubygems/util/licenses'
   autoload :PathSupport,        'rubygems/path_support'
@@ -1379,24 +1368,21 @@ end
 require 'rubygems/exceptions'
 
 # REFACTOR: This should be pulled out into some kind of hacks file.
-gem_preluded = Gem::GEM_PRELUDE_SUCKAGE and defined? Gem
-unless gem_preluded then # TODO: remove guard after 1.9.2 dropped
+begin
+  ##
+  # Defaults the operating system (or packager) wants to provide for RubyGems.
+
+  require 'rubygems/defaults/operating_system'
+rescue LoadError
+end
+
+if defined?(RUBY_ENGINE) then
   begin
     ##
-    # Defaults the operating system (or packager) wants to provide for RubyGems.
+    # Defaults the Ruby implementation wants to provide for RubyGems
 
-    require 'rubygems/defaults/operating_system'
+    require "rubygems/defaults/#{RUBY_ENGINE}"
   rescue LoadError
-  end
-
-  if defined?(RUBY_ENGINE) then
-    begin
-      ##
-      # Defaults the Ruby implementation wants to provide for RubyGems
-
-      require "rubygems/defaults/#{RUBY_ENGINE}"
-    rescue LoadError
-    end
   end
 end
 
@@ -1406,5 +1392,6 @@ Gem::Specification.load_defaults
 
 require 'rubygems/core_ext/kernel_gem'
 require 'rubygems/core_ext/kernel_require'
+require 'rubygems/core_ext/kernel_warn'
 
 Gem.use_gemdeps

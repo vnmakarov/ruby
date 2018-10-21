@@ -1,3 +1,63 @@
+2018-10-21  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* Merge with trunk @ 7a14608edc
+	* insns.def: Add leaf attribute for corresponding RTL insns.
+	(str_freeze_call, str_uminus): Add param cd.
+	(or, and, uor, uand, sor, sand, suor, suand, ior, iand, sior): New.
+	(siand, ori, andi, uori, uandi, iori, iandi, check_type): New.
+	* iseq.c (get_insn_info_succinct_bitvector): Use info->positions.
+	* mjit.c (mjit_valid_class_serial_p): Remove.
+	* mjit.h (mjit_init_p): Remove the definition.  Use mjit_call_p
+	instead.
+	* mjit_rtl.c (get_insn_fun_features): Process or, and, uor, uand,
+	sor, sand, suor, suand, ior, iand, sior, siand, ori, andi, uori,
+	uandi, iori, iandi, check_type.  Change str_freeze_call and
+	str_uminus features.
+	(get_safe_insn): Process or, and, ior, iand, sor, sand, sior,
+	siand, ori, andi, iori, iandi.
+	(update_bb_kill_gen_by_insn): Pass me for mjit_call_iseq_normal.
+	(update_compile_info_from_insns): Process or, and, sor, sand.
+	* mjit_worker.c (struct rb_mjit_unit): Ne members compile_nums,
+	node, compile_info.
+	(mjit_iseq_compile_info): New.
+	(create_list_node): Set up unit node.
+	(sprint_uniq_filename): Add arg modificator.
+	(compact_all_jit_code): Set up compile_nums.  Use it for
+	sprint_uniq_filename.
+	(convert_unit_to_func): Use compile_nums for sprint_uniq_filename.
+	(convert_unit_to_func): Call mjit_rtl_compile instead of
+	mjit_compile.
+	* rtl_exec.c (fix_num_or, fix_num_and): New.
+	(do_arithm): Check float_num_op and double_num_op.
+	(fixnum_call, or_f, and_f): New.
+	(ufixnum_call, uor_f, uand_f): New.
+	(sfixnum_call, sor_f, sand_f): New.
+	(sufixnum_call, suor_f, suand_f): New.
+	(fixnum_fix_call, ori_f, andi_f): New.
+	(ufixnum_fix_call, uori_f, uandi_f): New.
+	(spec_fix_num_or, spec_fix_num_and): New.
+	(ior_f, iand_f, sior_f, siand_f, iori, iandi): New.
+	(str_freeze_call_f, str_minus_f): New args ec and cd.
+	(call_super_val_f): Setup calling block_handler.  Use rec_val for
+	calling recv.
+	(check_type_f): New.
+	(mjit_call_iseq_normal): Pass me to vm_call_iseq_setup_normal
+	instead of ci and cc.
+	* rtl_gen.c (update_stack_by_insn): Remove branchiftype.
+	(make_imm_id, get_simple_insn): Process or, and.
+	(translate_stack_insn): Process checktype.  Process cd in
+	opt_str_freeze, opt_str_uminus.  Use var op for call_super.
+	Remove branchiftype processing.  Process opt_or and opt_and.
+	* vm_args.c (vm_caller_setup_arg_block): Remove prototype.
+	(refine_sym_proc_call): Use MJIT_STATIC.
+	* vm_insnhelper.c (lep_svar_get, lep_svar_set, check_match):
+	Ditto.
+	(vm_call_iseq_setup_normal): Use inside ALWAYS_INLINE.
+	(vm_trace): Add processing RUBY_EVENT_LINE.
+	* vm_insnhelper.h (lep_svar_get, lep_svar_set, check_match): Use
+	MJIT_STATIC.
+	(vm_change_insn): Don't check mjit_enabled in MJIT header.
+
 2018-04-15  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* internal.h (rb_float_new_inline): Move v declaration where it is

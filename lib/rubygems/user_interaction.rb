@@ -6,6 +6,7 @@
 #++
 
 require 'rubygems/util'
+require 'rubygems/deprecate'
 
 ##
 # Module that defines the default UserInteraction.  Any class including this
@@ -170,6 +171,8 @@ end
 
 class Gem::StreamUI
 
+  extend Gem::Deprecate
+
   ##
   # The input stream
 
@@ -202,11 +205,7 @@ class Gem::StreamUI
   # Returns true if TTY methods should be used on this StreamUI.
 
   def tty?
-    if RUBY_VERSION < '1.9.3' and RUBY_PLATFORM =~ /mingw|mswin/ then
-      @usetty
-    else
-      @usetty && @ins.tty?
-    end
+    @usetty && @ins.tty?
   end
 
   ##
@@ -321,29 +320,7 @@ class Gem::StreamUI
 
   def _gets_noecho
     require_io_console
-    if IO.method_defined?(:noecho) then
-      @ins.noecho {@ins.gets}
-    elsif Gem.win_platform?
-      require "Win32API"
-      password = ''
-
-      while char = Win32API.new("crtdll", "_getch", [ ], "L").Call do
-        break if char == 10 || char == 13 # received carriage return or newline
-        if char == 127 || char == 8 # backspace and delete
-          password.slice!(-1, 1)
-        else
-          password << char.chr
-        end
-      end
-      password
-    else
-      system "stty -echo"
-      begin
-        @ins.gets
-      ensure
-        system "stty echo"
-      end
-    end
+    @ins.noecho {@ins.gets}
   end
 
   ##
@@ -384,6 +361,7 @@ class Gem::StreamUI
   def debug(statement)
     @errs.puts statement
   end
+  deprecate :debug, :none, 2018, 12
 
   ##
   # Terminate the application with exit code +status+, running any exit
@@ -534,11 +512,10 @@ class Gem::StreamUI
   # Return a download reporter object chosen from the current verbosity
 
   def download_reporter(*args)
-    case Gem.configuration.verbose
-    when nil, false
+    if [nil, false].include?(Gem.configuration.verbose) || !@outs.tty?
       SilentDownloadReporter.new(@outs, *args)
     else
-      VerboseDownloadReporter.new(@outs, *args)
+      ThreadedDownloadReporter.new(@outs, *args)
     end
   end
 
@@ -575,9 +552,11 @@ class Gem::StreamUI
   end
 
   ##
-  # A progress reporter that prints out messages about the current progress.
+  # A progress reporter that behaves nicely with threaded downloading.
 
-  class VerboseDownloadReporter
+  class ThreadedDownloadReporter
+
+    MUTEX = Mutex.new
 
     ##
     # The current file name being displayed
@@ -585,71 +564,43 @@ class Gem::StreamUI
     attr_reader :file_name
 
     ##
-    # The total bytes in the file
-
-    attr_reader :total_bytes
-
-    ##
-    # The current progress (0 to 100)
-
-    attr_reader :progress
-
-    ##
-    # Creates a new verbose download reporter that will display on
+    # Creates a new threaded download reporter that will display on
     # +out_stream+.  The other arguments are ignored.
 
     def initialize(out_stream, *args)
       @out = out_stream
-      @progress = 0
     end
 
     ##
-    # Tells the download reporter that the +file_name+ is being fetched and
-    # contains +total_bytes+.
+    # Tells the download reporter that the +file_name+ is being fetched.
+    # The other arguments are ignored.
 
-    def fetch(file_name, total_bytes)
-      @file_name = file_name
-      @total_bytes = total_bytes.to_i
-      @units = @total_bytes.zero? ? 'B' : '%'
-
-      update_display(false)
+    def fetch(file_name, *args)
+      if @file_name.nil?
+        @file_name = file_name
+        locked_puts "Fetching #{@file_name}"
+      end
     end
 
     ##
-    # Updates the verbose download reporter for the given number of +bytes+.
+    # Updates the threaded download reporter for the given number of +bytes+.
 
     def update(bytes)
-      new_progress = if @units == 'B' then
-                       bytes
-                     else
-                       ((bytes.to_f * 100) / total_bytes.to_f).ceil
-                     end
-
-      return if new_progress == @progress
-
-      @progress = new_progress
-      update_display
+      # Do nothing.
     end
 
     ##
     # Indicates the download is complete.
 
     def done
-      @progress = 100 if @units == '%'
-      update_display(true, true)
+      # Do nothing.
     end
 
     private
-
-    def update_display(show_progress = true, new_line = false) # :nodoc:
-      return unless @out.tty?
-
-      if show_progress then
-        @out.print "\rFetching: %s (%3d%s)" % [@file_name, @progress, @units]
-      else
-        @out.print "Fetching: %s" % @file_name
+    def locked_puts(message)
+      MUTEX.synchronize do
+        @out.puts message
       end
-      @out.puts if new_line
     end
   end
 end
@@ -680,8 +631,8 @@ class Gem::SilentUI < Gem::StreamUI
   def initialize
     reader, writer = nil, nil
 
-    reader = File.open(Gem::Util::NULL_DEVICE, 'r')
-    writer = File.open(Gem::Util::NULL_DEVICE, 'w')
+    reader = File.open(IO::NULL, 'r')
+    writer = File.open(IO::NULL, 'w')
 
     super reader, writer, writer, false
   end

@@ -54,6 +54,8 @@
 
 #include "mjit.h"
 
+void Init_ruby_description(void);
+
 #ifndef HAVE_STDLIB_H
 char *getenv();
 #endif
@@ -77,6 +79,8 @@ char *getenv();
     X(rubyopt) \
     SEP \
     X(frozen_string_literal) \
+    SEP \
+    X(jit) \
     /* END OF FEATURES */
 #define EACH_DEBUG_FEATURES(X, SEP) \
     X(frozen_string_literal) \
@@ -169,6 +173,7 @@ enum {
 	& ~FEATURE_BIT(gems)
 #endif
 	& ~FEATURE_BIT(frozen_string_literal)
+        & ~FEATURE_BIT(jit)
 	)
 };
 
@@ -181,6 +186,9 @@ cmdline_options_init(ruby_cmdline_options_t *opt)
     opt->ext.enc.index = -1;
     opt->intern.enc.index = -1;
     opt->features = DEFAULT_FEATURES;
+#ifdef MJIT_FORCE_ENABLE /* to use with: ./configure cppflags="-DMJIT_FORCE_ENABLE" */
+    opt->features |= FEATURE_BIT(jit);
+#endif
     return opt;
 }
 
@@ -271,6 +279,7 @@ usage(const char *name, int help)
 	M("did_you_mean", "",   "did_you_mean (default: "DEFAULT_RUBYGEMS_ENABLED")"),
 	M("rubyopt", "",        "RUBYOPT environment variable (default: enabled)"),
 	M("frozen-string-literal", "", "freeze all string literals (default: disabled)"),
+        M("jit", "",            "MJIT (default: disabled)"),
     };
     static const struct message mjit_options[] = {
         M("--jit-warnings",      "", "Enable printing MJIT warnings"),
@@ -473,14 +482,59 @@ ruby_init_loadpath(void)
     ruby_init_loadpath_safe(0);
 }
 
-#if defined(LOAD_RELATIVE) && defined(HAVE_DLADDR) && !defined(__CYGWIN__)
+#if defined(LOAD_RELATIVE)
 static VALUE
-dladdr_path(const void* addr)
+runtime_libruby_path(void)
 {
+#if defined _WIN32 || defined __CYGWIN__
+    DWORD len = RSTRING_EMBED_LEN_MAX, ret;
+    VALUE path;
+    VALUE wsopath = rb_str_new(0, len*sizeof(WCHAR));
+    WCHAR *wlibpath;
+    char *libpath;
+
+    while (wlibpath = (WCHAR *)RSTRING_PTR(wsopath),
+	   ret = GetModuleFileNameW(libruby, wlibpath, len),
+	   (ret == len))
+    {
+	rb_str_modify_expand(wsopath, len*sizeof(WCHAR));
+	rb_str_set_len(wsopath, (len += len)*sizeof(WCHAR));
+    }
+    if (!ret || ret > len) rb_fatal("failed to get module file name");
+#if defined __CYGWIN__
+    {
+	const int win_to_posix = CCP_WIN_W_TO_POSIX | CCP_RELATIVE;
+	size_t newsize = cygwin_conv_path(win_to_posix, wlibpath, 0, 0);
+	if (!newsize) rb_fatal("failed to convert module path to cygwin");
+	path = rb_str_new(0, newsize);
+	libpath = RSTRING_PTR(path);
+	if (cygwin_conv_path(win_to_posix, wlibpath, libpath, newsize)) {
+	    rb_str_resize(path, 0);
+	}
+    }
+#else
+    {
+	DWORD i;
+	for (len = ret, i = 0; i < len; ++i) {
+	    if (wlibpath[i] == L'\\') {
+		wlibpath[i] = L'/';
+		ret = i+1;	/* chop after the last separator */
+	    }
+	}
+    }
+    len = WideCharToMultiByte(CP_UTF8, 0, wlibpath, ret, NULL, 0, NULL, NULL);
+    path = rb_utf8_str_new(0, len);
+    libpath = RSTRING_PTR(path);
+    WideCharToMultiByte(CP_UTF8, 0, wlibpath, ret, libpath, len, NULL, NULL);
+#endif
+    rb_str_resize(wsopath, 0);
+    return path;
+#elif defined(HAVE_DLADDR)
     Dl_info dli;
     VALUE fname, path;
+    const void* addr = (void *)(VALUE)expand_include_path;
 
-    if (!dladdr(addr, &dli)) {
+    if (!dladdr((void *)addr, &dli)) {
 	return rb_str_new(0, 0);
     }
 #ifdef __linux__
@@ -495,92 +549,66 @@ dladdr_path(const void* addr)
     }
     rb_str_resize(fname, 0);
     return path;
+#else
+# error relative load path is not supported on this platform.
+#endif
 }
 #endif
 
 #define INITIAL_LOAD_PATH_MARK rb_intern_const("@gem_prelude_index")
 
+VALUE ruby_archlibdir_path, ruby_prefix_path;
+
 void
 ruby_init_loadpath_safe(int safe_level)
 {
-    VALUE load_path;
+    VALUE load_path, archlibdir = 0;
     ID id_initial_load_path_mark;
     const char *paths = ruby_initial_load_paths;
 #if defined LOAD_RELATIVE
+#if !defined ENABLE_MULTIARCH
+# define RUBY_ARCH_PATH ""
+#elif defined RUBY_ARCH
+# define RUBY_ARCH_PATH "/"RUBY_ARCH
+#else
+# define RUBY_ARCH_PATH "/"RUBY_PLATFORM
+#endif
     char *libpath;
     VALUE sopath;
     size_t baselen;
-    char *p;
+    const char *p;
 
-#if defined _WIN32 || defined __CYGWIN__
-    {
-	DWORD len = RSTRING_EMBED_LEN_MAX, ret, i;
-	VALUE wsopath = rb_str_new(0, len*sizeof(WCHAR));
-	WCHAR *wlibpath;
-	while (wlibpath = (WCHAR *)RSTRING_PTR(wsopath),
-	       ret = GetModuleFileNameW(libruby, wlibpath, len),
-	       (ret == len))
-	{
-	    rb_str_modify_expand(wsopath, len*sizeof(WCHAR));
-	    rb_str_set_len(wsopath, (len += len)*sizeof(WCHAR));
-	}
-	if (!ret || ret > len) rb_fatal("failed to get module file name");
-	for (len = ret, i = 0; i < len; ++i) {
-	    if (wlibpath[i] == L'\\') {
-		wlibpath[i] = L'/';
-		ret = i+1;	/* chop after the last separator */
-	    }
-	}
-	len = WideCharToMultiByte(CP_UTF8, 0, wlibpath, ret, NULL, 0, NULL, NULL);
-	sopath = rb_utf8_str_new(0, len);
-	libpath = RSTRING_PTR(sopath);
-	WideCharToMultiByte(CP_UTF8, 0, wlibpath, ret, libpath, len, NULL, NULL);
-	rb_str_resize(wsopath, 0);
-    }
-#elif defined(HAVE_DLADDR)
-    sopath = dladdr_path((void *)(VALUE)expand_include_path);
+    sopath = runtime_libruby_path();
     libpath = RSTRING_PTR(sopath);
-#else
-# error relative load path is not supported on this platform.
-#endif
 
-#if defined DOSISH && !defined _WIN32
-    translit_char(libpath, '\\', '/');
-#elif defined __CYGWIN__
-    {
-	const int win_to_posix = CCP_WIN_A_TO_POSIX | CCP_RELATIVE;
-	size_t newsize = cygwin_conv_path(win_to_posix, libpath, 0, 0);
-	if (newsize > 0) {
-	    VALUE rubylib = rb_str_new(0, newsize);
-	    p = RSTRING_PTR(rubylib);
-	    if (cygwin_conv_path(win_to_posix, libpath, p, newsize) == 0) {
-		rb_str_resize(sopath, 0);
-		sopath = rubylib;
-		libpath = p;
-	    }
-	}
-    }
-#endif
     p = strrchr(libpath, '/');
     if (p) {
-	static const char bindir[] = "/bin";
+	static const char libdir[] = "/"
 #ifdef LIBDIR_BASENAME
-	static const char libdir[] = "/"LIBDIR_BASENAME;
+	    LIBDIR_BASENAME
 #else
-	static const char libdir[] = "/lib";
+	    "lib"
 #endif
+	    RUBY_ARCH_PATH;
+	const ptrdiff_t libdir_len = (ptrdiff_t)sizeof(libdir)
+	    - rb_strlen_lit(RUBY_ARCH_PATH) - 1;
+	static const char bindir[] = "/bin";
 	const ptrdiff_t bindir_len = (ptrdiff_t)sizeof(bindir) - 1;
-	const ptrdiff_t libdir_len = (ptrdiff_t)sizeof(libdir) - 1;
+
+	const char *p2 = NULL;
 
 #ifdef ENABLE_MULTIARCH
-	char *p2 = NULL;
-
       multiarch:
 #endif
 	if (p - libpath >= bindir_len && !STRNCASECMP(p - bindir_len, bindir, bindir_len)) {
 	    p -= bindir_len;
+	    archlibdir = rb_str_subseq(sopath, 0, p - libpath);
+	    rb_str_cat_cstr(archlibdir, libdir);
+	    OBJ_FREEZE_RAW(archlibdir);
 	}
 	else if (p - libpath >= libdir_len && !strncmp(p - libdir_len, libdir, libdir_len)) {
+	    archlibdir = rb_str_subseq(sopath, 0, (p2 ? p2 : p) - libpath);
+	    OBJ_FREEZE_RAW(archlibdir);
 	    p -= libdir_len;
 	}
 #ifdef ENABLE_MULTIARCH
@@ -606,6 +634,13 @@ ruby_init_loadpath_safe(int safe_level)
 #define RUBY_RELATIVE(path, len) rubylib_path_new((path), (len))
 #define PREFIX_PATH() RUBY_RELATIVE(ruby_exec_prefix, exec_prefix_len)
 #endif
+    rb_gc_register_address(&ruby_prefix_path);
+    ruby_prefix_path = PREFIX_PATH();
+    OBJ_FREEZE_RAW(ruby_prefix_path);
+    if (!archlibdir) archlibdir = ruby_prefix_path;
+    rb_gc_register_address(&ruby_archlibdir_path);
+    ruby_archlibdir_path = archlibdir;
+
     load_path = GET_VM()->load_path;
 
     if (safe_level == 0) {
@@ -621,7 +656,7 @@ ruby_init_loadpath_safe(int safe_level)
 	paths += len + 1;
     }
 
-    rb_const_set(rb_cObject, rb_intern_const("TMP_RUBY_PREFIX"), rb_obj_freeze(PREFIX_PATH()));
+    rb_const_set(rb_cObject, rb_intern_const("TMP_RUBY_PREFIX"), ruby_prefix_path);
 }
 
 
@@ -632,11 +667,9 @@ add_modules(VALUE *req_list, const char *mod)
     VALUE feature;
 
     if (!list) {
-	*req_list = list = rb_ary_new();
-	RBASIC_CLEAR_CLASS(list);
+	*req_list = list = rb_ary_tmp_new(0);
     }
-    feature = rb_str_new2(mod);
-    RBASIC_CLEAR_CLASS(feature);
+    feature = rb_str_cat_cstr(rb_str_tmp_new(0), mod);
     rb_ary_push(list, feature);
 }
 
@@ -738,6 +771,7 @@ moreswitches(const char *s, ruby_cmdline_options_t *opt, int envopt)
     char **argv, *p;
     const char *ap = 0;
     VALUE argstr, argary;
+    void *ptr;
 
     while (ISSPACE(*s)) s++;
     if (!*s) return;
@@ -760,7 +794,8 @@ moreswitches(const char *s, ruby_cmdline_options_t *opt, int envopt)
     argc = RSTRING_LEN(argary) / sizeof(ap);
     ap = 0;
     rb_str_cat(argary, (char *)&ap, sizeof(ap));
-    argv = (char **)RSTRING_PTR(argary);
+    argv = ptr = ALLOC_N(char *, argc);
+    MEMMOVE(argv, RSTRING_PTR(argary), char *, argc);
 
     while ((i = proc_options(argc, argv, opt, envopt)) > 1 && envopt && (argc -= i) > 0) {
 	argv += i;
@@ -773,6 +808,7 @@ moreswitches(const char *s, ruby_cmdline_options_t *opt, int envopt)
 	}
     }
 
+    ruby_xfree(ptr);
     /* get rid of GC */
     rb_str_resize(argary, 0);
     rb_str_resize(argstr, 0);
@@ -918,7 +954,6 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 static void
 setup_mjit_options(const char *s, struct mjit_options *mjit_opt)
 {
-    mjit_opt->on = 1;
     if (*s == 0) return;
     else if (strcmp(s, "-warnings") == 0) {
         mjit_opt->warnings = 1;
@@ -1303,6 +1338,7 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 		ruby_verbose = Qtrue;
 	    }
             else if (strncmp("jit", s, 3) == 0) {
+                opt->features |= FEATURE_BIT(jit);
                 setup_mjit_options(s + 3, &opt->mjit);
             }
 	    else if (strcmp("yydebug", s) == 0) {
@@ -1513,10 +1549,6 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     const struct rb_block *base_block;
     unsigned int dump = opt->dump & dump_exit_bits;
 
-#ifdef MJIT_FORCE_ENABLE /* to use with: ./configure cppflags="-DMJIT_FORCE_ENABLE" */
-    opt->mjit.on = 1;
-#endif
-
     if (opt->dump & (DUMP_BIT(usage)|DUMP_BIT(help))) {
 	const char *const progname =
 	    (argc > 0 && argv && argv[0] ? argv[0] :
@@ -1548,8 +1580,11 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     if (opt->src.enc.name)
 	rb_warning("-K is specified; it is for 1.8 compatibility and may cause odd behavior");
 
+    if (opt->features & FEATURE_BIT(jit)) {
+        opt->mjit.on = TRUE; /* set mjit.on for ruby_show_version() API and check to call mjit_init() */
+    }
     if (opt->dump & (DUMP_BIT(version) | DUMP_BIT(version_v))) {
-        mjit_opts.on = opt->mjit.on; /* used by ruby_show_version(). mjit_init() is still not called here. */
+        mjit_opts.on = opt->mjit.on; /* used by ruby_show_version(). mjit_init() still can't be called here. */
 	ruby_show_version();
 	if (opt->dump & DUMP_BIT(version)) return Qtrue;
     }
@@ -1606,6 +1641,7 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
         /* Using TMP_RUBY_PREFIX created by ruby_init_loadpath_safe(). */
         mjit_init(&opt->mjit);
 
+    Init_ruby_description();
     Init_enc();
     lenc = rb_locale_encoding();
     rb_enc_associate(rb_progname, lenc);
@@ -1670,9 +1706,9 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     Init_ext();		/* load statically linked extensions before rubygems */
     if (opt->features & FEATURE_BIT(gems)) {
 	rb_define_module("Gem");
-    }
-    if (opt->features & FEATURE_BIT(did_you_mean)) {
-	rb_define_module("DidYouMean");
+	if (opt->features & FEATURE_BIT(did_you_mean)) {
+	    rb_define_module("DidYouMean");
+	}
     }
     ruby_init_prelude();
     if ((opt->features ^ DEFAULT_FEATURES) & COMPILATION_FEATURES) {
@@ -1890,11 +1926,7 @@ load_file_internal(VALUE argp_v)
 	c = rb_io_getbyte(f);
 	if (c == INT2FIX('#')) {
 	    c = rb_io_getbyte(f);
-	    if (c == INT2FIX('!')) {
-		line = rb_io_gets(f);
-		if (NIL_P(line))
-		    return 0;
-
+            if (c == INT2FIX('!') && !NIL_P(line = rb_io_gets(f))) {
 		RSTRING_GETMEM(line, str, len);
 		warn_cr_in_shebang(str, len);
 		if ((p = strstr(str, ruby_engine)) == 0) {
@@ -2166,7 +2198,9 @@ external_str_new_cstr(const char *p)
 {
 #if UTF8_PATH
     VALUE str = rb_utf8_str_new_cstr(p);
-    return str_conv_enc(str, NULL, rb_default_external_encoding());
+    str = str_conv_enc(str, NULL, rb_default_external_encoding());
+    OBJ_TAINT_RAW(str);
+    return str;
 #else
     return rb_external_str_new_cstr(p);
 #endif

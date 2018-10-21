@@ -10,6 +10,10 @@ class Gem::Commands::BuildCommand < Gem::Command
     add_option '--force', 'skip validation of the spec' do |value, options|
       options[:force] = true
     end
+
+    add_option '--strict', 'consider warnings as errors when validating the spec' do |value, options|
+      options[:strict] = true
+    end
   end
 
   def arguments # :nodoc:
@@ -47,13 +51,15 @@ with gem spec:
     end
 
     if File.exist? gemspec then
-      spec = Gem::Specification.load gemspec
+      Dir.chdir(File.dirname(gemspec)) do
+        spec = Gem::Specification.load File.basename(gemspec)
 
-      if spec then
-        Gem::Package.build spec, options[:force]
-      else
-        alert_error "Error loading gemspec. Aborting."
-        terminate_interaction 1
+        if spec then
+          Gem::Package.build spec, options[:force], options[:strict]
+        else
+          alert_error "Error loading gemspec. Aborting."
+          terminate_interaction 1
+        end
       end
     else
       alert_error "Gemspec file not found: #{gemspec}"

@@ -14,10 +14,10 @@
 
 RUBY_SYMBOL_EXPORT_BEGIN
 
-extern VALUE ruby_vm_const_missing_count;
-extern rb_serial_t ruby_vm_global_method_state;
-extern rb_serial_t ruby_vm_global_constant_state;
-extern rb_serial_t ruby_vm_class_serial;
+RUBY_EXTERN VALUE ruby_vm_const_missing_count;
+RUBY_EXTERN rb_serial_t ruby_vm_global_method_state;
+RUBY_EXTERN rb_serial_t ruby_vm_global_constant_state;
+RUBY_EXTERN rb_serial_t ruby_vm_class_serial;
 
 RUBY_SYMBOL_EXPORT_END
 
@@ -39,6 +39,17 @@ RUBY_SYMBOL_EXPORT_END
 /**********************************************************/
 /* deal with stack                                        */
 /**********************************************************/
+
+static inline int
+rb_obj_hidden_p(VALUE obj)
+{
+    if (SPECIAL_CONST_P(obj)) {
+        return FALSE;
+    }
+    else {
+        return RBASIC_CLASS(obj) ? FALSE : TRUE;
+    }
+}
 
 #define PUSH(x) (SET_SV(x), INC_SP(1))
 #define TOPN(n) (*(GET_SP()-(n)-1))
@@ -107,7 +118,6 @@ enum vm_regan_acttype {
 #define DEC_SP(x)  (VM_REG_SP -= (COLLECT_USAGE_REGISTER_HELPER(SP, SET, (x))))
 #define SET_SV(x)  (*GET_SP() = (x))
   /* set current stack value as x */
-#define ADJ_SP(x)  INC_SP(x)
 
 /* instruction sequence C struct */
 #define GET_ISEQ() (GET_CFP()->iseq)
@@ -196,17 +206,9 @@ enum vm_regan_acttype {
  * because inline method cache does not care about receiver.
  */
 
-#ifndef OPT_CALL_FASTPATH
-#define OPT_CALL_FASTPATH 1
-#endif
-
-#if OPT_CALL_FASTPATH
-#define CI_SET_FASTPATH(cc, func, enabled) do { \
+#define CC_SET_FASTPATH(cc, func, enabled) do { \
     if (LIKELY(enabled)) ((cc)->call = (func)); \
 } while (0)
-#else
-#define CI_SET_FASTPATH(ci, func, enabled) /* do nothing */
-#endif
 
 #define GET_BLOCK_HANDLER() (GET_LEP()[VM_ENV_DATA_INDEX_SPECVAL])
 
@@ -214,6 +216,25 @@ enum vm_regan_acttype {
 /* deal with control flow 3: exception                    */
 /**********************************************************/
 
+
+/**********************************************************/
+/* deal with stack canary                                 */
+/**********************************************************/
+
+#if VM_CHECK_MODE > 0
+#define SETUP_CANARY() \
+    if (leaf) { \
+        canary = GET_SP(); \
+        SET_SV(vm_stack_canary); \
+    }
+#define CHECK_CANARY() \
+    if (leaf && (*canary != vm_stack_canary)) { \
+        vm_canary_is_found_dead(INSN_ATTR(bin), *canary); \
+    }
+#else
+#define SETUP_CANARY()          /* void */
+#define CHECK_CANARY()          /* void */
+#endif
 
 /**********************************************************/
 /* others                                                 */
@@ -233,13 +254,15 @@ enum vm_regan_acttype {
 #define USE_IC_FOR_SPECIALIZED_METHOD 1
 #endif
 
-#define CALL_SIMPLE_METHOD(recv_) do { \
-    struct rb_calling_info calling; \
-    calling.block_handler = VM_BLOCK_HANDLER_NONE; \
-    calling.argc = ci->orig_argc; \
-    vm_search_method(ci, cc, calling.recv = (recv_)); \
-    CALL_METHOD(&calling, ci, cc); \
+#ifndef MJIT_HEADER
+#define CALL_SIMPLE_METHOD() do { \
+    rb_snum_t x = leaf ? INSN_ATTR(width) : 0; \
+    rb_snum_t y = attr_width_opt_send_without_block(0, 0); \
+    rb_snum_t z = x - y; \
+    ADD_PC(z); \
+    DISPATCH_ORIGINAL_INSN(opt_send_without_block); \
 } while (0)
+#endif
 
 #define NEXT_CLASS_SERIAL() (++ruby_vm_class_serial)
 #define GET_GLOBAL_METHOD_STATE() (ruby_vm_global_method_state)
@@ -285,14 +308,14 @@ extern rb_cref_t *rb_vm_get_cref(const VALUE *ep);
 
 extern const rb_cref_t *vm_get_const_key_cref(const VALUE *ep);
 
-extern VALUE lep_svar_get(const rb_execution_context_t *ec, const VALUE *lep, rb_num_t key);
-extern void lep_svar_set(const rb_execution_context_t *ec, const VALUE *lep, rb_num_t key, VALUE val);
+MJIT_STATIC VALUE lep_svar_get(const rb_execution_context_t *ec, const VALUE *lep, rb_num_t key);
+MJIT_STATIC void lep_svar_set(const rb_execution_context_t *ec, const VALUE *lep, rb_num_t key, VALUE val);
 
 extern VALUE vm_defined(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, rb_num_t op_type, VALUE obj, VALUE needstr, VALUE v);
 extern void vm_search_super_method(const rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
 				   struct rb_calling_info *calling, struct rb_call_info *ci, struct rb_call_cache *cc);
 
-extern VALUE check_match(rb_execution_context_t *ec, VALUE pattern, VALUE target, enum vm_check_match_type type);
+MJIT_STATIC VALUE check_match(rb_execution_context_t *ec, VALUE pattern, VALUE target, enum vm_check_match_type type);
 extern VALUE vm_throw(const rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, rb_num_t throw_state, VALUE throwobj);
 extern VALUE vm_search_const_defined_class(const VALUE cbase, ID id);
 
@@ -315,7 +338,12 @@ static inline void
 vm_change_insn(rb_iseq_t *iseq, VALUE *pc, int insn_id) {
     VALUE addr = vm_exec_insn_address_table[insn_id];
     
-    if (mjit_init_p && *pc != addr)
+
+#ifndef MJIT_HEADER
+    if (mjit_enabled && *pc != addr)
+#else
+    if (*pc != addr)
+#endif
         mjit_change_iseq(iseq, FALSE);
     *pc = addr;
 }

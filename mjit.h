@@ -1,6 +1,6 @@
 /**********************************************************************
 
-  mjit.h - Interface to MRI method JIT compiler
+  mjit.h - Interface to MRI method JIT compiler for Ruby's main thread
 
   Copyright (C) 2017 Vladimir Makarov <vmakarov@redhat.com>.
 
@@ -25,15 +25,18 @@ enum rb_mjit_iseq_func {
     /* ISEQ is already queued for the machine code generation but the
        code is not ready yet for the execution */
     NOT_READY_JIT_ISEQ_FUNC = 1,
-    /* ISEQ included not compilable insn or some assertion failed  */
-    NOT_COMPILABLE_JIT_ISEQ_FUNC = 2,
+    /* ISEQ included not compilable insn, some internal assertion failed
+       or the unit is unloaded */
+    NOT_COMPILED_JIT_ISEQ_FUNC = 2,
     /* End mark */
     LAST_JIT_ISEQ_FUNC = 3
 };
 
 /* MJIT options which can be defined on the MRI command line.  */
 struct mjit_options {
-    char on; /* flag of MJIT usage  */
+    /* Converted from "jit" feature flag to tell the enablement
+       information to ruby_show_version().  */
+    char on;
     /* Flag of collecting and printing info about ISEQ execution as a
        byte code and as JIT generated code.  */
     char profile;
@@ -69,17 +72,11 @@ extern unsigned long byte_code_insns_num;
 typedef VALUE (*mjit_func_t)(rb_execution_context_t *, rb_control_frame_t *);
 
 RUBY_SYMBOL_EXPORT_BEGIN
-extern struct mjit_options mjit_opts;
-
-#ifndef MJIT_HEADER
-extern int mjit_init_p;
-#else
-/* Make it const to permit more optimizations in JIT code  */
-static const int mjit_init_p = 1;
-#endif
+RUBY_EXTERN struct mjit_options mjit_opts;
+RUBY_EXTERN int mjit_call_p;
 
 extern void mjit_add_iseq_to_process(const rb_iseq_t *iseq);
-extern mjit_func_t mjit_get_iseq_func(struct rb_iseq_constant_body *body);
+extern VALUE mjit_wait_call(rb_execution_context_t *ec, struct rb_iseq_constant_body *body);
 RUBY_SYMBOL_EXPORT_END
 
 extern int mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *funcname);
@@ -156,24 +153,24 @@ mjit_exec_iseq(rb_execution_context_t *ec, const rb_iseq_t *iseq,
     long unsigned total_calls;
     mjit_func_t func;
 
+    if (!mjit_call_p)
+        return Qundef;
+
     total_calls = ++body->total_calls;
 
     func = body->jit_func;
-    if (UNLIKELY(mjit_opts.wait && mjit_opts.min_calls == total_calls && mjit_target_iseq_p(body, type)
-                 && func == (mjit_func_t)NOT_ADDED_JIT_ISEQ_FUNC)) {
-        mjit_add_iseq_to_process(iseq);
-        func = mjit_get_iseq_func(body);
-    }
-
-    if (UNLIKELY((ptrdiff_t)func <= (ptrdiff_t)LAST_JIT_ISEQ_FUNC)) {
+    if (UNLIKELY((uintptr_t)func <= (uintptr_t)LAST_JIT_ISEQ_FUNC)) {
         switch ((enum rb_mjit_iseq_func)func) {
           case NOT_ADDED_JIT_ISEQ_FUNC:
 	      if (total_calls == mjit_opts.min_calls && mjit_target_iseq_p(body, type)) {
                 mjit_add_iseq_to_process(iseq);
+                if (UNLIKELY(mjit_opts.wait)) {
+                    return mjit_wait_call(ec, body);
+                }
             }
             return Qundef;
           case NOT_READY_JIT_ISEQ_FUNC:
-          case NOT_COMPILABLE_JIT_ISEQ_FUNC:
+          case NOT_COMPILED_JIT_ISEQ_FUNC:
             return Qundef;
           default: /* to avoid warning with LAST_JIT_ISEQ_FUNC */
             break;
@@ -190,7 +187,7 @@ mjit_exec(rb_execution_context_t *ec)
     const rb_iseq_t *iseq;
     struct rb_iseq_constant_body *body;
 
-    if (!mjit_init_p)
+    if (!mjit_call_p)
         return Qundef;
 
     iseq = ec->cfp->iseq;

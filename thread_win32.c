@@ -20,6 +20,10 @@
 
 #define native_thread_yield() Sleep(0)
 #define unregister_ubf_list(th)
+#define ubf_wakeup_all_threads() do {} while (0)
+#define ubf_threads_empty() (1)
+#define ubf_timer_disarm() do {} while (0)
+#define ubf_list_atfork() do {} while (0)
 
 static volatile DWORD ruby_native_thread_key = TLS_OUT_OF_INDEXES;
 
@@ -210,8 +214,9 @@ int
 rb_w32_wait_events(HANDLE *events, int num, DWORD timeout)
 {
     int ret;
+    rb_thread_t *th = GET_THREAD();
 
-    BLOCKING_REGION(ret = rb_w32_wait_events_blocking(events, num, timeout),
+    BLOCKING_REGION(th, ret = rb_w32_wait_events_blocking(events, num, timeout),
 		    ubf_handle, ruby_thread_from_native(), FALSE);
     return ret;
 }
@@ -264,19 +269,25 @@ int WINAPI
 rb_w32_Sleep(unsigned long msec)
 {
     int ret;
+    rb_thread_t *th = GET_THREAD();
 
-    BLOCKING_REGION(ret = rb_w32_sleep(msec),
+    BLOCKING_REGION(th, ret = rb_w32_sleep(msec),
 		    ubf_handle, ruby_thread_from_native(), FALSE);
     return ret;
 }
 
-static void
-native_sleep(rb_thread_t *th, struct timespec *ts)
+static DWORD
+hrtime2msec(rb_hrtime_t hrt)
 {
-    const volatile DWORD msec = (ts) ?
-	(DWORD)(ts->tv_sec * 1000 + ts->tv_nsec / 1000000) : INFINITE;
+    return (DWORD)hrt / (DWORD)RB_HRTIME_PER_MSEC;
+}
 
-    GVL_UNLOCK_BEGIN();
+static void
+native_sleep(rb_thread_t *th, rb_hrtime_t *rel)
+{
+    const volatile DWORD msec = rel ? hrtime2msec(*rel) : INFINITE;
+
+    GVL_UNLOCK_BEGIN(th);
     {
 	DWORD ret;
 
@@ -299,7 +310,7 @@ native_sleep(rb_thread_t *th, struct timespec *ts)
 	th->unblock.arg = 0;
         rb_native_mutex_unlock(&th->interrupt_lock);
     }
-    GVL_UNLOCK_END();
+    GVL_UNLOCK_END(th);
 }
 
 void
@@ -508,7 +519,7 @@ native_cond_timeout(rb_nativethread_cond_t *cond, struct timespec timeout_rel)
 #endif
 
 void
-rb_native_cond_initialize(rb_nativethread_cond_t *cond, int flags)
+rb_native_cond_initialize(rb_nativethread_cond_t *cond)
 {
     cond->next = (struct cond_event_entry *)cond;
     cond->prev = (struct cond_event_entry *)cond;
@@ -678,18 +689,21 @@ static struct {
 static unsigned long __stdcall
 timer_thread_func(void *dummy)
 {
+    rb_vm_t *vm = GET_VM();
     thread_debug("timer_thread\n");
     rb_w32_set_thread_description(GetCurrentThread(), L"ruby-timer-thread");
     while (WaitForSingleObject(timer_thread.lock, TIME_QUANTUM_USEC/1000) ==
 	   WAIT_TIMEOUT) {
-	timer_thread_function(dummy);
+	timer_thread_function();
+	ruby_sigchld_handler(vm); /* probably no-op */
+	rb_threadptr_check_signal(vm->main_thread);
     }
     thread_debug("timer killed\n");
     return 0;
 }
 
 void
-rb_thread_wakeup_timer_thread(void)
+rb_thread_wakeup_timer_thread(int sig)
 {
     /* do nothing */
 }
@@ -766,6 +780,26 @@ rb_reserved_fd_p(int fd)
     return 0;
 }
 
+int
+rb_sigwait_fd_get(rb_thread_t *th)
+{
+    return -1; /* TODO */
+}
+
+NORETURN(void rb_sigwait_fd_put(rb_thread_t *, int));
+void
+rb_sigwait_fd_put(rb_thread_t *th, int fd)
+{
+    rb_bug("not implemented, should not be called");
+}
+
+NORETURN(void rb_sigwait_sleep(const rb_thread_t *, int, const struct timespec *));
+void
+rb_sigwait_sleep(const rb_thread_t *th, int fd, const struct timespec *ts)
+{
+    rb_bug("not implemented, should not be called");
+}
+
 rb_nativethread_id_t
 rb_nativethread_self(void)
 {
@@ -788,7 +822,7 @@ mjit_worker(void *arg)
 
 /* Launch MJIT thread. Returns FALSE if it fails to create thread. */
 int
-rb_thread_create_mjit_thread(void (*child_hook)(void), void (*worker_func)(void))
+rb_thread_create_mjit_thread(void (*worker_func)(void))
 {
     size_t stack_size = 4 * 1024; /* 4KB is the minimum commit size */
     HANDLE thread_id = w32_create_thread(stack_size, mjit_worker, worker_func);

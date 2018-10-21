@@ -431,7 +431,7 @@ class TestGemDependencyInstaller < Gem::TestCase
       EXTCONF_RB
     end
 
-    e1 = new_spec 'e', '1', nil, 'extconf.rb' do |s|
+    e1 = util_spec 'e', '1', nil, 'extconf.rb' do |s|
       s.extensions << 'extconf.rb'
     end
     e1_gem = File.join @tempdir, 'gems', "#{e1.full_name}.gem"
@@ -445,9 +445,13 @@ class TestGemDependencyInstaller < Gem::TestCase
     FileUtils.mv f1_gem, @tempdir
     inst = nil
 
-    Dir.chdir @tempdir do
+    pwd = Dir.getwd
+    Dir.chdir @tempdir
+    begin
       inst = Gem::DependencyInstaller.new
       inst.install 'f'
+    ensure
+      Dir.chdir pwd
     end
 
     assert_equal %w[f-1], inst.installed_gems.map { |s| s.full_name }

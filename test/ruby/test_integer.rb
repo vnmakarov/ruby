@@ -24,6 +24,32 @@ class TestInteger < Test::Unit::TestCase
                         rescue
                           nil
                         end, "[ruby-dev:32084] [ruby-dev:34547]")
+
+    x = EnvUtil.suppress_warning {2 ** -0x4000000000000000}
+    assert_in_delta(0.0, (x / 2), Float::EPSILON)
+
+    <<~EXPRS.each_line.with_index(__LINE__+1) do |expr, line|
+      crash01: 111r+11**-11111161111111
+      crash02: 1118111111111**-1111111111111111**1+1==11111
+      crash03: -1111111**-1111*11 - -1111111** -111111111
+      crash04: 1118111111111** -1111111111111111**1+11111111111**1 ===111
+      crash05: 11** -111155555555555555  -55   !=5-555
+      crash07: 1 + 111111111**-1111811111
+      crash08: 18111111111**-1111111111111111**1 + 1111111111**-1111**1
+      crash10: -7 - -1111111** -1111**11
+      crash12: 1118111111111** -1111111111111111**1 + 1111 - -1111111** -1111*111111111119
+      crash13: 1.0i - -1111111** -111111111
+      crash14: 11111**111111111**111111 * -11111111111111111111**-111111111111
+      crash15: ~1**1111 + -~1**~1**111
+      crash17: 11** -1111111**1111 /11i
+      crash18: 5555i**-5155 - -9111111**-1111**11
+      crash19: 111111*-11111111111111111111**-1111111111111111
+      crash20: 1111**111-11**-11111**11
+      crash21: 11**-10111111119-1i -1r
+    EXPRS
+      name, expr = expr.split(':', 2)
+      assert_ruby_status(%w"-W0", expr, name)
+    end
   end
 
   def test_lshift
@@ -159,6 +185,12 @@ class TestInteger < Test::Unit::TestCase
     assert_nothing_raised(TypeError) {
       assert_equal(nil, Integer(nil, exception: false))
     }
+
+    assert_separately([], "#{<<~"begin;"}\n#{<<~'end;'}")
+    begin;
+      def method_missing(*);"";end
+      assert_equal(0, Integer("0", 2))
+    end;
   end
 
   def test_int_p

@@ -152,7 +152,34 @@ class Gem::RequestSet
     @prerelease = options[:prerelease]
 
     requests = []
+    download_queue = Queue.new
 
+    # Create a thread-safe list of gems to download
+    sorted_requests.each do |req|
+      download_queue << req
+    end
+
+    # Create N threads in a pool, have them download all the gems
+    threads = Gem.configuration.concurrent_downloads.times.map do
+      # When a thread pops this item, it knows to stop running. The symbol
+      # is queued here so that there will be one symbol per thread.
+      download_queue << :stop
+
+      Thread.new do
+        # The pop method will block waiting for items, so the only way
+        # to stop a thread from running is to provide a final item that
+        # means the thread should stop.
+        while req = download_queue.pop
+          break if req == :stop
+          req.spec.download options unless req.installed?
+        end
+      end
+    end
+
+    # Wait for all the downloads to finish before continuing
+    threads.each(&:value)
+
+    # Install requested gems after they have been downloaded
     sorted_requests.each do |req|
       if req.installed? then
         req.spec.spec.build_extensions
@@ -171,7 +198,9 @@ class Gem::RequestSet
         rescue Gem::RuntimeRequirementNotMetError => e
           recent_match = req.spec.set.find_all(req.request).sort_by(&:version).reverse_each.find do |s|
             s = s.spec
-            s.required_ruby_version.satisfied_by?(Gem.ruby_version) && s.required_rubygems_version.satisfied_by?(Gem.rubygems_version)
+            s.required_ruby_version.satisfied_by?(Gem.ruby_version) &&
+              s.required_rubygems_version.satisfied_by?(Gem.rubygems_version) &&
+              Gem::Platform.installable?(s)
           end
           if recent_match
             suggestion = "The last version of #{req.request} to support your Ruby & RubyGems was #{recent_match.version}. Try installing it with `gem install #{recent_match.name} -v #{recent_match.version}`"
@@ -189,22 +218,7 @@ class Gem::RequestSet
 
     return requests if options[:gemdeps]
 
-    specs = requests.map do |request|
-      case request
-      when Gem::Resolver::ActivationRequest then
-        request.spec.spec
-      else
-        request
-      end
-    end
-
-    require 'rubygems/dependency_installer'
-    inst = Gem::DependencyInstaller.new options
-    inst.installed_gems.replace specs
-
-    Gem.done_installing_hooks.each do |hook|
-      hook.call inst, specs
-    end unless Gem.done_installing_hooks.empty?
+    install_hooks requests, options
 
     requests
   end
@@ -281,9 +295,33 @@ class Gem::RequestSet
       installed << request
     end
 
+    install_hooks installed, options
+
     installed
   ensure
     ENV['GEM_HOME'] = gem_home
+  end
+
+  ##
+  # Call hooks on installed gems
+
+  def install_hooks requests, options
+    specs = requests.map do |request|
+      case request
+      when Gem::Resolver::ActivationRequest then
+        request.spec.spec
+      else
+        request
+      end
+    end
+
+    require "rubygems/dependency_installer"
+    inst = Gem::DependencyInstaller.new options
+    inst.installed_gems.replace specs
+
+    Gem.done_installing_hooks.each do |hook|
+      hook.call inst, specs
+    end unless Gem.done_installing_hooks.empty?
   end
 
   ##
@@ -406,7 +444,7 @@ class Gem::RequestSet
   end
 
   def specs_in dir
-    Dir["#{dir}/specifications/*.gemspec"].map do |g|
+    Gem::Util.glob_files_in_dir("*.gemspec", File.join(dir, "specifications")).map do |g|
       Gem::Specification.load g
     end
   end

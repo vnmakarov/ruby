@@ -92,6 +92,24 @@
 
 #define RUBY_NSIG NSIG
 
+#if defined(SIGCLD)
+#  define RUBY_SIGCHLD    (SIGCLD)
+#elif defined(SIGCHLD)
+#  define RUBY_SIGCHLD    (SIGCHLD)
+#else
+#  define RUBY_SIGCHLD    (0)
+#endif
+
+/* platforms with broken or non-existent SIGCHLD work by polling */
+#if defined(__APPLE__)
+#  define SIGCHLD_LOSSY (1)
+#else
+#  define SIGCHLD_LOSSY (0)
+#endif
+
+/* define to 0 to test old code path */
+#define WAITPID_USE_SIGCHLD (RUBY_SIGCHLD || SIGCHLD_LOSSY)
+
 #ifdef HAVE_STDARG_PROTOTYPES
 #include <stdarg.h>
 #define va_init_list(a,b) va_start((a),(b))
@@ -101,7 +119,15 @@
 #endif
 
 #if defined(SIGSEGV) && defined(HAVE_SIGALTSTACK) && defined(SA_SIGINFO) && !defined(__NetBSD__)
-#define USE_SIGALTSTACK
+#  define USE_SIGALTSTACK
+void *rb_register_sigaltstack(void);
+#  define RB_ALTSTACK_INIT(var) var = rb_register_sigaltstack()
+#  define RB_ALTSTACK_FREE(var) xfree(var)
+#  define RB_ALTSTACK(var)  var
+#else /* noop */
+#  define RB_ALTSTACK_INIT(var)
+#  define RB_ALTSTACK_FREE(var)
+#  define RB_ALTSTACK(var) (0)
 #endif
 
 /*****************/
@@ -138,6 +164,7 @@
 #endif /* OPT_STACK_CACHING */
 #endif /* OPT_CALL_THREADED_CODE */
 
+void rb_vm_encoded_insn_data_table_init(void);
 typedef unsigned long rb_num_t;
 typedef unsigned long lindex_t;
 typedef long vindex_t;
@@ -169,7 +196,6 @@ enum ruby_tag_type {
 
 enum ruby_vm_throw_flags {
     VM_THROW_NO_ESCAPE_FLAG = 0x8000,
-    VM_THROW_LEVEL_SHIFT = 16,
     VM_THROW_STATE_MASK = 0xff
 };
 
@@ -312,7 +338,6 @@ pathobj_realpath(VALUE pathobj)
 
 /* Forward declarations */
 struct rb_mjit_unit;
-struct rb_execution_context_struct;
 
 struct iseq_insn_info {
     const struct iseq_insn_info_entry *body;
@@ -448,9 +473,9 @@ struct rb_iseq_constant_body {
     int rtl_ary_p;
 
     struct {
-      rb_snum_t flip_count;
-      VALUE coverage;
-      VALUE original_iseq;
+	rb_snum_t flip_count;
+	VALUE coverage;
+	VALUE *original_iseq;
     } variable;
 
     unsigned int local_table_size;
@@ -555,6 +580,8 @@ enum ruby_basic_operators {
     BOP_MAX,
     BOP_MIN,
     BOP_CALL,
+    BOP_AND,
+    BOP_OR,
 
     BOP_LAST_
 };
@@ -584,11 +611,20 @@ typedef struct rb_vm_struct {
     VALUE self;
 
     rb_global_vm_lock_t gvl;
-    rb_nativethread_lock_t    thread_destruct_lock;
 
     struct rb_thread_struct *main_thread;
-    struct rb_thread_struct *running_thread;
 
+    /* persists across uncontended GVL release/acquire for time slice */
+    const struct rb_thread_struct *running_thread;
+
+#ifdef USE_SIGALTSTACK
+    void *main_altstack;
+#endif
+
+    rb_serial_t fork_gen;
+    rb_nativethread_lock_t waitpid_lock;
+    struct list_head waiting_pids; /* PID > 0: <=> struct waitpid_state */
+    struct list_head waiting_grps; /* PID <= 0: <=> struct waitpid_state */
     struct list_head waiting_fds; /* <=> struct waiting_fd */
     struct list_head living_threads;
     VALUE thgroup_default;
@@ -601,7 +637,7 @@ typedef struct rb_vm_struct {
     unsigned int safe_level_: 1;
 
     int trace_running;
-    volatile int sleeper;
+    int sleeper;
 
     /* object management */
     VALUE mark_object_ary;
@@ -631,8 +667,7 @@ typedef struct rb_vm_struct {
     struct st_table *ensure_rollback_table;
 
     /* postponed_job */
-    struct rb_postponed_job_struct *postponed_job_buffer;
-    int postponed_job_index;
+    struct st_table *postponed_jobs;
 
     int src_encoding_index;
 
@@ -822,11 +857,10 @@ typedef struct rb_execution_context_struct {
 
     struct rb_vm_tag *tag;
     struct rb_vm_protect_tag *protect_tag;
-    int raised_flag;
 
     /* interrupt flags */
     rb_atomic_t interrupt_flag;
-    unsigned long interrupt_mask;
+    rb_atomic_t interrupt_mask; /* size should match flag */
 
     rb_fiber_t *fiber_ptr;
     struct rb_thread_struct *thread_ptr;
@@ -850,7 +884,9 @@ typedef struct rb_execution_context_struct {
     VALUE errinfo;
     VALUE passed_block_handler; /* for rb_iterate */
     const rb_callable_method_entry_t *passed_bmethod_me; /* for bmethod */
+    int raised_flag;
     enum method_missing_reason method_missing_reason;
+    VALUE private_const_reference;
 
     /* for GC */
     struct {
@@ -862,7 +898,7 @@ typedef struct rb_execution_context_struct {
 	VALUE *register_stack_end;
 	size_t register_stack_maxsize;
 #endif
-	jmp_buf regs;
+	RUBY_ALIGNAS(SIZEOF_VALUE) jmp_buf regs;
     } machine;
 } rb_execution_context_t;
 
@@ -889,9 +925,14 @@ typedef struct rb_thread_struct {
 #ifdef NON_SCALAR_THREAD_ID
     rb_thread_id_string_t thread_id_string;
 #endif
-    enum rb_thread_status status;
-    int to_kill;
-    int priority;
+    BITFIELD(enum rb_thread_status, status, 2);
+    /* bit flags */
+    unsigned int to_kill : 1;
+    unsigned int abort_on_exception: 1;
+    unsigned int report_on_exception: 1;
+    unsigned int pending_interrupt_queue_checked: 1;
+    int8_t priority; /* -3 .. 3 (RUBY_THREAD_PRIORITY_{MIN,MAX}) */
+    uint32_t running_time_us; /* 12500..800000 */
 
     native_thread_data_t native_thread_data;
     void *blocking_region_buffer;
@@ -907,7 +948,6 @@ typedef struct rb_thread_struct {
     /* async errinfo queue */
     VALUE pending_interrupt_queue;
     VALUE pending_interrupt_mask_stack;
-    int pending_interrupt_queue_checked;
 
     /* interrupt management */
     rb_nativethread_lock_t interrupt_lock;
@@ -929,13 +969,8 @@ typedef struct rb_thread_struct {
     rb_jmpbuf_t root_jmpbuf;
 
     /* misc */
-    unsigned int abort_on_exception: 1;
-    unsigned int report_on_exception: 1;
-#ifdef USE_SIGALTSTACK
-    void *altstack;
-#endif
-    uint32_t running_time_us; /* 12500..800000 */
     VALUE name;
+
 } rb_thread_t;
 
 typedef enum {
@@ -1043,6 +1078,7 @@ enum vm_call_flag_bits {
     VM_CALL_KW_SPLAT_bit,       /* m(**opts) */
     VM_CALL_TAILCALL_bit,       /* located at tail position */
     VM_CALL_SUPER_bit,          /* super */
+    VM_CALL_ZSUPER_bit,         /* zsuper */
     VM_CALL_OPT_SEND_bit,       /* internal flag */
     VM_CALL__END
 };
@@ -1057,6 +1093,7 @@ enum vm_call_flag_bits {
 #define VM_CALL_KW_SPLAT        (0x01 << VM_CALL_KW_SPLAT_bit)
 #define VM_CALL_TAILCALL        (0x01 << VM_CALL_TAILCALL_bit)
 #define VM_CALL_SUPER           (0x01 << VM_CALL_SUPER_bit)
+#define VM_CALL_ZSUPER          (0x01 << VM_CALL_ZSUPER_bit)
 #define VM_CALL_OPT_SEND        (0x01 << VM_CALL_OPT_SEND_bit)
 
 enum vm_special_object_type {
@@ -1143,7 +1180,6 @@ enum {
 #define VM_ENV_DATA_INDEX_SPECVAL    (-1) /* ep[-1] */
 #define VM_ENV_DATA_INDEX_FLAGS      ( 0) /* ep[ 0] */
 #define VM_ENV_DATA_INDEX_ENV        ( 1) /* ep[ 1] */
-#define VM_ENV_DATA_INDEX_ENV_PROC   ( 2) /* ep[ 2] */
 
 #define VM_ENV_INDEX_LAST_LVAR              (-VM_ENV_DATA_SIZE)
 
@@ -1280,16 +1316,6 @@ static inline const rb_env_t *
 VM_ENV_ENVVAL_PTR(const VALUE *ep)
 {
     return (const rb_env_t *)VM_ENV_ENVVAL(ep);
-}
-
-static inline VALUE
-VM_ENV_PROCVAL(const VALUE *ep)
-{
-    VM_ASSERT(VM_ENV_ESCAPED_P(ep));
-    VM_ASSERT(VM_ENV_LOCAL_P(ep));
-    VM_ASSERT(VM_ENV_BLOCK_HANDLER(ep) != VM_BLOCK_HANDLER_NONE);
-
-    return ep[VM_ENV_DATA_INDEX_ENV_PROC];
 }
 
 static inline const rb_env_t *
@@ -1619,17 +1645,19 @@ void rb_vm_inc_const_missing_count(void);
 void rb_vm_gvl_destroy(rb_vm_t *vm);
 VALUE rb_vm_call(rb_execution_context_t *ec, VALUE recv, VALUE id, int argc,
 		 const VALUE *argv, const rb_callable_method_entry_t *me);
-void rb_vm_pop_frame(rb_execution_context_t *ec);
+MJIT_STATIC void rb_vm_pop_frame(rb_execution_context_t *ec);
 
 void rb_thread_start_timer_thread(void);
 void rb_thread_stop_timer_thread(void);
 void rb_thread_reset_timer_thread(void);
-void rb_thread_wakeup_timer_thread(void);
+void rb_thread_wakeup_timer_thread(int);
 
 static inline void
 rb_vm_living_threads_init(rb_vm_t *vm)
 {
     list_head_init(&vm->waiting_fds);
+    list_head_init(&vm->waiting_pids);
+    list_head_init(&vm->waiting_grps);
     list_head_init(&vm->living_threads);
     vm->living_thread_num = 0;
 }
@@ -1657,7 +1685,7 @@ void rb_vm_stack_to_heap(rb_execution_context_t *ec);
 void ruby_thread_init_stack(rb_thread_t *th);
 int rb_vm_control_frame_id_and_class(const rb_control_frame_t *cfp, ID *idp, ID *called_idp, VALUE *klassp);
 void rb_vm_rewind_cfp(rb_execution_context_t *ec, rb_control_frame_t *cfp);
-VALUE rb_vm_bh_to_procval(const rb_execution_context_t *ec, VALUE block_handler);
+MJIT_STATIC VALUE rb_vm_bh_to_procval(const rb_execution_context_t *ec, VALUE block_handler);
 
 void rb_vm_register_special_exception_str(enum ruby_special_exceptions sp, VALUE exception_class, VALUE mesg);
 
@@ -1668,7 +1696,7 @@ void rb_gc_mark_machine_stack(const rb_execution_context_t *ec);
 
 void rb_vm_rewrite_cref(rb_cref_t *node, VALUE old_klass, VALUE new_klass, rb_cref_t **new_cref_ptr);
 
-const rb_callable_method_entry_t *rb_vm_frame_method_entry(const rb_control_frame_t *cfp);
+MJIT_STATIC const rb_callable_method_entry_t *rb_vm_frame_method_entry(const rb_control_frame_t *cfp);
 
 #define sysstack_error GET_VM()->special_exceptions[ruby_error_sysstack]
 
@@ -1691,10 +1719,10 @@ VALUE rb_catch_protect(VALUE t, rb_block_call_func *func, VALUE data, enum ruby_
 #if RUBY_VM_THREAD_MODEL == 2
 RUBY_SYMBOL_EXPORT_BEGIN
 
-extern rb_vm_t *ruby_current_vm_ptr;
-extern rb_execution_context_t *ruby_current_execution_context_ptr;
-extern rb_event_flag_t ruby_vm_event_flags;
-extern rb_event_flag_t ruby_vm_event_enabled_flags;
+RUBY_EXTERN rb_vm_t *ruby_current_vm_ptr;
+RUBY_EXTERN rb_execution_context_t *ruby_current_execution_context_ptr;
+RUBY_EXTERN rb_event_flag_t ruby_vm_event_flags;
+RUBY_EXTERN rb_event_flag_t ruby_vm_event_enabled_flags;
 
 RUBY_SYMBOL_EXPORT_END
 
@@ -1773,11 +1801,11 @@ enum {
 
 VALUE rb_exc_set_backtrace(VALUE exc, VALUE bt);
 int rb_signal_buff_size(void);
-void rb_signal_exec(rb_thread_t *th, int sig);
+int rb_signal_exec(rb_thread_t *th, int sig);
 void rb_threadptr_check_signal(rb_thread_t *mth);
 void rb_threadptr_signal_raise(rb_thread_t *th, int sig);
 void rb_threadptr_signal_exit(rb_thread_t *th);
-void rb_threadptr_execute_interrupts(rb_thread_t *, int);
+int rb_threadptr_execute_interrupts(rb_thread_t *, int);
 void rb_threadptr_interrupt(rb_thread_t *th);
 void rb_threadptr_unlock_all_locking_mutexes(rb_thread_t *th);
 void rb_threadptr_pending_interrupt_clear(rb_thread_t *th);

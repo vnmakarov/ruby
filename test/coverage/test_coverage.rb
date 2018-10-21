@@ -127,15 +127,6 @@ class TestCoverage < Test::Unit::TestCase
     }
   end
 
-  def test_nonpositive_linenumber
-    bug12517 = '[ruby-core:76141] [Bug #12517]'
-    assert_in_out_err(%w[-W0 -rcoverage], <<-"end;", ['{"<compiled>"=>[nil]}'], [], bug12517)
-      Coverage.start
-      RubyVM::InstructionSequence.compile(":ok", nil, "<compiled>", 0)
-      p Coverage.result
-    end;
-  end
-
   def test_eval
     bug13305 = '[ruby-core:80079] [Bug #13305]'
 
@@ -203,7 +194,7 @@ class TestCoverage < Test::Unit::TestCase
 
   def test_line_coverage_for_multiple_lines
     result = {
-      :lines => [1, nil, nil, nil, nil, nil, 1, nil, 1, nil, nil, nil, nil, nil, 1, nil, 1, 1, 1, nil, nil, nil, nil, nil, 1]
+      :lines => [nil, 1, nil, nil, nil, 1, nil, nil, nil, 1, nil, 1, nil, nil, nil, nil, 1, 1, nil, 1, nil, nil, nil, nil, 1]
     }
     assert_coverage(<<~"end;", { lines: true }, result) # Bug #14191
       FOO = [

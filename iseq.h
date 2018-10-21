@@ -12,10 +12,9 @@
 #ifndef RUBY_ISEQ_H
 #define RUBY_ISEQ_H 1
 
-#include "ruby/version.h"
-
-#define ISEQ_MAJOR_VERSION RUBY_API_VERSION_MAJOR
-#define ISEQ_MINOR_VERSION RUBY_API_VERSION_MINOR
+RUBY_EXTERN const int ruby_api_version[];
+#define ISEQ_MAJOR_VERSION ((unsigned int)ruby_api_version[0])
+#define ISEQ_MINOR_VERSION ((unsigned int)ruby_api_version[1])
 
 #ifndef rb_iseq_t
 typedef struct rb_iseq_struct rb_iseq_t;
@@ -46,23 +45,24 @@ ISEQ_FLIP_CNT_INCREMENT(const rb_iseq_t *iseq)
 static inline VALUE *
 ISEQ_ORIGINAL_ISEQ(const rb_iseq_t *iseq)
 {
-    VALUE str = iseq->body->variable.original_iseq;
-    if (RTEST(str)) return (VALUE *)RSTRING_PTR(str);
-    return NULL;
+    return iseq->body->variable.original_iseq;
 }
 
 static inline void
 ISEQ_ORIGINAL_ISEQ_CLEAR(const rb_iseq_t *iseq)
 {
-    RB_OBJ_WRITE(iseq, &iseq->body->variable.original_iseq, Qnil);
+    void *ptr = iseq->body->variable.original_iseq;
+    iseq->body->variable.original_iseq = NULL;
+    if (ptr) {
+        ruby_xfree(ptr);
+    }
 }
 
 static inline VALUE *
 ISEQ_ORIGINAL_ISEQ_ALLOC(const rb_iseq_t *iseq, long size)
 {
-    VALUE str = rb_str_tmp_new(size * sizeof(VALUE));
-    RB_OBJ_WRITE(iseq, &iseq->body->variable.original_iseq, str);
-    return (VALUE *)RSTRING_PTR(str);
+    return iseq->body->variable.original_iseq =
+        ruby_xmalloc2(size, sizeof(VALUE));
 }
 
 #define ISEQ_TRACE_EVENTS (RUBY_EVENT_LINE  | \
@@ -71,7 +71,8 @@ ISEQ_ORIGINAL_ISEQ_ALLOC(const rb_iseq_t *iseq, long size)
 			   RUBY_EVENT_CALL  | \
 			   RUBY_EVENT_RETURN| \
 			   RUBY_EVENT_B_CALL| \
-			   RUBY_EVENT_B_RETURN)
+			   RUBY_EVENT_B_RETURN| \
+			   RUBY_EVENT_COVERAGE_LINE)
 
 #define ISEQ_NOT_LOADED_YET   IMEMO_FL_USER1
 #define ISEQ_USE_COMPILE_DATA IMEMO_FL_USER2
@@ -92,10 +93,9 @@ struct iseq_compile_data {
     VALUE ensure_node;
     VALUE for_iseq;
     struct iseq_compile_data_ensure_node_stack *ensure_node_stack;
-    int loopval_popped;	/* used by NODE_BREAK */
-    int cached_const;
     struct iseq_compile_data_storage *storage_head;
     struct iseq_compile_data_storage *storage_current;
+    int loopval_popped;	/* used by NODE_BREAK */
     int last_line;
     int label_no;
     int node_level;
@@ -139,11 +139,15 @@ iseq_imemo_alloc(void)
     return (rb_iseq_t *)rb_imemo_new(imemo_iseq, 0, 0, 0, 0);
 }
 
-VALUE iseq_ibf_dump(const rb_iseq_t *iseq, VALUE opt);
-void ibf_load_iseq_complete(rb_iseq_t *iseq);
-const rb_iseq_t *iseq_ibf_load(VALUE str);
-VALUE iseq_ibf_load_extra_data(VALUE str);
+VALUE rb_iseq_ibf_dump(const rb_iseq_t *iseq, VALUE opt);
+void rb_ibf_load_iseq_complete(rb_iseq_t *iseq);
+const rb_iseq_t *rb_iseq_ibf_load(VALUE str);
+VALUE rb_iseq_ibf_load_extra_data(VALUE str);
+void rb_iseq_init_trace(rb_iseq_t *iseq);
+
+#if VM_INSN_INFO_TABLE_IMPL == 2
 unsigned int *rb_iseq_insns_info_decode_positions(const struct rb_iseq_constant_body *body);
+#endif
 
 RUBY_SYMBOL_EXPORT_BEGIN
 
@@ -176,6 +180,8 @@ VALUE rb_iseq_base_label(const rb_iseq_t *iseq);
 VALUE rb_iseq_first_lineno(const rb_iseq_t *iseq);
 VALUE rb_iseq_method_name(const rb_iseq_t *iseq);
 void rb_iseq_code_location(const rb_iseq_t *iseq, int *first_lineno, int *first_column, int *last_lineno, int *last_column);
+
+void rb_iseq_remove_coverage_all(void);
 
 /* proc.c */
 const rb_iseq_t *rb_method_iseq(VALUE body);

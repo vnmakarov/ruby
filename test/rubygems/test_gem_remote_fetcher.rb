@@ -9,6 +9,10 @@ rescue LoadError => e
                e.message =~ / -- openssl$/
 end
 
+unless defined?(OpenSSL::SSL) then
+  warn 'Skipping Gem::Request tests.  openssl not found.'
+end
+
 require 'rubygems/remote_fetcher'
 require 'rubygems/package'
 require 'minitest/mock'
@@ -118,7 +122,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     @a1.loaded_from = File.join(@gemhome, 'specifications', @a1.full_name)
 
     Gem::RemoteFetcher.fetcher = nil
-
+    @stub_ui = Gem::MockGemUi.new
     @fetcher = Gem::RemoteFetcher.fetcher
   end
 
@@ -175,7 +179,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
   end
 
   def test_no_proxy
-    use_ui @ui do
+    use_ui @stub_ui do
       assert_data_from_server @fetcher.fetch_path(@server_uri)
       assert_equal SERVER_DATA.size, @fetcher.fetch_size(@server_uri)
     end
@@ -267,7 +271,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     fetch = Gem::RemoteFetcher.new nil, dns
     begin
       old_verbose, Gem.configuration.verbose = Gem.configuration.verbose, 1
-      endpoint = use_ui @ui do
+      endpoint = use_ui @stub_ui do
         fetch.api_endpoint(uri)
       end
     ensure
@@ -276,7 +280,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
 
     assert_equal uri, endpoint
 
-    assert_equal "Getting SRV record failed: timeout!\n", @ui.output
+    assert_equal "Getting SRV record failed: timeout!\n", @stub_ui.output
 
     dns.verify
   end
@@ -541,7 +545,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     @fetcher = fetcher
 
     def fetcher.fetch_http(uri, mtime, head = nil)
-      Gem.gzip 'foo'
+      Gem::Util.gzip 'foo'
     end
 
     assert_equal 'foo', fetcher.fetch_path(@uri + 'foo.gz')
@@ -625,7 +629,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
   end
 
   def test_implicit_no_proxy
-    use_ui @ui do
+    use_ui @stub_ui do
       ENV['http_proxy'] = 'http://fakeurl:12345'
       fetcher = Gem::RemoteFetcher.new :no_proxy
       @fetcher = fetcher
@@ -634,7 +638,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
   end
 
   def test_implicit_proxy
-    use_ui @ui do
+    use_ui @stub_ui do
       ENV['http_proxy'] = @proxy_uri
       fetcher = Gem::RemoteFetcher.new nil
       @fetcher = fetcher
@@ -643,7 +647,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
   end
 
   def test_implicit_upper_case_proxy
-    use_ui @ui do
+    use_ui @stub_ui do
       ENV['HTTP_PROXY'] = @proxy_uri
       fetcher = Gem::RemoteFetcher.new nil
       @fetcher = fetcher
@@ -652,7 +656,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
   end
 
   def test_implicit_proxy_no_env
-    use_ui @ui do
+    use_ui @stub_ui do
       fetcher = Gem::RemoteFetcher.new nil
       @fetcher = fetcher
       assert_data_from_server fetcher.fetch_path(@server_uri)
@@ -727,10 +731,9 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     assert_equal "murphy", fetcher.fetch_path(@server_uri)
   end
 
-  def test_fetch_s3
+  def assert_fetch_s3(url)
     fetcher = Gem::RemoteFetcher.new nil
     @fetcher = fetcher
-    url = 's3://testuser:testpass@my-bucket/gems/specs.4.8.gz'
     $fetched_uri = nil
 
     def fetcher.request(uri, request_class, last_modified = nil)
@@ -752,19 +755,68 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     $fetched_uri = nil
   end
 
-  def test_fetch_s3_no_creds
+  def test_fetch_s3_config_creds
+    Gem.configuration[:s3_source] = {
+      'my-bucket' => {:id => 'testuser', :secret => 'testpass'}
+    }
+    url = 's3://my-bucket/gems/specs.4.8.gz'
+    assert_fetch_s3 url
+  ensure
+    Gem.configuration[:s3_source] = nil
+  end
+
+  def test_fetch_s3_url_creds
+    url = 's3://testuser:testpass@my-bucket/gems/specs.4.8.gz'
+    assert_fetch_s3 url
+  end
+
+  def refute_fetch_s3(url, expected_message)
     fetcher = Gem::RemoteFetcher.new nil
     @fetcher = fetcher
-    url = 's3://my-bucket/gems/specs.4.8.gz'
+
     e = assert_raises Gem::RemoteFetcher::FetchError do
       fetcher.fetch_s3 URI.parse(url)
     end
 
-    assert_match "credentials needed", e.message
+    assert_match expected_message, e.message
+  end
+
+  def test_fetch_s3_no_source_key
+    url = 's3://my-bucket/gems/specs.4.8.gz'
+    refute_fetch_s3 url, 'no s3_source key exists in .gemrc'
+  end
+
+  def test_fetch_s3_no_host
+    Gem.configuration[:s3_source] = {
+      'my-bucket' => {:id => 'testuser', :secret => 'testpass'}
+    }
+
+    url = 's3://other-bucket/gems/specs.4.8.gz'
+    refute_fetch_s3 url, 'no key for host other-bucket in s3_source in .gemrc'
+  ensure
+    Gem.configuration[:s3_source] = nil
+  end
+
+  def test_fetch_s3_no_id
+    Gem.configuration[:s3_source] = { 'my-bucket' => {:secret => 'testpass'} }
+
+    url = 's3://my-bucket/gems/specs.4.8.gz'
+    refute_fetch_s3 url, 's3_source for my-bucket missing id or secret'
+  ensure
+    Gem.configuration[:s3_source] = nil
+  end
+
+  def test_fetch_s3_no_secret
+    Gem.configuration[:s3_source] = { 'my-bucket' => {:id => 'testuser'} }
+
+    url = 's3://my-bucket/gems/specs.4.8.gz'
+    refute_fetch_s3 url, 's3_source for my-bucket missing id or secret'
+  ensure
+    Gem.configuration[:s3_source] = nil
   end
 
   def test_observe_no_proxy_env_single_host
-    use_ui @ui do
+    use_ui @stub_ui do
       ENV["http_proxy"] = @proxy_uri
       ENV["no_proxy"] = URI::parse(@server_uri).host
       fetcher = Gem::RemoteFetcher.new nil
@@ -774,7 +826,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
   end
 
   def test_observe_no_proxy_env_list
-    use_ui @ui do
+    use_ui @stub_ui do
       ENV["http_proxy"] = @proxy_uri
       ENV["no_proxy"] = "fakeurl.com, #{URI::parse(@server_uri).host}"
       fetcher = Gem::RemoteFetcher.new nil
@@ -796,7 +848,7 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
   end
 
   def test_yaml_error_on_size
-    use_ui @ui do
+    use_ui @stub_ui do
       self.class.enable_yaml = false
       fetcher = Gem::RemoteFetcher.new nil
       @fetcher = fetcher
@@ -842,9 +894,9 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     with_configured_fetcher(
       ":ssl_ca_cert: #{temp_ca_cert}\n" +
       ":ssl_client_cert: #{temp_client_cert}\n") do |fetcher|
-        assert_raises Gem::RemoteFetcher::FetchError do
-          fetcher.fetch_path("https://localhost:#{ssl_server.config[:Port]}/yaml")
-        end
+      assert_raises Gem::RemoteFetcher::FetchError do
+        fetcher.fetch_path("https://localhost:#{ssl_server.config[:Port]}/yaml")
+      end
     end
   end
 
@@ -1067,4 +1119,4 @@ PeIQQkFng2VVot/WAQbv3ePqWq07g1BBcwIBAg==
     assert_equal "/home/skillet", @fetcher.correct_for_windows_path(path)
   end
 
-end
+end if defined?(OpenSSL::SSL)

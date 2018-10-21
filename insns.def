@@ -45,7 +45,10 @@
        * sp_inc: Used to dynamically calculate sp increase in
          `insn_stack_increase`.
 
-       * handles_frame: If it is true, VM moves pc before insn body.
+       * handles_sp: If it is true, VM deals with sp in the insn.
+
+       * leaf: indicates that the instruction is "leaf" i.e. it does
+         not introduce new stack frame on top of it.  Default true.
 
    - Attributes can access operands, but not stack (push/pop) variables.
 
@@ -209,6 +212,8 @@ getinstancevariable
 (ID id, IC ic)
 ()
 (VALUE val)
+/* "instance variable not initialized" warning can be hooked. */
+// attr bool leaf = false; /* has rb_warning() */
 {
 #if STACK_INSN_CODE
     val = vm_getinstancevariable(GET_SELF(), id, ic);
@@ -233,6 +238,8 @@ getclassvariable
 (ID id)
 ()
 (VALUE val)
+/* "class variable access from toplevel" warning can be hooked. */
+// attr bool leaf = false; /* has rb_warning() */
 {
 #if STACK_INSN_CODE
     val = rb_cvar_get(vm_get_cvar_base(rb_vm_get_cref(GET_EP()), GET_CFP()), id);
@@ -245,6 +252,8 @@ setclassvariable
 (ID id)
 (VALUE val)
 ()
+/* "class variable access from toplevel" warning can be hooked. */
+// attr bool leaf = false; /* has rb_warning() */
 {
 #if STACK_INSN_CODE
     vm_ensure_not_refinement_module(GET_SELF());
@@ -253,8 +262,7 @@ setclassvariable
 }
 
 /* Get constant variable id. If klass is Qnil, constants
-   are searched in the current scope. If klass is Qfalse, constants
-   are searched as top level constants. Otherwise, get constant under klass
+   are searched in the current scope. Otherwise, get constant under klass
    class or module.
  */
 DEFINE_INSN
@@ -262,22 +270,26 @@ getconstant
 (ID id)
 (VALUE klass)
 (VALUE val)
+/* getconstant can kick autoload */
+// attr bool leaf = false; /* has rb_autoload_load() */
 {
 #if STACK_INSN_CODE
     val = vm_get_ev_const(ec, klass, id, 0);
 #endif
 }
 
-/* Set constant variable id. If klass is Qfalse, constant
-   is able to access in this scope. if klass is Qnil, set
-   top level constant. otherwise, set constant under klass
-   class or module.
+/* Set constant variable id under cbase class or module.
  */
 DEFINE_INSN
 setconstant
 (ID id)
 (VALUE val, VALUE cbase)
 ()
+/* Assigning an object to a constant is basically a leaf operation.
+ * The problem is, assigning a Module instance to a constant _names_
+ * that module.  Naming involves string manipulations, which are
+ * method calls. */
+// attr bool leaf = false; /* has StringValue() */
 {
 #if STACK_INSN_CODE
     vm_check_if_namespace(cbase);
@@ -292,6 +304,7 @@ getglobal
 (GENTRY entry)
 ()
 (VALUE val)
+// attr bool leaf = leafness_of_getglobal(entry);
 {
 #if STACK_INSN_CODE
     val = GET_GLOBAL((VALUE)entry);
@@ -304,6 +317,7 @@ setglobal
 (GENTRY entry)
 (VALUE val)
 ()
+// attr bool leaf = leafness_of_setglobal(entry);
 {
 #if STACK_INSN_CODE
     SET_GLOBAL((VALUE)entry, val);
@@ -373,6 +387,7 @@ putiseq
 (ISEQ iseq)
 ()
 (VALUE ret)
+// attr bool leaf = true; /* yes it is */
 {
 #if STACK_INSN_CODE
     ret = (VALUE)iseq;
@@ -412,7 +427,6 @@ tostring
 (VALUE val)
 {
 #if STACK_INSN_CODE
-    VALUE rb_obj_as_string_result(VALUE str, VALUE obj);
     val = rb_obj_as_string_result(str, val);
 #endif
 }
@@ -437,11 +451,12 @@ toregexp
 (rb_num_t opt, rb_num_t cnt)
 (...)
 (VALUE val)
+/* This instruction has StringValue(), which is a method call.  But it
+ * seems that path is never covered. */
+// attr bool leaf = true; /* yes it is */
 // attr rb_snum_t sp_inc = 1 - cnt;
 {
 #if STACK_INSN_CODE
-    VALUE rb_reg_new_ary(VALUE ary, int options);
-    VALUE rb_ary_tmp_new_from_values(VALUE, long, const VALUE *);
     const VALUE ary = rb_ary_tmp_new_from_values(0, cnt, STACK_ADDR_FROM_TOP(cnt));
     val = rb_reg_new_ary(ary, (int)opt);
     rb_ary_clear(ary);
@@ -497,6 +512,7 @@ expandarray
 (rb_num_t num, rb_num_t flag)
 (..., VALUE ary)
 (...)
+// attr bool leaf = false; /* has rb_check_array_type() */
 // attr rb_snum_t sp_inc = num - 1 + (flag & 1 ? 1 : 0);
 {
 #if STACK_INSN_CODE
@@ -510,6 +526,7 @@ concatarray
 ()
 (VALUE ary1, VALUE ary2)
 (VALUE ary)
+// attr bool leaf = false; /* has rb_check_array_type() */
 {
 #if STACK_INSN_CODE
     ary = vm_concat_array(ary1, ary2);
@@ -522,6 +539,7 @@ splatarray
 (VALUE flag)
 (VALUE ary)
 (VALUE obj)
+// attr bool leaf = false; /* has rb_check_array_type() */
 {
 #if STACK_INSN_CODE
     obj = vm_splat_array(flag, ary);
@@ -534,6 +552,7 @@ newhash
 (rb_num_t num)
 (...)
 (VALUE val)
+// attr bool leaf = false; /* has rb_hash_key_str() */
 // attr rb_snum_t sp_inc = 1 - num;
 {
 #if STACK_INSN_CODE
@@ -553,6 +572,8 @@ newrange
 (rb_num_t flag)
 (VALUE low, VALUE high)
 (VALUE val)
+/* rb_range_new() exercises "bad value for range" check. */
+// attr bool leaf = false; /* see also: range.c:range_init() */
 {
 #if STACK_INSN_CODE
     val = rb_range_new(low, high, (int)flag);
@@ -695,6 +716,7 @@ defined
 (rb_num_t op_type, VALUE obj, VALUE needstr)
 (VALUE v)
 (VALUE val)
+// attr bool leaf = leafness_of_defined(op_type);
 {
 #if STACK_INSN_CODE
     val = vm_defined(ec, GET_CFP(), op_type, obj, needstr, v);
@@ -705,7 +727,7 @@ defined
      `flag & VM_CHECKMATCH_TYPE_MASK' describe how to check pattern.
       VM_CHECKMATCH_TYPE_WHEN: ignore target and check pattern is truthy.
       VM_CHECKMATCH_TYPE_CASE: check `patten === target'.
-      VM_CHECKMATCH_TYPE_RESCUE: check `pattern.kind_op?(Module) && pattern == target'.
+      VM_CHECKMATCH_TYPE_RESCUE: check `pattern.kind_op?(Module) && pattern === target'.
      if `flag & VM_CHECKMATCH_ARRAY' is not 0, then `patten' is array of patterns.
  */
 DEFINE_INSN
@@ -713,6 +735,7 @@ checkmatch
 (rb_num_t flag)
 (VALUE target, VALUE pattern)
 (VALUE result)
+// attr bool leaf = leafness_of_checkmatch(flag);
 {
 #if STACK_INSN_CODE
     result = vm_check_match(ec, target, pattern, flag);
@@ -728,6 +751,18 @@ checkkeyword
 {
 #if STACK_INSN_CODE
     ret = vm_check_keyword(kw_bits_index, keyword_index, GET_EP());
+#endif
+}
+
+/* check if val is type. */
+DEFINE_INSN
+checktype
+(rb_num_t type)
+(VALUE val)
+(VALUE ret)
+{
+#if STACK_INSN_CODE
+    ret = (TYPE(val) == (int)type) ? Qtrue : Qfalse;
 #endif
 }
 
@@ -756,7 +791,7 @@ defineclass
 (ID id, ISEQ class_iseq, rb_num_t flags)
 (VALUE cbase, VALUE super)
 (VALUE val)
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
 {
 #if STACK_INSN_CODE
     VALUE klass = vm_find_or_create_class_by_id(id, flags, cbase, super);
@@ -785,69 +820,16 @@ send
 (CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq)
 (...)
 (VALUE val)
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = - (int)(ci->orig_argc + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0));
 {
 #if STACK_INSN_CODE
     struct rb_calling_info calling;
 
-    vm_caller_setup_arg_block(ec, reg_cfp, &calling, ci, blockiseq, FALSE);
-    vm_search_method(ci, cc, calling.recv = TOPN(calling.argc = ci->orig_argc));
+    calling.block_handler = vm_caller_setup_arg_block(ec, reg_cfp, ci, blockiseq, FALSE);
+    calling.recv = TOPN(calling.argc = ci->orig_argc);
+    vm_search_method(ci, cc, calling.recv);
     CALL_METHOD(&calling, ci, cc);
-#endif
-}
-
-DEFINE_INSN
-opt_str_freeze
-(VALUE str)
-()
-(VALUE val)
-{
-#if STACK_INSN_CODE
-    if (BASIC_OP_UNREDEFINED_P(BOP_FREEZE, STRING_REDEFINED_OP_FLAG)) {
-	val = str;
-    }
-    else {
-	val = rb_funcall(rb_str_resurrect(str), idFreeze, 0);
-    }
-#endif
-}
-
-DEFINE_INSN
-opt_str_uminus
-(VALUE str)
-()
-(VALUE val)
-{
-#if STACK_INSN_CODE
-    if (BASIC_OP_UNREDEFINED_P(BOP_UMINUS, STRING_REDEFINED_OP_FLAG)) {
-	val = str;
-    }
-    else {
-	val = rb_funcall(rb_str_resurrect(str), idUMinus, 0);
-    }
-#endif
-}
-
-DEFINE_INSN
-opt_newarray_max
-(rb_num_t num)
-(...)
-(VALUE val)
-// attr rb_snum_t sp_inc = 1 - num;
-{
-    val = vm_opt_newarray_max(num, STACK_ADDR_FROM_TOP(num));
-}
-
-DEFINE_INSN
-opt_newarray_min
-(rb_num_t num)
-(...)
-(VALUE val)
-// attr rb_snum_t sp_inc = 1 - num;
-{
-#if STACK_INSN_CODE
-    val = vm_opt_newarray_min(num, STACK_ADDR_FROM_TOP(num));
 #endif
 }
 
@@ -857,7 +839,8 @@ opt_send_without_block
 (CALL_INFO ci, CALL_CACHE cc)
 (...)
 (VALUE val)
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* Of course it isn't. */
+// attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = -ci->orig_argc;
 {
 #if STACK_INSN_CODE
@@ -868,21 +851,81 @@ opt_send_without_block
 #endif
 }
 
+DEFINE_INSN
+opt_str_freeze
+(VALUE str, CALL_INFO ci, CALL_CACHE cc)
+()
+(VALUE val)
+{
+#if STACK_INSN_CODE
+    val = vm_opt_str_freeze(str, BOP_FREEZE, idFreeze);
+
+    if (val == Qundef) {
+        PUSH(rb_str_resurrect(str));
+        CALL_SIMPLE_METHOD();
+    }
+#endif
+}
+
+DEFINE_INSN
+opt_str_uminus
+(VALUE str, CALL_INFO ci, CALL_CACHE cc)
+()
+(VALUE val)
+{
+#if STACK_INSN_CODE
+    val = vm_opt_str_freeze(str, BOP_UMINUS, idUMinus);
+
+    if (val == Qundef) {
+        PUSH(rb_str_resurrect(str));
+        CALL_SIMPLE_METHOD();
+    }
+#endif
+}
+
+DEFINE_INSN
+opt_newarray_max
+(rb_num_t num)
+(...)
+(VALUE val)
+/* This instruction typically has no funcalls.  But it compares array
+ * contents each other by nature.  That part could call methods when
+ * necessary.  No way to detect such method calls beforehand.  We
+ * cannot but mark it being not leaf. */
+// attr bool leaf = false; /* has rb_funcall() */
+// attr rb_snum_t sp_inc = 1 - num;
+{
+    val = vm_opt_newarray_max(num, STACK_ADDR_FROM_TOP(num));
+}
+
+DEFINE_INSN
+opt_newarray_min
+(rb_num_t num)
+(...)
+(VALUE val)
+/* Same discussion as opt_newarray_max. */
+// attr bool leaf = false; /* has rb_funcall() */
+// attr rb_snum_t sp_inc = 1 - num;
+{
+#if STACK_INSN_CODE
+    val = vm_opt_newarray_min(num, STACK_ADDR_FROM_TOP(num));
+#endif
+}
+
 /* super(args) # args.size => num */
 DEFINE_INSN
 invokesuper
 (CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq)
 (...)
 (VALUE val)
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = - (int)(ci->orig_argc + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0));
 {
 #if STACK_INSN_CODE
     struct rb_calling_info calling;
-    calling.argc = ci->orig_argc;
 
-    vm_caller_setup_arg_block(ec, reg_cfp, &calling, ci, blockiseq, TRUE);
-    calling.recv = GET_SELF();
+    calling.block_handler = vm_caller_setup_arg_block(ec, reg_cfp, ci, blockiseq, TRUE);
+    calling.recv = TOPN(calling.argc = ci->orig_argc);
     vm_search_super_method(ec, GET_CFP(), &calling, ci, cc);
     CALL_METHOD(&calling, ci, cc);
 #endif
@@ -894,7 +937,8 @@ invokeblock
 (CALL_INFO ci)
 (...)
 (VALUE val)
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* Of course it isn't. */
+// attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = 1 - ci->orig_argc;
 {
 #if STACK_INSN_CODE
@@ -923,7 +967,11 @@ leave
 ()
 (VALUE val)
 (VALUE val)
-// attr bool handles_frame = true;
+/* This is super surprising but when leaving from a frame, we check
+ * for interrupts.  If any, that should be executed on top of the
+ * current execution context.  This is a method call. */
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
+// attr bool handles_sp = true;
 {
 #if STACK_INSN_CODE
     if (OPT_CHECKED_RUN) {
@@ -959,6 +1007,8 @@ throw
 (rb_num_t throw_state)
 (VALUE throwobj)
 (VALUE val)
+/* Same discussion as leave. */
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
 #if STACK_INSN_CODE
     RUBY_VM_CHECK_INTS(ec);
@@ -978,6 +1028,8 @@ jump
 (OFFSET dst)
 ()
 ()
+/* Same discussion as leave. */
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
 #if STACK_INSN_CODE
     RUBY_VM_CHECK_INTS(ec);
@@ -991,6 +1043,8 @@ branchif
 (OFFSET dst)
 (VALUE val)
 ()
+/* Same discussion as jump. */
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
 #if STACK_INSN_CODE
     if (RTEST(val)) {
@@ -1006,6 +1060,8 @@ branchunless
 (OFFSET dst)
 (VALUE val)
 ()
+/* Same discussion as jump. */
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
 #if STACK_INSN_CODE
     if (!RTEST(val)) {
@@ -1021,6 +1077,8 @@ branchnil
 (OFFSET dst)
 (VALUE val)
 ()
+/* Same discussion as jump. */
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
 #if STACK_INSN_CODE
     if (NIL_P(val)) {
@@ -1028,19 +1086,6 @@ branchnil
 	JUMP(dst);
     }
 #endif
-}
-
-/* if val is type, set PC to (PC + dst). */
-DEFINE_INSN
-branchiftype
-(rb_num_t type, OFFSET dst)
-(VALUE val)
-()
-{
-    if (TYPE(val) == (int)type) {
-	RUBY_VM_CHECK_INTS(ec);
-	JUMP(dst);
-    }
 }
 
 /**********************************************************/
@@ -1114,12 +1159,15 @@ opt_plus
 (CALL_INFO ci, CALL_CACHE cc)
 (VALUE recv, VALUE obj)
 (VALUE val)
+/* Array + anything can be handled inside of opt_plus, and that
+ * anything is converted into array using #to_ary. */
+// attr bool leaf = false; /* has rb_to_array_type() */
 {
 #if STACK_INSN_CODE
     val = vm_opt_plus(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1135,7 +1183,7 @@ opt_minus
     val = vm_opt_minus(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1151,7 +1199,7 @@ opt_mult
     val = vm_opt_mult(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1167,7 +1215,7 @@ opt_div
     val = vm_opt_div(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1183,7 +1231,7 @@ opt_mod
     val = vm_opt_mod(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1194,12 +1242,16 @@ opt_eq
 (CALL_INFO ci, CALL_CACHE cc)
 (VALUE recv, VALUE obj)
 (VALUE val)
+/* This instruction can compare a string with non-string.  This
+ * (somewhat) coerces the non-string into a string, via a method
+ * call. */
+// attr bool leaf = false; /* has rb_str_equal() */
 {
 #if STACK_INSN_CODE
     val = opt_eq_func(recv, obj, ci, cc);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1210,15 +1262,14 @@ opt_neq
 (CALL_INFO ci_eq, CALL_CACHE cc_eq, CALL_INFO ci, CALL_CACHE cc)
 (VALUE recv, VALUE obj)
 (VALUE val)
+/* Same discussion as opt_eq. */
+// attr bool leaf = false; /* has rb_str_equal() */
 {
 #if STACK_INSN_CODE
     val = vm_opt_neq(ci, cc, ci_eq, cc_eq, recv, obj);
 
     if (val == Qundef) {
-#ifndef MJIT_HEADER
-	ADD_PC(2); /* !!! */
-#endif
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1234,7 +1285,7 @@ opt_lt
     val = vm_opt_lt(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1250,7 +1301,7 @@ opt_le
     val = vm_opt_le(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1266,7 +1317,7 @@ opt_gt
     val = vm_opt_gt(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1282,7 +1333,7 @@ opt_ge
     val = vm_opt_ge(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1298,7 +1349,39 @@ opt_ltlt
     val = vm_opt_ltlt(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
+    }
+#endif
+}
+
+/* optimized X&Y. */
+DEFINE_INSN
+opt_and
+(CALL_INFO ci, CALL_CACHE cc)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+#if STACK_INSN_CODE
+    val = vm_opt_and(recv, obj);
+
+    if (val == Qundef) {
+        CALL_SIMPLE_METHOD();
+    }
+#endif
+}
+
+/* optimized X|Y. */
+DEFINE_INSN
+opt_or
+(CALL_INFO ci, CALL_CACHE cc)
+(VALUE recv, VALUE obj)
+(VALUE val)
+{
+#if STACK_INSN_CODE
+    val = vm_opt_or(recv, obj);
+
+    if (val == Qundef) {
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1309,12 +1392,17 @@ opt_aref
 (CALL_INFO ci, CALL_CACHE cc)
 (VALUE recv, VALUE obj)
 (VALUE val)
+/* This is complicated.  In case of hash, vm_opt_aref() resorts to
+ * rb_hash_aref().  If `recv` has no `obj`, this function then yields
+ * default_proc.  This is a method call.  So opt_aref is
+ * (surprisingly) not leaf. */
+// attr bool leaf = false; /* has rb_funcall() */ /* calls #yield */
 {
 #if STACK_INSN_CODE
     val = vm_opt_aref(recv, obj);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1325,12 +1413,15 @@ opt_aset
 (CALL_INFO ci, CALL_CACHE cc)
 (VALUE recv, VALUE obj, VALUE set)
 (VALUE val)
+/* This is another story than opt_aref.  When vm_opt_aset() resorts
+ * to rb_hash_aset(), which should call #hash for `obj`. */
+// attr bool leaf = false; /* has rb_funcall() */ /* calls #hash */
 {
 #if STACK_INSN_CODE
     val = vm_opt_aset(recv, obj, set);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1341,6 +1432,8 @@ opt_aset_with
 (VALUE key, CALL_INFO ci, CALL_CACHE cc)
 (VALUE recv, VALUE val)
 (VALUE val)
+/* Same discussion as opt_aset. */
+// attr bool leaf = false; /* has rb_funcall() */ /* calls #hash */
 {
 #if STACK_INSN_CODE
     VALUE tmp = vm_opt_aset_with(recv, key, val);
@@ -1352,9 +1445,8 @@ opt_aset_with
 #ifndef MJIT_HEADER
 	TOPN(0) = rb_str_resurrect(key);
 	PUSH(val);
-	ADD_PC(1); /* !!! */
 #endif
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1365,6 +1457,8 @@ opt_aref_with
 (VALUE key, CALL_INFO ci, CALL_CACHE cc)
 (VALUE recv)
 (VALUE val)
+/* Same discussion as opt_aref. */
+// attr bool leaf = false; /* has rb_funcall() */ /* calls #yield */
 {
 #if STACK_INSN_CODE
     val = vm_opt_aref_with(recv, key);
@@ -1372,9 +1466,8 @@ opt_aref_with
     if (val == Qundef) {
 #ifndef MJIT_HEADER
 	PUSH(rb_str_resurrect(key));
-	ADD_PC(1); /* !!! */
 #endif
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1390,7 +1483,7 @@ opt_length
     val = vm_opt_length(recv, BOP_LENGTH);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1406,7 +1499,7 @@ opt_size
     val = vm_opt_length(recv, BOP_SIZE);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1422,7 +1515,7 @@ opt_empty_p
     val = vm_opt_empty_p(recv);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1438,7 +1531,7 @@ opt_succ
     val = vm_opt_succ(recv);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1454,7 +1547,7 @@ opt_not
     val = vm_opt_not(ci, cc, recv);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1465,6 +1558,7 @@ opt_regexpmatch1
 (VALUE recv)
 (VALUE obj)
 (VALUE val)
+// attr bool leaf = BASIC_OP_UNREDEFINED_P(BOP_MATCH, REGEXP_REDEFINED_OP_FLAG);
 {
 #if STACK_INSN_CODE
     val = vm_opt_regexpmatch1(recv, obj);
@@ -1482,7 +1576,7 @@ opt_regexpmatch2
     val = vm_opt_regexpmatch2(obj2, obj1);
 
     if (val == Qundef) {
-	DISPATCH_ORIGINAL_INSN(opt_send_without_block);
+        CALL_SIMPLE_METHOD();
     }
 #endif
 }
@@ -1493,7 +1587,8 @@ opt_call_c_function
 (rb_insn_func_t funcptr)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* anything can happen inside */
+// attr bool handles_sp = true;
 {
 #if STACK_INSN_CODE
     reg_cfp = (funcptr)(ec, reg_cfp);
@@ -1740,6 +1835,7 @@ const2var
 (ID id, tindex_t res, vindex_t klass_op)
 ()
 ()
+// attr bool leaf = false; /* has rb_autoload_load() */
 {
     const2var_f(ec, reg_cfp, id, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, klass_op));
 }
@@ -1749,6 +1845,7 @@ const_ld_val
 (ID id, tindex_t res, VALUE klass)
 ()
 ()
+// attr bool leaf = false; /* has rb_autoload_load() */
 {
     const_ld_val_f(ec, reg_cfp, id, get_temp_addr(reg_cfp, res), klass);
 }
@@ -1759,7 +1856,8 @@ const_cached_val_ld
 (tindex_t res, VALUE klass, ID id, IC ic)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
+// attr bool leaf = false; /* has rb_autoload_load() */
 {
     const_cached_val_ld_f(ec, reg_cfp, get_temp_addr(reg_cfp, res), klass, id, ic);
 }
@@ -1815,6 +1913,7 @@ global2var
 (tindex_t res, GENTRY entry)
 ()
 ()
+// attr bool leaf = leafness_of_getglobal(entry);
 {
     global2var_f(reg_cfp, get_temp_addr(reg_cfp, res), entry);
 }
@@ -1824,6 +1923,7 @@ ivar2var
 (tindex_t res, ID id, IC ic)
 ()
 ()
+// attr bool leaf = false; /* has rb_warning() */
 {
     ivar2var_f(reg_cfp, get_temp_addr(reg_cfp, res), id, ic);
 }
@@ -1833,6 +1933,7 @@ cvar2var
 (tindex_t res, ID id)
 ()
 ()
+// attr bool leaf = false; /* has rb_warning() */
 {
     cvar2var_f(reg_cfp, get_temp_addr(reg_cfp, res), id);
 }
@@ -1842,6 +1943,7 @@ iseq2var
 (tindex_t res, ISEQ iseq)
 ()
 ()
+// attr bool leaf = true; /* yes it is */
 {
     iseq2var_f(reg_cfp, get_temp_addr(reg_cfp, res), iseq);
 }
@@ -1902,7 +2004,7 @@ ret_to_loc
 (sindex_t idx, vindex_t from)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
 {
     ret_to_loc_f(ec, reg_cfp, idx, get_var_addr(reg_cfp, from));
     RESTORE_REGS();
@@ -1914,7 +2016,7 @@ ret_to_temp
 (sindex_t idx, vindex_t from)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
 {
     ret_to_temp_f(ec, reg_cfp, idx, get_var_addr(reg_cfp, from));
     RESTORE_REGS();
@@ -1927,6 +2029,7 @@ var2const
 (ID id, vindex_t val_op, vindex_t cbase_op)
 ()
 ()
+// attr bool leaf = false; /* has StringValue() */
 {
     var2const_f(reg_cfp, id, get_var_addr(reg_cfp, val_op), get_var_addr(reg_cfp, cbase_op));
 }
@@ -1936,6 +2039,7 @@ var2global
 (GENTRY entry, vindex_t val_op)
 ()
 ()
+// attr bool leaf = leafness_of_setglobal(entry);
 {
     var2global_f(reg_cfp, entry, get_var_addr(reg_cfp, val_op));
 }
@@ -1972,6 +2076,7 @@ var2cvar
 (ID id, vindex_t val_op)
 ()
 ()
+// attr bool leaf = false; /* has rb_warning() */
 {
     var2cvar_f(reg_cfp, id, get_var_addr(reg_cfp, val_op));
 }
@@ -2026,7 +2131,7 @@ spec_not
 
 /* General and unchanging insns:  */
 DEFINE_INSN
-plus minus mult div mod ltlt ind eq ne lt gt le ge uplus uminus umult udiv umod uind ueq une ult ugt ule uge
+minus mult div mod or and ltlt lt gt le ge uminus umult udiv umod uor uand ult ugt ule uge
 (CALL_DATA cd, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
@@ -2039,12 +2144,45 @@ plus minus mult div mod ltlt ind eq ne lt gt le ge uplus uminus umult udiv umod 
     }
 }
 
+/* General and unchanging insns:  */
+DEFINE_INSN
+plus uplus eq ne ueq une ind uind
+(CALL_DATA cd, tindex_t res, vindex_t op1, vindex_t op2)
+()
+()
+/* attrboolleaf = false; /* has rb_to_array_type() */ /* has rb_str_equal() */ /* has rb_funcall() */ /* calls #yield */
+{
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2))) {
+      	ec->cfp[1].pc += 5;
+	RESTORE_REGS();
+	set_default_sp(reg_cfp, reg_cfp->bp);
+	NEXT_INSN();
+    }
+}
+
 /* General and unchanging simple (stack) insns:  */
 DEFINE_INSN
-splus sminus smult sdiv smod seq sne slt sgt sle sge suplus suminus sumult sudiv sumod sueq sune sult sugt sule suge
+sminus smult sdiv smod sor sand slt sgt sle sge suminus sumult sudiv sumod suor suand sult sugt sule suge
 (CALL_DATA cd, tindex_t res)
 ()
 ()
+{
+    VALUE *res_op = get_temp_addr(reg_cfp, res);
+    
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, res_op, res_op, res_op + 1)) {
+	ec->cfp[1].pc += 3;
+	RESTORE_REGS();
+	set_default_sp(reg_cfp, reg_cfp->bp);
+	NEXT_INSN();
+    }
+}
+
+DEFINE_INSN
+splus suplus seq sne sueq sune
+(CALL_DATA cd, tindex_t res)
+()
+()
+/* attrboolleaf = false; /* has rb_to_array_type() */ /* has rb_str_equal() */
 {
     VALUE *res_op = get_temp_addr(reg_cfp, res);
     
@@ -2090,7 +2228,7 @@ feq fne flt fgt fle fge
 }
 
 DEFINE_INSN
-iplus iminus imult idiv imod aind hind ieq ine ilt igt ile ige
+iplus iminus imult idiv imod ior iand aind hind ieq ine ilt igt ile ige
 (CALL_DATA _, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
@@ -2139,7 +2277,7 @@ sfeq sfne sflt sfgt sfle sfge
 }
 
 DEFINE_INSN
-siplus siminus simult sidiv simod sieq sine silt sigt sile sige
+siplus siminus simult sidiv simod sior siand sieq sine silt sigt sile sige
 (CALL_DATA _, tindex_t res)
 ()
 ()
@@ -2156,7 +2294,7 @@ siplus siminus simult sidiv simod sieq sine silt sigt sile sige
 
 /* General immediate insns:  */
 DEFINE_INSN
-plusi plusf minusi minusf multi multf divi divf modi modf ltlti indi inds eqi eqf nei nef lti ltf gti gtf lei lef gei gef
+minusi minusf multi multf divi divf modi modf ori andi ltlti lti ltf gti gtf lei lef gei gef
 (CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
@@ -2169,12 +2307,42 @@ plusi plusf minusi minusf multi multf divi divf modi modf ltlti indi inds eqi eq
     }
 }
 
-/* Unchanging immediate insns:  */
 DEFINE_INSN
-uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf uindi uinds ueqi ueqf unei unef ulti ultf ugti ugtf ulei ulef ugei ugef
+plusi plusf eqi eqf nei nef indi inds
 (CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
+/* attrboolleaf = false; /* has rb_to_array_type() */ /* has rb_str_equal() */ /* has rb_funcall() */ /* calls #yield */
+{
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
+	ec->cfp[1].pc += 5;
+	RESTORE_REGS();
+        set_default_sp(reg_cfp, reg_cfp->bp);
+	NEXT_INSN();
+    }
+}
+
+/* Unchanging immediate insns:  */
+DEFINE_INSN
+uminusi uminusf umulti umultf udivi udivf umodi umodf uori uandi ulti ultf ugti ugtf ulei ulef ugei ugef
+(CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
+()
+()
+{
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
+	ec->cfp[1].pc += 5;
+	RESTORE_REGS();
+        set_default_sp(reg_cfp, reg_cfp->bp);
+	NEXT_INSN();
+    }
+}
+
+DEFINE_INSN
+uplusi uplusf ueqi ueqf unei unef uindi uinds
+(CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
+()
+()
+/* attrboolleaf = false; /* has rb_to_array_type() */ /* has rb_str_equal() */ /* has rb_funcall() */ /* calls #yield */
 {
     if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
 	ec->cfp[1].pc += 5;
@@ -2217,10 +2385,26 @@ feqf fnef fltf fgtf flef fgef
 }
 
 DEFINE_INSN
-iplusi iminusi imulti idivi imodi aindi hindi hinds ieqi inei ilti igti ilei igei
+ieqi inei iplusi iminusi imulti idivi imodi iori iandi ilti igti ilei igei
 (CALL_DATA _, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
+{
+    enum ruby_vminsn_type new_insn;
+    
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm, &new_insn)) {
+	/* Change and re-execute the insn.  */
+	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
+	ADD_PC(-5);
+    }
+}
+
+DEFINE_INSN
+aindi hindi hinds
+(CALL_DATA _, tindex_t res, vindex_t op1, VALUE imm)
+()
+()
+/* attrboolleaf = false; /* has rb_funcall() */ /* calls #yield */
 {
     enum ruby_vminsn_type new_insn;
     
@@ -2237,6 +2421,7 @@ indset uindset
 (CALL_DATA cd, vindex_t op1, vindex_t op2, vindex_t op3)
 ()
 ()
+/* attrboolleaf = false; /* has rb_funcall() */ /* calls #hash */
 {
     if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_var_addr(reg_cfp, op1),
 					    get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
@@ -2253,6 +2438,7 @@ aindset hindset
 (CALL_DATA _, vindex_t op1, vindex_t op2, vindex_t op3)
 ()
 ()
+/* attrboolleaf = false; /* has rb_funcall() */ /* calls #hash */
 {
     enum ruby_vminsn_type new_insn;
     
@@ -2270,6 +2456,7 @@ indseti indsets uindseti uindsets
 (CALL_DATA cd, vindex_t op1, VALUE imm, vindex_t op3)
 ()
 ()
+/* attrboolleaf = false; /* has rb_funcall() */ /* calls #hash */
 {
     if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3))) {
 	ec->cfp[1].pc += 5;
@@ -2285,6 +2472,7 @@ aindseti hindseti hindsets
 (CALL_DATA _, vindex_t op1, VALUE imm, vindex_t op3)
 ()
 ()
+/* attrboolleaf = false; /* has rb_funcall() */ /* calls #hash */
 {
     enum ruby_vminsn_type new_insn;
     
@@ -2299,6 +2487,7 @@ goto
 (OFFSET dst)
 ()
 ()
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
     goto_f(ec, reg_cfp);
     JUMP(dst);
@@ -2311,6 +2500,7 @@ bf bt bnil
 (OFFSET dst, vindex_t op)
 ()
 ()
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
     if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, get_var_addr(reg_cfp, op)))
 	JUMP(dst);
@@ -2321,6 +2511,7 @@ btype
 (OFFSET dst, rb_num_t type, vindex_t op)
 ()
 ()
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
     if (btype_f(ec, reg_cfp, type, get_var_addr(reg_cfp, op)))
 	JUMP(dst);
@@ -2331,6 +2522,7 @@ cont_btcmp
 (OFFSET dst, CALL_DATA cd, tindex_t res, vindex_t _, vindex_t _)
 ()
 ()
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val = *get_temp_addr(reg_cfp, res);
 
@@ -2345,6 +2537,7 @@ cont_bfcmp
 (OFFSET dst, CALL_DATA cd, tindex_t res, vindex_t _, vindex_t _)
 ()
 ()
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val = *get_temp_addr(reg_cfp, res);
 
@@ -2552,6 +2745,7 @@ to_regexp
 (sindex_t start, rb_num_t opt, rb_num_t cnt)
 ()
 ()
+// attr bool leaf = true; /* yes it is */
 {
     to_regexp_f(reg_cfp, start, opt, cnt);
 }
@@ -2561,6 +2755,7 @@ defined_p
 (tindex_t res, vindex_t op, rb_num_t op_type, VALUE obj, VALUE needstr)
 ()
 ()
+// attr bool leaf = leafness_of_defined(op_type);
 {
     defined_p_f(ec, reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op), op_type, obj, needstr);
 }
@@ -2570,26 +2765,23 @@ val_defined_p
 (tindex_t res, VALUE v, rb_num_t op_type, VALUE obj, VALUE needstr)
 ()
 ()
+// attr bool leaf = leafness_of_defined(op_type);
 {
     val_defined_p_f(ec, reg_cfp, get_temp_addr(reg_cfp, res), v, op_type, obj, needstr);
 }
 
 DEFINE_INSN
-str_freeze_call
-(tindex_t res, VALUE str)
+str_freeze_call str_uminus
+(CALL_DATA cd, tindex_t res, VALUE str)
 ()
 ()
 {
-    str_freeze_call_f(reg_cfp, get_temp_addr(reg_cfp, res), str);
-}
-
-DEFINE_INSN
-str_uminus
-(tindex_t res, VALUE str)
-()
-()
-{
-    str_uminus_f(reg_cfp, get_temp_addr(reg_cfp, res), str);
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), str)) {
+	ec->cfp[1].pc += 4;
+	RESTORE_REGS();
+	set_default_sp(reg_cfp, reg_cfp->bp);
+	NEXT_INSN();
+    }
 }
 
 DEFINE_INSN
@@ -2597,7 +2789,8 @@ temp_ret
 (tindex_t op)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
+// attr bool handles_sp = true;
 {
     VALUE val;
 
@@ -2612,7 +2805,8 @@ loc_ret
 (vindex_t op)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
+// attr bool handles_sp = true;
 {
     VALUE val;
 
@@ -2627,7 +2821,8 @@ val_ret
 (VALUE val)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
+// attr bool handles_sp = true;
 {
     if (val_ret_f(ec, reg_cfp, val, &val))
 	return val;
@@ -2640,7 +2835,8 @@ simple_call simple_call_self
 (CALL_DATA cd, sindex_t call_start)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
+// attr bool leaf = false; /* Of course it isn't. */
 {
     struct rb_calling_info calling;
 
@@ -2653,7 +2849,8 @@ simple_call_recv
 (CALL_DATA cd, sindex_t call_start, vindex_t recv_op)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
+// attr bool leaf = false; /* Of course it isn't. */
 {
     struct rb_calling_info calling;
 
@@ -2666,7 +2863,8 @@ call vmcore_call call_self
 (CALL_DATA cd, sindex_t call_start, ISEQ blockiseq)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
+// attr bool leaf = false; /* Of course it isn't. */
 {
     struct rb_calling_info calling;
 
@@ -2679,7 +2877,8 @@ call_recv
 (CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, vindex_t recv_op)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
+// attr bool leaf = false; /* Of course it isn't. */
 {
     struct rb_calling_info calling;
 
@@ -2692,7 +2891,8 @@ call_c_func
 (rb_insn_func_t funcptr, sindex_t args_num)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* anything can happen inside */
+// attr bool handles_sp = true;
 {
     /* SP here is always on the stack beginning.  */
     reg_cfp->sp = reg_cfp->bp + 1 + args_num;
@@ -2713,7 +2913,8 @@ call_block
 (CALL_DATA cd, sindex_t call_start)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* Of course it isn't. */
+// attr bool handles_sp = true;
 {
     VALUE val = call_block_f(ec, reg_cfp, cd, call_start);
     if (val == Qundef) {
@@ -2729,7 +2930,8 @@ call_super_val
 (CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, VALUE rec_val)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
+// attr bool leaf = false; /* Of course it isn't. */
 {
     struct rb_calling_info calling;
 
@@ -2742,7 +2944,8 @@ call_super
 (CALL_DATA cd, sindex_t call_start, ISEQ blockiseq, vindex_t rec_op)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
+// attr bool leaf = false; /* Of course it isn't. */
 {
     struct rb_calling_info calling;
 
@@ -2755,15 +2958,27 @@ make_range
 (tindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
 ()
 ()
+// attr bool leaf = false; /* see also: range.c:range_init() */
 {
     make_range_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag);
 }
 
 DEFINE_INSN
-make_array make_hash new_array_min new_array_max
+make_array
 (tindex_t res, sindex_t start, rb_num_t num)
 ()
 ()
+// attr bool leaf = false; /* has rb_hash_key_str(), rb_funcall() */
+{
+    make_array_f(reg_cfp, get_temp_addr(reg_cfp, res), start, num);
+}
+
+DEFINE_INSN
+make_hash new_array_min new_array_max
+(tindex_t res, sindex_t start, rb_num_t num)
+()
+()
+// attr bool leaf = false; /* has rb_hash_key_str(), rb_funcall() */
 {
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(reg_cfp, get_temp_addr(reg_cfp, res), start, num);
 }
@@ -2784,6 +2999,7 @@ spread_array
 (vindex_t op1, rb_num_t num, rb_num_t flag)
 ()
 ()
+// attr bool leaf = false; /* has rb_check_array_type() */
 {
     spread_array_f(reg_cfp, get_var_addr(reg_cfp, op1), num, flag);
 }
@@ -2793,6 +3009,7 @@ splat_array
 (tindex_t res, vindex_t arr, VALUE flag)
 ()
 ()
+// attr bool leaf = false; /* has rb_check_array_type() */
 {
     splat_array_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, arr), flag);
 }
@@ -2803,6 +3020,7 @@ concat_array
 (tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
+// attr bool leaf = false; /* has rb_check_array_type() */
 {
     concat_array_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2));
 }
@@ -2827,10 +3045,20 @@ bkw
 }
 
 DEFINE_INSN
+check_type
+(tindex_t res, vindex_t op, rb_num_t type)
+()
+()
+{
+    check_type_f(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op), type);
+}
+
+DEFINE_INSN
 check_match
 (tindex_t res, vindex_t op1, vindex_t op2, rb_num_t flag)
 ()
 ()
+// attr bool leaf = leafness_of_checkmatch(flag);
 {
     check_match_f(ec, reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), flag);
 }
@@ -2862,6 +3090,7 @@ regexp_match1
 (tindex_t res, VALUE regex, vindex_t str_op)
 ()
 ()
+// attr bool leaf = BASIC_OP_UNREDEFINED_P(BOP_MATCH, REGEXP_REDEFINED_OP_FLAG);
 {
     regexp_match1_f(reg_cfp, get_temp_addr(reg_cfp, res), regex, get_var_addr(reg_cfp, str_op));
 }
@@ -2885,7 +3114,8 @@ raise_except
 (vindex_t op, rb_num_t throw_state)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
+// attr bool handles_sp = true;
 {
     VALUE val = raise_except_f(ec, reg_cfp, get_var_addr(reg_cfp, op), throw_state);
     THROW_EXCEPTION(val);
@@ -2898,7 +3128,8 @@ raise_except_val
 (VALUE throwobj, rb_num_t throw_state)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
+// attr bool handles_sp = true;
 {
     VALUE val = raise_except_val_f(ec, reg_cfp, throwobj, throw_state);
     THROW_EXCEPTION(val);
@@ -2919,7 +3150,7 @@ define_class
 (ID id, ISEQ class_iseq, rb_num_t flags, vindex_t op1, vindex_t op2, sindex_t stack_top)
 ()
 ()
-// attr bool handles_frame = true;
+// attr bool handles_sp = true;
 {
     define_class(ec, reg_cfp, id, class_iseq, flags, get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2), stack_top);
     RESTORE_REGS();

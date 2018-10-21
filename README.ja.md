@@ -1,3 +1,6 @@
+[![Build Status](https://travis-ci.org/ruby/ruby.svg)](https://travis-ci.org/ruby/ruby)
+[![Build status](https://ci.appveyor.com/api/projects/status/0sy8rrxut4o0k960/branch/trunk?svg=true)](https://ci.appveyor.com/project/ruby/ruby/branch/trunk)
+
 # Rubyとは
 
 Rubyはシンプルかつ強力なオブジェクト指向スクリプト言語です． Rubyは純粋なオブジェクト指向言語として設計されているので，
@@ -18,16 +21,16 @@ Rubyはテキスト処理関係の能力などに優れ，Perlと同じくらい
 *   ダイナミックローディング (アーキテクチャによる)
 *   移植性が高い．多くのUnix-like/POSIX互換プラットフォーム上で動くだけでなく，Windows， macOS，
     Haikuなどの上でも動く cf.
-    https://bugs.ruby-lang.org/projects/ruby-trunk/wiki/SupportedPlatformsJa
+    https://github.com/ruby/ruby/blob/trunk/doc/contributing.rdoc#platform-maintainers
 
 
 ## 入手法
 
-### FTPで
+サードパーティーツールを使った方法を含むRubyのインストール方法の一覧は
 
-以下の場所においてあります．
+https://www.ruby-lang.org/ja/downloads/
 
-ftp://ftp.ruby-lang.org/pub/ruby/
+を参照してください．
 
 ### Subversionで
 
@@ -43,7 +46,7 @@ ftp://ftp.ruby-lang.org/pub/ruby/
 
 SubversionのミラーをGitHubに公開しています． 以下のコマンドでリポジトリを取得できます．
 
-    $ git clone git://github.com/ruby/ruby.git
+    $ git clone https://github.com/ruby/ruby.git
 
 ## ホームページ
 

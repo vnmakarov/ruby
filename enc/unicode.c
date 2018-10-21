@@ -786,6 +786,30 @@ SpecialsCopy:
   return (int )(to - to_start);
 }
 
+/* for extended grapheme cluster */
+/* TODO: generate from Unicode data */
+const OnigCodePoint
+onigenc_unicode_GCB_ranges_GAZ[] = {
+    0,
+};
+
+const OnigCodePoint
+onigenc_unicode_GCB_ranges_E_Base[] = {
+    3,
+    0x1F3F3, 0x1F3F3,
+    0x1F441, 0x1F441,
+    0x1F46F, 0x1F46F,
+};
+
+const OnigCodePoint
+onigenc_unicode_GCB_ranges_Emoji[] = {
+    4,
+    0x2640, 0x2640,
+    0x2642, 0x2642,
+    0x2695, 0x2696,
+    0x2708, 0x2708,
+};
+
 #if 0
 const char onigenc_unicode_version_string[] =
 #ifdef ONIG_UNICODE_VERSION_STRING

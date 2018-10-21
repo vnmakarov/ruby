@@ -95,7 +95,7 @@ rb_memsearch_ss(const unsigned char *xs, long m, const unsigned char *ys, long n
 {
     const unsigned char *y;
 
-    if (y = memmem(ys, n, xs, m))
+    if ((y = memmem(ys, n, xs, m)) != NULL)
 	return y - ys;
     else
 	return -1;
@@ -3084,8 +3084,11 @@ reg_operand(VALUE s, int check)
     if (SYMBOL_P(s)) {
 	return rb_sym2str(s);
     }
+    else if (RB_TYPE_P(s, T_STRING)) {
+        return s;
+    }
     else {
-	return (check ? rb_str_to_str : rb_check_string_type)(s);
+        return check ? rb_str_to_str(s) : rb_check_string_type(s);
     }
 }
 

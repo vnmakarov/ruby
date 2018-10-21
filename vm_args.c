@@ -8,9 +8,6 @@
 
 **********************************************************************/
 
-extern void
-vm_caller_setup_arg_block(const rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
-			  struct rb_calling_info *calling, const struct rb_call_info *ci, rb_iseq_t *blockiseq, const int is_super);
 NORETURN(static void raise_argument_error(rb_execution_context_t *ec, const rb_iseq_t *iseq, const VALUE exc));
 NORETURN(static void argument_arity_error(rb_execution_context_t *ec, const rb_iseq_t *iseq, const int miss_argc, const int min_argc, const int max_argc));
 NORETURN(static void argument_kw_error(rb_execution_context_t *ec, const rb_iseq_t *iseq, const char *error, const VALUE keys));
@@ -22,10 +19,11 @@ struct args_info {
     /* basic args info */
     VALUE *argv;
     int argc;
-    const struct rb_call_info_kw_arg *kw_arg;
 
     /* additional args info */
     int rest_index;
+    int rest_dupped;
+    const struct rb_call_info_kw_arg *kw_arg;
     VALUE *kw_argv;
     VALUE rest;
 };
@@ -34,6 +32,15 @@ enum arg_setup_type {
     arg_setup_method,
     arg_setup_block
 };
+
+static inline void
+arg_rest_dup(struct args_info *args)
+{
+    if(!args->rest_dupped) {
+        args->rest = rb_ary_dup(args->rest);
+        args->rest_dupped = TRUE;
+    }
+}
 
 static inline int
 args_argc(struct args_info *args)
@@ -52,7 +59,7 @@ args_extend(struct args_info *args, const int min_argc)
     int i;
 
     if (args->rest) {
-	args->rest = rb_ary_dup(args->rest);
+        arg_rest_dup(args);
 	VM_ASSERT(args->rest_index == 0);
 	for (i=args->argc + RARRAY_LENINT(args->rest); i<min_argc; i++) {
 	    rb_ary_push(args->rest, Qnil);
@@ -72,7 +79,7 @@ args_reduce(struct args_info *args, int over_argc)
 	const long len = RARRAY_LEN(args->rest);
 
 	if (len > over_argc) {
-	    args->rest = rb_ary_dup(args->rest);
+	    arg_rest_dup(args);
 	    rb_ary_resize(args->rest, len - over_argc);
 	    return;
 	}
@@ -117,7 +124,7 @@ args_copy(struct args_info *args)
     if (args->rest != Qfalse) {
 	int argc = args->argc;
 	args->argc = 0;
-	args->rest = rb_ary_dup(args->rest); /* make dup */
+        arg_rest_dup(args);
 
 	/*
 	 * argv: [m0, m1, m2, m3]
@@ -149,6 +156,7 @@ args_copy(struct args_info *args)
     else if (args->argc > 0) {
 	args->rest = rb_ary_new_from_values(args->argc, args->argv);
 	args->rest_index = 0;
+        args->rest_dupped = TRUE;
 	args->argc = 0;
     }
 }
@@ -165,7 +173,8 @@ args_rest_array(struct args_info *args)
     VALUE ary;
 
     if (args->rest) {
-	ary = rb_ary_subseq(args->rest, args->rest_index, RARRAY_LEN(args->rest) - args->rest_index);
+        ary = rb_ary_behead(args->rest, args->rest_index);
+        args->rest_index = 0;
 	args->rest = 0;
     }
     else {
@@ -222,7 +231,7 @@ args_pop_keyword_hash(struct args_info *args, VALUE *kw_hash_ptr)
 		    RARRAY_ASET(args->rest, len - 1, rest_hash);
 		}
 		else {
-		    args->rest = rb_ary_dup(args->rest);
+		    arg_rest_dup(args);
 		    rb_ary_pop(args->rest);
 		    return TRUE;
 		}
@@ -272,7 +281,7 @@ args_stored_kw_argv_to_hash(struct args_info *args)
     args->kw_argv = NULL;
 
     if (args->rest) {
-	args->rest = rb_ary_dup(args->rest);
+	arg_rest_dup(args);
 	rb_ary_push(args->rest, h);
     }
     else {
@@ -304,7 +313,6 @@ static inline void
 args_setup_post_parameters(struct args_info *args, int argc, VALUE *locals)
 {
     long len;
-    args_copy(args);
     len = RARRAY_LEN(args->rest);
     MEMCPY(locals, RARRAY_CONST_PTR(args->rest) + len - argc, VALUE, argc);
     rb_ary_resize(args->rest, len - argc);
@@ -346,7 +354,6 @@ args_setup_opt_parameters(struct args_info *args, int opt_max, VALUE *locals)
 static inline void
 args_setup_rest_parameter(struct args_info *args, VALUE *locals)
 {
-    args_copy(args);
     *locals = args_rest_array(args);
 }
 
@@ -541,6 +548,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
     args = &args_body;
     given_argc = args->argc = calling->argc;
     args->argv = locals;
+    args->rest_dupped = FALSE;
 
     if (ci->flag & VM_CALL_KWARG) {
 	args->kw_arg = ((struct rb_call_data_with_kwarg *)ci)->kw_arg;
@@ -631,6 +639,10 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 	args_setup_lead_parameters(args, iseq->body->param.lead_num, locals + 0);
     }
 
+    if (iseq->body->param.flags.has_rest || iseq->body->param.flags.has_post){
+        args_copy(args);
+    }
+
     if (iseq->body->param.flags.has_post) {
 	args_setup_post_parameters(args, iseq->body->param.post_num, locals + iseq->body->param.post_start);
     }
@@ -674,8 +686,15 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 	argument_kw_error(ec, iseq, "unknown", rb_hash_keys(keyword_hash));
     }
     else if (kw_splat && NIL_P(keyword_hash)) {
-	rb_warning("passing splat keyword arguments as a single Hash"
-		   " to `% "PRIsVALUE"'", rb_id2str(ci->mid));
+	if (RTEST(ruby_verbose)) {
+	    VALUE path = rb_iseq_path(iseq);
+	    VALUE line = rb_iseq_first_lineno(iseq);
+	    VALUE label = rb_iseq_label(iseq);
+	    rb_compile_warning(NIL_P(path) ? NULL : RSTRING_PTR(path), FIX2INT(line),
+			       "in `%s': the last argument was passed as a single Hash",
+			       NIL_P(label) ? NULL : RSTRING_PTR(label));
+	    rb_warning("although a splat keyword arguments here");
+	}
     }
 
     if (iseq->body->param.flags.has_block) {
@@ -828,7 +847,7 @@ vm_to_proc(VALUE proc)
 	    rb_callable_method_entry_with_refinements(CLASS_OF(proc), idTo_proc, NULL);
 
 	if (me) {
-	    b = vm_call0(GET_EC(), proc, idTo_proc, 0, NULL, me);
+            b = rb_vm_call0(GET_EC(), proc, idTo_proc, 0, NULL, me);
 	}
 	else {
 	    /* NOTE: calling method_missing */
@@ -847,9 +866,9 @@ vm_to_proc(VALUE proc)
     }
 }
 
-extern VALUE refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg));
+MJIT_STATIC VALUE refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg));
 
-VALUE
+MJIT_STATIC VALUE
 refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
 {
     VALUE obj;
@@ -870,7 +889,7 @@ refine_sym_proc_call(RB_BLOCK_CALL_FUNC_ARGLIST(yielded_arg, callback_arg))
     if (!me) {
 	return method_missing(obj, mid, argc, argv, MISSING_NOENTRY);
     }
-    return vm_call0(ec, obj, mid, argc, argv, me);
+    return rb_vm_call0(ec, obj, mid, argc, argv, me);
 }
 
 /* We use the function to provide constant propagation of known parameters for MJIT.  */
@@ -921,11 +940,12 @@ vm_caller_setup_arg_block_0(const rb_execution_context_t *ec, rb_control_frame_t
     }
 }
 
-void
+static VALUE
 vm_caller_setup_arg_block(const rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
 			  struct rb_calling_info *calling, const struct rb_call_info *ci, rb_iseq_t *blockiseq, const int is_super)
 {
     vm_caller_setup_arg_block_0(ec, reg_cfp, &calling->block_handler, ci->flag, blockiseq, is_super);
+    return calling->block_handler;
 }
 
 #define IS_ARGS_SPLAT(ci)   ((ci)->flag & VM_CALL_ARGS_SPLAT)

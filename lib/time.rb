@@ -245,8 +245,8 @@ class Time
     end
     private :apply_offset
 
-    def make_time(date, year, mon, day, hour, min, sec, sec_fraction, zone, now)
-      if !year && !mon && !day && !hour && !min && !sec && !sec_fraction
+    def make_time(date, year, yday, mon, day, hour, min, sec, sec_fraction, zone, now)
+      if !year && !yday && !mon && !day && !hour && !min && !sec && !sec_fraction
         raise ArgumentError, "no time information in #{date.inspect}"
       end
 
@@ -256,7 +256,18 @@ class Time
         off = zone_offset(zone, off_year) if zone
       end
 
-      if now
+      if yday
+        mon, day = (yday-1).divmod(31)
+        mon += 1
+        day += 1
+        t = make_time(date, year, nil, mon, day, hour, min, sec, sec_fraction, zone, now)
+        diff = yday - t.yday
+        return t if diff.zero?
+        day += diff
+        return make_time(date, year, nil, mon, day, hour, min, sec, sec_fraction, zone, now)
+      end
+
+      if now and now.respond_to?(:getlocal)
         if off
           now = now.getlocal(off) if now.utc_offset != off
         else
@@ -363,7 +374,7 @@ class Time
       d = Date._parse(date, comp)
       year = d[:year]
       year = yield(year) if year && !comp
-      make_time(date, year, d[:mon], d[:mday], d[:hour], d[:min], d[:sec], d[:sec_fraction], d[:zone], now)
+      make_time(date, year, d[:yday], d[:mon], d[:mday], d[:hour], d[:min], d[:sec], d[:sec_fraction], d[:zone], now)
     end
 
     #
@@ -402,6 +413,7 @@ class Time
     #       %9N :: nanosecond (9 digits)
     # %p :: Meridian indicator ("AM" or "PM")
     # %P :: Meridian indicator ("am" or "pm")
+    # %Q :: Number of milliseconds since 1970-01-01 00:00:00 UTC.
     # %r :: time, 12-hour (same as %I:%M:%S %p)
     # %R :: time, 24-hour (%H:%M)
     # %s :: Number of seconds since 1970-01-01 00:00:00 UTC.
@@ -423,6 +435,7 @@ class Time
     # %z :: Time zone as  hour offset from UTC (e.g. +0900)
     # %Z :: Time zone name
     # %% :: Literal "%" character
+    # %+ :: date(1) (%a %b %e %H:%M:%S %Z %Y)
 
     def strptime(date, format, now=self.now)
       d = Date._strptime(date, format)
@@ -441,7 +454,7 @@ class Time
       else
         year = d[:year]
         year = yield(year) if year && block_given?
-        t = make_time(date, year, d[:mon], d[:mday], d[:hour], d[:min], d[:sec], d[:sec_fraction], d[:zone], now)
+        t = make_time(date, year, d[:yday], d[:mon], d[:mday], d[:hour], d[:min], d[:sec], d[:sec_fraction], d[:zone], now)
       end
       t
     end
@@ -571,7 +584,7 @@ class Time
           T
           (\d\d):(\d\d):(\d\d)
           (\.\d+)?
-          (Z|[+-]\d\d:\d\d)?
+          (Z|[+-]\d\d(?::?\d\d)?)?
           \s*\z/ix =~ date
         year = $1.to_i
         mon = $2.to_i

@@ -83,6 +83,9 @@ extern "C" {
 # define __has_extension __has_feature
 #endif
 
+/* Prevent compiler from reordering access */
+#define ACCESS_ONCE(type,x) (*((volatile type *)&(x)))
+
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)
 # define STATIC_ASSERT(name, expr) _Static_assert(expr, #name ": " #expr)
 #elif GCC_VERSION_SINCE(4, 6, 0) || __has_extension(c_static_assert)
@@ -628,8 +631,10 @@ struct RBignum {
 #define BIGNUM_NEGATE(b) (RBASIC(b)->flags ^= BIGNUM_SIGN_BIT)
 
 #define BIGNUM_EMBED_FLAG ((VALUE)FL_USER2)
-#define BIGNUM_EMBED_LEN_MASK ((VALUE)(FL_USER5|FL_USER4|FL_USER3))
-#define BIGNUM_EMBED_LEN_SHIFT (FL_USHIFT+BIGNUM_EMBED_LEN_NUMBITS)
+#define BIGNUM_EMBED_LEN_MASK \
+    (~(~(VALUE)0U << BIGNUM_EMBED_LEN_NUMBITS) << BIGNUM_EMBED_LEN_SHIFT)
+#define BIGNUM_EMBED_LEN_SHIFT \
+    (FL_USHIFT+3) /* bit offset of BIGNUM_EMBED_LEN_MASK */
 #define BIGNUM_LEN(b) \
     ((RBASIC(b)->flags & BIGNUM_EMBED_FLAG) ? \
      (size_t)((RBASIC(b)->flags >> BIGNUM_EMBED_LEN_SHIFT) & \
@@ -669,12 +674,9 @@ struct RComplex {
 
 #define RCOMPLEX(obj) (R_CAST(RComplex)(obj))
 
-#ifdef RCOMPLEX_SET_REAL        /* shortcut macro for internal only */
-#undef RCOMPLEX_SET_REAL
-#undef RCOMPLEX_SET_IMAG
+/* shortcut macro for internal only */
 #define RCOMPLEX_SET_REAL(cmp, r) RB_OBJ_WRITE((cmp), &((struct RComplex *)(cmp))->real,(r))
 #define RCOMPLEX_SET_IMAG(cmp, i) RB_OBJ_WRITE((cmp), &((struct RComplex *)(cmp))->imag,(i))
-#endif
 
 struct RHash {
     struct RBasic basic;
@@ -870,7 +872,7 @@ enum imemo_type {
     imemo_memo           =  5,
     imemo_ment           =  6,
     imemo_iseq           =  7,
-    imemo_alloc          =  8,
+    imemo_tmpbuf         =  8,
     imemo_ast            =  9,
     imemo_parser_strterm = 10
 };
@@ -958,15 +960,35 @@ rb_vm_ifunc_proc_new(VALUE (*func)(ANYARGS), const void *data)
     return rb_vm_ifunc_new(func, data, 0, UNLIMITED_ARGUMENTS);
 }
 
-typedef struct rb_imemo_alloc_struct {
+typedef struct rb_imemo_tmpbuf_struct {
     VALUE flags;
     VALUE reserved;
     VALUE *ptr; /* malloc'ed buffer */
-    struct rb_imemo_alloc_struct *next; /* next imemo */
+    struct rb_imemo_tmpbuf_struct *next; /* next imemo */
     size_t cnt; /* buffer size in VALUE */
-} rb_imemo_alloc_t;
+} rb_imemo_tmpbuf_t;
 
-rb_imemo_alloc_t *rb_imemo_alloc_new(VALUE, VALUE, VALUE, VALUE);
+VALUE rb_imemo_tmpbuf_auto_free_pointer(void *buf);
+VALUE rb_imemo_tmpbuf_auto_free_maybe_mark_buffer(void *buf, size_t cnt);
+rb_imemo_tmpbuf_t *rb_imemo_tmpbuf_parser_heap(void *buf, rb_imemo_tmpbuf_t *old_heap, size_t cnt);
+
+#define RB_IMEMO_TMPBUF_PTR(v) \
+    ((void *)(((const struct rb_imemo_tmpbuf_struct *)(v))->ptr))
+
+static inline VALUE
+rb_imemo_tmpbuf_auto_free_pointer_new_from_an_RString(VALUE str)
+{
+    const void *src;
+    void *dst;
+    size_t len;
+
+    SafeStringValue(str);
+    len = RSTRING_LEN(str);
+    src = RSTRING_PTR(str);
+    dst = ruby_xmalloc(len);
+    memcpy(dst, src, len);
+    return rb_imemo_tmpbuf_auto_free_pointer(dst);
+}
 
 void rb_strterm_mark(VALUE obj);
 
@@ -1056,8 +1078,6 @@ VALUE rb_gvar_get(struct rb_global_entry *);
 VALUE rb_gvar_set(struct rb_global_entry *, VALUE);
 VALUE rb_gvar_defined(struct rb_global_entry *);
 
-struct vtm; /* defined by timev.h */
-
 /* array.c */
 VALUE rb_ary_last(int, const VALUE *, VALUE);
 void rb_ary_set_len(VALUE, long);
@@ -1069,6 +1089,8 @@ VALUE rb_ary_aref2(VALUE ary, VALUE b, VALUE e);
 size_t rb_ary_memsize(VALUE);
 VALUE rb_to_array_type(VALUE obj);
 VALUE rb_check_to_array(VALUE ary);
+VALUE rb_ary_tmp_new_from_values(VALUE, long, const VALUE *);
+VALUE rb_ary_behead(VALUE, long);
 #if defined(__GNUC__) && defined(HAVE_VA_ARGS_MACRO)
 #define rb_ary_new_from_args(n, ...) \
     __extension__ ({ \
@@ -1157,6 +1179,7 @@ VALUE rb_complex_plus(VALUE, VALUE);
 VALUE rb_complex_mul(VALUE, VALUE);
 VALUE rb_complex_abs(VALUE x);
 VALUE rb_complex_sqrt(VALUE x);
+VALUE rb_dbl_complex_polar(double abs, double ang);
 
 /* cont.c */
 VALUE rb_obj_is_fiber(VALUE);
@@ -1175,7 +1198,6 @@ void Init_ext(void);
 
 /* encoding.c */
 ID rb_id_encoding(void);
-void rb_gc_mark_encodings(void);
 #ifdef RUBY_ENCODING_H
 rb_encoding *rb_enc_get_from_index(int index);
 rb_encoding *rb_enc_check_str(VALUE str1, VALUE str2);
@@ -1234,11 +1256,12 @@ NORETURN(void ruby_deprecated_internal_feature(const char *));
 #define DEPRECATED_INTERNAL_FEATURE(func) \
     (ruby_deprecated_internal_feature(func), UNREACHABLE)
 VALUE rb_warning_warn(VALUE mod, VALUE str);
-VALUE rb_warning_string(const char *fmt, ...);
+PRINTF_ARGS(VALUE rb_warning_string(const char *fmt, ...), 1, 2);
 
 /* eval.c */
 VALUE rb_refinement_module_get_refined_class(VALUE module);
 extern ID ruby_static_id_signo, ruby_static_id_status;
+void rb_class_modify_check(VALUE);
 #define id_signo ruby_static_id_signo
 #define id_status ruby_static_id_status
 
@@ -1302,9 +1325,11 @@ void rb_copy_wb_protected_attribute(VALUE dest, VALUE obj);
 #define ruby_sized_xfree(ptr, size) ruby_xfree(ptr)
 #define SIZED_REALLOC_N(var,type,n,old_n) REALLOC_N(var, type, n)
 #else
+RUBY_SYMBOL_EXPORT_BEGIN
 void *ruby_sized_xrealloc(void *ptr, size_t new_size, size_t old_size) RUBY_ATTR_ALLOC_SIZE((2));
 void *ruby_sized_xrealloc2(void *ptr, size_t new_count, size_t element_size, size_t old_count) RUBY_ATTR_ALLOC_SIZE((2, 3));
 void ruby_sized_xfree(void *x, size_t size);
+RUBY_SYMBOL_EXPORT_END
 #define SIZED_REALLOC_N(var,type,n,old_n) ((var)=(type*)ruby_sized_xrealloc((char*)(var), (n) * sizeof(type), (old_n) * sizeof(type)))
 #endif
 
@@ -1340,6 +1365,7 @@ VALUE rb_hash_values(VALUE hash);
 VALUE rb_hash_rehash(VALUE hash);
 int rb_hash_add_new_element(VALUE hash, VALUE key, VALUE val);
 #define HASH_PROC_DEFAULT FL_USER2
+VALUE rb_hash_set_pair(VALUE hash, VALUE pair);
 
 /* inits.c */
 void rb_call_inits(void);
@@ -1354,6 +1380,8 @@ VALUE rb_io_flush_raw(VALUE, int);
 size_t rb_io_memsize(const rb_io_t *);
 #endif
 int rb_stderr_tty_p(void);
+void rb_io_fptr_finalize_internal(void *ptr);
+#define rb_io_fptr_finalize rb_io_fptr_finalize_internal
 
 /* load.c */
 VALUE rb_get_load_path(void);
@@ -1378,6 +1406,11 @@ VALUE rb_math_log(int argc, const VALUE *argv);
 VALUE rb_math_sin(VALUE);
 VALUE rb_math_sinh(VALUE);
 VALUE rb_math_sqrt(VALUE);
+
+/* mjit.c */
+extern int mjit_enabled;
+VALUE mjit_pause(int wait_p);
+VALUE mjit_resume(void);
 
 /* newline.c */
 void Init_newline(void);
@@ -1410,7 +1443,7 @@ enum ruby_num_rounding_mode {
 
 int rb_num_to_uint(VALUE val, unsigned int *ret);
 VALUE ruby_num_interval_step_size(VALUE from, VALUE to, VALUE step, int excl);
-int ruby_float_step(VALUE from, VALUE to, VALUE step, int excl);
+int ruby_float_step(VALUE from, VALUE to, VALUE step, int excl, int allow_endless);
 double ruby_float_mod(double x, double y);
 int rb_num_negative_p(VALUE);
 VALUE rb_int_succ(VALUE num);
@@ -1442,6 +1475,8 @@ VALUE rb_int_lshift(VALUE x, VALUE y);
 VALUE rb_int_div(VALUE x, VALUE y);
 VALUE rb_int_abs(VALUE num);
 VALUE rb_int_odd_p(VALUE num);
+int rb_int_positive_p(VALUE num);
+int rb_int_negative_p(VALUE num);
 
 static inline VALUE
 rb_num_compare_with_zero(VALUE num, ID mid)
@@ -1761,6 +1796,7 @@ struct rb_execarg {
     unsigned uid_given : 1;
     unsigned gid_given : 1;
     unsigned exception : 1;
+    unsigned nocldwait_prev : 1;
     rb_pid_t pgroup_pgid; /* asis(-1), new pgroup(0), specified pgroup (0<V). */
     VALUE rlimit_limits; /* Qfalse or [[rtype, softlim, hardlim], ...] */
     mode_t umask_mask;
@@ -1780,13 +1816,23 @@ struct rb_execarg {
  * The beginning one is for /bin/sh used by exec_with_sh.
  * The last one for terminating NULL used by execve.
  * See rb_exec_fillarg() in process.c. */
-#define ARGVSTR2ARGC(argv_str) (RSTRING_LEN(argv_str) / sizeof(char *) - 2)
-#define ARGVSTR2ARGV(argv_str) ((char **)RSTRING_PTR(argv_str) + 1)
+#define ARGVSTR2ARGV(argv_str) ((char **)RB_IMEMO_TMPBUF_PTR(argv_str) + 1)
+
+static inline size_t
+ARGVSTR2ARGC(VALUE argv_str)
+{
+    size_t i = 0;
+    char *const *p = ARGVSTR2ARGV(argv_str);
+    while (p[i++])
+        ;
+    return i - 1;
+}
 
 rb_pid_t rb_fork_ruby(int *status);
 void rb_last_status_clear(void);
 
 /* rational.c */
+VALUE rb_rational_canonicalize(VALUE x);
 VALUE rb_rational_uminus(VALUE self);
 VALUE rb_rational_plus(VALUE self, VALUE other);
 VALUE rb_lcm(VALUE x, VALUE y);
@@ -1805,22 +1851,11 @@ bool rb_reg_start_with_p(VALUE re, VALUE str);
 void rb_backref_set_string(VALUE string, long pos, long len);
 int rb_match_count(VALUE match);
 int rb_match_nth_defined(int nth, VALUE match);
+VALUE rb_reg_new_ary(VALUE ary, int options);
 
 /* signal.c */
 extern int ruby_enable_coredump;
 int rb_get_next_signal(void);
-int rb_sigaltstack_size(void);
-
-/* st.c */
-extern void rb_hash_bulk_insert(long, const VALUE *, VALUE);
-
-/* strftime.c */
-#ifdef RUBY_ENCODING_H
-VALUE rb_strftime_timespec(const char *format, size_t format_len, rb_encoding *enc,
-			   const struct vtm *vtm, struct timespec *ts, int gmt);
-VALUE rb_strftime(const char *format, size_t format_len, rb_encoding *enc,
-		  const struct vtm *vtm, VALUE timev, int gmt);
-#endif
 
 /* string.c */
 VALUE rb_fstring(VALUE);
@@ -1878,6 +1913,7 @@ VALUE rb_sym_proc_call(ID mid, int argc, const VALUE *argv, VALUE passed_proc);
 VALUE rb_sym_to_proc(VALUE sym);
 char *rb_str_to_cstr(VALUE str);
 VALUE rb_str_eql(VALUE str1, VALUE str2);
+VALUE rb_obj_as_string_result(VALUE str, VALUE obj);
 
 /* symbol.c */
 #ifdef RUBY_ENCODING_H
@@ -1934,9 +1970,6 @@ void rb_mutex_allow_trap(VALUE self, int val);
 VALUE rb_uninterruptible(VALUE (*b_proc)(ANYARGS), VALUE data);
 VALUE rb_mutex_owned_p(VALUE self);
 
-/* thread_pthread.c, thread_win32.c */
-int rb_divert_reserved_fd(int fd);
-
 /* transcode.c */
 extern VALUE rb_cEncodingConverter;
 #ifdef RUBY_ENCODING_H
@@ -1966,6 +1999,9 @@ VALUE rb_ivar_lookup(VALUE obj, ID id, VALUE undef);
 void rb_autoload_str(VALUE mod, ID id, VALUE file);
 void rb_deprecate_constant(VALUE mod, const char *name);
 NORETURN(VALUE rb_mod_const_missing(VALUE,VALUE));
+rb_gvar_getter_t *rb_gvar_getter_function_of(const struct rb_global_entry *);
+rb_gvar_setter_t *rb_gvar_setter_function_of(const struct rb_global_entry *);
+bool rb_gvar_is_traced(const struct rb_global_entry *);
 
 /* vm_insnhelper.h */
 rb_serial_t rb_next_class_serial(void);
@@ -1977,16 +2013,17 @@ void Init_BareVM(void);
 void Init_vm_objects(void);
 PUREFUNC(VALUE rb_vm_top_self(void));
 void rb_thread_recycle_stack_release(VALUE *);
+VALUE *rb_thread_recycle_stack(size_t);
 void rb_vm_change_state(void);
 void rb_vm_inc_const_missing_count(void);
 const void **rb_vm_get_insns_address_table(void);
 VALUE rb_source_location(int *pline);
 const char *rb_source_location_cstr(int *pline);
-void rb_vm_pop_cfunc_frame(void);
+MJIT_STATIC void rb_vm_pop_cfunc_frame(void);
 int rb_vm_add_root_module(ID id, VALUE module);
 void rb_vm_check_redefinition_by_prepend(VALUE klass);
 VALUE rb_yield_refine_block(VALUE refinement, VALUE refinements);
-VALUE ruby_vm_special_exception_copy(VALUE);
+MJIT_STATIC VALUE ruby_vm_special_exception_copy(VALUE);
 PUREFUNC(st_table *rb_vm_fstring_table(void));
 
 
@@ -2011,6 +2048,7 @@ VALUE rb_lambda_call(VALUE obj, ID mid, int argc, const VALUE *argv,
 /* vm_insnhelper.c */
 VALUE rb_equal_opt(VALUE obj1, VALUE obj2);
 VALUE rb_eql_opt(VALUE obj1, VALUE obj2);
+void Init_vm_stack_canary(void);
 
 /* vm_method.c */
 void Init_eval_method(void);
@@ -2064,6 +2102,11 @@ enum rb_int_parse_flags {
 };
 VALUE rb_int_parse_cstr(const char *str, ssize_t len, char **endp, size_t *ndigits, int base, int flags);
 
+/* enumerator.c (export) */
+VALUE rb_arith_seq_new(VALUE obj, VALUE meth, int argc, VALUE const *argv,
+                       rb_enumerator_size_func *size_fn,
+                       VALUE beg, VALUE end, VALUE step, int excl);
+
 /* error.c (export) */
 int rb_bug_reporter_add(void (*func)(FILE *, void *), void *data);
 NORETURN(void rb_unexpected_type(VALUE,int));
@@ -2113,14 +2156,22 @@ VALUE rb_gcd_normal(VALUE self, VALUE other);
 VALUE rb_gcd_gmp(VALUE x, VALUE y);
 #endif
 
+/* signal.c (export) */
+int rb_grantpt(int fd);
+
 /* string.c (export) */
 #ifdef RUBY_ENCODING_H
 /* internal use */
 VALUE rb_setup_fake_str(struct RString *fake_str, const char *name, long len, rb_encoding *enc);
 #endif
+VALUE rb_str_upto_each(VALUE, VALUE, int, int (*each)(VALUE, VALUE), VALUE);
+VALUE rb_str_upto_endless_each(VALUE, int (*each)(VALUE, VALUE), VALUE);
 
 /* thread.c (export) */
 int ruby_thread_has_gvl_p(void); /* for ext/fiddle/closure.c */
+
+/* time.c (export) */
+void ruby_reset_leap_second_info(void);
 
 /* util.c (export) */
 extern const signed char ruby_digit36_to_number_table[];
@@ -2150,6 +2201,9 @@ VALUE rb_imemo_new_debug(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VAL
 #else
 VALUE rb_imemo_new(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VALUE v0);
 #endif
+
+/* random.c */
+int ruby_fill_random_bytes(void *, size_t, int);
 
 RUBY_SYMBOL_EXPORT_END
 
@@ -2195,15 +2249,52 @@ rb_obj_builtin_type(VALUE obj)
 /*
  * For declaring bitfields out of non-unsigned int types:
  *   struct date {
- *      BITFIELD(enum months) month:4;
+ *      BITFIELD(enum months, month, 4);
  *      ...
  *   };
  */
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)
-# define BITFIELD(type) type
+# define BITFIELD(type, name, size) type name : size
 #else
-# define BITFIELD(type) unsigned int
+# define BITFIELD(type, name, size) unsigned int name : size
 #endif
+
+#if defined(_MSC_VER)
+# define COMPILER_WARNING_PUSH          __pragma(warning(push))
+# define COMPILER_WARNING_POP           __pragma(warning(pop))
+# define COMPILER_WARNING_ERROR(flag)   __pragma(warning(error: flag)))
+# define COMPILER_WARNING_IGNORED(flag) __pragma(warning(suppress: flag)))
+
+#elif defined(__clang__) /* clang 2.6 already had this feature */
+# define COMPILER_WARNING_PUSH          _Pragma("clang diagnostic push")
+# define COMPILER_WARNING_POP           _Pragma("clang diagnostic pop")
+# define COMPILER_WARNING_SPECIFIER(kind, msg) \
+    clang diagnostic kind # msg
+# define COMPILER_WARNING_ERROR(flag) \
+    COMPILER_WARNING_PRAGMA(COMPILER_WARNING_SPECIFIER(error, flag))
+# define COMPILER_WARNING_IGNORED(flag) \
+    COMPILER_WARNING_PRAGMA(COMPILER_WARNING_SPECIFIER(ignored, flag))
+
+#elif GCC_VERSION_SINCE(4, 2, 0)
+/* https://gcc.gnu.org/onlinedocs/gcc-4.2.0/gcc/Diagnostic-Pragmas.html */
+# define COMPILER_WARNING_PUSH          _Pragma("GCC diagnostic push")
+# define COMPILER_WARNING_POP           _Pragma("GCC diagnostic pop")
+# define COMPILER_WARNING_SPECIFIER(kind, msg) \
+    GCC diagnostic kind # msg
+# define COMPILER_WARNING_ERROR(flag) \
+    COMPILER_WARNING_PRAGMA(COMPILER_WARNING_SPECIFIER(error, flag))
+# define COMPILER_WARNING_IGNORED(flag) \
+    COMPILER_WARNING_PRAGMA(COMPILER_WARNING_SPECIFIER(ignored, flag))
+
+#else /* other compilers to follow? */
+# define COMPILER_WARNING_PUSH          /* nop */
+# define COMPILER_WARNING_POP           /* nop */
+# define COMPILER_WARNING_ERROR(flag)   /* nop */
+# define COMPILER_WARNING_IGNORED(flag) /* nop */
+#endif
+
+#define COMPILER_WARNING_PRAGMA(str) COMPILER_WARNING_PRAGMA_(str)
+#define COMPILER_WARNING_PRAGMA_(str) _Pragma(#str)
 
 #if defined(__cplusplus)
 #if 0

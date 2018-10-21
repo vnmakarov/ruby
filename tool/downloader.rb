@@ -11,8 +11,8 @@ rescue LoadError
 else
   https = 'https'
 
-  # open-uri of ruby 2.2.0 accept an array of PEMs as ssl_ca_cert, but old
-  # versions are not.  so, patching OpenSSL::X509::Store#add_file instead.
+  # open-uri of ruby 2.2.0 accepts an array of PEMs as ssl_ca_cert, but old
+  # versions do not.  so, patching OpenSSL::X509::Store#add_file instead.
   class OpenSSL::X509::Store
     alias orig_add_file add_file
     def add_file(pems)
@@ -161,7 +161,7 @@ class Downloader
       $stdout.flush
     end
     begin
-      data = with_retry(3, [Errno::ETIMEDOUT, SocketError]) do
+      data = with_retry(6) do
         url.read(options.merge(http_options(file, since.nil? ? true : since)))
       end
     rescue OpenURI::HTTPError => http_error
@@ -267,11 +267,12 @@ class Downloader
     end
   end
 
-  def self.with_retry(max_times, exceptions, &block)
+  def self.with_retry(max_times, &block)
     times = 0
     begin
       block.call
-    rescue *exceptions => e
+    rescue Errno::ETIMEDOUT, SocketError, OpenURI::HTTPError, Net::ReadTimeout => e
+      raise if e.is_a?(OpenURI::HTTPError) && e.message !~ /^50[023] / # retry only 500, 502, 503 for http error
       times += 1
       if times <= max_times
         $stderr.puts "retrying #{e.class} (#{e.message}) after #{times ** 2} seconds..."
@@ -329,8 +330,9 @@ if $0 == __FILE__
       dir = destdir
       if prefix
         name = name.sub(/\A\.\//, '')
-        if name.start_with?(destdir+"/")
-          name = name[(destdir.size+1)..-1]
+        destdir2 = destdir.sub(/\A\.\//, '')
+        if name.start_with?(destdir2+"/")
+          name = name[(destdir2.size+1)..-1]
           if (dir = File.dirname(name)) == '.'
             dir = destdir
           else

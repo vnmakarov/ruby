@@ -145,6 +145,8 @@ module Test
             r.close if r
             nil
           else
+            r.close_on_exec = true
+            w.close_on_exec = true
             @jobserver = [r, w]
             options[:parallel] ||= 1
           end
@@ -191,8 +193,10 @@ module Test
 
       class Worker
         def self.launch(ruby,args=[])
+          scale = EnvUtil.subprocess_timeout_scale
           io = IO.popen([*ruby, "-W1",
                         "#{File.dirname(__FILE__)}/unit/parallel.rb",
+                        *("--subprocess-timeout-scale=#{scale}" if scale),
                         *args], "rb+")
           new(io, io.pid, :waiting)
         end
@@ -1044,10 +1048,14 @@ module Test
           raise OptionParser::InvalidArgument, "timeout scale must be positive" unless scale > 0
           options[:timeout_scale] = scale
         end
+      end
+
+      def non_options(files, options)
         if scale = options[:timeout_scale] or
           (scale = ENV["RUBY_TEST_SUBPROCESS_TIMEOUT_SCALE"] and (scale = scale.to_f) > 0)
           EnvUtil.subprocess_timeout_scale = scale
         end
+        super
       end
     end
 

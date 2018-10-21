@@ -706,13 +706,6 @@ proc_new(VALUE klass, int8_t is_lambda)
 	cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
 
 	if ((block_handler = rb_vm_frame_block_handler(cfp)) != VM_BLOCK_HANDLER_NONE) {
-	    const VALUE *lep = rb_vm_ep_local_ep(cfp->ep);
-
-	    if (VM_ENV_ESCAPED_P(lep)) {
-		procval = VM_ENV_PROCVAL(lep);
-		goto return_existing_proc;
-	    }
-
 	    if (is_lambda) {
 		rb_warn(proc_without_block);
 	    }
@@ -730,13 +723,12 @@ proc_new(VALUE klass, int8_t is_lambda)
       case block_handler_type_proc:
 	procval = VM_BH_TO_PROC(block_handler);
 
-      return_existing_proc:
 	if (RBASIC_CLASS(procval) == klass) {
 	    return procval;
 	}
 	else {
 	    VALUE newprocval = rb_proc_dup(procval);
-	    RBASIC_SET_CLASS(newprocval, klass);
+            RBASIC_SET_CLASS(newprocval, klass);
 	    return newprocval;
 	}
 	break;
@@ -1156,8 +1148,8 @@ rb_proc_location(VALUE self)
     return iseq_location(rb_proc_get_iseq(self, 0));
 }
 
-static VALUE
-unnamed_parameters(int arity)
+VALUE
+rb_unnamed_parameters(int arity)
 {
     VALUE a, param = rb_ary_new2((arity < 0) ? -arity : arity);
     int n = (arity < 0) ? ~arity : arity;
@@ -1191,7 +1183,7 @@ rb_proc_parameters(VALUE self)
     int is_proc;
     const rb_iseq_t *iseq = rb_proc_get_iseq(self, &is_proc);
     if (!iseq) {
-	return unnamed_parameters(rb_proc_arity(self));
+	return rb_unnamed_parameters(rb_proc_arity(self));
     }
     return rb_iseq_parameters(iseq, is_proc);
 }
@@ -1214,7 +1206,6 @@ rb_sym_to_proc(VALUE sym)
     VALUE proc;
     long index;
     ID id;
-    VALUE *aryp;
 
     if (!sym_proc_cache) {
 	sym_proc_cache = rb_ary_tmp_new(SYM_PROC_CACHE_SIZE * 2);
@@ -1225,14 +1216,13 @@ rb_sym_to_proc(VALUE sym)
     id = SYM2ID(sym);
     index = (id % SYM_PROC_CACHE_SIZE) << 1;
 
-    aryp = RARRAY_PTR(sym_proc_cache);
-    if (aryp[index] == sym) {
-	return aryp[index + 1];
+    if (RARRAY_AREF(sym_proc_cache, index) == sym) {
+        return RARRAY_AREF(sym_proc_cache, index + 1);
     }
     else {
-	proc = sym_proc_new(rb_cProc, ID2SYM(id));
-	aryp[index] = sym;
-	aryp[index + 1] = proc;
+        proc = sym_proc_new(rb_cProc, ID2SYM(id));
+        RARRAY_ASET(sym_proc_cache, index, sym);
+        RARRAY_ASET(sym_proc_cache, index + 1, proc);
 	return proc;
     }
 }
@@ -1653,7 +1643,7 @@ method_owner(VALUE obj)
 void
 rb_method_name_error(VALUE klass, VALUE str)
 {
-#define MSG(s) rb_fstring_cstr("undefined method `%1$s' for"s" `%2$s'")
+#define MSG(s) rb_fstring_lit("undefined method `%1$s' for"s" `%2$s'")
     VALUE c = klass;
     VALUE s;
 
@@ -1861,16 +1851,14 @@ rb_mod_public_instance_method(VALUE mod, VALUE vid)
  *  Defines an instance method in the receiver. The _method_
  *  parameter can be a +Proc+, a +Method+ or an +UnboundMethod+ object.
  *  If a block is specified, it is used as the method body. This block
- *  is evaluated using <code>instance_eval</code>, a point that is
- *  tricky to demonstrate because <code>define_method</code> is private.
- *  (This is why we resort to the +send+ hack in this example.)
+ *  is evaluated using <code>instance_eval</code>.
  *
  *     class A
  *       def fred
  *         puts "In Fred"
  *       end
  *       def create_method(name, &block)
- *         self.class.send(:define_method, name, &block)
+ *         self.class.define_method(name, &block)
  *       end
  *       define_method(:wilma) { puts "Charge it!" }
  *     end
@@ -2344,7 +2332,7 @@ rb_method_entry_min_max_arity(const rb_method_entry_t *me, int *max)
 	return 0;
     }
     rb_bug("rb_method_entry_min_max_arity: invalid method entry type (%d)", def->type);
-    UNREACHABLE;
+    UNREACHABLE_RETURN(Qnil);
 }
 
 int
@@ -2575,7 +2563,7 @@ rb_method_parameters(VALUE method)
 {
     const rb_iseq_t *iseq = rb_method_iseq(method);
     if (!iseq) {
-	return unnamed_parameters(method_arity(method));
+	return rb_unnamed_parameters(method_arity(method));
     }
     return rb_iseq_parameters(iseq, 0);
 }
@@ -2831,7 +2819,7 @@ proc_binding(VALUE self)
 	    const struct vm_ifunc *ifunc = block->as.captured.code.ifunc;
 	    if (IS_METHOD_PROC_IFUNC(ifunc)) {
 		VALUE method = (VALUE)ifunc->data;
-		VALUE name = rb_fstring_cstr("<empty_iseq>");
+		VALUE name = rb_fstring_lit("<empty_iseq>");
 		rb_iseq_t *empty;
 		binding_self = method_receiver(method);
 		iseq = rb_method_iseq(method);
@@ -2864,7 +2852,7 @@ proc_binding(VALUE self)
     }
     else {
 	RB_OBJ_WRITE(bindval, &bind->pathobj,
-		     rb_iseq_pathobj_new(rb_fstring_cstr("(binding)"), Qnil));
+		     rb_iseq_pathobj_new(rb_fstring_lit("(binding)"), Qnil));
 	bind->first_lineno = 1;
     }
 

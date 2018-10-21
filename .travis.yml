@@ -20,16 +20,115 @@ language: c
 dist: trusty
 
 sudo: false
+addons:
+  apt:
+    config:
+      retries: true
+    update: true
+    sources:
+      - ubuntu-toolchain-r-test
+    packages:
+      - gcc-8
+      - libffi-dev
+      - libgdbm-dev
+      - libgmp-dev
+      - libjemalloc-dev
+      - libncurses5-dev
+      - libncursesw5-dev
+      - libreadline6-dev
+      - libssl-dev
+      - libyaml-dev
+      - openssl
+      - valgrind
+      - zlib1g-dev
+  homebrew:
+    packages:
+      - gdbm
+      - gmp
+      - libffi
+      - openssl@1.1
+      - zlib
 
-compiler:
-  - gcc
-
-os:
-  - linux
-
-before_install:
-  - "CONFIG_FLAG="
-  - "JOBS=-j`nproc`"
+matrix:
+  include:
+    - os: linux
+      compiler: gcc
+      env:
+        - "CONFIG_FLAG='--with-gmp --with-jemalloc --with-valgrind'"
+        - "JOBS=-j`nproc`"
+    - os: linux
+      compiler: gcc-8
+      env:
+        - "JOBS=-j`nproc`"
+    - os: osx
+      compiler: clang
+      # We are not going to make rdoc here; that is to be done above.
+      env:
+        - "CONFIG_FLAG='--disable-install-doc --with-opt-dir=/usr/local/opt/openssl@1.1:/usr/local/opt/zlib'"
+        - "JOBS=\"-j`sysctl -n hw.activecpu`\""
+      before_install:
+        # Bare "brew update" nukes everything.
+        # These steps are very carefully chosen to avoid breaking things.
+        - brew_core_dir=/usr/local/Homebrew/Library/Taps/homebrew/homebrew-core/
+        - git -C $brew_core_dir fetch -q origin
+        - git -C $brew_core_dir checkout -q 25590710e3f7af9cfa173c5cd3eb41a0532107b6
+        - HOMEBREW_NO_AUTO_UPDATE=1 brew upgrade openssl@1.1
+        - /usr/local/opt/openssl@1.1/bin/openssl version
+    - name: pedanticism
+      os: linux
+      compiler: "'clang -ansi -Werror=pedantic -pedantic-errors -std=iso9899:1990'"
+      env:
+        - "CONFIG_FLAG="
+        - "JOBS="
+      # construct warnflags (using bashism...)
+      before_install: |
+        warnflags_array=(
+          -Wall
+          -Wextra
+          -Werror=declaration-after-statement
+          -Werror=deprecated-declarations
+          -Werror=division-by-zero
+          -Werror=extra-tokens
+          -Werror=implicit-function-declaration
+          -Werror=implicit-int
+          -Werror=long-long
+          -Werror=pointer-arith
+          -Werror=shorten-64-to-32
+          -Werror=write-strings
+          -Wmissing-noreturn
+          -Wno-constant-logical-operand
+          -Wno-extended-offsetof
+          -Wno-missing-field-initializers
+          -Wno-overlength-strings
+          -Wno-parentheses-equality
+          -Wno-self-assign
+          -Wno-tautological-compare
+          -Wno-unused-local-typedef
+          -Wno-unused-parameter
+          -Wunused-variable
+        )
+        CONFIG_FLAG_ARRAY=(
+          --disable-install-doc
+          optflags=-O0
+          debugflags=-g0
+          warnflags="${warnflags_array[*]}"
+          LDFLAGS=-Wno-unused-command-line-argument)
+    - os: linux
+      language: ruby
+      rvm: 2.3
+      name: Running ruby/spec on 2.3 to ensure version guards are correctly added
+      addons:
+        apt:
+          packages:
+      before_install:
+      install:
+      before_script: chmod -R u+w spec/ruby
+      script: ruby -C spec/ruby ../mspec/bin/mspec -j .
+  allow_failures:
+    # It randomly hangs on travis osx. Let's remove this from allow_failures once it gets stable.
+    - os: osx
+    - name: pedanticism
+  fast_finish: true
 
 before_script:
   - "echo JOBS=$JOBS"
@@ -42,17 +141,12 @@ before_script:
   - "make update-config_files"
   - "make touch-unicode-files"
   - "make -s $JOBS srcs UNICODE_FILES=."
-  - "requests=; for req in ${RUBYSPEC_PULL_REQUEST//,/ }; do
-      requests=\"$requests +refs/pull/$req/merge:\";
-    done"
-  - "${requests:+git -C spec/ruby -c user.email=none -c user.name=none pull --no-edit origin $requests}"
-  - "${requests:+git -C spec/ruby log --oneline origin/master..@}"
   - "rm config.status Makefile rbconfig.rb .rbconfig.time"
   - "mkdir build config_1st config_2nd"
   - "chmod -R a-w ."
   - "chmod u+w build config_1st config_2nd"
   - "cd build"
-  - "../configure -C --disable-install-doc --prefix=/tmp/ruby-prefix --with-gcc=$CC $CONFIG_FLAG"
+  - "../configure -C --disable-install-doc --prefix=/tmp/ruby-prefix --with-gcc=\"$CC\" $CONFIG_FLAG \"${CONFIG_FLAG_ARRAY[@]}\""
   - "cp -pr config.cache config.status .ext/include ../config_1st"
   - "make reconfig"
   - "cp -pr config.cache config.status .ext/include ../config_2nd"
@@ -68,12 +162,12 @@ script:
 branches:
   only:
     - trunk
-    - ruby_2_2
     - ruby_2_3
     - ruby_2_4
     - ruby_2_5
     - /^feature\//
     - /^bug\//
+    - /^travis-/
 
 # We want to be notified when something happens.
 notifications:

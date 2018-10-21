@@ -21,6 +21,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include "ruby_atomic.h"
+#include "ccan/list/list.h"
 
 #undef free
 #define free(x) xfree(x)
@@ -944,18 +945,24 @@ internal_read_func(void *ptr)
     return read(iis->fd, iis->buf, iis->capa);
 }
 
+#if defined __APPLE__
+# define do_write_retry(code) do {ret = code;} while (ret == -1 && errno == EPROTOTYPE)
+#else
+# define do_write_retry(code) ret = code
+#endif
 static VALUE
 internal_write_func(void *ptr)
 {
     struct io_internal_write_struct *iis = ptr;
-    return write(iis->fd, iis->buf, iis->capa);
+    ssize_t ret;
+    do_write_retry(write(iis->fd, iis->buf, iis->capa));
+    return (VALUE)ret;
 }
 
 static void*
 internal_write_func2(void *ptr)
 {
-    struct io_internal_write_struct *iis = ptr;
-    return (void*)(intptr_t)write(iis->fd, iis->buf, iis->capa);
+    return (void*)internal_write_func(ptr);
 }
 
 #ifdef HAVE_WRITEV
@@ -963,7 +970,9 @@ static VALUE
 internal_writev_func(void *ptr)
 {
     struct io_internal_writev_struct *iis = ptr;
-    return writev(iis->fd, iis->iov, iis->iovcnt);
+    ssize_t ret;
+    do_write_retry(writev(iis->fd, iis->iov, iis->iovcnt));
+    return (VALUE)ret;
 }
 #endif
 
@@ -1360,6 +1369,11 @@ io_binwrite(VALUE str, const char *ptr, long len, rb_io_t *fptr, int nosync)
 
 # define MODE_BTMODE(a,b,c) ((fmode & FMODE_BINMODE) ? (b) : \
                              (fmode & FMODE_TEXTMODE) ? (c) : (a))
+
+#define MODE_BTXMODE(a, b, c, d, e, f) ((fmode & FMODE_EXCL) ? \
+                                        MODE_BTMODE(d, e, f) : \
+                                        MODE_BTMODE(a, b, c))
+
 static VALUE
 do_writeconv(VALUE str, rb_io_t *fptr, int *converted)
 {
@@ -1617,6 +1631,16 @@ io_fwritev(int argc, VALUE *argv, rb_io_t *fptr)
 
     return n;
 }
+
+static int
+iovcnt_ok(int iovcnt)
+{
+#ifdef IOV_MAX
+    return iovcnt < IOV_MAX;
+#else /* GNU/Hurd has writev, but no IOV_MAX */
+    return 1;
+#endif
+}
 #endif /* HAVE_WRITEV */
 
 static VALUE
@@ -1640,7 +1664,7 @@ io_writev(int argc, VALUE *argv, VALUE io)
 
     for (i = 0; i < argc; i += cnt) {
 #ifdef HAVE_WRITEV
-	if ((fptr->mode & (FMODE_SYNC|FMODE_TTY)) && ((cnt = argc - i) < IOV_MAX)) {
+	if ((fptr->mode & (FMODE_SYNC|FMODE_TTY)) && iovcnt_ok(cnt = argc - i)) {
 	    n = io_fwritev(cnt, &argv[i], fptr);
 	}
 	else
@@ -4620,20 +4644,35 @@ clear_codeconv(rb_io_t *fptr)
     clear_writeconv(fptr);
 }
 
-int
-rb_io_fptr_finalize(rb_io_t *fptr)
+void
+rb_io_fptr_finalize_internal(void *ptr)
 {
-    if (!fptr) return 0;
+    rb_io_t *fptr = ptr;
+
+    if (!ptr) return;
     fptr->pathv = Qnil;
     if (0 <= fptr->fd)
-	rb_io_fptr_cleanup(fptr, TRUE);
+        rb_io_fptr_cleanup(fptr, TRUE);
     fptr->write_lock = 0;
     free_io_buffer(&fptr->rbuf);
     free_io_buffer(&fptr->wbuf);
     clear_codeconv(fptr);
     free(fptr);
-    return 1;
 }
+
+#undef rb_io_fptr_finalize
+int
+rb_io_fptr_finalize(rb_io_t *fptr)
+{
+    if (!fptr) {
+        return 0;
+    }
+    else {
+        rb_io_fptr_finalize_internal(fptr);
+        return 1;
+    }
+}
+#define rb_io_fptr_finalize(fptr) rb_io_fptr_finalize_internal(fptr)
 
 RUBY_FUNC_EXPORTED size_t
 rb_io_memsize(const rb_io_t *fptr)
@@ -4654,16 +4693,16 @@ rb_io_memsize(const rb_io_t *fptr)
 # define KEEPGVL FALSE
 #endif
 
-int rb_notify_fd_close(int fd);
+int rb_notify_fd_close(int fd, struct list_head *);
 static rb_io_t *
 io_close_fptr(VALUE io)
 {
     rb_io_t *fptr;
-    int fd;
     VALUE write_io;
     rb_io_t *write_fptr;
-    int busy;
+    struct list_head busy;
 
+    list_head_init(&busy);
     write_io = GetWriteIO(io);
     if (io != write_io) {
         write_fptr = RFILE(write_io)->fptr;
@@ -4676,11 +4715,9 @@ io_close_fptr(VALUE io)
     if (!fptr) return 0;
     if (fptr->fd < 0) return 0;
 
-    fd = fptr->fd;
-    busy = rb_notify_fd_close(fd);
-    if (busy) {
-	fptr_finalize_flush(fptr, FALSE, KEEPGVL);
-	do rb_thread_schedule(); while (rb_notify_fd_close(fd));
+    if (rb_notify_fd_close(fptr->fd, &busy)) {
+	fptr_finalize_flush(fptr, FALSE, KEEPGVL); /* calls close(fptr->fd) */
+	do rb_thread_schedule(); while (!list_empty(&busy));
     }
     rb_io_fptr_cleanup(fptr, FALSE);
     return fptr;
@@ -5328,10 +5365,10 @@ rb_io_fmode_modestr(int fmode)
       case FMODE_READABLE:
 	return MODE_BTMODE("r", "rb", "rt");
       case FMODE_WRITABLE:
-	return MODE_BTMODE("w", "wb", "wt");
+	return MODE_BTXMODE("w", "wb", "wt", "wx", "wbx", "wtx");
       case FMODE_READWRITE:
 	if (fmode & FMODE_CREATE) {
-	    return MODE_BTMODE("w+", "wb+", "wt+");
+            return MODE_BTXMODE("w+", "wb+", "wt+", "w+x", "wb+x", "wt+x");
 	}
 	return MODE_BTMODE("r+", "rb+", "rt+");
     }
@@ -5380,6 +5417,11 @@ rb_io_modestr_fmode(const char *modestr)
 	  case '+':
             fmode |= FMODE_READWRITE;
             break;
+          case 'x':
+            if (modestr[0] != 'w')
+                goto error;
+            fmode |= FMODE_EXCL;
+            break;
 	  default:
             goto error;
 	  case ':':
@@ -5423,6 +5465,9 @@ rb_io_oflags_fmode(int oflags)
     if (oflags & O_CREAT) {
 	fmode |= FMODE_CREATE;
     }
+    if (oflags & O_EXCL) {
+        fmode |= FMODE_EXCL;
+    }
 #ifdef O_BINARY
     if (oflags & O_BINARY) {
 	fmode |= FMODE_BINMODE;
@@ -5458,6 +5503,9 @@ rb_io_fmode_oflags(int fmode)
     if (fmode & FMODE_CREATE) {
         oflags |= O_CREAT;
     }
+    if (fmode & FMODE_EXCL) {
+        oflags |= O_EXCL;
+    }
 #ifdef O_BINARY
     if (fmode & FMODE_BINMODE) {
         oflags |= O_BINARY;
@@ -5481,7 +5529,11 @@ rb_io_oflags_modestr(int oflags)
 #else
 # define MODE_BINARY(a,b) (a)
 #endif
-    int accmode = oflags & (O_RDONLY|O_WRONLY|O_RDWR);
+    int accmode;
+    if (oflags & O_EXCL) {
+        rb_raise(rb_eArgError, "exclusive access mode is not supported");
+    }
+    accmode = oflags & (O_RDONLY|O_WRONLY|O_RDWR);
     if (oflags & O_APPEND) {
 	if (accmode == O_WRONLY) {
 	    return MODE_BINARY("a", "ab");
@@ -5490,7 +5542,7 @@ rb_io_oflags_modestr(int oflags)
 	    return MODE_BINARY("a+", "ab+");
 	}
     }
-    switch (oflags & (O_RDONLY|O_WRONLY|O_RDWR)) {
+    switch (accmode) {
       default:
 	rb_raise(rb_eArgError, "invalid access oflags 0x%x", oflags);
       case O_RDONLY:
@@ -7185,7 +7237,7 @@ io_reopen(VALUE io, VALUE nfile)
             rb_update_max_fd(fd);
             fptr->fd = fd;
 	}
-	rb_notify_fd_close(fd);
+	rb_thread_fd_close(fd);
 	if ((orig->mode & FMODE_READABLE) && pos >= 0) {
 	    if (io_seek(fptr, pos, SEEK_SET) < 0 && errno) {
 		rb_sys_fail_path(fptr->pathv);
@@ -8020,6 +8072,10 @@ rb_io_make_open_file(VALUE obj)
  *
  *  	"t"  Text file mode
  *
+ *  The exclusive access mode ("x") can be used together with "w" to ensure
+ *  the file is created. <code>Errno::EEXIST</code> is raised when it already
+ *  exists. It may not be supported with all kinds of streams (e.g. pipes).
+ *
  *  When the open mode of original IO is read only, the mode cannot be
  *  changed to be writable.  Similarly, the open mode cannot be changed from
  *  write only to readable.
@@ -8470,6 +8526,7 @@ argf_next_argv(VALUE argf)
 	    VALUE filename = rb_ary_shift(ARGF.argv);
 	    FilePathValue(filename);
 	    ARGF.filename = filename;
+	    filename = rb_str_encode_ospath(filename);
 	    fn = StringValueCStr(filename);
 	    if (RSTRING_LEN(filename) == 1 && fn[0] == '-') {
 		ARGF.current_file = rb_stdin;
@@ -8571,6 +8628,7 @@ argf_next_argv(VALUE argf)
 		if (!NIL_P(write_io)) {
 		    rb_io_set_write_io(ARGF.current_file, write_io);
 		}
+		RB_GC_GUARD(filename);
 	    }
 	    if (ARGF.binmode) rb_io_ascii8bit_binmode(ARGF.current_file);
 	    GetOpenFile(ARGF.current_file, fptr);
@@ -9288,7 +9346,7 @@ rb_io_advise(int argc, VALUE *argv, VALUE io)
  *  So, the remote side of SSL sends a partial record,
  *  <code>IO.select</code> notifies readability but
  *  <code>OpenSSL::SSL::SSLSocket</code> cannot decrypt a byte and
- *  <code>OpenSSL::SSL::SSLSocket#readpartial</code> will blocks.
+ *  <code>OpenSSL::SSL::SSLSocket#readpartial</code> will block.
  *
  *  Also, the remote side can request SSL renegotiation which forces
  *  the local SSL engine to write some data.
@@ -9311,7 +9369,7 @@ rb_io_advise(int argc, VALUE *argv, VALUE io)
  *  However it is not the best way to use <code>IO.select</code>.
  *
  *  The writability notified by select(2) doesn't show
- *  how many bytes writable.
+ *  how many bytes are writable.
  *  <code>IO#write</code> method blocks until given whole string is written.
  *  So, <code>IO#write(two or more bytes)</code> can block after writability is notified by <code>IO.select</code>.
  *  <code>IO#write_nonblock</code> is required to avoid the blocking.
@@ -10585,7 +10643,6 @@ struct copy_stream_struct {
     const char *syserr;
     int error_no;
     const char *notimp;
-    rb_fdset_t fds;
     VALUE th;
 };
 
@@ -10622,15 +10679,23 @@ maygvl_copy_stream_continue_p(int has_gvl, struct copy_stream_struct *stp)
 }
 
 /* non-Linux poll may not work on all FDs */
-#if defined(HAVE_POLL) && defined(__linux__)
-#  define USE_POLL 1
-#  define IOWAIT_SYSCALL "poll"
-#else
-#  define IOWAIT_SYSCALL "select"
+#if defined(HAVE_POLL)
+#  if defined(__linux__)
+#    define USE_POLL 1
+#  endif
+#  if defined(__FreeBSD_version) && __FreeBSD_version >= 1100000
+#    define USE_POLL 1
+#  endif
+#endif
+
+#ifndef USE_POLL
 #  define USE_POLL 0
 #endif
 
 #if USE_POLL
+#  define IOWAIT_SYSCALL "poll"
+STATIC_ASSERT(pollin_expected, POLLIN == RB_WAITFD_IN);
+STATIC_ASSERT(pollout_expected, POLLOUT == RB_WAITFD_OUT);
 static int
 nogvl_wait_for_single_fd(int fd, short events)
 {
@@ -10641,6 +10706,32 @@ nogvl_wait_for_single_fd(int fd, short events)
 
     return poll(&fds, 1, -1);
 }
+#else /* !USE_POLL */
+#  define IOWAIT_SYSCALL "select"
+static int
+nogvl_wait_for_single_fd(int fd, short events)
+{
+    rb_fdset_t fds;
+    int ret;
+
+    rb_fd_init(&fds);
+    rb_fd_set(fd, &fds);
+
+    switch (events) {
+      case RB_WAITFD_IN:
+        ret = rb_fd_select(fd + 1, &fds, 0, 0, 0);
+        break;
+      case RB_WAITFD_OUT:
+        ret = rb_fd_select(fd + 1, 0, &fds, 0, 0);
+        break;
+      default:
+        assert(0 && "not supported yet, should never get here");
+    }
+
+    rb_fd_term(&fds);
+    return ret;
+}
+#endif /* !USE_POLL */
 
 static int
 maygvl_copy_stream_wait_read(int has_gvl, struct copy_stream_struct *stp)
@@ -10652,46 +10743,17 @@ maygvl_copy_stream_wait_read(int has_gvl, struct copy_stream_struct *stp)
 	    ret = rb_wait_for_single_fd(stp->src_fd, RB_WAITFD_IN, NULL);
 	}
 	else {
-	    ret = nogvl_wait_for_single_fd(stp->src_fd, POLLIN);
+	    ret = nogvl_wait_for_single_fd(stp->src_fd, RB_WAITFD_IN);
 	}
     } while (ret == -1 && maygvl_copy_stream_continue_p(has_gvl, stp));
 
     if (ret == -1) {
-        stp->syserr = "poll";
+        stp->syserr = IOWAIT_SYSCALL;
         stp->error_no = errno;
         return -1;
     }
     return 0;
 }
-#else /* !USE_POLL */
-static int
-maygvl_select(int has_gvl, int n, rb_fdset_t *rfds, rb_fdset_t *wfds, rb_fdset_t *efds, struct timeval *timeout)
-{
-    if (has_gvl)
-        return rb_thread_fd_select(n, rfds, wfds, efds, timeout);
-    else
-        return rb_fd_select(n, rfds, wfds, efds, timeout);
-}
-
-static int
-maygvl_copy_stream_wait_read(int has_gvl, struct copy_stream_struct *stp)
-{
-    int ret;
-
-    do {
-	rb_fd_zero(&stp->fds);
-	rb_fd_set(stp->src_fd, &stp->fds);
-        ret = maygvl_select(has_gvl, rb_fd_max(&stp->fds), &stp->fds, NULL, NULL, NULL);
-    } while (ret == -1 && maygvl_copy_stream_continue_p(has_gvl, stp));
-
-    if (ret == -1) {
-        stp->syserr = "select";
-        stp->error_no = errno;
-        return -1;
-    }
-    return 0;
-}
-#endif /* !USE_POLL */
 
 static int
 nogvl_copy_stream_wait_write(struct copy_stream_struct *stp)
@@ -10699,13 +10761,7 @@ nogvl_copy_stream_wait_write(struct copy_stream_struct *stp)
     int ret;
 
     do {
-#if USE_POLL
-	ret = nogvl_wait_for_single_fd(stp->dst_fd, POLLOUT);
-#else
-	rb_fd_zero(&stp->fds);
-	rb_fd_set(stp->dst_fd, &stp->fds);
-        ret = rb_fd_select(rb_fd_max(&stp->fds), NULL, &stp->fds, NULL, NULL);
-#endif
+	ret = nogvl_wait_for_single_fd(stp->dst_fd, RB_WAITFD_OUT);
     } while (ret == -1 && maygvl_copy_stream_continue_p(0, stp));
 
     if (ret == -1) {
@@ -11338,9 +11394,6 @@ copy_stream_body(VALUE arg)
         return copy_stream_fallback(stp);
     }
 
-    rb_fd_set(src_fd, &stp->fds);
-    rb_fd_set(dst_fd, &stp->fds);
-
     rb_thread_call_without_gvl(nogvl_copy_stream_func, (void*)stp, RUBY_UBF_IO, 0);
     return Qnil;
 }
@@ -11355,7 +11408,6 @@ copy_stream_finalize(VALUE arg)
     if (stp->close_dst) {
         rb_io_close_m(stp->dst);
     }
-    rb_fd_term(&stp->fds);
     if (stp->syserr) {
         rb_syserr_fail(stp->error_no, stp->syserr);
     }
@@ -11421,7 +11473,6 @@ rb_io_s_copy_stream(int argc, VALUE *argv, VALUE io)
     else
         st.src_offset = NUM2OFFT(src_offset);
 
-    rb_fd_init(&st.fds);
     rb_ensure(copy_stream_body, (VALUE)&st, copy_stream_finalize, (VALUE)&st);
 
     return OFFT2NUM(st.total);
@@ -12983,7 +13034,7 @@ Init_IO(void)
     rb_output_fs = Qnil;
     rb_define_hooked_variable("$,", &rb_output_fs, 0, rb_str_setter);
 
-    rb_default_rs = rb_fstring_cstr("\n"); /* avoid modifying RS_default */
+    rb_default_rs = rb_fstring_lit("\n"); /* avoid modifying RS_default */
     rb_gc_register_mark_object(rb_default_rs);
     rb_rs = rb_default_rs;
     rb_output_rs = Qnil;

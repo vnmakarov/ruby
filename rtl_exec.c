@@ -1120,8 +1120,8 @@ common_cmp(rb_execution_context_t *ec,
 	    vm_change_insn(cfp->iseq, cfp->pc, fix_insn_id);
 	cmp = fix_num_cmp(*op1, op2);
 	return cmp ? Qtrue : Qfalse;
-    } else if ((op2_flonum_p && FLONUM_P(*op1)
-	      || (! op2_fixnum_p && ! op2_flonum_p && FLONUM_2_P(*op1, op2)))
+    } else if (((op2_flonum_p && FLONUM_P(*op1))
+		|| (! op2_fixnum_p && ! op2_flonum_p && FLONUM_2_P(*op1, op2)))
 	       && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)) {
 	if (change_p)
 	    vm_change_insn(cfp->iseq, cfp->pc, flo_insn_id);
@@ -1409,7 +1409,7 @@ common_spec_flo_cmp(VALUE op1, VALUE op2, enum ruby_basic_operators bop,
 		    double *d1, double *d2)
 {
     if (LIKELY((! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG))
-	       && (op2_flonum_p && (d1 != NULL || FLONUM_P(op1))
+	       && ((op2_flonum_p && (d1 != NULL || FLONUM_P(op1)))
 		   || (! op2_flonum_p && ((d1 != NULL && d2 != NULL) || FLONUM_2_P(op1, op2)))))) {
 	double flo1, flo2;
 
@@ -2255,6 +2255,13 @@ arithmf(float_num_mod)
 
 arithmf(double_num_mod) {return float_num_mult(op1, op2);}
 
+arithmf(fix_num_or) {
+    return LONG2NUM(FIX2LONG(op1) | FIX2LONG(op2));
+}
+
+arithmf(fix_num_and) {
+    return LONG2NUM(FIX2LONG(op1) & FIX2LONG(op2));
+}
 
 /* Common function executing an arithmetic operation of operands OP1
    (value location) and OP2 (value) in frame CFP of thread EC.  The
@@ -2290,15 +2297,15 @@ do_arithm(rb_execution_context_t *ec,
 		vm_change_insn(cfp->iseq, cfp->pc, fix_insn_id);
 	    return 0;
 	}
-    } else if ((op2_flonum_p && FLONUM_P(*op1)
-		|| (! op2_fixnum_p && ! op2_flonum_p && FLONUM_2_P(*op1, op2)))
+    } else if (float_num_op != NULL && ((op2_flonum_p && FLONUM_P(*op1))
+					|| (! op2_fixnum_p && ! op2_flonum_p && FLONUM_2_P(*op1, op2)))
 	       && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)) {
 	*res = float_num_op(*op1, op2);
 	if (change_p)
 	    vm_change_insn(cfp->iseq, cfp->pc, flo_insn_id);
 	return 0;
     }
-    else if (! op2_fixnum_p && ! op2_flonum_p
+    else if (double_num_op != NULL && ! op2_fixnum_p && ! op2_flonum_p
 	     && ! SPECIAL_CONST_P(*op1) && ! SPECIAL_CONST_P(op2)) {
 	if (RBASIC_CLASS(*op1) == rb_cFloat && RBASIC_CLASS(op2) == rb_cFloat
 	    && BASIC_OP_UNREDEFINED_P(bop, FLOAT_REDEFINED_OP_FLAG)) {
@@ -2354,6 +2361,14 @@ op2_fun(mult) {return arithm_call(mult, BOP_MULT);}
 op2_fun(div) {return arithm_call(div, BOP_DIV);}
 op2_fun(mod) {return arithm_call(mod, BOP_MOD);}
 
+#define fixnum_call(suff, bop) arithm_op(ec, cfp, cd, \
+					 res, op1, op2, bop,	\
+					 fix_num_ ## suff, NULL, NULL,	\
+					 TRUE, BIN(i ## suff), 0)
+
+op2_fun(or) {return fixnum_call(or, BOP_OR);}
+op2_fun(and) {return fixnum_call(and, BOP_AND);}
+
 /* A function call implementing an arithmetic operation (which can not
    change the insn) with operation BOP and suffix SUFF for fast
    execution path functions. */
@@ -2369,6 +2384,14 @@ op2_fun(uminus) {return uarithm_call(minus, BOP_MINUS);}
 op2_fun(umult) {return uarithm_call(mult, BOP_MULT);}
 op2_fun(udiv) {return uarithm_call(div, BOP_DIV);}
 op2_fun(umod) {return uarithm_call(mod, BOP_MOD);}
+
+#define ufixnum_call(suff, bop) arithm_op(ec, cfp, cd, \
+					  res, op1, op2, bop,		\
+					  fix_num_ ## suff, NULL, NULL,	\
+					  FALSE, 0, 0)
+
+op2_fun(uor) {return ufixnum_call(or, BOP_OR);}
+op2_fun(uand) {return ufixnum_call(and, BOP_AND);}
 
 /* A function call implementing a simple (stack) arithmetic operation
    (which can change the insn to speculative one) with operation BOP
@@ -2387,6 +2410,14 @@ op2_fun(smult) {return sarithm_call(mult, BOP_MULT);}
 op2_fun(sdiv) {return sarithm_call(div, BOP_DIV);}
 op2_fun(smod) {return sarithm_call(mod, BOP_MOD);}
 
+#define sfixnum_call(suff, bop) arithm_op(ec, cfp, cd, \
+					  res, op1, op2, bop,		\
+					  fix_num_ ## suff, NULL, NULL,	\
+					  TRUE, BIN(si ## suff), 0)
+
+op2_fun(sor) {return sfixnum_call(or, BOP_OR);}
+op2_fun(sand) {return sfixnum_call(and, BOP_AND);}
+
 /* A function call implementing a simple (stack) arithmetic operation
    (which can not change the insn) with operation BOP and suffix SUFF
    for fast execution path functions. */
@@ -2402,6 +2433,14 @@ op2_fun(suminus) {return suarithm_call(minus, BOP_MINUS);}
 op2_fun(sumult) {return suarithm_call(mult, BOP_MULT);}
 op2_fun(sudiv) {return suarithm_call(div, BOP_DIV);}
 op2_fun(sumod) {return suarithm_call(mod, BOP_MOD);}
+
+#define sufixnum_call(suff, bop) arithm_op(ec, cfp, cd, \
+					   res, op1, op2, bop,		\
+					   fix_num_ ## suff, NULL, NULL, \
+					   FALSE, 0, 0)
+
+op2_fun(suor) {return sufixnum_call(or, BOP_OR);}
+op2_fun(suand) {return sufixnum_call(and, BOP_AND);}
 
 /* It is analogous to airthm_op with known value of the 2nd operand
    (IMM).  */
@@ -2439,6 +2478,15 @@ op2i_fun(multi) {return arithm_fix_call(mult, BOP_MULT);}
 op2i_fun(divi) {return arithm_fix_call(div, BOP_DIV);}
 op2i_fun(modi) {return arithm_fix_call(mod, BOP_MOD);}
 
+#define fixnum_fix_call(suff, bop) arithm_imm_op(ec, cfp, cd, \
+						 res, op1, imm, bop,	\
+						 fix_num_ ## suff, NULL, NULL, \
+						 TRUE, FALSE, \
+						 TRUE, BIN(i ## suff ## i), 0)
+
+op2i_fun(ori) {return fixnum_fix_call(or, BOP_OR);}
+op2i_fun(andi) {return fixnum_fix_call(and, BOP_AND);}
+
 /* A function call implementing an arithmetic insn (which can not
    change the insn) with operation BOP and suffix SUFF for fast path
    functions and immediate of type fixnum as the 2nd operand.  */
@@ -2455,6 +2503,15 @@ op2i_fun(uminusi) {return uarithm_fix_call(minus, BOP_MINUS);}
 op2i_fun(umulti) {return uarithm_fix_call(mult, BOP_MULT);}
 op2i_fun(udivi) {return uarithm_fix_call(div, BOP_DIV);}
 op2i_fun(umodi) {return uarithm_fix_call(mod, BOP_MOD);}
+
+#define ufixnum_fix_call(suff, bop) arithm_imm_op(ec, cfp, cd, \
+						  res, op1, imm, bop,	\
+						  fix_num_ ## suff, NULL, NULL, \
+						  TRUE, FALSE,		\
+						  FALSE, 0, 0)
+
+op2i_fun(uori) {return ufixnum_fix_call(or, BOP_OR);}
+op2i_fun(uandi) {return ufixnum_fix_call(and, BOP_AND);}
 
 /* The same as arithm_fix_call but for immediate of flo num type.  */
 #define arithm_flo_call(suff, bop) arithm_imm_op(ec, cfp, cd,		\
@@ -2564,6 +2621,14 @@ arithmf(spec_fix_num_mod) {
     if (l2 > 0 ? mod < 0 : mod > 0)
 	mod += l2;
     return LONG2FIX(mod);
+}
+
+arithmf(spec_fix_num_or) {
+    return LONG2NUM(FIX2LONG(op1) | FIX2LONG(op2));
+}
+
+arithmf(spec_fix_num_and) {
+    return LONG2NUM(FIX2LONG(op1) & FIX2LONG(op2));
 }
 
 #if USE_FLONUM && NEW_FLONUM
@@ -2731,6 +2796,8 @@ spec_op2_fun(iminus) {return spec_fix_arithm_call(minus, BOP_MINUS);}
 spec_op2_fun(imult) {return spec_fix_arithm_call(mult, BOP_MULT);}
 spec_op2_fun(idiv) {return spec_fix_arithm_call(div, BOP_DIV);}
 spec_op2_fun(imod) {return spec_fix_arithm_call(mod, BOP_MOD);}
+spec_op2_fun(ior) {return spec_fix_arithm_call(or, BOP_OR);}
+spec_op2_fun(iand) {return spec_fix_arithm_call(and, BOP_AND);}
 
 /* As spec_fix_arithm_call but a flo num variant. */
 #define spec_flo_arithm_call(suff, bop) spec_flo_arithm_op(cfp, \
@@ -2760,6 +2827,8 @@ spec_op2_fun(siminus) {return spec_fix_sarithm_call(minus, BOP_MINUS);}
 spec_op2_fun(simult) {return spec_fix_sarithm_call(mult, BOP_MULT);}
 spec_op2_fun(sidiv) {return spec_fix_sarithm_call(div, BOP_DIV);}
 spec_op2_fun(simod) {return spec_fix_sarithm_call(mod, BOP_MOD);}
+spec_op2_fun(sior) {return spec_fix_sarithm_call(or, BOP_OR);}
+spec_op2_fun(siand) {return spec_fix_sarithm_call(and, BOP_AND);}
 
 /* As spec_fix_sarithm_call but a flo num variant. */
 #define spec_flo_sarithm_call(suff, bop) spec_flo_arithm_op(cfp, \
@@ -2815,6 +2884,8 @@ spec_op2i_fun(iminusi) {return spec_fix_arithm_imm_call(minus, BOP_MINUS);}
 spec_op2i_fun(imulti) {return spec_fix_arithm_imm_call(mult, BOP_MULT);}
 spec_op2i_fun(idivi) {return spec_fix_arithm_imm_call(div, BOP_DIV);}
 spec_op2i_fun(imodi) {return spec_fix_arithm_imm_call(mod, BOP_MOD);}
+spec_op2i_fun(iori) {return spec_fix_arithm_imm_call(or, BOP_OR);}
+spec_op2i_fun(iandi) {return spec_fix_arithm_imm_call(and, BOP_AND);}
 
 /* As spec_fix_arithm_imm_call but a flo num variant. */
 #define spec_flo_arithm_imm_call(suff, bop) spec_flo_arithm_imm_op(cfp, \
@@ -3252,22 +3323,36 @@ val_defined_p_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *res,
 
 /* Assign the result of call freeze method of string STR to temporary
    variable with location RES in frame CFP.  */
-static do_inline void
-str_freeze_call_f(rb_control_frame_t *cfp, VALUE *res, VALUE str)
+static do_inline int
+str_freeze_call_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, CALL_DATA cd, VALUE *res, VALUE str)
 {
-    check_sp_default(cfp);
-    *res =  (BASIC_OP_UNREDEFINED_P(BOP_FREEZE, STRING_REDEFINED_OP_FLAG)
-	     ? str : rb_funcall(rb_str_resurrect(str), idFreeze, 0));
+    VALUE val;
+    
+    val = vm_opt_str_freeze(str, BOP_FREEZE, idFreeze);
+    if (val != Qundef) {
+	*res = val;
+	return 0;
+    }
+    str = rb_str_resurrect(str);
+    val = op1_call(ec, cfp, cd, &str);
+    return op_val_call_end(ec, cfp, res, val);
 }
 
 /* Assign the result of uminus method of string STR to temporary
    variable with location RES in frame CFP.  */
-static do_inline void
-str_uminus_f(rb_control_frame_t *cfp, VALUE *res, VALUE str)
+static do_inline int
+str_uminus_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, CALL_DATA cd, VALUE *res, VALUE str)
 {
-    check_sp_default(cfp);
-    *res =  (BASIC_OP_UNREDEFINED_P(BOP_UMINUS, STRING_REDEFINED_OP_FLAG)
-	     ? str : rb_funcall(rb_str_resurrect(str), idUMinus, 0));
+    VALUE val;
+    
+    val = vm_opt_str_freeze(str, BOP_UMINUS, idUMinus);
+    if (val != Qundef) {
+	*res = val;
+	return 0;
+    }
+    str = rb_str_resurrect(str);
+    val = op1_call(ec, cfp, cd, &str);
+    return op_val_call_end(ec, cfp, res, val);
 }
 
 /* Initiate a call of method with caller ORIG_ARGC and FLAG.  The
@@ -3493,8 +3578,8 @@ call_super_val_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
     *top = rec_val;
     calling->argc = ci->orig_argc;
     cfp->sp = top + calling->argc + 1 + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0);
-    vm_caller_setup_arg_block(ec, cfp, calling, ci, blockiseq, TRUE);
-    calling->recv = GET_SELF();
+    calling->block_handler = vm_caller_setup_arg_block(ec, cfp, calling, ci, blockiseq, TRUE);
+    calling->recv = rec_val;
     vm_search_super_method(ec, GET_CFP(), calling, ci, cc);
 }
 
@@ -3698,6 +3783,13 @@ bkw_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, rb_num_t kw_bits_inde
 	return TRUE;
     }
     return FALSE;
+}
+
+/* Set up RES by Qtrue if value of local variable OP is of TYPE.
+   Otherwise, assign Qfalse to RES.  */
+static do_inline void
+check_type_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op, rb_num_t type) {
+    *res = (TYPE(*op) == (int)type) ? Qtrue : Qfalse;
 }
 
 /* Match a value (target) in local or temporary variable with location
@@ -3934,7 +4026,7 @@ val_ret_f(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE v, VALUE *v
     RTL_ASSERT(in_mjit_p || ret_p || ec->cfp->iseq);
     if (! ret_p) {
 	*val = v;
-	return 0;
+ 	return 0;
     } else {
 #if OPT_CALL_THREADED_CODE
 	rb_ec_thread_ptr(ec)->retval = v;
@@ -4029,10 +4121,8 @@ mjit_call_method(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_
    JITed code execution and not to use the code anymore.  */
 static do_inline int
 mjit_call_iseq_normal(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling,
-		      CALL_DATA cd, int param, int local, VALUE *res) {
-    CALL_INFO ci = &cd->call_info;
-    CALL_CACHE cc = &cd->call_cache;
-    VALUE val = vm_call_iseq_setup_normal(ec, cfp, calling, ci, cc, 0, param, local);
+		      const rb_callable_method_entry_t *me, int param, int local, VALUE *res) {
+    VALUE val = vm_call_iseq_setup_normal(ec, cfp, calling, me, 0, param, local);
 
     return mjit_general_call_finish(ec, cfp, val, res);
 }

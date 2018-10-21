@@ -703,6 +703,45 @@ class TestSetTraceFunc < Test::Unit::TestCase
     assert_equal(false, trace.enabled?)
   end
 
+  def parameter_test(a, b, c)
+    yield
+  end
+
+  def test_tracepoint_parameters
+    trace = TracePoint.new(:line, :class, :end, :call, :return, :b_call, :b_return, :c_call, :c_return, :raise){|tp|
+      next if !target_thread?
+      next if tp.path != __FILE__
+      case tp.event
+      when :call, :return
+        assert_equal([[:req, :a], [:req, :b], [:req, :c]], tp.parameters)
+      when :b_call, :b_return
+        next if tp.parameters == []
+        if tp.parameters.first == [:opt, :x]
+          assert_equal([[:opt, :x], [:opt, :y], [:opt, :z]], tp.parameters)
+        else
+          assert_equal([[:req, :p], [:req, :q], [:req, :r]], tp.parameters)
+        end
+      when :c_call, :c_return
+        assert_equal([[:req]], tp.parameters) if tp.method_id == :getbyte
+      when :line, :class, :end, :raise
+        assert_raise(RuntimeError) { tp.parameters }
+      end
+    }
+    obj = Object.new
+    trace.enable{
+      parameter_test(1, 2, 3) {|x, y, z|
+      }
+      lambda {|p, q, r| }.call(4, 5, 6)
+      "".getbyte(0)
+      class << obj
+      end
+      begin
+        raise
+      rescue
+      end
+    }
+  end
+
   def method_test_tracepoint_return_value obj
     obj
   end
@@ -854,6 +893,21 @@ class TestSetTraceFunc < Test::Unit::TestCase
   def test_tracepoint_exception_at_return
     assert_nothing_raised(Timeout::Error, 'infinite trace') do
       assert_normal_exit('def m; end; TracePoint.new(:return) {raise}.enable {m}', '', timeout: 3)
+    end
+  end
+
+  def test_tracepoint_exception_at_c_return
+    assert_nothing_raised(Timeout::Error, 'infinite trace') do
+      assert_normal_exit %q{
+        begin
+          TracePoint.new(:c_return){|tp|
+            raise
+          }.enable{
+            tap{ itself }
+          }
+        rescue
+        end
+      }, '', timeout: 3
     end
   end
 
@@ -1755,7 +1809,6 @@ class TestSetTraceFunc < Test::Unit::TestCase
       define_method(:m) {}
 
       tp = TracePoint.new(:call) do
-        next unless target_thread?
         raise ''
       end
 
@@ -1847,5 +1900,18 @@ class TestSetTraceFunc < Test::Unit::TestCase
     assert_equal ["c-return", base_line + 35], events[8] # Thread.current
     assert_equal ["c-call", base_line + 35],   events[9] # Thread#set_trace_func
     assert_equal nil,                          events[10]
+  end
+
+  def test_lineno_in_optimized_insn
+    actual, _, _ = EnvUtil.invoke_ruby [], <<-EOF.gsub(/^.*?: */, ""), true
+      1: class String
+      2:   def -@
+      3:     puts caller_locations(1, 1)[0].lineno
+      4:   end
+      5: end
+      6:
+      7: -""
+    EOF
+    assert_equal "7\n", actual, '[Bug #14809]'
   end
 end

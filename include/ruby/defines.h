@@ -90,8 +90,13 @@ extern "C" {
 #endif /* __GNUC__ >= 3 */
 
 #ifdef __GNUC__
+#if defined __MINGW_PRINTF_FORMAT
+#define PRINTF_ARGS(decl, string_index, first_to_check) \
+  decl __attribute__((format(__MINGW_PRINTF_FORMAT, string_index, first_to_check)))
+#else
 #define PRINTF_ARGS(decl, string_index, first_to_check) \
   decl __attribute__((format(printf, string_index, first_to_check)))
+#endif
 #else
 #define PRINTF_ARGS(decl, string_index, first_to_check) decl
 #endif
@@ -203,12 +208,89 @@ RUBY_SYMBOL_EXPORT_BEGIN
 # define RUBY_ATTR_ALLOC_SIZE(params)
 #endif
 
-void *xmalloc(size_t) RUBY_ATTR_ALLOC_SIZE((1));
-void *xmalloc2(size_t,size_t) RUBY_ATTR_ALLOC_SIZE((1,2));
-void *xcalloc(size_t,size_t) RUBY_ATTR_ALLOC_SIZE((1,2));
-void *xrealloc(void*,size_t) RUBY_ATTR_ALLOC_SIZE((2));
-void *xrealloc2(void*,size_t,size_t) RUBY_ATTR_ALLOC_SIZE((2,3));
-void xfree(void*);
+void *ruby_xmalloc(size_t) RUBY_ATTR_ALLOC_SIZE((1));
+void *ruby_xmalloc2(size_t,size_t) RUBY_ATTR_ALLOC_SIZE((1,2));
+void *ruby_xcalloc(size_t,size_t) RUBY_ATTR_ALLOC_SIZE((1,2));
+void *ruby_xrealloc(void*,size_t) RUBY_ATTR_ALLOC_SIZE((2));
+void *ruby_xrealloc2(void*,size_t,size_t) RUBY_ATTR_ALLOC_SIZE((2,3));
+void ruby_xfree(void*);
+
+#ifndef USE_GC_MALLOC_OBJ_INFO_DETAILS
+#define USE_GC_MALLOC_OBJ_INFO_DETAILS 0
+#endif
+
+#if USE_GC_MALLOC_OBJ_INFO_DETAILS
+
+void *ruby_xmalloc_body(size_t) RUBY_ATTR_ALLOC_SIZE((1));
+void *ruby_xmalloc2_body(size_t,size_t) RUBY_ATTR_ALLOC_SIZE((1,2));
+void *ruby_xcalloc_body(size_t,size_t) RUBY_ATTR_ALLOC_SIZE((1,2));
+void *ruby_xrealloc_body(void*,size_t) RUBY_ATTR_ALLOC_SIZE((2));
+void *ruby_xrealloc2_body(void*,size_t,size_t) RUBY_ATTR_ALLOC_SIZE((2,3));
+
+#define ruby_xmalloc(s1)            ruby_xmalloc_with_location(s1, __FILE__, __LINE__)
+#define ruby_xmalloc2(s1, s2)       ruby_xmalloc2_with_location(s1, s2, __FILE__, __LINE__)
+#define ruby_xcalloc(s1, s2)        ruby_xcalloc_with_location(s1, s2, __FILE__, __LINE__)
+#define ruby_xrealloc(ptr, s1)      ruby_xrealloc_with_location(ptr, s1, __FILE__, __LINE__)
+#define ruby_xrealloc2(ptr, s1, s2) ruby_xrealloc2_with_location(ptr, s1, s2, __FILE__, __LINE__)
+
+extern const char *ruby_malloc_info_file;
+extern int ruby_malloc_info_line;
+
+static inline void *
+ruby_xmalloc_with_location(size_t s, const char *file, int line)
+{
+    void *ptr;
+    ruby_malloc_info_file = file;
+    ruby_malloc_info_line = line;
+    ptr = ruby_xmalloc_body(s);
+    ruby_malloc_info_file = NULL;
+    return ptr;
+}
+
+static inline void *
+ruby_xmalloc2_with_location(size_t s1, size_t s2, const char *file, int line)
+{
+    void *ptr;
+    ruby_malloc_info_file = file;
+    ruby_malloc_info_line = line;
+    ptr = ruby_xmalloc2_body(s1, s2);
+    ruby_malloc_info_file = NULL;
+    return ptr;
+}
+
+static inline void *
+ruby_xcalloc_with_location(size_t s1, size_t s2, const char *file, int line)
+{
+    void *ptr;
+    ruby_malloc_info_file = file;
+    ruby_malloc_info_line = line;
+    ptr = ruby_xcalloc_body(s1, s2);
+    ruby_malloc_info_file = NULL;
+    return ptr;
+}
+
+static inline void *
+ruby_xrealloc_with_location(void *ptr, size_t s, const char *file, int line)
+{
+    void *rptr;
+    ruby_malloc_info_file = file;
+    ruby_malloc_info_line = line;
+    rptr = ruby_xrealloc_body(ptr, s);
+    ruby_malloc_info_file = NULL;
+    return rptr;
+}
+
+static inline void *
+ruby_xrealloc2_with_location(void *ptr, size_t s1, size_t s2, const char *file, int line)
+{
+    void *rptr;
+    ruby_malloc_info_file = file;
+    ruby_malloc_info_line = line;
+    rptr = ruby_xrealloc2_body(ptr, s1, s2);
+    ruby_malloc_info_file = NULL;
+    return rptr;
+}
+#endif
 
 #define STRINGIZE(expr) STRINGIZE0(expr)
 #ifndef STRINGIZE0
@@ -278,6 +360,11 @@ void xfree(void*);
 #define MJIT_FUNC_EXPORTED RUBY_FUNC_EXPORTED
 #define MJIT_SYMBOL_EXPORT_BEGIN RUBY_SYMBOL_EXPORT_BEGIN
 #define MJIT_SYMBOL_EXPORT_END RUBY_SYMBOL_EXPORT_END
+
+#if defined(MJIT_HEADER) && defined(_MSC_VER)
+# undef MJIT_FUNC_EXPORTED
+# define MJIT_FUNC_EXPORTED static
+#endif
 
 #ifndef RUBY_EXTERN
 #define RUBY_EXTERN extern

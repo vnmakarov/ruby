@@ -4,9 +4,7 @@
 
 # tc_csv_parsing.rb
 #
-#  Created by James Edward Gray II on 2005-10-31.
-#  Copyright 2005 James Edward Gray II. You can redistribute or modify this code
-#  under the terms of Ruby's license.
+# Created by James Edward Gray II on 2005-10-31.
 
 require "timeout"
 
@@ -150,13 +148,13 @@ class TestCSV::Parsing < TestCSV
       CSV.parse_line("1,2\r,3", row_sep: "\n")
     end
 
-    bad_data = <<-END_DATA.gsub(/^ +/, "")
-    line,1,abc
-    line,2,"def\nghi"
+    bad_data = <<-CSV
+line,1,abc
+line,2,"def\nghi"
 
-    line,4,some\rjunk
-    line,5,jkl
-    END_DATA
+line,4,some\rjunk
+line,5,jkl
+    CSV
     lines = bad_data.lines.to_a
     assert_equal(6, lines.size)
     assert_match(/\Aline,4/, lines.find { |l| l =~ /some\rjunk/ })
@@ -168,19 +166,19 @@ class TestCSV::Parsing < TestCSV
         assert_send([csv.lineno, :<, 4])
       end
     rescue CSV::MalformedCSVError
-      assert_equal( "Unquoted fields do not allow \\r or \\n (line 4).",
+      assert_equal( "Unquoted fields do not allow \\r or \\n in line 4.",
                     $!.message )
     end
 
     assert_raise(CSV::MalformedCSVError) { CSV.parse_line('1,2,"3...') }
 
-    bad_data = <<-END_DATA.gsub(/^ +/, "")
-    line,1,abc
-    line,2,"def\nghi"
+    bad_data = <<-CSV
+line,1,abc
+line,2,"def\nghi"
 
-    line,4,8'10"
-    line,5,jkl
-    END_DATA
+line,4,8'10"
+line,5,jkl
+    CSV
     lines = bad_data.lines.to_a
     assert_equal(6, lines.size)
     assert_match(/\Aline,4/, lines.find { |l| l =~ /8'10"/ })
@@ -229,6 +227,16 @@ class TestCSV::Parsing < TestCSV
       ",""
     DATA
     assert_parse_errors_out(data, field_size_limit: 5)
+  end
+
+  def test_col_sep_comma
+    assert_equal([["a", "b", nil, "d"]],
+                 CSV.parse("a,b,,d", col_sep: ","))
+  end
+
+  def test_col_sep_space
+    assert_equal([["a", "b", nil, "d"]],
+                 CSV.parse("a b  d", col_sep: " "))
   end
 
   private

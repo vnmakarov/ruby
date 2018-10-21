@@ -24,7 +24,8 @@ class Gem::Commands::PristineCommand < Gem::Command
 
     add_option('--skip=gem_name',
                'used on --all, skip if name == gem_name') do |value, options|
-      options[:skip] = value
+      options[:skip] ||= []
+      options[:skip] << value
     end
 
     add_option('--[no-]extensions',
@@ -43,6 +44,12 @@ class Gem::Commands::PristineCommand < Gem::Command
                'Rewrite executables with a shebang',
                'of /usr/bin/env') do |value, options|
       options[:env_shebang] = value
+    end
+
+    add_option('-n', '--bindir DIR',
+               'Directory where executables are',
+               'located') do |value, options|
+      options[:bin_dir] = File.expand_path(value)
     end
 
     add_version_option('restore to', 'pristine condition')
@@ -115,9 +122,11 @@ extensions will be restored.
         next
       end
 
-      if spec.name == options[:skip]
-        say "Skipped #{spec.full_name}, it was given through options"
-        next
+      if options.has_key? :skip
+        if options[:skip].include? spec.name
+          say "Skipped #{spec.full_name}, it was given through options"
+          next
+        end
       end
 
       if spec.bundled_gem_in_old_ruby?
@@ -157,12 +166,15 @@ extensions will be restored.
           install_defaults.to_s['--env-shebang']
         end
 
+      bin_dir = options[:bin_dir] if options[:bin_dir]
+
       installer_options = {
         :wrappers => true,
         :force => true,
         :install_dir => spec.base_dir,
         :env_shebang => env_shebang,
         :build_args => spec.build_args,
+        :bin_dir => bin_dir
       }
 
       if options[:only_executables] then

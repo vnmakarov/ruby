@@ -847,6 +847,16 @@ class TestHash < Test::Unit::TestCase
     assert_equal("nope42", h[42])
   end
 
+  def test_to_h_block
+    h = @h.to_h {|k, v| [k.to_s, v.to_s]}
+    assert_equal({
+                   "1"=>"one", "2"=>"two", "3"=>"three", to_s=>"self",
+                   "true"=>"true", ""=>"nil", "nil"=>""
+                 },
+                 h)
+    assert_instance_of(Hash, h)
+  end
+
   def test_nil_to_h
     h = nil.to_h
     assert_equal({}, h)
@@ -1123,11 +1133,35 @@ class TestHash < Test::Unit::TestCase
     assert_equal({1=>6, 3=>4, 5=>7}, h1)
   end
 
+  def test_update3
+    h1 = @cls[1=>2, 3=>4]
+    h1.update()
+    assert_equal({1=>2, 3=>4}, h1)
+    h2 = {1=>3, 5=>7}
+    h3 = {1=>1, 2=>4}
+    h1.update(h2, h3)
+    assert_equal({1=>1, 2=>4, 3=>4, 5=>7}, h1)
+  end
+
+  def test_update4
+    h1 = @cls[1=>2, 3=>4]
+    h1.update(){|k, v1, v2| k + v1 + v2 }
+    assert_equal({1=>2, 3=>4}, h1)
+    h2 = {1=>3, 5=>7}
+    h3 = {1=>1, 2=>4}
+    h1.update(h2, h3){|k, v1, v2| k + v1 + v2 }
+    assert_equal({1=>8, 2=>4, 3=>4, 5=>7}, h1)
+  end
+
   def test_merge
     h1 = @cls[1=>2, 3=>4]
     h2 = {1=>3, 5=>7}
+    h3 = {1=>1, 2=>4}
+    assert_equal({1=>2, 3=>4}, h1.merge())
     assert_equal({1=>3, 3=>4, 5=>7}, h1.merge(h2))
     assert_equal({1=>6, 3=>4, 5=>7}, h1.merge(h2) {|k, v1, v2| k + v1 + v2 })
+    assert_equal({1=>1, 2=>4, 3=>4, 5=>7}, h1.merge(h2, h3))
+    assert_equal({1=>8, 2=>4, 3=>4, 5=>7}, h1.merge(h2, h3) {|k, v1, v2| k + v1 + v2 })
   end
 
   def test_assoc

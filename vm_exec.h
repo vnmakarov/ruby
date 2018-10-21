@@ -39,12 +39,8 @@ typedef rb_iseq_t *ISEQ;
 #define SC_REGS()
 #endif
 
-#if 1
-#define DEBUG_END_INSN()
-#else
-#define DEBUG_END_INSN()				\
-  rb_vmdebug_debug_print_post(th, GET_CFP() SC_REGS());
-#endif
+#define DEBUG_END_INSN() \
+  rb_vmdebug_debug_print_post(ec, GET_CFP() SC_REGS());
 
 #else
 
