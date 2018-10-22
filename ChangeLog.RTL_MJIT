@@ -1,5 +1,14 @@
 2018-10-21  Vladimir Makarov  <vmakarov@redhat.com>
 
+	* insns.def (plus, uplus, eq, ne, ueq, une, ind, uind, splus): Delete attr leaf.
+	(suplus, seq, sne, sueq, sune, plusi, plusf, eqi, eqf, nei, nef): Ditto.
+	(indi, inds, uplusi, uplusf, ueqi, ueqf, unei, unef, uindi): Ditto.
+	(uinds, aindi, hindi, hinds, indset, uindset, aindset, hindset): Ditto.
+	(indseti, indsets, uindseti, uindsets, aindseti, hindseti): Ditto.
+	(hindsets): Ditto.
+
+2018-10-21  Vladimir Makarov  <vmakarov@redhat.com>
+
 	* Merge with trunk @ 7a14608edc
 	* insns.def: Add leaf attribute for corresponding RTL insns.
 	(str_freeze_call, str_uminus): Add param cd.

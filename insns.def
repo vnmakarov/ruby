@@ -2131,7 +2131,7 @@ spec_not
 
 /* General and unchanging insns:  */
 DEFINE_INSN
-minus mult div mod or and ltlt lt gt le ge uminus umult udiv umod uor uand ult ugt ule uge
+plus minus mult div mod or and eq ne ltlt lt gt le ge ind uplus uminus umult udiv umod uor uand ueq une ult ugt ule uge uind
 (CALL_DATA cd, tindex_t res, vindex_t op1, vindex_t op2)
 ()
 ()
@@ -2144,45 +2144,12 @@ minus mult div mod or and ltlt lt gt le ge uminus umult udiv umod uor uand ult u
     }
 }
 
-/* General and unchanging insns:  */
-DEFINE_INSN
-plus uplus eq ne ueq une ind uind
-(CALL_DATA cd, tindex_t res, vindex_t op1, vindex_t op2)
-()
-()
-/* attrboolleaf = false; /* has rb_to_array_type() */ /* has rb_str_equal() */ /* has rb_funcall() */ /* calls #yield */
-{
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), get_var_addr(reg_cfp, op2))) {
-      	ec->cfp[1].pc += 5;
-	RESTORE_REGS();
-	set_default_sp(reg_cfp, reg_cfp->bp);
-	NEXT_INSN();
-    }
-}
-
 /* General and unchanging simple (stack) insns:  */
 DEFINE_INSN
-sminus smult sdiv smod sor sand slt sgt sle sge suminus sumult sudiv sumod suor suand sult sugt sule suge
+splus sminus smult sdiv smod sor sand seq sne slt sgt sle sge suplus suminus sumult sudiv sumod suor suand sueq sune sult sugt sule suge
 (CALL_DATA cd, tindex_t res)
 ()
 ()
-{
-    VALUE *res_op = get_temp_addr(reg_cfp, res);
-    
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, res_op, res_op, res_op + 1)) {
-	ec->cfp[1].pc += 3;
-	RESTORE_REGS();
-	set_default_sp(reg_cfp, reg_cfp->bp);
-	NEXT_INSN();
-    }
-}
-
-DEFINE_INSN
-splus suplus seq sne sueq sune
-(CALL_DATA cd, tindex_t res)
-()
-()
-/* attrboolleaf = false; /* has rb_to_array_type() */ /* has rb_str_equal() */
 {
     VALUE *res_op = get_temp_addr(reg_cfp, res);
     
@@ -2294,25 +2261,10 @@ siplus siminus simult sidiv simod sior siand sieq sine silt sigt sile sige
 
 /* General immediate insns:  */
 DEFINE_INSN
-minusi minusf multi multf divi divf modi modf ori andi ltlti lti ltf gti gtf lei lef gei gef
+plusi minusi plusf minusf multi multf divi divf modi modf ori andi eqi nei ltlti lti eqf nef ltf gti gtf lei lef gei gef indi inds
 (CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
-{
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
-	ec->cfp[1].pc += 5;
-	RESTORE_REGS();
-        set_default_sp(reg_cfp, reg_cfp->bp);
-	NEXT_INSN();
-    }
-}
-
-DEFINE_INSN
-plusi plusf eqi eqf nei nef indi inds
-(CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
-()
-()
-/* attrboolleaf = false; /* has rb_to_array_type() */ /* has rb_str_equal() */ /* has rb_funcall() */ /* calls #yield */
 {
     if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
 	ec->cfp[1].pc += 5;
@@ -2324,25 +2276,10 @@ plusi plusf eqi eqf nei nef indi inds
 
 /* Unchanging immediate insns:  */
 DEFINE_INSN
-uminusi uminusf umulti umultf udivi udivf umodi umodf uori uandi ulti ultf ugti ugtf ulei ulef ugei ugef
+uplusi uplusf uminusi uminusf umulti umultf udivi udivf umodi umodf uori uandi ueqi ueqf unei unef ulti ultf ugti ugtf ulei ulef ugei ugef uindi uinds
 (CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
-{
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
-	ec->cfp[1].pc += 5;
-	RESTORE_REGS();
-        set_default_sp(reg_cfp, reg_cfp->bp);
-	NEXT_INSN();
-    }
-}
-
-DEFINE_INSN
-uplusi uplusf ueqi ueqf unei unef uindi uinds
-(CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm)
-()
-()
-/* attrboolleaf = false; /* has rb_to_array_type() */ /* has rb_str_equal() */ /* has rb_funcall() */ /* calls #yield */
 {
     if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm)) {
 	ec->cfp[1].pc += 5;
@@ -2385,26 +2322,10 @@ feqf fnef fltf fgtf flef fgef
 }
 
 DEFINE_INSN
-ieqi inei iplusi iminusi imulti idivi imodi iori iandi ilti igti ilei igei
+ieqi inei iplusi iminusi imulti idivi imodi iori iandi ilti igti ilei igei aindi hindi hinds
 (CALL_DATA _, tindex_t res, vindex_t op1, VALUE imm)
 ()
 ()
-{
-    enum ruby_vminsn_type new_insn;
-    
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1), imm, &new_insn)) {
-	/* Change and re-execute the insn.  */
-	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
-	ADD_PC(-5);
-    }
-}
-
-DEFINE_INSN
-aindi hindi hinds
-(CALL_DATA _, tindex_t res, vindex_t op1, VALUE imm)
-()
-()
-/* attrboolleaf = false; /* has rb_funcall() */ /* calls #yield */
 {
     enum ruby_vminsn_type new_insn;
     
@@ -2421,7 +2342,6 @@ indset uindset
 (CALL_DATA cd, vindex_t op1, vindex_t op2, vindex_t op3)
 ()
 ()
-/* attrboolleaf = false; /* has rb_funcall() */ /* calls #hash */
 {
     if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_var_addr(reg_cfp, op1),
 					    get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
@@ -2438,7 +2358,6 @@ aindset hindset
 (CALL_DATA _, vindex_t op1, vindex_t op2, vindex_t op3)
 ()
 ()
-/* attrboolleaf = false; /* has rb_funcall() */ /* calls #hash */
 {
     enum ruby_vminsn_type new_insn;
     
@@ -2456,7 +2375,6 @@ indseti indsets uindseti uindsets
 (CALL_DATA cd, vindex_t op1, VALUE imm, vindex_t op3)
 ()
 ()
-/* attrboolleaf = false; /* has rb_funcall() */ /* calls #hash */
 {
     if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3))) {
 	ec->cfp[1].pc += 5;
@@ -2472,7 +2390,6 @@ aindseti hindseti hindsets
 (CALL_DATA _, vindex_t op1, VALUE imm, vindex_t op3)
 ()
 ()
-/* attrboolleaf = false; /* has rb_funcall() */ /* calls #hash */
 {
     enum ruby_vminsn_type new_insn;
     
