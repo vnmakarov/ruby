@@ -1,3 +1,16 @@
+2018-10-23  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def (indset, uindset, aindset, hindset, indseti, indsets):
+	Add result.
+	(uindseti, uindsets, aindseti, hindseti, hindsets): Ditto.
+	* mjit_rtl.c (get_insn_fun_features): Setup result flag for the
+	above insns.
+	* rtl_exec.c (common_indset_f, indset_f, uindset_f, aindset_f):
+	Add res arg.
+	(hindset_f, indseti_f, indsets_f, uindseti_f, uindsets_f): Ditto.
+	(aindseti_f, hindseti_f, hindsets_f): Ditto.
+	* rtl_gen.c (generate_aset_op): Generate the result.
+
 2018-10-21  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def (plus, uplus, eq, ne, ueq, une, ind, uind, splus): Delete attr leaf.

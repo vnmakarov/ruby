@@ -3098,16 +3098,18 @@ spec_op2i_fun(hinds)
 /* Common function executing operation []= for operands OP1, IND, and
    OP3.  OP1 and OP3 are locations in frame CFP of thread EC.  The
    function has a fast execution path for operand of type array and
-   hash.  For the slow paths use call data CD.  Return non zero if we
-   started a new ISEQ execution (we need to update vm_exec_core regs
-   in this case) or we need to cancel the current JITed code.  */
+   hash.  For the slow paths use call data CD.  The operation result
+   is put into RES.  Return non zero if we started a new ISEQ
+   execution (we need to update vm_exec_core regs in this case) or we
+   need to cancel the current JITed code.  */
 static do_inline int
 common_indset(rb_execution_context_t *ec, rb_control_frame_t *cfp,
-	      CALL_DATA cd, VALUE *op1, VALUE ind, VALUE *op3,
+	      CALL_DATA cd, VALUE *res, VALUE *op1, VALUE ind, VALUE *op3,
 	      int fixnum_p, int str_p, int ary_insn_id, int hash_insn_id)
 {
     VALUE val, *recv = op1, el = *op3;
 
+    RTL_ASSERT(get_temp_addr(cfp, cd->call_start) == res);
     if (!SPECIAL_CONST_P(*recv)) {
 	if (RBASIC_CLASS(*recv) == rb_cArray
 	    && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, ARRAY_REDEFINED_OP_FLAG))
@@ -3115,6 +3117,7 @@ common_indset(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	    rb_ary_store(*recv, FIX2LONG(ind), el);
 	    if (ary_insn_id != BIN(nop))
 		vm_change_insn(cfp->iseq, cfp->pc, ary_insn_id);
+	    *res = el;
 	    return 0;
 	} else if (RBASIC_CLASS(*recv) == rb_cHash
 		   && BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)
@@ -3123,52 +3126,53 @@ common_indset(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 	    rb_hash_aset(*recv, ind, el);
 	    if (ary_insn_id != BIN(nop))
 		vm_change_insn(cfp->iseq, cfp->pc, hash_insn_id);
+	    *res = el;
 	    return 0;
 	}
     }
     val = op3_call(ec, cfp, cd, recv, str_p ? rb_str_resurrect(ind) : ind, el);
-    return op_call_end(ec, cfp, val);
+    return op_val_call_end(ec, cfp, res, val);
 }   
 
 static do_inline int
 indset_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
-	 CALL_DATA cd, VALUE *op1, VALUE *op2, VALUE *op3) {
-    return common_indset(ec, cfp, cd, op1, *op2, op3, FALSE, FALSE, BIN(aindset), BIN(hindset));
+	 CALL_DATA cd, VALUE *res, VALUE *op1, VALUE *op2, VALUE *op3) {
+    return common_indset(ec, cfp, cd, res, op1, *op2, op3, FALSE, FALSE, BIN(aindset), BIN(hindset));
 }
 
 static do_inline int
 uindset_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
-	  CALL_DATA cd, VALUE *op1, VALUE *op2, VALUE *op3) {
-    return common_indset(ec, cfp, cd, op1, *op2, op3, FALSE, FALSE, BIN(nop), BIN(nop));
+	  CALL_DATA cd, VALUE *res, VALUE *op1, VALUE *op2, VALUE *op3) {
+    return common_indset(ec, cfp, cd, res, op1, *op2, op3, FALSE, FALSE, BIN(nop), BIN(nop));
 }
 
 static do_inline int
 indseti_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
-	   CALL_DATA cd, VALUE *op1, VALUE imm, VALUE *op3) {
-    return common_indset(ec, cfp, cd, op1, imm, op3, TRUE, FALSE, BIN(aindseti), BIN(hindseti));
+	   CALL_DATA cd, VALUE *res, VALUE *op1, VALUE imm, VALUE *op3) {
+    return common_indset(ec, cfp, cd, res, op1, imm, op3, TRUE, FALSE, BIN(aindseti), BIN(hindseti));
 }
 
 static do_inline int
 uindseti_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
-	   CALL_DATA cd, VALUE *op1, VALUE imm, VALUE *op3) {
-    return common_indset(ec, cfp, cd, op1, imm, op3, TRUE, FALSE, BIN(nop), BIN(nop));
+	   CALL_DATA cd, VALUE *res, VALUE *op1, VALUE imm, VALUE *op3) {
+    return common_indset(ec, cfp, cd, res, op1, imm, op3, TRUE, FALSE, BIN(nop), BIN(nop));
 }
 
 static do_inline int
 indsets_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
-	  CALL_DATA cd, VALUE *op1, VALUE str, VALUE *op3) {
-    return common_indset(ec, cfp, cd, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(hindsets));
+	  CALL_DATA cd, VALUE *res, VALUE *op1, VALUE str, VALUE *op3) {
+    return common_indset(ec, cfp, cd, res, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(hindsets));
 }
 
 static do_inline int
 uindsets_f(rb_execution_context_t *ec, rb_control_frame_t *cfp,
-	   CALL_DATA cd, VALUE *op1, VALUE str, VALUE *op3) {
-    return common_indset(ec, cfp, cd, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(nop));
+	   CALL_DATA cd, VALUE *res, VALUE *op1, VALUE str, VALUE *op3) {
+    return common_indset(ec, cfp, cd, res, op1, str, op3, FALSE, TRUE, BIN(nop), BIN(nop));
 }
 
 /* Speculative []= insns:  */
 static do_inline int
-aindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3,
+aindset_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE *op2, VALUE *op3,
 	  enum ruby_vminsn_type *new_insn) {
     VALUE ary = *op1;
 
@@ -3180,6 +3184,7 @@ aindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3,
 
 	if (offset < len) {
 	    RARRAY_ASET(ary, offset, *op3);
+	    *res = *op3;
 	    return FALSE;
 	}
     }
@@ -3188,12 +3193,13 @@ aindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3,
 }
 
 static do_inline int
-hindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3,
+hindset_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE *op2, VALUE *op3,
 	  enum ruby_vminsn_type *new_insn) {
     if (LIKELY(!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
 	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)))) {
 	check_sp_default(cfp);
 	rb_hash_aset(*op1, *op2, *op3);
+	*res = *op3;
 	return FALSE;
     }
     *new_insn = BIN(uindset);
@@ -3201,7 +3207,7 @@ hindset_f(rb_control_frame_t *cfp, VALUE *op1, VALUE *op2, VALUE *op3,
 }
 
 static do_inline int
-aindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3,
+aindseti_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE imm, VALUE *op3,
 	   enum ruby_vminsn_type *new_insn) {
     VALUE ary = *op1;
 
@@ -3215,6 +3221,7 @@ aindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3,
 	    offset += len;
 	if (offset >= 0 && offset < len) {
 	    RARRAY_ASET(ary, offset, *op3);
+	    *res = *op3;
 	    return FALSE;
 	}
     }
@@ -3223,12 +3230,13 @@ aindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3,
 }
 
 static do_inline int
-hindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3,
+hindseti_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE imm, VALUE *op3,
 	   enum ruby_vminsn_type *new_insn) {
     if (LIKELY(!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
 	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG)))) {
 	check_sp_default(cfp);
 	rb_hash_aset(*op1, imm, *op3);
+	*res = *op3;
 	return FALSE;
     }
     *new_insn = BIN(uindseti);
@@ -3236,13 +3244,14 @@ hindseti_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3,
 }
 
 static do_inline int
-hindsets_f(rb_control_frame_t *cfp, VALUE *op1, VALUE imm, VALUE *op3,
+hindsets_f(rb_control_frame_t *cfp, VALUE *res, VALUE *op1, VALUE imm, VALUE *op3,
 	   enum ruby_vminsn_type *new_insn) {
     if (LIKELY(!SPECIAL_CONST_P(*op1) && RBASIC_CLASS(*op1) == rb_cHash
 	       && (! mjit_bop_redefined_p || BASIC_OP_UNREDEFINED_P(BOP_ASET, HASH_REDEFINED_OP_FLAG))
 	       && rb_hash_compare_by_id_p(*op1) == Qfalse)) {
 	check_sp_default(cfp);
 	rb_hash_aset(*op1, imm, *op3);
+	*res = *op3;
 	return FALSE;
     }
     *new_insn = BIN(uindsets);

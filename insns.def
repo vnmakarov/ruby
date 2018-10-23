@@ -2339,13 +2339,13 @@ ieqi inei iplusi iminusi imulti idivi imodi iori iandi ilti igti ilei igei aindi
 /* General and unchanging insns:  */
 DEFINE_INSN
 indset uindset
-(CALL_DATA cd, vindex_t op1, vindex_t op2, vindex_t op3)
+(CALL_DATA cd, tindex_t res, vindex_t op1, vindex_t op2, vindex_t op3)
 ()
 ()
 {
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_var_addr(reg_cfp, op1),
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1),
 					    get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3))) {
-	ec->cfp[1].pc += 5;
+	ec->cfp[1].pc += 6;
 	RESTORE_REGS();
 	set_default_sp(reg_cfp, reg_cfp->bp);
 	NEXT_INSN();
@@ -2355,29 +2355,30 @@ indset uindset
 /* Speculative insns:  */
 DEFINE_INSN
 aindset hindset
-(CALL_DATA _, vindex_t op1, vindex_t op2, vindex_t op3)
+(CALL_DATA _, tindex_t res, vindex_t op1, vindex_t op2, vindex_t op3)
 ()
 ()
 {
     enum ruby_vminsn_type new_insn;
     
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(reg_cfp, get_var_addr(reg_cfp, op1),
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(reg_cfp, get_temp_addr(reg_cfp, res), get_var_addr(reg_cfp, op1),
 					    get_var_addr(reg_cfp, op2), get_var_addr(reg_cfp, op3), &new_insn)) {
 	/* Change and re-execute the insn.  */
 	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
-	ADD_PC(-5);
+	ADD_PC(-6);
     }
 }
 
 /* General and unchanging immediate insns:  */
 DEFINE_INSN
 indseti indsets uindseti uindsets
-(CALL_DATA cd, vindex_t op1, VALUE imm, vindex_t op3)
+(CALL_DATA cd, tindex_t res, vindex_t op1, VALUE imm, vindex_t op3)
 ()
 ()
 {
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3))) {
-	ec->cfp[1].pc += 5;
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(ec, reg_cfp, cd, get_temp_addr(reg_cfp, res),
+					    get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3))) {
+	ec->cfp[1].pc += 6;
 	RESTORE_REGS();
 	set_default_sp(reg_cfp, reg_cfp->bp);
 	NEXT_INSN();
@@ -2387,15 +2388,16 @@ indseti indsets uindseti uindsets
 /* Speculative immediate insns:  */
 DEFINE_INSN
 aindseti hindseti hindsets
-(CALL_DATA _, vindex_t op1, VALUE imm, vindex_t op3)
+(CALL_DATA _, tindex_t res, vindex_t op1, VALUE imm, vindex_t op3)
 ()
 ()
 {
     enum ruby_vminsn_type new_insn;
     
-    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(reg_cfp, get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3), &new_insn)) {
+    if (RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(reg_cfp, get_temp_addr(reg_cfp, res),
+					    get_var_addr(reg_cfp, op1), imm, get_var_addr(reg_cfp, op3), &new_insn)) {
 	vm_change_insn(reg_cfp->iseq, GET_PC(), new_insn);
-	ADD_PC(-5);
+	ADD_PC(-6);
     }
 }
 

@@ -399,7 +399,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(uindset):
     case BIN(uindseti):
     case BIN(uindsets):
-	f->result = 0;
+	f->result = 1;
 	f->ec_p = f->op_end_p = TRUE;
 	break;
     case BIN(aindset):
@@ -407,7 +407,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(aindseti):
     case BIN(hindseti):
     case BIN(hindsets):
-	f->result = 0;
+	f->result = 1;
 	f->speculative_p = TRUE;
 	break;
     case BIN(goto):

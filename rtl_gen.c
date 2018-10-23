@@ -1913,12 +1913,8 @@ generate_aset_op(const VALUE *args, VALUE str) {
 	op2 = slot2.mode == LOC ? slot2.u.loc : -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2;
     }
     op3 = to_var(slot3, -(vindex_t) VARR_LENGTH(stack_slot, stack) - 2 - (str == Qnil ? 1 : 0));
-    APPEND_INSN_OP4(res_insn, cd, op, op2, op3);
-#ifndef NDEBUG
-    if (slot3.mode == TEMP)
-	slot3.u.temp = -(vindex_t) VARR_LENGTH(stack_slot, stack) - 1;
-#endif
-    push_stack_slot(slot3);
+    res = new_top_stack_temp_var();
+    APPEND_INSN_OP5(res_insn, cd, res, op, op2, op3);
 }
 
 /* Info how to update label offsets in hash of opt_case_dispatch
