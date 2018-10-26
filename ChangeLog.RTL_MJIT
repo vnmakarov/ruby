@@ -1,3 +1,19 @@
+2018-10-26  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def: Remove handles_sp for RTL insns.
+	(indseti, indsets, uindseti, uindsets, aindseti, hindseti): Pass
+	res.
+	(hindsets): Ditto.
+	* mjit_rtl.c (struct insn_fun_features): Remove frame_p.
+	(translate_iseq_insn): Use insn_leaf_flag instead of frame_p.
+	* rtl_gen.c (non_trapping_rtl_insn_p, leaf_rtl_insn_p): New.
+	(curr_catch_rtl_pos, add_nop_if_necessary): New.
+	(append_vals): Call add_nop_if_necessary.
+	(translate_stack_insn): Setup curr_catch_rtl_pos.  Generate one
+	nop at most.
+	(rtl_gen): Initialize curr_catch_rtl_pos.
+	* tool/ruby_vm/views/insns_info.inc.erb: Add insn_leaf_flag.
+
 2018-10-23  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def (indset, uindset, aindset, hindset, indseti, indsets):

@@ -1200,20 +1200,51 @@ DEF_VARR(event_t);
 /* The corresponding insns_info entries for the above positions.  */
 static VARR(event_t) *rtl_insn_events;
 
-/* Append ARGC values to the RTL insn sequence.  */
+/* Return TRUE if RTL INSN never generate an exception.  */
+static int
+non_trapping_rtl_insn_p(VALUE insn) {
+    /* ??? add more */
+    return (insn == BIN(nop) || insn == BIN(var2var) || insn == BIN(temp2temp) || insn == BIN(loc2loc)
+	    || insn == BIN(loc2temp) || insn == BIN(temp2loc) || insn == BIN(val2loc)
+	    || insn == BIN(val2temp) || insn == BIN(self2var) || insn == BIN(iseq2var)); 
+}
+
+/* Return value of attribute leaf of RTL INSN with operands OPS.  */
+static int
+leaf_rtl_insn_p(VALUE insn, VALUE *ops) {
+    return insn_leaf_flag(insn, ops);
+}
+
+/* Position in RTL insn stream correposding to a stack insn on a catch
+   bound.  */
+static size_t curr_catch_rtl_pos;
+
+/* Add NOP before trapping RTL INSN with operands OPS on a catch
+   bound.  */
+static void add_nop_if_necessary(VALUE insn, VALUE *ops) {
+    if (curr_catch_rtl_pos != VARR_LENGTH(VALUE, iseq_rtl)
+	|| non_trapping_rtl_insn_p(insn) || ! leaf_rtl_insn_p(insn, ops))
+	return;
+    VARR_PUSH(VALUE, iseq_rtl, BIN(nop));
+}
+
+/* Append ARGC values to the RTL insn sequence.  Add NOP if
+   necessary.  */
 static void
 append_vals(int argc, ...) {
     va_list argv;
     int i;
+#define MAX_VALS_NUM 16
+    VALUE vals[MAX_VALS_NUM];
     
-    assert (argc > 0);
+    assert (argc > 0 && argc < MAX_VALS_NUM);
     va_start(argv, argc);
-    for (i = 0; i < argc; i++) {
-	VALUE v = va_arg(argv, VALUE);
-	
-	VARR_PUSH(VALUE, iseq_rtl, v);
-    }
+    for (i = 0; i < argc; i++)
+	vals[i] = va_arg(argv, VALUE);
     va_end(argv);
+    add_nop_if_necessary(vals[0], &vals[1]);
+    for (i = 0; i < argc; i++)
+	VARR_PUSH(VALUE, iseq_rtl, vals[i]);
 }
 
 /* Auxiliary append macros.  */
@@ -1993,7 +2024,7 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
     size_t stack_insn_len;
     stack_slot slot;
     branch_target_loc loc;
-    int label_type, temp_only_p;
+    int label_type, temp_only_p, nop_p;
     size_t rtl_pos, pos = curr_source_insn_pos;
     event_t event, last_event;
     
@@ -2030,7 +2061,10 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	return;
     }
     rtl_pos = VARR_LENGTH(VALUE, iseq_rtl);
+    if (VARR_ADDR(char, catch_bound_pos_p)[pos])
+	curr_catch_rtl_pos = rtl_pos;
     event = pos_event(pos);
+    nop_p = FALSE;
     if (event.defined_p) {
 	if (VARR_LENGTH(unsigned, rtl_insn_event_positions) != 0
 	    && VARR_LAST(unsigned, rtl_insn_event_positions) == rtl_pos) {
@@ -2043,6 +2077,7 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 		   It might happen for NOP or stack manipulation
 		   insns, e.g. pop.  */
 		APPEND_INSN_OP0(BIN(nop));
+		nop_p = TRUE;
 		add_event(event);
 	    }
 	}  else {
@@ -2781,7 +2816,7 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	APPEND_INSN_OP2(BIN(trace_coverage), code[pos + 1], code[pos + 2]);
 	break;
     case BIN(nop):
-	if (VARR_ADDR(char, catch_bound_pos_p)[pos])
+	if (! nop_p && VARR_ADDR(char, catch_bound_pos_p)[pos])
 	    APPEND_INSN_OP0(BIN(nop));
 	break;
     case BIN(getlocal_WC_0):
@@ -3050,6 +3085,7 @@ rtl_gen(rb_iseq_t *iseq) {
     /* First pass on stack insns:  */
     find_stack_values_on_labels();
     /* Second pass on stack insns: */
+    curr_catch_rtl_pos = SIZE_MAX;
     translate();
     curr_iseq->body->rtl_encoded = ALLOC_N(VALUE, VARR_LENGTH(VALUE, iseq_rtl));
     curr_iseq->body->rtl_size = VARR_LENGTH(VALUE, iseq_rtl);

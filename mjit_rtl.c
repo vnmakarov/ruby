@@ -121,8 +121,6 @@ struct insn_fun_features {
     char imm_double_p : 1;
     /* True if it is some special assignment insn, e.g. swap.  */
     char special_assign_p : 1;
-    /* True if it is frame related insn.  */
-    char frame_p : 1;
     /* Number of insn operand which is the result.  Zero if there is
        no result.  */
     signed char result;
@@ -135,12 +133,10 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     f->ec_p = f->skip_first_p = f->op_end_p = f->bcmp_p = FALSE;
     f->call_p = f->recv_p = f->jmp_p = f->jmp_true_p = FALSE;
     f->special_p = f->changing_p = f->speculative_p = f->simple_p = FALSE;
-    f->imm_double_p = f->double_p = f->cmp_double_p = f->special_assign_p = f->frame_p = FALSE;
+    f->imm_double_p = f->double_p = f->cmp_double_p = f->special_assign_p = FALSE;
     f->result = 2;
     switch (insn) {
     case BIN(const_cached_val_ld):
-	f->frame_p = TRUE;
-	/* Fall through.  */
     case BIN(special2var):
     case BIN(defined_p):
     case BIN(val_defined_p):
@@ -149,8 +145,6 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
 	f->ec_p = TRUE;
 	break;
     case BIN(define_class):
-	f->frame_p = TRUE;
-	/* Fall through.  */
     case BIN(var2special):
 	f->result = 0;
 	f->ec_p = TRUE;
@@ -170,7 +164,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(call_self):
     case BIN(call_recv):
     case BIN(call_super_val):
-	f->frame_p = f->ec_p = f->call_p = TRUE;
+	f->ec_p = f->call_p = TRUE;
 	break;
     case BIN(length):
     case BIN(size):
@@ -399,7 +393,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(uindset):
     case BIN(uindseti):
     case BIN(uindsets):
-	f->result = 1;
+	f->result = 0;
 	f->ec_p = f->op_end_p = TRUE;
 	break;
     case BIN(aindset):
@@ -407,7 +401,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(aindseti):
     case BIN(hindseti):
     case BIN(hindsets):
-	f->result = 1;
+	f->result = 0;
 	f->speculative_p = TRUE;
 	break;
     case BIN(goto):
@@ -576,7 +570,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(raise_except):
     case BIN(raise_except_val):
     case BIN(call_block):
-	f->call_p = f->frame_p = TRUE;
+	f->call_p = TRUE;
 	/* falls through */
     case BIN(nop):
 	f->special_p = TRUE;
@@ -1504,7 +1498,7 @@ translate_iseq_insn(FILE *f, size_t pos, const rb_iseq_t *iseq,
     get_insn_fun_features(insn, &features);
     ivar_p = const_p = FALSE;
     if (! features.speculative_p)
-	fprintf(f, "%s", generate_set_pc(buf, &code[pos] + (features.frame_p ? len : 0)));
+	fprintf(f, "%s", generate_set_pc(buf, &code[pos] + (insn_leaf_flag(insn, &code[pos + 1]) ? 0 : len)));
     if (features.call_p && ! features.special_p) {
 	/* CD is always the 1st operand.  */
 	cc = &((CALL_DATA) code[pos + 1])->call_cache;
