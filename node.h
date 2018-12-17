@@ -164,6 +164,7 @@ typedef struct RNode {
 	VALUE value;
     } u3;
     rb_code_location_t nd_loc;
+    int node_id;
 } NODE;
 
 #define RNODE(obj)  (R_CAST(RNode)(obj))
@@ -192,6 +193,8 @@ typedef struct RNode {
 #define nd_set_first_column(n, v) ((n)->nd_loc.beg_pos.column = (v))
 #define nd_first_lineno(n) ((int)((n)->nd_loc.beg_pos.lineno))
 #define nd_set_first_lineno(n, v) ((n)->nd_loc.beg_pos.lineno = (v))
+#define nd_first_loc(n) ((n)->nd_loc.beg_pos)
+#define nd_set_first_loc(n, v) (nd_first_loc(n) = (v))
 
 #define nd_last_column(n) ((int)((n)->nd_loc.end_pos.column))
 #define nd_set_last_column(n, v) ((n)->nd_loc.end_pos.column = (v))
@@ -199,6 +202,8 @@ typedef struct RNode {
 #define nd_set_last_lineno(n, v) ((n)->nd_loc.end_pos.lineno = (v))
 #define nd_last_loc(n) ((n)->nd_loc.end_pos)
 #define nd_set_last_loc(n, v) (nd_last_loc(n) = (v))
+#define nd_node_id(n) ((n)->node_id)
+#define nd_set_node_id(n,id) ((n)->node_id = (id))
 
 #define nd_head  u1.node
 #define nd_alen  u2.argc
@@ -397,6 +402,7 @@ rb_ast_t *rb_parser_compile_string(VALUE, const char*, VALUE, int);
 rb_ast_t *rb_parser_compile_file(VALUE, const char*, VALUE, int);
 rb_ast_t *rb_parser_compile_string_path(VALUE vparser, VALUE fname, VALUE src, int line);
 rb_ast_t *rb_parser_compile_file_path(VALUE vparser, VALUE fname, VALUE input, int line);
+rb_ast_t *rb_parser_compile_generic(VALUE vparser, VALUE (*lex_gets)(VALUE, int), VALUE fname, VALUE input, int line);
 
 rb_ast_t *rb_compile_cstr(const char*, const char*, int, int);
 rb_ast_t *rb_compile_string(const char*, VALUE, int);

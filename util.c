@@ -35,8 +35,12 @@ ruby_scan_oct(const char *start, size_t len, size_t *retlen)
 {
     register const char *s = start;
     register unsigned long retval = 0;
+    size_t i;
 
-    while (len-- && *s >= '0' && *s <= '7') {
+    for (i = 0; i < len; i++) {
+        if ((s[0] < '0') || ('7' < s[0])) {
+            break;
+        }
 	retval <<= 3;
 	retval |= *s++ - '0';
     }
@@ -50,8 +54,16 @@ ruby_scan_hex(const char *start, size_t len, size_t *retlen)
     register const char *s = start;
     register unsigned long retval = 0;
     const char *tmp;
+    size_t i = 0;
 
-    while (len-- && *s && (tmp = strchr(hexdigit, *s))) {
+    for (i = 0; i < len; i++) {
+        if (! s[0]) {
+            break;
+        }
+        tmp = strchr(hexdigit, *s);
+        if (! tmp) {
+            break;
+        }
 	retval <<= 4;
 	retval |= (tmp - hexdigit) & 15;
 	s++;
@@ -80,6 +92,7 @@ const signed char ruby_digit36_to_number_table[] = {
     /*f*/ -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
 };
 
+NO_SANITIZE("unsigned-integer-overflow", extern unsigned long ruby_scan_digits(const char *str, ssize_t len, int base, size_t *retlen, int *overflow));
 unsigned long
 ruby_scan_digits(const char *str, ssize_t len, int base, size_t *retlen, int *overflow)
 {
@@ -1528,6 +1541,7 @@ cmp(Bigint *a, Bigint *b)
     return 0;
 }
 
+NO_SANITIZE("unsigned-integer-overflow", static Bigint * diff(Bigint *a, Bigint *b));
 static Bigint *
 diff(Bigint *a, Bigint *b)
 {
@@ -2007,6 +2021,7 @@ hexnan(double *rvp, const char **sp)
 #endif /*No_Hex_NaN*/
 #endif /* INFNAN_CHECK */
 
+NO_SANITIZE("unsigned-integer-overflow", double ruby_strtod(const char *s00, char **se));
 double
 ruby_strtod(const char *s00, char **se)
 {
@@ -2966,6 +2981,7 @@ ret:
     return sign ? -dval(rv) : dval(rv);
 }
 
+NO_SANITIZE("unsigned-integer-overflow", static int quorem(Bigint *b, Bigint *S));
 static int
 quorem(Bigint *b, Bigint *S)
 {

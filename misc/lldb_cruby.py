@@ -82,6 +82,9 @@ def lldb_rp(debugger, command, result, internal_dict):
     if error.Fail():
         print >> result, error
         return
+    lldb_inspect(debugger, target, result, val)
+
+def lldb_inspect(debugger, target, result, val):
     num = val.GetValueAsSigned()
     if num == RUBY_Qfalse:
         print >> result, 'false'
@@ -174,6 +177,26 @@ def lldb_rp(debugger, command, result, internal_dict):
             tRFloat = target.FindFirstType("struct RFloat").GetPointerType()
             val = val.Cast(tRFloat)
             append_command_output(debugger, "p *(double *)%0#x" % val.GetValueForExpressionPath("->float_value").GetAddress(), result)
+        elif flType == RUBY_T_RATIONAL:
+            tRRational = target.FindFirstType("struct RRational").GetPointerType()
+            val = val.Cast(tRRational)
+            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->num"))
+            output = result.GetOutput()
+            result.Clear()
+            result.write("(Rational) " + output.rstrip() + " / ")
+            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->den"))
+        elif flType == RUBY_T_COMPLEX:
+            tRComplex = target.FindFirstType("struct RComplex").GetPointerType()
+            val = val.Cast(tRComplex)
+            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->real"))
+            real = result.GetOutput().rstrip()
+            result.Clear()
+            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->imag"))
+            imag = result.GetOutput().rstrip()
+            result.Clear()
+            if not imag.startswith("-"):
+                imag = "+" + imag
+            print >> result, "(Complex) " + real + imag + "i"
         elif flType == RUBY_T_DATA:
             tRTypedData = target.FindFirstType("struct RTypedData").GetPointerType()
             val = val.Cast(tRTypedData)

@@ -64,7 +64,7 @@ endif
 ORDERED_TEST_TARGETS := $(filter $(TEST_TARGETS), \
 	btest-ruby test-knownbug test-basic \
 	test-testframework test-ruby test-almost test-all \
-	test-spec \
+	test-spec test-bundler-prepare test-bundler \
 	)
 prev_test := $(if $(filter test-spec,$(ORDERED_TEST_TARGETS)),test-spec-precheck)
 $(foreach test,$(ORDERED_TEST_TARGETS), \
@@ -109,7 +109,7 @@ endif
 STUBPROGRAM = rubystub$(EXEEXT)
 IGNOREDPATTERNS = %~ .% %.orig %.rej \#%\#
 SCRIPTBINDIR := $(if $(EXEEXT),,exec/)
-SCRIPTPROGRAMS = $(addprefix $(SCRIPTBINDIR),$(addsuffix $(EXEEXT),$(filter-out $(IGNOREDPATTERNS),$(notdir $(wildcard $(srcdir)/bin/*)))))
+SCRIPTPROGRAMS = $(addprefix $(SCRIPTBINDIR),$(addsuffix $(EXEEXT),$(filter-out $(IGNOREDPATTERNS),$(notdir $(wildcard $(srcdir)/libexec/*)))))
 
 stub: $(STUBPROGRAM)
 scriptbin: $(SCRIPTPROGRAMS)
@@ -184,3 +184,22 @@ $(MJIT_MIN_HEADER): $(mjit_min_headers) $(PREP)
 	$(Q) $(MAKE_LINK) $@ $(MJIT_HEADER_INSTALL_DIR)/$(@F)
 
 endif
+
+# GNU make treat the target as unmodified when its dependents get
+# updated but it is not updated, while others may not.
+$(srcdir)/revision.h: $(REVISION_H)
+
+# Query on the generated rdoc
+#
+#   $ make rdoc:Integer#+
+rdoc\:%: PHONY
+	$(Q)$(RUNRUBY) $(srcdir)/libexec/ri --no-standard-docs --doc-dir=$(RDOCOUT) $(patsubst rdoc:%,%,$@)
+
+test_%.rb test/%: programs PHONY
+	+$(Q)$(exec) $(RUNRUBY) "$(srcdir)/test/runner.rb" --ruby="$(RUNRUBY)" $(TEST_EXCLUDES) $(TESTOPTS) -- $(patsubst test/%,%,$@)
+
+clean-srcs-ext::
+	$(Q)$(RM) $(patsubst $(srcdir)/%,%,$(EXT_SRCS))
+
+clean-srcs-extra::
+	$(Q)$(RM) $(patsubst $(srcdir)/%,%,$(EXTRA_SRCS))

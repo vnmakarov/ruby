@@ -367,6 +367,7 @@ def assert_normal_exit(testsrc, *rest, timeout: nil, **opt)
 end
 
 def assert_finish(timeout_seconds, testsrc, message = '')
+  timeout_seconds *= 3 if RubyVM::MJIT.enabled? # for --jit-wait
   newtest
   show_progress(message) {
     faildesc = nil
@@ -385,7 +386,7 @@ def assert_finish(timeout_seconds, testsrc, message = '')
         if IO.select([io], nil, nil, diff)
           begin
             io.read_nonblock(1024)
-          rescue Errno::EAGAIN, EOFError
+          rescue Errno::EAGAIN, IO::WaitReadable, EOFError
             break
           end while true
         end

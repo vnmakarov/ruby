@@ -9,13 +9,13 @@
 $install_name ||= nil
 $so_name ||= nil
 $unicode_version ||= nil
+$unicode_emoji_version ||= nil
 arch = $arch or raise "missing -arch"
 version = $version or raise "missing -version"
 
 srcdir = File.expand_path('../..', __FILE__)
 $:.unshift(".")
 
-require "fileutils"
 mkconfig = File.basename($0)
 
 fast = {'prefix'=>true, 'ruby_install_name'=>true, 'INSTALL'=>true, 'EXEEXT'=>true}
@@ -62,6 +62,7 @@ File.foreach "config.status" do |line|
     when /^(?:X|(?:MINI|RUN|(?:HAVE_)?BASE|BOOTSTRAP|BTEST)RUBY(?:_COMMAND)?$)/; next
     when /^INSTALLDOC|TARGET$/; next
     when /^DTRACE/; next
+    when /^MJIT_SUPPORT/; # pass
     when /^MJIT_/; next
     when /^(?:MAJOR|MINOR|TEENY)$/; vars[name] = val; next
     when /^LIBRUBY_D?LD/; next
@@ -246,6 +247,9 @@ print(*v_others)
 print <<EOS if $unicode_version
   CONFIG["UNICODE_VERSION"] = #{$unicode_version.dump}
 EOS
+print <<EOS if $unicode_emoji_version
+  CONFIG["UNICODE_EMOJI_VERSION"] = #{$unicode_emoji_version.dump}
+EOS
 print <<EOS if /darwin/ =~ arch
   CONFIG["SDKROOT"] = ENV["SDKROOT"] || "" # don't run xcrun everytime, usually useless.
 EOS
@@ -307,6 +311,38 @@ print <<EOS
   end
   CONFIG.each_value do |val|
     RbConfig::expand(val)
+  end
+
+  # :nodoc:
+  # call-seq:
+  #
+  #   RbConfig.fire_update!(key, val)               -> string
+  #   RbConfig.fire_update!(key, val, mkconf, conf) -> string
+  #
+  # updates +key+ in +mkconf+ with +val+, and all values depending on
+  # the +key+ in +mkconf+.
+  #
+  #   RbConfig::MAKEFILE_CONFIG.values_at("CC", "LDSHARED") # => ["gcc", "$(CC) -shared"]
+  #   RbConfig::CONFIG.values_at("CC", "LDSHARED")          # => ["gcc", "gcc -shared"]
+  #   RbConfig.fire_update!("CC", "gcc-8")                  # => ["CC", "LDSHARED"]
+  #   RbConfig::MAKEFILE_CONFIG.values_at("CC", "LDSHARED") # => ["gcc-8", "$(CC) -shared"]
+  #   RbConfig::CONFIG.values_at("CC", "LDSHARED")          # => ["gcc-8", "gcc-8 -shared"]
+  #
+  # returns updated keys list, or +nil+ if nothing changed.
+  def RbConfig.fire_update!(key, val, mkconf = MAKEFILE_CONFIG, conf = CONFIG)
+    return if (old = mkconf[key]) == val
+    mkconf[key] = val
+    keys = [key]
+    deps = []
+    begin
+      re = Regexp.new("\\\\$\\\\((?:%1$s)\\\\)|\\\\$\\\\{(?:%1$s)\\\\}" % keys.join('|'))
+      deps |= keys
+      keys.clear
+      mkconf.each {|k,v| keys << k if re =~ v}
+    end until keys.empty?
+    deps.each {|k| conf[k] = mkconf[k].dup}
+    deps.each {|k| expand(conf[k])}
+    deps
   end
 
   # call-seq:

@@ -794,4 +794,19 @@ class TestRubyOptimization < Test::Unit::TestCase
     end
     assert_equal(:ok, x.bug(:ok))
   end
+
+  def test_peephole_jump_after_newarray
+    i = 0
+    %w(1) || 2 while (i += 1) < 100
+    assert_equal(100, i)
+  end
+
+  def test_optimized_empty_ensure
+    assert_separately([], "#{<<~"begin;"}\n#{<<~'end;'}", timeout: 1)
+    begin;
+      assert_raise(RuntimeError) {
+        begin raise ensure nil if nil end
+      }
+    end;
+  end
 end

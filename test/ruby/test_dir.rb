@@ -370,14 +370,18 @@ class TestDir < Test::Unit::TestCase
     ENV.delete("LOGDIR")
 
     ENV["HOME"] = @nodir
-    assert_nothing_raised(ArgumentError) {
+    assert_nothing_raised(ArgumentError) do
       assert_equal(@nodir, Dir.home)
+    end
+    assert_nothing_raised(ArgumentError) do
       assert_equal(@nodir, Dir.home(""))
-      if user = ENV["USER"]
-        ENV["HOME"] = env_home
-        assert_equal(File.expand_path(env_home), Dir.home(user))
+    end
+    if user = ENV["USER"]
+      tilde = windows? ? "~" : "~#{user}"
+      assert_nothing_raised(ArgumentError) do
+        assert_equal(File.expand_path(tilde), Dir.home(user))
       end
-    }
+    end
     %W[no:such:user \u{7559 5b88}:\u{756a}].each do |user|
       assert_raise_with_message(ArgumentError, /#{user}/) {Dir.home(user)}
     end

@@ -94,7 +94,7 @@ class TestGemPackage < Gem::Package::TarTestCase
       }
     }
 
-    if defined?(OpenSSL::Digest) then
+    if defined?(OpenSSL::Digest)
       expected['SHA256'] = {
         'metadata.gz' => metadata_sha256,
         'data.tar.gz' => Digest::SHA256.hexdigest(tar),
@@ -150,10 +150,8 @@ class TestGemPackage < Gem::Package::TarTestCase
   end
 
   def test_add_files_symlink
-    skip 'symlink not supported' if Gem.win_platform? && RUBY_VERSION < '2.3'
-
     spec = Gem::Specification.new
-    spec.files = %w[lib/code.rb lib/code_sym.rb]
+    spec.files = %w[lib/code.rb lib/code_sym.rb lib/code_sym2.rb]
 
     FileUtils.mkdir_p 'lib'
     File.open 'lib/code.rb',  'w' do |io| io.write '# lib/code.rb'  end
@@ -161,6 +159,7 @@ class TestGemPackage < Gem::Package::TarTestCase
     # NOTE: 'code.rb' is correct, because it's relative to lib/code_sym.rb
     begin
       File.symlink('code.rb', 'lib/code_sym.rb')
+      File.symlink('../lib/code.rb', 'lib/code_sym2.rb')
     rescue Errno::EACCES => e
       if win_platform?
         skip "symlink - must be admin with no UAC on Windows"
@@ -191,7 +190,7 @@ class TestGemPackage < Gem::Package::TarTestCase
     end
 
     assert_equal %w[lib/code.rb], files
-    assert_equal [{'lib/code_sym.rb' => 'lib/code.rb'}], symlinks
+    assert_equal [{'lib/code_sym.rb' => 'lib/code.rb'}, {'lib/code_sym2.rb' => '../lib/code.rb'}], symlinks
   end
 
   def test_build
@@ -472,8 +471,6 @@ class TestGemPackage < Gem::Package::TarTestCase
   end
 
   def test_extract_tar_gz_symlink_relative_path
-    skip 'symlink not supported' if Gem.win_platform? && RUBY_VERSION < '2.3'
-
     package = Gem::Package.new @gem
 
     tgz_io = util_tar_gz do |tar|
@@ -501,8 +498,6 @@ class TestGemPackage < Gem::Package::TarTestCase
   end
 
   def test_extract_symlink_parent
-    skip 'symlink not supported' if Gem.win_platform? && RUBY_VERSION < '2.3'
-
     package = Gem::Package.new @gem
 
     tgz_io = util_tar_gz do |tar|

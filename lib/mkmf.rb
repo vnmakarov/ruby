@@ -7,8 +7,9 @@ require 'rbconfig'
 require 'fileutils'
 require 'shellwords'
 
-# :stopdoc:
 class String
+  # :stopdoc:
+
   # Wraps a string in escaped quotes if it contains whitespace.
   def quote
     /\s/ =~ self ? "\"#{self}\"" : "#{self}"
@@ -31,15 +32,20 @@ class String
   def sans_arguments
     self[/\A[^()]+/]
   end
+
+  # :startdoc:
 end
 
 class Array
+  # :stopdoc:
+
   # Wraps all strings in escaped quotes if they contain whitespace.
   def quote
     map {|s| s.quote}
   end
+
+  # :startdoc:
 end
-# :startdoc:
 
 ##
 # mkmf.rb is used by Ruby C extensions to generate a Makefile which will
@@ -1965,6 +1971,7 @@ VPATH = #{vpath.join(CONFIG['PATH_SEPARATOR'])}
     headers << '$(RUBY_EXTCONF_H)' if $extconf_h
     mk << %{
 
+CC_WRAPPER = #{CONFIG['CC_WRAPPER']}
 CC = #{CONFIG['CC']}
 CXX = #{CONFIG['CXX']}
 LIBRUBY = #{CONFIG['LIBRUBY']}
@@ -2257,7 +2264,7 @@ RULES
     origdef ||= ''
 
     if $extout and $INSTALLFILES
-      $cleanfiles.concat($INSTALLFILES.collect {|files, dir|File.join(dir, files.sub(/\A\.\//, ''))})
+      $cleanfiles.concat($INSTALLFILES.collect {|files, dir|File.join(dir, files.delete_prefix('./'))})
       $distcleandirs.concat($INSTALLFILES.collect {|files, dir| dir})
     end
 
@@ -2512,6 +2519,9 @@ site-install-rb: install-rb
         RbConfig.expand(rbconfig[key] = val.dup) if /warnflags/ =~ val
       end
       $warnflags = config['warnflags'] unless $extmk
+    end
+    if (w = rbconfig['CC_WRAPPER']) and !w.empty? and !File.executable?(w)
+      rbconfig['CC_WRAPPER'] = config['CC_WRAPPER'] = ''
     end
     $CFLAGS = with_config("cflags", arg_config("CFLAGS", config["CFLAGS"])).dup
     $CXXFLAGS = (with_config("cxxflags", arg_config("CXXFLAGS", config["CXXFLAGS"]))||'').dup

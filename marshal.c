@@ -401,8 +401,8 @@ w_float(double d, struct dump_arg *arg)
 	w_cstr("nan", arg);
     }
     else if (d == 0.0) {
-	if (1.0/d < 0) w_cstr("-0", arg);
-	else           w_cstr("0", arg);
+        if (signbit(d)) w_cstr("-0", arg);
+        else            w_cstr("0", arg);
     }
     else {
 	int decpt, sign, digs, len = 0;
@@ -817,6 +817,7 @@ w_object(VALUE obj, struct dump_arg *arg, int limit)
 		char sign = BIGNUM_SIGN(obj) ? '+' : '-';
 		size_t len = BIGNUM_LEN(obj);
 		size_t slen;
+                size_t j;
 		BDIGIT *d = BIGNUM_DIGITS(obj);
 
                 slen = SHORTLEN(len);
@@ -826,7 +827,7 @@ w_object(VALUE obj, struct dump_arg *arg, int limit)
 
 		w_byte(sign, arg);
 		w_long((long)slen, arg);
-		while (len--) {
+                for (j = 0; j < len; j++) {
 #if SIZEOF_BDIGIT > SIZEOF_SHORT
 		    BDIGIT num = *d;
 		    int i;
@@ -834,7 +835,7 @@ w_object(VALUE obj, struct dump_arg *arg, int limit)
 		    for (i=0; i<SIZEOF_BDIGIT; i+=SIZEOF_SHORT) {
 			w_short(num & SHORTMASK, arg);
 			num = SHORTDN(num);
-			if (len == 0 && num == 0) break;
+                        if (j == len - 1 && num == 0) break;
 		    }
 #else
 		    w_short(*d, arg);
@@ -887,7 +888,7 @@ w_object(VALUE obj, struct dump_arg *arg, int limit)
 	    else {
 		w_byte(TYPE_HASH_DEF, arg);
 	    }
-	    w_long(RHASH_SIZE(obj), arg);
+            w_long(rb_hash_size_num(obj), arg);
 	    rb_hash_foreach(obj, hash_each, (st_data_t)&c_arg);
 	    if (!NIL_P(RHASH_IFNONE(obj))) {
 		w_object(RHASH_IFNONE(obj), arg, limit);

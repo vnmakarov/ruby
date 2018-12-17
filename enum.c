@@ -14,6 +14,7 @@
 #include "ruby/util.h"
 #include "id.h"
 #include "symbol.h"
+#include "transient_heap.h"
 
 #include <assert.h>
 
@@ -293,7 +294,7 @@ enum_find(int argc, VALUE *argv, VALUE obj)
     struct MEMO *memo;
     VALUE if_none;
 
-    rb_scan_args(argc, argv, "01", &if_none);
+    if_none = rb_check_arity(argc, 0, 1) ? argv[0] : Qnil;
     RETURN_ENUMERATOR(obj, argc, argv);
     memo = MEMO_NEW(Qundef, 0, 0);
     rb_block_call(obj, id_each, 0, 0, find_i, (VALUE)memo);
@@ -744,7 +745,8 @@ ary_inject_op(VALUE ary, VALUE init, VALUE op)
         }
     }
     for (; i < RARRAY_LEN(ary); i++) {
-        v = rb_funcallv_public(v, id, 1, &RARRAY_CONST_PTR(ary)[i]);
+        VALUE arg = RARRAY_AREF(ary, i);
+        v = rb_funcallv_public(v, id, 1, &arg);
     }
     return v;
 }
@@ -1170,9 +1172,9 @@ enum_sort_by(VALUE obj)
 	rb_ary_concat(ary, buf);
     }
     if (RARRAY_LEN(ary) > 2) {
-	RARRAY_PTR_USE(ary, ptr,
-		      ruby_qsort(ptr, RARRAY_LEN(ary)/2, 2*sizeof(VALUE),
-				 sort_by_cmp, (void *)ary));
+        RARRAY_PTR_USE(ary, ptr,
+                       ruby_qsort(ptr, RARRAY_LEN(ary)/2, 2*sizeof(VALUE),
+                                  sort_by_cmp, (void *)ary));
     }
     if (RBASIC(ary)->klass) {
 	rb_raise(rb_eRuntimeError, "sort_by reentered");
@@ -1321,22 +1323,23 @@ DEFINE_ENUMFUNCS(one)
 }
 
 struct nmin_data {
-  long n;
-  long bufmax;
-  long curlen;
-  VALUE buf;
-  VALUE limit;
-  int (*cmpfunc)(const void *, const void *, void *);
-  int rev; /* max if 1 */
-  int by; /* min_by if 1 */
-  const char *method;
+    long n;
+    long bufmax;
+    long curlen;
+    VALUE buf;
+    VALUE limit;
+    int (*cmpfunc)(const void *, const void *, void *);
+    int rev: 1; /* max if 1 */
+    int by: 1; /* min_by if 1 */
 };
 
 static VALUE
 cmpint_reenter_check(struct nmin_data *data, VALUE val)
 {
     if (RBASIC(data->buf)->klass) {
-	rb_raise(rb_eRuntimeError, "%s reentered", data->method);
+        rb_raise(rb_eRuntimeError, "%s%s reentered",
+                 data->rev ? "max" : "min",
+                 data->by ? "_by" : "");
     }
     return val;
 }
@@ -1501,8 +1504,6 @@ rb_nmin_run(VALUE obj, VALUE num, int by, int rev, int ary)
 		   nmin_cmp;
     data.rev = rev;
     data.by = by;
-    data.method = rev ? (by ? "max_by" : "max")
-                      : (by ? "min_by" : "min");
     if (ary) {
 	long i;
 	for (i = 0; i < RARRAY_LEN(obj); i++) {
@@ -1697,9 +1698,7 @@ enum_min(int argc, VALUE *argv, VALUE obj)
     VALUE result;
     VALUE num;
 
-    rb_scan_args(argc, argv, "01", &num);
-
-    if (!NIL_P(num))
+    if (rb_check_arity(argc, 0, 1) && !NIL_P(num = argv[0]))
        return rb_nmin_run(obj, num, 0, 0, 0);
 
     m->min = Qundef;
@@ -1791,9 +1790,7 @@ enum_max(int argc, VALUE *argv, VALUE obj)
     VALUE result;
     VALUE num;
 
-    rb_scan_args(argc, argv, "01", &num);
-
-    if (!NIL_P(num))
+    if (rb_check_arity(argc, 0, 1) && !NIL_P(num = argv[0]))
        return rb_nmin_run(obj, num, 0, 1, 0);
 
     m->max = Qundef;
@@ -2012,11 +2009,11 @@ enum_min_by(int argc, VALUE *argv, VALUE obj)
     struct MEMO *memo;
     VALUE num;
 
-    rb_scan_args(argc, argv, "01", &num);
+    rb_check_arity(argc, 0, 1);
 
     RETURN_SIZED_ENUMERATOR(obj, argc, argv, enum_size);
 
-    if (!NIL_P(num))
+    if (argc && !NIL_P(num = argv[0]))
         return rb_nmin_run(obj, num, 1, 0, 0);
 
     memo = MEMO_NEW(Qundef, Qnil, 0);
@@ -2119,11 +2116,11 @@ enum_max_by(int argc, VALUE *argv, VALUE obj)
     struct MEMO *memo;
     VALUE num;
 
-    rb_scan_args(argc, argv, "01", &num);
+    rb_check_arity(argc, 0, 1);
 
     RETURN_SIZED_ENUMERATOR(obj, argc, argv, enum_size);
 
-    if (!NIL_P(num))
+    if (argc && !NIL_P(num = argv[0]))
         return rb_nmin_run(obj, num, 1, 1, 0);
 
     memo = MEMO_NEW(Qundef, Qnil, 0);
@@ -2974,10 +2971,10 @@ enum_cycle(int argc, VALUE *argv, VALUE obj)
     VALUE nv = Qnil;
     long n, i, len;
 
-    rb_scan_args(argc, argv, "01", &nv);
+    rb_check_arity(argc, 0, 1);
 
     RETURN_SIZED_ENUMERATOR(obj, argc, argv, enum_cycle_size);
-    if (NIL_P(nv)) {
+    if (!argc || NIL_P(nv = argv[0])) {
         n = -1;
     }
     else {
@@ -3947,11 +3944,8 @@ enum_sum(int argc, VALUE* argv, VALUE obj)
     VALUE beg, end;
     int excl;
 
-    if (rb_scan_args(argc, argv, "01", &memo.v) == 0)
-        memo.v = LONG2FIX(0);
-
+    memo.v = (rb_check_arity(argc, 0, 1) == 0) ? LONG2FIX(0) : argv[0];
     memo.block_given = rb_block_given_p();
-
     memo.n = 0;
     memo.r = Qundef;
 

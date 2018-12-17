@@ -1914,4 +1914,205 @@ class TestSetTraceFunc < Test::Unit::TestCase
     EOF
     assert_equal "7\n", actual, '[Bug #14809]'
   end
+
+  def method_for_enable_target1
+    a = 1
+    b = 2
+    1.times{|i|
+      x = i
+    }
+    c = a + b
+  end
+
+  def method_for_enable_target2
+    a = 1
+    b = 2
+    1.times{|i|
+      x = i
+    }
+    c = a + b
+  end
+
+  def check_with_events *trace_events
+    all_events = [[:call, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:b_call, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:b_return, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:return, :method_for_enable_target1],
+                  # repeat
+                  [:call, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:b_call, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:b_return, :method_for_enable_target1],
+                  [:line, :method_for_enable_target1],
+                  [:return, :method_for_enable_target1],
+                 ]
+    events = []
+    TracePoint.new(*trace_events) do |tp|
+      next unless target_thread?
+      events << [tp.event, tp.method_id]
+    end.enable(target: method(:method_for_enable_target1)) do
+      method_for_enable_target1
+      method_for_enable_target2
+      method_for_enable_target1
+    end
+    assert_equal all_events.find_all{|(ev, m)| trace_events.include? ev}, events
+  end
+
+  def test_tracepoint_enable_target
+    check_with_events :line
+    check_with_events :call, :return
+    check_with_events :line, :call, :return
+    check_with_events :call, :return, :b_call, :b_return
+    check_with_events :line, :call, :return, :b_call, :b_return
+  end
+
+  def test_tracepoint_nested_enabled_with_target
+    code1 = proc{
+      a = 1
+    }
+    code2 = proc{
+      b = 2
+    }
+
+    ## error
+
+    # targetted TP and targetted TP
+    ex = assert_raise(ArgumentError) do
+      tp = TracePoint.new(:line){}
+      tp.enable(target: code1){
+        tp.enable(target: code2){}
+      }
+    end
+    assert_equal "can't nest-enable a targetting TracePoint", ex.message
+
+    # global TP and targetted TP
+    ex = assert_raise(ArgumentError) do
+      tp = TracePoint.new(:line){}
+      tp.enable{
+        tp.enable(target: code2){}
+      }
+    end
+    assert_equal "can't nest-enable a targetting TracePoint", ex.message
+
+    # targetted TP and global TP
+    ex = assert_raise(ArgumentError) do
+      tp = TracePoint.new(:line){}
+      tp.enable(target: code1){
+        tp.enable{}
+      }
+    end
+    assert_equal "can't nest-enable a targetting TracePoint", ex.message
+
+    # targetted TP and disable
+    ex = assert_raise(ArgumentError) do
+      tp = TracePoint.new(:line){}
+      tp.enable(target: code1){
+        tp.disable{}
+      }
+    end
+    assert_equal "can't disable a targetting TracePoint in a block", ex.message
+
+    ## success with two nesting targetting tracepoints
+    events = []
+    tp1 = TracePoint.new(:line){|tp| events << :tp1}
+    tp2 = TracePoint.new(:line){|tp| events << :tp2}
+    tp1.enable(target: code1) do
+      tp2.enable(target: code1) do
+        code1.call
+        events << :___
+      end
+    end
+    assert_equal [:tp2, :tp1, :___], events
+
+    # succss with two tracepoints (global/targetting)
+    events = []
+    tp1 = TracePoint.new(:line){|tp| events << :tp1}
+    tp2 = TracePoint.new(:line){|tp| events << :tp2}
+    tp1.enable do
+      tp2.enable(target: code1) do
+        code1.call
+        events << :___
+      end
+    end
+    assert_equal [:tp1, :tp1, :tp1, :tp1, :tp2, :tp1, :___], events
+
+    # succss with two tracepoints (targetting/global)
+    events = []
+    tp1 = TracePoint.new(:line){|tp| events << :tp1}
+    tp2 = TracePoint.new(:line){|tp| events << :tp2}
+    tp1.enable(target: code1) do
+      tp2.enable do
+        code1.call
+        events << :___
+      end
+    end
+    assert_equal [:tp2, :tp2, :tp1, :tp2, :___], events
+  end
+
+  def test_tracepoint_enable_with_target_line
+    events = []
+    line_0 = __LINE__
+    code1 = proc{
+      events << 1
+      events << 2
+      events << 3
+    }
+    tp = TracePoint.new(:line) do |tp|
+      events << :tp
+    end
+    tp.enable(target: code1, target_line: line_0 + 3) do
+      code1.call
+    end
+    assert_equal [1, :tp, 2, 3], events
+
+
+    e = assert_raise(ArgumentError) do
+      TracePoint.new(:line){}.enable(target_line: 10){}
+    end
+    assert_equal 'only target_line is specified', e.message
+
+    e = assert_raise(ArgumentError) do
+      TracePoint.new(:call){}.enable(target: code1, target_line: 10){}
+    end
+    assert_equal 'target_line is specified, but line event is not specified', e.message
+  end
+
+  def test_script_compiled
+    events = []
+    tp = TracePoint.new(:script_compiled){|tp|
+      next unless target_thread?
+      events << [tp.instruction_sequence.path,
+                 tp.eval_script]
+    }
+
+    eval_script = 'a = 1'
+    tp.enable{
+      eval(eval_script, nil, __FILE__+"/eval")
+      nil.instance_eval(eval_script, __FILE__+"/instance_eval")
+      Object.class_eval(eval_script, __FILE__+"/class_eval")
+    }
+    assert_equal [[__FILE__+"/eval", eval_script],
+                  [__FILE__+"/instance_eval", eval_script],
+                  [__FILE__+"/class_eval", eval_script],
+                 ], events
+    events.clear
+
+    # TODO: test for requires
+    return
+
+    tp.enable{
+      require ''
+      require_relative ''
+      load ''
+    }
+    assert_equal [], events
+  end
 end

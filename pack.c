@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <ctype.h>
 #include <errno.h>
+#include <float.h>
 
 /*
  * It is intentional that the condition for natstr is HAVE_TRUE_LONG_LONG
@@ -42,20 +43,20 @@ static const char endstr[] = "sSiIlLqQjJ";
 #endif
 
 #ifdef DYNAMIC_ENDIAN
- /* for universal binary of NEXTSTEP and MacOS X */
- /* useless since autoconf 2.63? */
- static int
- is_bigendian(void)
- {
-     static int init = 0;
-     static int endian_value;
-     char *p;
+/* for universal binary of NEXTSTEP and MacOS X */
+/* useless since autoconf 2.63? */
+static int
+is_bigendian(void)
+{
+    static int init = 0;
+    static int endian_value;
+    char *p;
 
-     if (init) return endian_value;
-     init = 1;
-     p = (char*)&init;
-     return endian_value = p[0]?0:1;
- }
+    if (init) return endian_value;
+    init = 1;
+    p = (char*)&init;
+    return endian_value = p[0]?0:1;
+}
 # define BIGENDIAN_P() (is_bigendian())
 #elif defined(WORDS_BIGENDIAN)
 # define BIGENDIAN_P() 1
@@ -125,6 +126,47 @@ static VALUE
 str_associated(VALUE str)
 {
     return rb_ivar_lookup(str, id_associated, Qfalse);
+}
+
+static void
+unknown_directive(const char *mode, char type, VALUE fmt)
+{
+    VALUE f;
+    char unknown[5];
+
+    if (ISPRINT(type)) {
+        unknown[0] = type;
+        unknown[1] = '\0';
+    }
+    else {
+        snprintf(unknown, sizeof(unknown), "\\x%.2x", type & 0xff);
+    }
+    f = rb_str_quote_unprintable(fmt);
+    if (f != fmt) {
+        fmt = rb_str_subseq(f, 1, RSTRING_LEN(f) - 2);
+    }
+    rb_warning("unknown %s directive '%s' in '%"PRIsVALUE"'",
+               mode, unknown, fmt);
+}
+
+static float
+VALUE_to_float(VALUE obj)
+{
+    VALUE v = rb_to_float(obj);
+    double d = RFLOAT_VALUE(v);
+
+    if (isnan(d)) {
+        return NAN;
+    }
+    else if (d < -FLT_MAX) {
+        return -INFINITY;
+    }
+    else if (d <= FLT_MAX) {
+        return d;
+    }
+    else {
+        return INFINITY;
+    }
 }
 
 /*
@@ -642,7 +684,7 @@ pack_pack(int argc, VALUE *argv, VALUE ary)
 		float f;
 
 		from = NEXTFROM;
-		f = (float)RFLOAT_VALUE(rb_to_float(from));
+                f = VALUE_to_float(from);
 		rb_str_buf_cat(res, (char*)&f, sizeof(float));
 	    }
 	    break;
@@ -652,7 +694,7 @@ pack_pack(int argc, VALUE *argv, VALUE ary)
 		FLOAT_CONVWITH(tmp);
 
 		from = NEXTFROM;
-		tmp.f = (float)RFLOAT_VALUE(rb_to_float(from));
+                tmp.f = VALUE_to_float(from);
 		HTOVF(tmp);
 		rb_str_buf_cat(res, tmp.buf, sizeof(float));
 	    }
@@ -683,7 +725,7 @@ pack_pack(int argc, VALUE *argv, VALUE ary)
 	    while (len-- > 0) {
 		FLOAT_CONVWITH(tmp);
 		from = NEXTFROM;
-		tmp.f = (float)RFLOAT_VALUE(rb_to_float(from));
+                tmp.f = VALUE_to_float(from);
 		HTONF(tmp);
 		rb_str_buf_cat(res, tmp.buf, sizeof(float));
 	    }
@@ -839,9 +881,9 @@ pack_pack(int argc, VALUE *argv, VALUE ary)
 
                 cp = RSTRING_PTR(buf);
                 while (1 < numbytes) {
-                  *cp |= 0x80;
-                  cp++;
-                  numbytes--;
+                    *cp |= 0x80;
+                    cp++;
+                    numbytes--;
                 }
 
                 rb_str_buf_cat(res, RSTRING_PTR(buf), RSTRING_LEN(buf));
@@ -849,16 +891,7 @@ pack_pack(int argc, VALUE *argv, VALUE ary)
 	    break;
 
 	  default: {
-	    char unknown[5];
-	    if (ISPRINT(type)) {
-		unknown[0] = type;
-		unknown[1] = '\0';
-	    }
-	    else {
-		snprintf(unknown, sizeof(unknown), "\\x%.2x", type & 0xff);
-	    }
-	    rb_warning("unknown pack directive '%s' in '% "PRIsVALUE"'",
-		       unknown, fmt);
+            unknown_directive("pack", type, fmt);
 	    break;
 	  }
 	}
@@ -1005,7 +1038,7 @@ hex2num(char c)
     tmp_len = 0;				\
     if (len > (long)((send-s)/(sz))) {		\
         if (!star) {				\
-	    tmp_len = len-(send-s)/(sz);		\
+	    tmp_len = len-(send-s)/(sz);	\
         }					\
 	len = (send-s)/(sz);			\
     }						\
@@ -1748,8 +1781,7 @@ pack_unpack_internal(VALUE str, VALUE fmt, int mode)
 	    break;
 
 	  default:
-	    rb_warning("unknown unpack directive '%c' in '%s'",
-		type, RSTRING_PTR(fmt));
+            unknown_directive("unpack", type, fmt);
 	    break;
 	}
     }

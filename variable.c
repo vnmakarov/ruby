@@ -22,6 +22,7 @@
 #include "id_table.h"
 #include "debug_counter.h"
 #include "vm_core.h"
+#include "transient_heap.h"
 
 static struct rb_id_table *rb_global_tbl;
 static ID autoload, classpath, tmp_classpath, classid;
@@ -482,13 +483,25 @@ struct rb_global_variable {
     struct trace_var *trace;
 };
 
-MJIT_FUNC_EXPORTED struct rb_global_entry*
-rb_global_entry(ID id)
+static struct rb_global_entry*
+rb_find_global_entry(ID id)
 {
     struct rb_global_entry *entry;
     VALUE data;
 
     if (!rb_id_table_lookup(rb_global_tbl, id, &data)) {
+        return NULL;
+    }
+    entry = (struct rb_global_entry *)data;
+    ASSUME(entry != NULL);
+    return entry;
+}
+
+MJIT_FUNC_EXPORTED struct rb_global_entry*
+rb_global_entry(ID id)
+{
+    struct rb_global_entry *entry = rb_find_global_entry(id);
+    if (!entry) {
 	struct rb_global_variable *var;
 	entry = ALLOC(struct rb_global_entry);
 	var = ALLOC(struct rb_global_variable);
@@ -503,9 +516,6 @@ rb_global_entry(ID id)
 	var->block_trace = 0;
 	var->trace = 0;
 	rb_id_table_insert(rb_global_tbl, id, (VALUE)entry);
-    }
-    else {
-	entry = (struct rb_global_entry *)data;
     }
     return entry;
 }
@@ -609,11 +619,34 @@ global_id(const char *name)
     if (name[0] == '$') id = rb_intern(name);
     else {
 	size_t len = strlen(name);
-	char *buf = ALLOCA_N(char, len+1);
+        VALUE vbuf = 0;
+        char *buf = ALLOCV_N(char, vbuf, len+1);
 	buf[0] = '$';
 	memcpy(buf+1, name, len);
 	id = rb_intern2(buf, len+1);
+        ALLOCV_END(vbuf);
     }
+    return id;
+}
+
+static ID
+find_global_id(const char *name)
+{
+    ID id;
+    size_t len = strlen(name);
+
+    if (name[0] == '$') {
+        id = rb_check_id_cstr(name, len, NULL);
+    }
+    else {
+        VALUE vbuf = 0;
+        char *buf = ALLOCV_N(char, vbuf, len+1);
+        buf[0] = '$';
+        memcpy(buf+1, name, len);
+        id = rb_check_id_cstr(buf, len+1, NULL);
+        ALLOCV_END(vbuf);
+    }
+
     return id;
 }
 
@@ -855,8 +888,14 @@ VALUE
 rb_gv_get(const char *name)
 {
     struct rb_global_entry *entry;
+    ID id = find_global_id(name);
 
-    entry = rb_global_entry(global_id(name));
+    if (!id) {
+        rb_warning("global variable `%s' not initialized", name);
+        return Qnil;
+    }
+
+    entry = rb_global_entry(id);
     return rb_gvar_get(entry);
 }
 
@@ -1333,61 +1372,133 @@ generic_ivar_set(VALUE obj, ID id, VALUE val)
     RB_OBJ_WRITTEN(obj, Qundef, val);
 }
 
-VALUE
-rb_ivar_set(VALUE obj, ID id, VALUE val)
+static VALUE *
+obj_ivar_heap_alloc(VALUE obj, size_t newsize)
+{
+    VALUE *newptr = rb_transient_heap_alloc(obj, sizeof(VALUE) * newsize);
+
+    if (newptr != NULL) {
+        ROBJ_TRANSIENT_SET(obj);
+    }
+    else {
+        ROBJ_TRANSIENT_UNSET(obj);
+        newptr = ALLOC_N(VALUE, newsize);
+    }
+    return newptr;
+}
+
+static VALUE *
+obj_ivar_heap_realloc(VALUE obj, int32_t len, size_t newsize)
+{
+    VALUE *newptr;
+    int i;
+
+    if (ROBJ_TRANSIENT_P(obj)) {
+        const VALUE *orig_ptr = ROBJECT(obj)->as.heap.ivptr;
+        if ((newptr = obj_ivar_heap_alloc(obj, newsize)) != NULL) {
+            /* ok */
+        }
+        else {
+            newptr = ALLOC_N(VALUE, newsize);
+            ROBJ_TRANSIENT_UNSET(obj);
+        }
+        ROBJECT(obj)->as.heap.ivptr = newptr;
+        for (i=0; i<(int)len; i++) {
+            newptr[i] = orig_ptr[i];
+        }
+    }
+    else {
+        REALLOC_N(ROBJECT(obj)->as.heap.ivptr, VALUE, newsize);
+        newptr = ROBJECT(obj)->as.heap.ivptr;
+    }
+
+    return newptr;
+}
+
+#if USE_TRANSIENT_HEAP
+void
+rb_obj_transient_heap_evacuate(VALUE obj, int promote)
+{
+    if (ROBJ_TRANSIENT_P(obj)) {
+        uint32_t len = ROBJECT_NUMIV(obj);
+        const VALUE *old_ptr = ROBJECT_IVPTR(obj);
+        VALUE *new_ptr;
+
+        if (promote) {
+            new_ptr = ALLOC_N(VALUE, len);
+            ROBJ_TRANSIENT_UNSET(obj);
+        }
+        else {
+            new_ptr = obj_ivar_heap_alloc(obj, len);
+        }
+        MEMCPY(new_ptr, old_ptr, VALUE, len);
+        ROBJECT(obj)->as.heap.ivptr = new_ptr;
+    }
+}
+#endif
+
+static VALUE
+obj_ivar_set(VALUE obj, ID id, VALUE val)
 {
     struct ivar_update ivup;
     uint32_t i, len;
 
+    ivup.iv_extended = 0;
+    ivup.u.iv_index_tbl = iv_index_tbl_make(obj);
+    iv_index_tbl_extend(&ivup, id);
+    len = ROBJECT_NUMIV(obj);
+    if (len <= ivup.index) {
+        VALUE *ptr = ROBJECT_IVPTR(obj);
+        if (ivup.index < ROBJECT_EMBED_LEN_MAX) {
+            RBASIC(obj)->flags |= ROBJECT_EMBED;
+            ptr = ROBJECT(obj)->as.ary;
+            for (i = 0; i < ROBJECT_EMBED_LEN_MAX; i++) {
+                ptr[i] = Qundef;
+            }
+        }
+        else {
+            VALUE *newptr;
+            uint32_t newsize = iv_index_tbl_newsize(&ivup);
+
+            if (RBASIC(obj)->flags & ROBJECT_EMBED) {
+                newptr = obj_ivar_heap_alloc(obj, newsize);
+                MEMCPY(newptr, ptr, VALUE, len);
+                RBASIC(obj)->flags &= ~ROBJECT_EMBED;
+                ROBJECT(obj)->as.heap.ivptr = newptr;
+            }
+            else {
+                newptr = obj_ivar_heap_realloc(obj, len, newsize);
+            }
+            for (; len < newsize; len++) {
+                newptr[len] = Qundef;
+            }
+            ROBJECT(obj)->as.heap.numiv = newsize;
+            ROBJECT(obj)->as.heap.iv_index_tbl = ivup.u.iv_index_tbl;
+        }
+    }
+    RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[ivup.index], val);
+
+    return val;
+}
+
+VALUE
+rb_ivar_set(VALUE obj, ID id, VALUE val)
+{
     RB_DEBUG_COUNTER_INC(ivar_set_base);
 
     rb_check_frozen(obj);
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-        ivup.iv_extended = 0;
-        ivup.u.iv_index_tbl = iv_index_tbl_make(obj);
-        iv_index_tbl_extend(&ivup, id);
-        len = ROBJECT_NUMIV(obj);
-        if (len <= ivup.index) {
-            VALUE *ptr = ROBJECT_IVPTR(obj);
-            if (ivup.index < ROBJECT_EMBED_LEN_MAX) {
-                RBASIC(obj)->flags |= ROBJECT_EMBED;
-                ptr = ROBJECT(obj)->as.ary;
-                for (i = 0; i < ROBJECT_EMBED_LEN_MAX; i++) {
-                    ptr[i] = Qundef;
-                }
-            }
-            else {
-                VALUE *newptr;
-                uint32_t newsize = iv_index_tbl_newsize(&ivup);
-
-                if (RBASIC(obj)->flags & ROBJECT_EMBED) {
-                    newptr = ALLOC_N(VALUE, newsize);
-                    MEMCPY(newptr, ptr, VALUE, len);
-                    RBASIC(obj)->flags &= ~ROBJECT_EMBED;
-                    ROBJECT(obj)->as.heap.ivptr = newptr;
-                }
-                else {
-                    REALLOC_N(ROBJECT(obj)->as.heap.ivptr, VALUE, newsize);
-                    newptr = ROBJECT(obj)->as.heap.ivptr;
-                }
-                for (; len < newsize; len++)
-                    newptr[len] = Qundef;
-                ROBJECT(obj)->as.heap.numiv = newsize;
-                ROBJECT(obj)->as.heap.iv_index_tbl = ivup.u.iv_index_tbl;
-            }
-        }
-        RB_OBJ_WRITE(obj, &ROBJECT_IVPTR(obj)[ivup.index], val);
-	break;
+        return obj_ivar_set(obj, id, val);
       case T_CLASS:
       case T_MODULE:
-	if (!RCLASS_IV_TBL(obj)) RCLASS_IV_TBL(obj) = st_init_numtable();
-	rb_class_ivar_set(obj, id, val);
+        if (!RCLASS_IV_TBL(obj)) RCLASS_IV_TBL(obj) = st_init_numtable();
+        rb_class_ivar_set(obj, id, val);
         break;
       default:
-	generic_ivar_set(obj, id, val);
-	break;
+        generic_ivar_set(obj, id, val);
+        break;
     }
     return val;
 }
@@ -2617,16 +2728,11 @@ rb_const_list(void *data)
 VALUE
 rb_mod_constants(int argc, const VALUE *argv, VALUE mod)
 {
-    VALUE inherit;
+    bool inherit = TRUE;
 
-    if (argc == 0) {
-	inherit = Qtrue;
-    }
-    else {
-	rb_scan_args(argc, argv, "01", &inherit);
-    }
+    if (rb_check_arity(argc, 0, 1)) inherit = RTEST(argv[0]);
 
-    if (RTEST(inherit)) {
+    if (inherit) {
 	return rb_const_list(rb_mod_const_of(mod, 0));
     }
     else {
@@ -3183,16 +3289,11 @@ cvar_list(void *data)
 VALUE
 rb_mod_class_variables(int argc, const VALUE *argv, VALUE mod)
 {
-    VALUE inherit;
+    bool inherit = TRUE;
     st_table *tbl;
 
-    if (argc == 0) {
-	inherit = Qtrue;
-    }
-    else {
-	rb_scan_args(argc, argv, "01", &inherit);
-    }
-    if (RTEST(inherit)) {
+    if (rb_check_arity(argc, 0, 1)) inherit = RTEST(argv[0]);
+    if (inherit) {
 	tbl = mod_cvar_of(mod, 0);
     }
     else {

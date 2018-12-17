@@ -48,7 +48,7 @@
 
 require 'socket'
 require 'io/wait'
-require 'drb/eq'
+require_relative 'eq'
 
 #
 # == Overview
@@ -1638,7 +1638,7 @@ module DRb
 
     end
 
-    require 'drb/invokemethod'
+    require_relative 'invokemethod'
     class InvokeMethod
       include InvokeMethod18Mixin
     end
@@ -1866,6 +1866,11 @@ module DRb
   # Removes +server+ from the list of registered servers.
   def remove_server(server)
     @server.delete(server.uri)
+    mutex.synchronize do
+      if @primary_server == server
+        @primary_server = nil
+      end
+    end
   end
   module_function :remove_server
 

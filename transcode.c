@@ -4084,7 +4084,7 @@ econv_insert_output(VALUE self, VALUE string)
 }
 
 /*
- * call-seq
+ * call-seq:
  *   ec.putback                    -> string
  *   ec.putback(max_numbytes)      -> string
  *
@@ -4115,10 +4115,9 @@ econv_putback(int argc, VALUE *argv, VALUE self)
     int putbackable;
     VALUE str, max;
 
-    rb_scan_args(argc, argv, "01", &max);
-
-    if (NIL_P(max))
+    if (!rb_check_arity(argc, 0, 1) || NIL_P(max = argv[0])) {
         n = rb_econv_putbackable(ec);
+    }
     else {
         n = NUM2INT(max);
         putbackable = rb_econv_putbackable(ec);

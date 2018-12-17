@@ -91,12 +91,25 @@
 #  endif
 #endif
 
+enum rtimer_state {
+    /* alive, after timer_create: */
+    RTIMER_DISARM,
+    RTIMER_ARMING,
+    RTIMER_ARMED,
+
+    RTIMER_DEAD
+};
+
 #if UBF_TIMER == UBF_TIMER_POSIX
+static const struct itimerspec zero;
 static struct {
-    timer_t timerid;
-    rb_atomic_t armed; /* 0: disarmed, 1: arming, 2: armed */
+    rb_atomic_t state; /* rtimer_state */
     rb_pid_t owner;
-} timer_posix;
+    timer_t timerid;
+} timer_posix = {
+    /* .state = */ RTIMER_DEAD,
+};
+
 #elif UBF_TIMER == UBF_TIMER_PTHREAD
 static void *timer_pthread_fn(void *);
 static struct {
@@ -270,7 +283,7 @@ gvl_acquire(rb_vm_t *vm, rb_thread_t *th)
     rb_native_mutex_unlock(&vm->gvl.lock);
 }
 
-static native_thread_data_t *
+static const native_thread_data_t *
 gvl_release_common(rb_vm_t *vm)
 {
     native_thread_data_t *next;
@@ -292,7 +305,7 @@ gvl_release(rb_vm_t *vm)
 static void
 gvl_yield(rb_vm_t *vm, rb_thread_t *th)
 {
-    native_thread_data_t *next;
+    const native_thread_data_t *next;
 
     /*
      * Perhaps other threads are stuck in blocking region w/o GVL, too,
@@ -1342,11 +1355,17 @@ ubf_select(void *ptr)
      * in unblock_function_clear.
      */
     if (cur != vm->gvl.timer && cur != sigwait_th) {
-        rb_native_mutex_lock(&vm->gvl.lock);
-        if (!vm->gvl.timer) {
-            rb_thread_wakeup_timer_thread(-1);
+        /*
+         * Double-checked locking above was to prevent nested locking
+         * by the SAME thread.  We use trylock here to prevent deadlocks
+         * between DIFFERENT threads
+         */
+        if (native_mutex_trylock(&vm->gvl.lock) == 0) {
+            if (!vm->gvl.timer) {
+                rb_thread_wakeup_timer_thread(-1);
+            }
+            rb_native_mutex_unlock(&vm->gvl.lock);
         }
-        rb_native_mutex_unlock(&vm->gvl.lock);
     }
 
     ubf_wakeup_thread(th);
@@ -1389,10 +1408,12 @@ static int ubf_threads_empty(void) { return 1; }
 static struct {
     /* pipes are closed in forked children when owner_process does not match */
     int normal[2]; /* [0] == sigwait_fd */
+    int ub_main[2]; /* unblock main thread from native_ppoll_sleep */
 
     /* volatile for signal handler use: */
     volatile rb_pid_t owner_process;
 } signal_self_pipe = {
+    {-1, -1},
     {-1, -1},
 };
 
@@ -1439,7 +1460,7 @@ ubf_timer_arm(rb_pid_t current) /* async signal safe */
 {
 #if UBF_TIMER == UBF_TIMER_POSIX
     if ((!current || timer_posix.owner == current) &&
-            !ATOMIC_CAS(timer_posix.armed, 0, 1)) {
+            !ATOMIC_CAS(timer_posix.state, RTIMER_DISARM, RTIMER_ARMING)) {
         struct itimerspec it;
 
         it.it_interval.tv_sec = it.it_value.tv_sec = 0;
@@ -1448,21 +1469,24 @@ ubf_timer_arm(rb_pid_t current) /* async signal safe */
         if (timer_settime(timer_posix.timerid, 0, &it, 0))
             rb_async_bug_errno("timer_settime (arm)", errno);
 
-        switch (ATOMIC_CAS(timer_posix.armed, 1, 2)) {
-          case 0:
+        switch (ATOMIC_CAS(timer_posix.state, RTIMER_ARMING, RTIMER_ARMED)) {
+          case RTIMER_DISARM:
             /* somebody requested a disarm while we were arming */
-            it.it_interval.tv_nsec = it.it_value.tv_nsec = 0;
-            if (timer_settime(timer_posix.timerid, 0, &it, 0))
-                rb_async_bug_errno("timer_settime (disarm)", errno);
+            /* may race harmlessly with ubf_timer_destroy */
+            (void)timer_settime(timer_posix.timerid, 0, &zero, 0);
 
-          case 1: return; /* success */
-          case 2:
+          case RTIMER_ARMING: return; /* success */
+          case RTIMER_ARMED:
             /*
              * it is possible to have another thread disarm, and
              * a third thread arm finish re-arming before we get
              * here, so we wasted a syscall with timer_settime but
              * probably unavoidable in a signal handler.
              */
+            return;
+          case RTIMER_DEAD:
+            /* may race harmlessly with ubf_timer_destroy */
+            (void)timer_settime(timer_posix.timerid, 0, &zero, 0);
             return;
           default:
             rb_async_bug_errno("UBF_TIMER_POSIX unknown state", ERANGE);
@@ -1605,37 +1629,36 @@ setup_communication_pipe_internal(int pipes[2])
 # define SET_CURRENT_THREAD_NAME(name) prctl(PR_SET_NAME, name)
 #endif
 
+static VALUE threadptr_invoke_proc_location(rb_thread_t *th);
+
 static void
 native_set_thread_name(rb_thread_t *th)
 {
 #ifdef SET_CURRENT_THREAD_NAME
-    if (!th->first_func && th->first_proc) {
-	VALUE loc;
-	if (!NIL_P(loc = th->name)) {
-	    SET_CURRENT_THREAD_NAME(RSTRING_PTR(loc));
-	}
-	else if (!NIL_P(loc = rb_proc_location(th->first_proc))) {
-	    const VALUE *ptr = RARRAY_CONST_PTR(loc); /* [ String, Integer ] */
-	    char *name, *p;
-	    char buf[16];
-	    size_t len;
-	    int n;
+    VALUE loc;
+    if (!NIL_P(loc = th->name)) {
+        SET_CURRENT_THREAD_NAME(RSTRING_PTR(loc));
+    }
+    else if ((loc = threadptr_invoke_proc_location(th)) != Qnil) {
+        char *name, *p;
+        char buf[16];
+        size_t len;
+        int n;
 
-	    name = RSTRING_PTR(ptr[0]);
-	    p = strrchr(name, '/'); /* show only the basename of the path. */
-	    if (p && p[1])
-		name = p + 1;
+        name = RSTRING_PTR(RARRAY_AREF(loc, 0));
+        p = strrchr(name, '/'); /* show only the basename of the path. */
+        if (p && p[1])
+          name = p + 1;
 
-	    n = snprintf(buf, sizeof(buf), "%s:%d", name, NUM2INT(ptr[1]));
-	    rb_gc_force_recycle(loc); /* acts as a GC guard, too */
+        n = snprintf(buf, sizeof(buf), "%s:%d", name, NUM2INT(RARRAY_AREF(loc, 1)));
+        rb_gc_force_recycle(loc); /* acts as a GC guard, too */
 
-	    len = (size_t)n;
-	    if (len >= sizeof(buf)) {
-		buf[sizeof(buf)-2] = '*';
-		buf[sizeof(buf)-1] = '\0';
-	    }
-	    SET_CURRENT_THREAD_NAME(buf);
-	}
+        len = (size_t)n;
+        if (len >= sizeof(buf)) {
+            buf[sizeof(buf)-2] = '*';
+            buf[sizeof(buf)-1] = '\0';
+        }
+        SET_CURRENT_THREAD_NAME(buf);
     }
 #endif
 }
@@ -1694,10 +1717,18 @@ ubf_timer_create(rb_pid_t current)
     sev.sigev_notify = SIGEV_SIGNAL;
     sev.sigev_signo = SIGVTALRM;
     sev.sigev_value.sival_ptr = &timer_posix;
-    if (!timer_create(UBF_TIMER_CLOCK, &sev, &timer_posix.timerid))
+
+    if (!timer_create(UBF_TIMER_CLOCK, &sev, &timer_posix.timerid)) {
+        rb_atomic_t prev = ATOMIC_EXCHANGE(timer_posix.state, RTIMER_DISARM);
+
+        if (prev != RTIMER_DEAD) {
+            rb_bug("timer_posix was not dead: %u\n", (unsigned)prev);
+        }
         timer_posix.owner = current;
-    else
+    }
+    else {
 	rb_warn("timer_create failed: %s, signals racy", strerror(errno));
+    }
 #endif
     if (UBF_TIMER == UBF_TIMER_PTHREAD)
         ubf_timer_pthread_create(current);
@@ -1712,20 +1743,18 @@ rb_thread_create_timer_thread(void)
 
     if (owner && owner != current) {
         CLOSE_INVALIDATE_PAIR(signal_self_pipe.normal);
+        CLOSE_INVALIDATE_PAIR(signal_self_pipe.ub_main);
         ubf_timer_invalidate();
     }
 
     if (setup_communication_pipe_internal(signal_self_pipe.normal) < 0) return;
+    if (setup_communication_pipe_internal(signal_self_pipe.ub_main) < 0) return;
 
+    ubf_timer_create(current);
     if (owner != current) {
         /* validate pipe on this process */
-        ubf_timer_create(current);
         sigwait_th = THREAD_INVALID;
         signal_self_pipe.owner_process = current;
-    }
-    else if (UBF_TIMER == UBF_TIMER_PTHREAD) {
-        /* UBF_TIMER_PTHREAD needs to recreate after fork */
-        ubf_timer_pthread_create(current);
     }
 }
 
@@ -1733,19 +1762,21 @@ static void
 ubf_timer_disarm(void)
 {
 #if UBF_TIMER == UBF_TIMER_POSIX
-    static const struct itimerspec zero;
-    rb_atomic_t armed = ATOMIC_EXCHANGE(timer_posix.armed, 0);
+    rb_atomic_t prev;
 
-    if (LIKELY(armed) == 0) return;
-    switch (armed) {
-      case 1: return; /* ubf_timer_arm was arming and will disarm itself */
-      case 2:
+    prev = ATOMIC_CAS(timer_posix.state, RTIMER_ARMED, RTIMER_DISARM);
+    switch (prev) {
+      case RTIMER_DISARM: return; /* likely */
+      case RTIMER_ARMING: return; /* ubf_timer_arm will disarm itself */
+      case RTIMER_ARMED:
         if (timer_settime(timer_posix.timerid, 0, &zero, 0))
             rb_bug_errno("timer_settime (disarm)", errno);
         return;
+      case RTIMER_DEAD: return; /* stay dead */
       default:
-        rb_bug("UBF_TIMER_POSIX bad state: %u\n", (unsigned)armed);
+        rb_bug("UBF_TIMER_POSIX bad state: %u\n", (unsigned)prev);
     }
+
 #elif UBF_TIMER == UBF_TIMER_PTHREAD
     ATOMIC_SET(timer_pthread.armed, 0);
 #endif
@@ -1754,7 +1785,19 @@ ubf_timer_disarm(void)
 static void
 ubf_timer_destroy(void)
 {
-#if UBF_TIMER == UBF_TIMER_PTHREAD
+#if UBF_TIMER == UBF_TIMER_POSIX
+    if (timer_posix.owner == getpid()) {
+        /* prevent signal handler from arming: */
+        ATOMIC_SET(timer_posix.state, RTIMER_DEAD);
+
+        if (timer_settime(timer_posix.timerid, 0, &zero, 0))
+            rb_bug_errno("timer_settime (destroy)", errno);
+        if (timer_delete(timer_posix.timerid) < 0)
+            rb_sys_fail("timer_delete");
+
+        VM_ASSERT(ATOMIC_EXCHANGE(timer_posix.state, RTIMER_DEAD) == RTIMER_DEAD);
+    }
+#elif UBF_TIMER == UBF_TIMER_PTHREAD
     int err;
 
     timer_pthread.owner = 0;
@@ -1765,7 +1808,6 @@ ubf_timer_destroy(void)
         rb_raise(rb_eThreadError, "native_thread_join() failed (%d)", err);
     }
 #endif
-/* no need to destroy real POSIX timers */
 }
 
 static int
@@ -1833,13 +1875,18 @@ ruby_stack_overflowed_p(const rb_thread_t *th, const void *addr)
 int
 rb_reserved_fd_p(int fd)
 {
+    /* no false-positive if out-of-FD at startup */
+    if (fd < 0)
+        return 0;
+
 #if UBF_TIMER == UBF_TIMER_PTHREAD
     if (fd == timer_pthread.low[0] || fd == timer_pthread.low[1])
         goto check_pid;
 #endif
     if (fd == signal_self_pipe.normal[0] || fd == signal_self_pipe.normal[1])
         goto check_pid;
-
+    if (fd == signal_self_pipe.ub_main[0] || fd == signal_self_pipe.ub_main[1])
+        goto check_pid;
     return 0;
 check_pid:
     if (signal_self_pipe.owner_process == getpid()) /* async-signal-safe */
@@ -1853,6 +1900,7 @@ rb_nativethread_self(void)
     return pthread_self();
 }
 
+#if USE_MJIT
 /* A function that wraps actual worker function, for pthread abstraction. */
 static void *
 mjit_worker(void *arg)
@@ -1884,6 +1932,7 @@ rb_thread_create_mjit_thread(void (*worker_func)(void))
     pthread_attr_destroy(&attr);
     return ret;
 }
+#endif
 
 int
 rb_sigwait_fd_get(const rb_thread_t *th)
@@ -1945,52 +1994,87 @@ ruby_ppoll(struct pollfd *fds, nfds_t nfds,
 #endif
 
 void
-rb_sigwait_sleep(rb_thread_t *th, int sigwait_fd, const struct timespec *ts)
+rb_sigwait_sleep(rb_thread_t *th, int sigwait_fd, const rb_hrtime_t *rel)
 {
     struct pollfd pfd;
+    struct timespec ts;
 
     pfd.fd = sigwait_fd;
     pfd.events = POLLIN;
 
     if (!BUSY_WAIT_SIGNALS && ubf_threads_empty()) {
-        (void)ppoll(&pfd, 1, ts, 0);
+        (void)ppoll(&pfd, 1, rb_hrtime2timespec(&ts, rel), 0);
         check_signals_nogvl(th, sigwait_fd);
     }
     else {
-        rb_hrtime_t rel, end;
+        rb_hrtime_t to = RB_HRTIME_MAX, end;
         int n = 0;
 
-        if (ts) {
-            rel = rb_timespec2hrtime(ts);
-            end = rb_hrtime_add(rb_hrtime_now(), rel);
+        if (rel) {
+            to = *rel;
+            end = rb_hrtime_add(rb_hrtime_now(), to);
         }
         /*
          * tricky: this needs to return on spurious wakeup (no auto-retry).
          * But we also need to distinguish between periodic quantum
          * wakeups, so we care about the result of consume_communication_pipe
+         *
+         * We want to avoid spurious wakeup for Mutex#sleep compatibility
+         * [ruby-core:88102]
          */
         for (;;) {
-            const rb_hrtime_t *sto = sigwait_timeout(th, sigwait_fd, &rel, &n);
-            struct timespec tmp;
+            const rb_hrtime_t *sto = sigwait_timeout(th, sigwait_fd, &to, &n);
 
             if (n) return;
-            n = ppoll(&pfd, 1, rb_hrtime2timespec(&tmp, sto), 0);
+            n = ppoll(&pfd, 1, rb_hrtime2timespec(&ts, sto), 0);
             if (check_signals_nogvl(th, sigwait_fd))
                 return;
             if (n || (th && RUBY_VM_INTERRUPTED(th->ec)))
                 return;
-            if (ts && hrtime_update_expire(&rel, end))
+            if (rel && hrtime_update_expire(&to, end))
                 return;
         }
     }
 }
 
 /*
+ * we need to guarantee wakeups from native_ppoll_sleep because
+ * ubf_select may not be going through ubf_list if other threads
+ * are all sleeping.
+ */
+static void
+ubf_ppoll_sleep(void *ignore)
+{
+    rb_thread_wakeup_timer_thread_fd(signal_self_pipe.ub_main[1]);
+}
+
+/*
+ * Single CPU setups benefit from explicit sched_yield() before ppoll(),
+ * since threads may be too starved to enter the GVL waitqueue for
+ * us to detect contention.  Instead, we want to kick other threads
+ * so they can run and possibly prevent us from entering slow paths
+ * in ppoll() or similar syscalls.
+ *
+ * Confirmed on FreeBSD 11.2 and Linux 4.19.
+ * [ruby-core:90417] [Bug #15398]
+ */
+#define GVL_UNLOCK_BEGIN_YIELD(th) do { \
+    const native_thread_data_t *next; \
+    rb_vm_t *vm = th->vm; \
+    RB_GC_SAVE_MACHINE_CONTEXT(th); \
+    rb_native_mutex_lock(&vm->gvl.lock); \
+    next = gvl_release_common(vm); \
+    rb_native_mutex_unlock(&vm->gvl.lock); \
+    if (!next && vm_living_thread_num(vm) > 1) { \
+        native_thread_yield(); \
+    }
+
+/*
  * This function does not exclusively acquire sigwait_fd, so it
  * cannot safely read from it.  However, it can be woken up in
  * 4 ways:
  *
- * 1) ubf_select (from another thread)
+ * 1) ubf_ppoll_sleep (from another thread)
  * 2) rb_thread_wakeup_timer_thread (from signal handler)
  * 3) any unmasked signal hitting the process
  * 4) periodic ubf timer wakeups (after 3)
@@ -1999,26 +2083,30 @@ static void
 native_ppoll_sleep(rb_thread_t *th, rb_hrtime_t *rel)
 {
     rb_native_mutex_lock(&th->interrupt_lock);
-    th->unblock.func = ubf_select;
-    th->unblock.arg = th;
+    th->unblock.func = ubf_ppoll_sleep;
     rb_native_mutex_unlock(&th->interrupt_lock);
 
-    GVL_UNLOCK_BEGIN(th);
+    GVL_UNLOCK_BEGIN_YIELD(th);
+
     if (!RUBY_VM_INTERRUPTED(th->ec)) {
-        struct pollfd pfd;
+        struct pollfd pfd[2];
         struct timespec ts;
 
-        pfd.fd = signal_self_pipe.normal[0]; /* sigwait_fd */
-        pfd.events = POLLIN;
-        (void)ppoll(&pfd, 1, rb_hrtime2timespec(&ts, rel), 0);
-
+        pfd[0].fd = signal_self_pipe.normal[0]; /* sigwait_fd */
+        pfd[1].fd = signal_self_pipe.ub_main[0];
+        pfd[0].events = pfd[1].events = POLLIN;
+        if (ppoll(pfd, 2, rb_hrtime2timespec(&ts, rel), 0) > 0) {
+            if (pfd[1].revents & POLLIN) {
+                (void)consume_communication_pipe(pfd[1].fd);
+            }
+        }
         /*
-         * do not read the fd, here, let uplevel callers or other threads
-         * that, otherwise we may steal and starve other threads
+         * do not read the sigwait_fd, here, let uplevel callers
+         * or other threads that, otherwise we may steal and starve
+         * other threads
          */
     }
     unblock_function_clear(th);
-    unregister_ubf_list(th);
     GVL_UNLOCK_END(th);
 }
 
@@ -2032,11 +2120,10 @@ native_sleep(rb_thread_t *th, rb_hrtime_t *rel)
         th->unblock.func = ubf_sigwait;
         rb_native_mutex_unlock(&th->interrupt_lock);
 
-        GVL_UNLOCK_BEGIN(th);
+        GVL_UNLOCK_BEGIN_YIELD(th);
 
         if (!RUBY_VM_INTERRUPTED(th->ec)) {
-            struct timespec ts;
-            rb_sigwait_sleep(th, sigwait_fd, rb_hrtime2timespec(&ts, rel));
+            rb_sigwait_sleep(th, sigwait_fd, rel);
         }
         else {
             check_signals_nogvl(th, sigwait_fd);

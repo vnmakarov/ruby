@@ -570,6 +570,24 @@ rb_obj_size(VALUE self, VALUE args, VALUE obj)
  *     3.next.then {|x| x**x }.to_s             #=> "256"
  *     "my string".yield_self {|s| s.upcase }   #=> "MY STRING"
  *
+ *  Good usage for +yield_self+ is value piping in method chains:
+ *
+ *     require 'open-uri'
+ *     require 'json'
+ *
+ *     construct_url(arguments).
+ *       yield_self {|url| open(url).read }.
+ *       yield_self {|response| JSON.parse(response) }
+ *
+ *  When called without block, the method returns +Enumerator+,
+ *  which can be used, for example, for conditional
+ *  circuit-breaking:
+ *
+ *     # meets condition, no-op
+ *     1.yield_self.detect(&:odd?)            # => 1
+ *     # does not meet condition, drop value
+ *     2.yield_self.detect(&:odd?)            # => nil
+ *
  */
 
 static VALUE
@@ -1461,6 +1479,19 @@ nil_inspect(VALUE obj)
     return rb_usascii_str_new2("nil");
 }
 
+/*
+ *  call-seq:
+ *     nil =~ other  -> nil
+ *
+ *  Dummy pattern matching -- always returns nil.
+ */
+
+static VALUE
+nil_match(VALUE obj1, VALUE obj2)
+{
+    return Qnil;
+}
+
 /***********************************************************************
  *  Document-class: TrueClass
  *
@@ -1647,14 +1678,17 @@ rb_false(VALUE obj)
  *  call-seq:
  *     obj =~ other  -> nil
  *
- *  Pattern Match---Overridden by descendants (notably
- *  <code>Regexp</code> and <code>String</code>) to provide meaningful
- *  pattern-match semantics.
+ * This method is deprecated.
+ *
+ * This is not only unuseful but also troublesome because it
+ * may hide a type error.
  */
 
 static VALUE
 rb_obj_match(VALUE obj1, VALUE obj2)
 {
+    rb_warning("deprecated Object#=~ is called on %"PRIsVALUE
+               "; it always returns nil", rb_obj_class(obj1));
     return Qnil;
 }
 
@@ -2029,11 +2063,11 @@ rb_class_initialize(int argc, VALUE *argv, VALUE klass)
     if (RCLASS_SUPER(klass) != 0 || klass == rb_cBasicObject) {
 	rb_raise(rb_eTypeError, "already initialized class");
     }
-    if (argc == 0) {
+    if (rb_check_arity(argc, 0, 1) == 0) {
 	super = rb_cObject;
     }
     else {
-	rb_scan_args(argc, argv, "01", &super);
+        super = argv[0];
 	rb_check_inheritable(super);
 	if (super != rb_cBasicObject && !RCLASS_SUPER(super)) {
 	    rb_raise(rb_eTypeError, "can't inherit uninitialized class");
@@ -3037,7 +3071,8 @@ rb_check_convert_type_with_id(VALUE val, int type, const char *tname, ID method)
 #define try_to_int(val, mid, raise) \
     convert_type_with_id(val, "Integer", mid, raise, -1)
 
-static VALUE
+ALWAYS_INLINE(static VALUE rb_to_integer(VALUE val, const char *method, ID mid));
+static inline VALUE
 rb_to_integer(VALUE val, const char *method, ID mid)
 {
     VALUE v;
@@ -4130,6 +4165,7 @@ InitVM_Object(void)
     rb_define_method(rb_cNilClass, "to_a", nil_to_a, 0);
     rb_define_method(rb_cNilClass, "to_h", nil_to_h, 0);
     rb_define_method(rb_cNilClass, "inspect", nil_inspect, 0);
+    rb_define_method(rb_cNilClass, "=~", nil_match, 1);
     rb_define_method(rb_cNilClass, "&", false_and, 1);
     rb_define_method(rb_cNilClass, "|", false_or, 1);
     rb_define_method(rb_cNilClass, "^", false_xor, 1);

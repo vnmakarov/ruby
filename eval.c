@@ -233,7 +233,7 @@ ruby_cleanup(volatile int ex)
 	}
     }
 
-    mjit_finish(); /* We still need ISeqs here. */
+    mjit_finish(TRUE); /* We still need ISeqs here. */
 
     ruby_finalize_1();
 
@@ -531,7 +531,7 @@ setup_exception(rb_execution_context_t *ec, int tag, volatile VALUE mesg, VALUE 
 		    mesg = rb_obj_dup(mesg);
 		}
 	    }
-	    if (cause != Qundef) {
+            if (cause != Qundef && !THROW_DATA_P(cause)) {
 		exc_setup_cause(mesg, cause);
 	    }
 	    if (NIL_P(bt)) {

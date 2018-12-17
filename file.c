@@ -572,7 +572,7 @@ static VALUE
 rb_stat_dev_major(VALUE self)
 {
 #if defined(major)
-    return DEVT2NUM(major(get_stat(self)->st_dev));
+    return UINT2NUM(major(get_stat(self)->st_dev));
 #else
     return Qnil;
 #endif
@@ -593,7 +593,7 @@ static VALUE
 rb_stat_dev_minor(VALUE self)
 {
 #if defined(minor)
-    return DEVT2NUM(minor(get_stat(self)->st_dev));
+    return UINT2NUM(minor(get_stat(self)->st_dev));
 #else
     return Qnil;
 #endif
@@ -731,7 +731,7 @@ static VALUE
 rb_stat_rdev_major(VALUE self)
 {
 #if defined(HAVE_STRUCT_STAT_ST_RDEV) && defined(major)
-    return DEVT2NUM(major(get_stat(self)->st_rdev));
+    return UINT2NUM(major(get_stat(self)->st_rdev));
 #else
     return Qnil;
 #endif
@@ -752,7 +752,7 @@ static VALUE
 rb_stat_rdev_minor(VALUE self)
 {
 #if defined(HAVE_STRUCT_STAT_ST_RDEV) && defined(minor)
-    return DEVT2NUM(minor(get_stat(self)->st_rdev));
+    return UINT2NUM(minor(get_stat(self)->st_rdev));
 #else
     return Qnil;
 #endif
@@ -1948,6 +1948,8 @@ check3rdbyte(VALUE fname, int mode)
  *   File.setuid?(file_name)   ->  true or false
  *
  * Returns <code>true</code> if the named file has the setuid bit set.
+ *
+ * _file_name_ can be an IO object.
  */
 
 static VALUE
@@ -1965,6 +1967,8 @@ rb_file_suid_p(VALUE obj, VALUE fname)
  *   File.setgid?(file_name)   ->  true or false
  *
  * Returns <code>true</code> if the named file has the setgid bit set.
+ *
+ * _file_name_ can be an IO object.
  */
 
 static VALUE
@@ -1982,6 +1986,8 @@ rb_file_sgid_p(VALUE obj, VALUE fname)
  *   File.sticky?(file_name)   ->  true or false
  *
  * Returns <code>true</code> if the named file has the sticky bit set.
+ *
+ * _file_name_ can be an IO object.
  */
 
 static VALUE
@@ -2497,7 +2503,7 @@ chown_internal(const char *path, void *arg)
 
 /*
  *  call-seq:
- *     File.chown(owner_int, group_int, file_name,... )  ->  integer
+ *     File.chown(owner_int, group_int, file_name, ...)  ->  integer
  *
  *  Changes the owner and group of the named file(s) to the given
  *  numeric owner and group id's. Only a process with superuser
@@ -2751,7 +2757,7 @@ utime_internal_i(int argc, VALUE *argv, int follow)
 
 /*
  * call-seq:
- *  File.utime(atime, mtime, file_name,...)   ->  integer
+ *  File.utime(atime, mtime, file_name, ...)   ->  integer
  *
  * Sets the access and modification times of each named file to the
  * first two arguments. If a file is a symlink, this method acts upon
@@ -2770,7 +2776,7 @@ rb_file_s_utime(int argc, VALUE *argv)
 
 /*
  * call-seq:
- *  File.lutime(atime, mtime, file_name,...)   ->  integer
+ *  File.lutime(atime, mtime, file_name, ...)   ->  integer
  *
  * Sets the access and modification times of each named file to the
  * first two arguments. If a file is a symlink, this method acts upon
