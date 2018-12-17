@@ -3640,7 +3640,7 @@ make_hash_f(rb_control_frame_t *cfp, VALUE *res, sindex_t start, rb_num_t num)
     val = rb_hash_new_with_size(num / 2);
 
     if (num) {
-	assert(start < 0);
+	RTL_ASSERT(start < 0);
         rb_hash_bulk_insert(num, get_temp_addr(cfp, start), val);
     }
     *res = val;
