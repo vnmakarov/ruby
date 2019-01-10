@@ -5284,9 +5284,9 @@ update_line_coverage(VALUE data, const rb_trace_arg_t *trace_arg)
 	    long line = rb_sourceline() - 1;
 	    long count;
 	    VALUE num;
-            void rb_iseq_clear_event_flags(const rb_iseq_t *iseq, size_t pos, rb_event_flag_t reset);
+            void rb_iseq_clear_event_flags(const rb_iseq_t *iseq, size_t pos, int rtl_p, rb_event_flag_t reset);
             if (GET_VM()->coverage_mode & COVERAGE_TARGET_ONESHOT_LINES) {
-                rb_iseq_clear_event_flags(cfp->iseq, cfp->pc - cfp->iseq->body->iseq_encoded - 1, RUBY_EVENT_COVERAGE_LINE);
+	        rb_iseq_clear_event_flags(cfp->iseq, cfp->pc - cfp->iseq->body->rtl_encoded - 1, TRUE, RUBY_EVENT_COVERAGE_LINE);
                 rb_ary_push(lines, LONG2FIX(line + 1));
                 return;
             }
@@ -5311,10 +5311,13 @@ update_branch_coverage(VALUE data, const rb_trace_arg_t *trace_arg)
     if (RB_TYPE_P(coverage, T_ARRAY) && !RBASIC_CLASS(coverage)) {
 	VALUE branches = RARRAY_AREF(coverage, COVERAGE_INDEX_BRANCHES);
 	if (branches) {
-            long pc = cfp->pc - cfp->iseq->body->iseq_encoded - 1;
-            long idx = FIX2INT(RARRAY_AREF(ISEQ_PC2BRANCHINDEX(cfp->iseq), pc)), count;
-	    VALUE counters = RARRAY_AREF(branches, 1);
-	    VALUE num = RARRAY_AREF(counters, idx);
+	    long idx, count, pc = cfp->pc - cfp->iseq->body->rtl_encoded - 1;
+	    VALUE counters, num, data = RARRAY_AREF(ISEQ_PC2BRANCHINDEX(cfp->iseq), pc);
+	    if (data == Qnil)
+	        return;
+            idx = FIX2INT(data), count;
+	    counters = RARRAY_AREF(branches, 1);
+	    num = RARRAY_AREF(counters, idx);
 	    count = FIX2LONG(num) + 1;
 	    if (POSFIXABLE(count)) {
 		RARRAY_ASET(counters, idx, LONG2FIX(count));

@@ -7,6 +7,9 @@
 **********************************************************************/
 
 #include "internal.h"
+
+#if USE_MJIT
+
 #include "vm_core.h"
 #include "vm_exec.h"
 #include "iseq.h"
@@ -606,6 +609,7 @@ get_insn_fun_features(VALUE insn, struct insn_fun_features *f) {
     case BIN(new_array_min):
     case BIN(new_array_max):
     case BIN(clone_array):
+    case BIN(clone_hash):
     case BIN(spread_array):
     case BIN(splat_array):
     case BIN(concat_array):
@@ -1895,7 +1899,8 @@ translate_iseq_insn(FILE *f, size_t pos, const rb_iseq_t *iseq,
 		fprintf(f, " {\n  %s", generate_set_pc(buf, &code[pos]));
 		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 		fprintf(f, "  if (mjit_call_iseq_normal(ec, cfp, &calling, (void *) 0x%"PRIxVALUE ", %d, %d, %s)) {\n",
-			((CALL_DATA) code[pos + 1])->call_cache.me, callee_iseq->body->param.size, callee_iseq->body->local_table_size,
+			(VALUE) ((CALL_DATA) code[pos + 1])->call_cache.me,
+			callee_iseq->body->param.size, callee_iseq->body->local_table_size,
 			get_op_str(buf, call_start, tcp));
 		fprintf(f, "    %sgoto stop_spec;\n  }\n", set_failed_insn_str(buf, pos));
 	    } else {
@@ -2069,7 +2074,8 @@ initiate_compile_info(const rb_iseq_t *iseq, struct rb_mjit_compile_info *compil
    It returns 1 if it succeeds to compile. */
 int
 mjit_rtl_compile(FILE *f, const rb_iseq_t *iseq,
-		 struct rb_mjit_compile_info *compile_info, const char *funcname)
+		 struct rb_mjit_compile_info *compile_info, const char *funcname,
+		 struct rb_call_data *cd_entries, union iseq_inline_storage_entry *is_entries)
 {
     int ep_neq_bp_p, ignore_result_p;
     struct cfg *cfg;
@@ -2121,7 +2127,7 @@ mjit_rtl_compile(FILE *f, const rb_iseq_t *iseq,
 	for (i = 0; i <= body->temp_vars_num; i++)
 	    fprintf(f, "  VALUE t%lu;\n", i);
     cfg = NULL;
-    if (0 && ! tc.safe_p && tc.use_local_vars_p && compile_info->doubles_p != NULL)
+    if (mjit_opts.fp_opt && ! tc.safe_p && tc.use_local_vars_p && compile_info->doubles_p != NULL)
 	for (i = 0; i < body->local_table_size + body->temp_vars_num; i++)
 	    if (compile_info->doubles_p[i]) {
 		if (cfg == NULL && (cfg = build_cfg(iseq)) == NULL)
@@ -2256,3 +2262,5 @@ MJIT_FUNC_EXPORTED void
 mjit_ivar_spec_fail(rb_iseq_t *iseq) {
     mjit_recompile_iseq(iseq, recompile_ivar_spec_guard);
 }
+
+#endif /* USE_MJIT */

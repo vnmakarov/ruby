@@ -1,3 +1,45 @@
+2019-01-10  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* insns.def (duphash): Switch off the code.
+	(clone_hash): New.
+	* iseq.c (validate_get_insn_info): Use rtl size.
+	(rb_iseq_clear_event_flags): New arg rtl_p.  Use it.
+	(struct insn_data_struct): New members safe_trace_encoded_insn and
+	safe_notrace_encoded_insn.
+	(get_safe_insn): New.
+	(rb_vm_encoded_insn_data_table_init): Set up the safe encoded
+	insns.
+	(encoded_iseq_trace_instrument): Use the safe encoded insns.
+	(rb_iseq_trace_flag_cleared): New arg rtl_p.  Use it.
+	(iseq_add_local_tracepoint): Use RTL.
+	(rb_iseq_add_local_tracepoint_recursively): Ditto.
+	(iseq_remove_local_tracepoint): New arg rtl_p.  Use it.
+	(iseq_remove_local_tracepoint_i, rb_iseq_trace_set): Use RTL.
+	* mjit.c (mjit_copy_job_handler): Copy cd entries.
+	(mjit_recompile_iseq): Pass u, not its node.
+	* mjit.h (struct mjit_options): Add member fp_opt.
+	* mjit_rtl.c: Check macro USE_MJIT.
+	(get_insn_fun_features): Process clone_hash.
+	(mjit_rtl_compile): New args cd_entries and is_entries.  Use
+	mjit_opts.fp_opt.
+	* mjit_worker.c (convert_unit_to_func): Change prototype.
+	* rtl_exec.c (clone_hash_f): New.
+	* rtl_gen.c (RTL_GEN_DEBUG): Reset.
+	(update_stack_by_insn): Remove tracecoverage.  Rename
+	getinlinecache to opt_getinlinecache.
+	(translate_stack_insn): Rename getinlinecache to
+	opt_getinlinecache and setinlinecache to opt_setinlinecache.
+	Check label_type.  Generate nop if necessary to tracing.  Process
+	duphash.  Remove tracecoverage.
+	(create_rtl_insn_info_table): Don't use mask RUBY_EVENT_LINE.
+	(rtl_gen): Update create_rtl_catch_table.
+	* ruby.c (usage, setup_mjit_options): Process --jit-fp-opt.
+	* thread.c: Add arg rtl_p for rb_iseq_clear_event_flags.
+	(update_branch_coverage): Use RTL.
+	* vm.c (ruby_vm_global_method_state): Remove.
+	(ruby_vm_global_constant_state, ruby_vm_class_serial): Ditto.
+	* vm_insnhelper.c (vm_trace): Use VM_TRACE_HOOK.
+
 2018-10-26  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def: Remove handles_sp for RTL insns.

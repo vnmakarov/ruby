@@ -3729,6 +3729,15 @@ clone_array_f(rb_control_frame_t *cfp, VALUE *res, VALUE arr)
     *res = rb_ary_resurrect(arr);
 }
 
+/* Create a copy of HASH and assign it to temporary variable with
+   location RES in frame CFP.  */
+static do_inline void
+clone_hash_f(rb_control_frame_t *cfp, VALUE *res, VALUE hash)
+{
+    check_sp_default(cfp);
+    *res = rb_hash_dup(hash);
+}
+
 /* Put NUM elements of array in temporary OP1 on the stack starting
    with OP1 according to FLAG (see details in vm_expandarray).  */
 static do_inline void

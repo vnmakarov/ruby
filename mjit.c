@@ -41,8 +41,8 @@ mjit_copy_job_handler(void *data)
     }
 
     body = job->unit->iseq->body;
-    if (job->cc_entries) {
-        memcpy(job->cc_entries, body->cc_entries, sizeof(struct rb_call_cache) * (body->ci_size + body->ci_kw_size));
+    if (job->cd_entries) {
+        memcpy(job->cd_entries, body->cd_entries, sizeof(struct rb_call_data) * (body->cd_size + body->cd_kw_size));
     }
     if (job->is_entries) {
         memcpy(job->is_entries, body->is_entries, sizeof(union iseq_inline_storage_entry) * body->is_size);
@@ -898,9 +898,9 @@ void mjit_recompile_iseq(rb_iseq_t *iseq, int (*guard)(struct rb_mjit_compile_in
       CRITICAL_SECTION_FINISH(3, "in recompile iseq");
       return;
     }
-    assert(u->handle != NULL && u->node != NULL);
+    assert(u->handle != NULL);
     verbose(3, "Iseq in unit %d is canceled", u->id);
-    remove_from_list(u->node, &active_units);
+    remove_from_list(u, &active_units);
     verbose(3, "Code of unit %d is removed", u->id);
     iseq->body->jit_func = (void *) NOT_ADDED_JIT_ISEQ_FUNC;
     u->compile_nums++;

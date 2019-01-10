@@ -4097,8 +4097,7 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *p
 	      } else {
 		val = TOPN(0);
 	      }
-	      vm_trace_hook(ec, reg_cfp, pc, pc_events, (RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN),
-			    global_hooks, local_hooks, val);
+	      VM_TRACE_HOOK(RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN, val);
 	    }
         }
     }

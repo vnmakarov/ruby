@@ -22,7 +22,7 @@
 #include <math.h>
 
 /* Use nonzero to print debug info abou the generator.  */
-#define RTL_GEN_DEBUG 1
+#define RTL_GEN_DEBUG 0
 
 #include "vm_core.h"
 #include "iseq.h"
@@ -790,7 +790,6 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
     case BIN(swap):
     case BIN(reverse):
     case BIN(adjuststack):
-    case BIN(tracecoverage):
 	assert(VARR_LENGTH(stack_slot, stack) >= *depth);
 	trunc_stack(*depth);
 	break;
@@ -825,7 +824,7 @@ update_stack_by_insn(const VALUE *code, size_t pos, size_t *depth) {
     case BIN(branchif):
     case BIN(branchunless):
     case BIN(branchnil):
-    case BIN(getinlinecache):
+    case BIN(opt_getinlinecache):
     case BIN(jump): {
 	if (result_p)
 	    push_val(TEMP, 0, pos);
@@ -2069,7 +2068,7 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	if (VARR_LENGTH(unsigned, rtl_insn_event_positions) != 0
 	    && VARR_LAST(unsigned, rtl_insn_event_positions) == rtl_pos) {
 	    last_event = VARR_LAST(event_t, rtl_insn_events);
-	    if (combined_event_p(last_event, event, &last_event)) {
+	    if (label_type == NO_LABEL && combined_event_p(last_event, event, &last_event)) {
 		VARR_SET(event_t, rtl_insn_events, VARR_LENGTH(event_t, rtl_insn_events) - 1, last_event);
 		event.defined_p = FALSE;
 	    } else {
@@ -2079,12 +2078,17 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 		APPEND_INSN_OP0(BIN(nop));
 		nop_p = TRUE;
 		add_event(event);
+		rtl_pos = VARR_LENGTH(VALUE, iseq_rtl);
 	    }
-	}  else {
+	} else {
 	    add_event(event);
+	    if (VARR_ADDR(char, pos_label_type)[pos + stack_insn_len] != NO_LABEL) {
+		APPEND_INSN_OP0(BIN(nop));
+		nop_p = TRUE;
+	    }
 	}
     }
-    VARR_ADDR(size_t, new_insn_offsets)[pos] = VARR_LENGTH(VALUE, iseq_rtl);
+    VARR_ADDR(size_t, new_insn_offsets)[pos] = rtl_pos;
     // line_no for  rtl_pos ????
     temp_only_p = VARR_ADDR(char, use_only_temp_result_p)[pos];
     switch (insn) {
@@ -2261,6 +2265,14 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 
 	res = new_top_stack_temp_var();
 	APPEND_INSN_OP2(BIN(clone_array), res, ary);
+	break;
+    }
+    case BIN(duphash): {
+	VALUE hash = code[pos + 1];
+	vindex_t res;
+
+	res = new_top_stack_temp_var();
+	APPEND_INSN_OP2(BIN(clone_hash), res, hash);
 	break;
     }
     case BIN(expandarray): {
@@ -2628,7 +2640,7 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	VARR_PUSH(branch_target_loc, branch_target_locs, loc);
 	break;
     }
-    case BIN(getinlinecache): {
+    case BIN(opt_getinlinecache): {
 	vindex_t res;
 	VALUE next_insn, next_next_insn;
 	size_t next_insn_len, next_next_insn_len;
@@ -2638,7 +2650,7 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	next_insn_len = insn_len(next_insn);
 	if (VARR_ADDR(char, pos_label_type)[pos + stack_insn_len] == NO_LABEL
 	    && next_insn == BIN(getconstant)
-	    && (next_next_insn = code[pos + stack_insn_len + next_insn_len]) == BIN(setinlinecache)
+	    && (next_next_insn = code[pos + stack_insn_len + next_insn_len]) == BIN(opt_setinlinecache)
 	    && VARR_ADDR(char, pos_label_type)[pos + stack_insn_len + next_insn_len] == NO_LABEL
 	    && (next_next_insn_len = insn_len(next_next_insn)) + next_insn_len == code[pos + 1]
 	    && code[pos + 2] == code[pos + stack_insn_len + next_insn_len + 1] /* ic */) {
@@ -2653,7 +2665,7 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
 	push_temp_result(res);
 	break;
     }
-    case BIN(setinlinecache): {
+    case BIN(opt_setinlinecache): {
 	vindex_t op;
 	
 	slot = pop_stack_slot();
@@ -2812,9 +2824,6 @@ translate_stack_insn(const VALUE *code, enum ruby_vminsn_type prev_insn) {
     case BIN(answer):
 	assert(FALSE);
 	break;
-    case BIN(tracecoverage):
-	APPEND_INSN_OP2(BIN(trace_coverage), code[pos + 1], code[pos + 2]);
-	break;
     case BIN(nop):
 	if (! nop_p && VARR_ADDR(char, catch_bound_pos_p)[pos])
 	    APPEND_INSN_OP0(BIN(nop));
@@ -2929,7 +2938,7 @@ create_rtl_insn_info_table(void) {
 	next_insn_pos = pos + insn_len(curr_iseq->body->rtl_encoded[pos]);
 	no_event_next_insn_p = (i + 1 < rtl_insn_info_size
 				&& next_insn_pos != VARR_GET(unsigned, rtl_insn_event_positions, i + 1));
-	if ((event.info_entry.events & RUBY_EVENT_LINE)
+	if ((event.info_entry.events/* & RUBY_EVENT_LINE*/)
 	    && (no_event_next_insn_p
 		|| (i + 1 == rtl_insn_info_size && next_insn_pos < curr_iseq->body->rtl_size)))
 	    nel++; /* for switch off line event */
@@ -2950,7 +2959,7 @@ create_rtl_insn_info_table(void) {
 	next_insn_pos = pos + insn_len(curr_iseq->body->rtl_encoded[pos]);
 	no_event_next_insn_p = (i + 1 < rtl_insn_info_size
 				&& next_insn_pos != VARR_GET(unsigned, rtl_insn_event_positions, i + 1));
-	if ((event.info_entry.events & RUBY_EVENT_LINE)
+	if ((event.info_entry.events/* & RUBY_EVENT_LINE*/)
 	    && (no_event_next_insn_p
 		|| (i + 1 == rtl_insn_info_size && next_insn_pos < curr_iseq->body->rtl_size))) {
 	    nel++; /* for switch off line event */
@@ -2958,7 +2967,7 @@ create_rtl_insn_info_table(void) {
 	    entries[i + nel].line_no = entries[i + nel - 1].line_no;
 	    entries[i + nel].events = 0;
 	}
-	if (entries[i + nel].events & RUBY_EVENT_LINE) {
+	if (entries[i + nel].events/* & RUBY_EVENT_LINE*/) {
 	    pos = positions[i + nel];
 	    pos += insn_len(curr_iseq->body->rtl_encoded[pos]);
 	    if ((i + 1 < rtl_insn_info_size && VARR_GET(unsigned, rtl_insn_event_positions, i + 1) != pos)
@@ -3115,7 +3124,33 @@ rtl_gen(rb_iseq_t *iseq) {
     setup_opt_table();
     if (! create_rtl_insn_info_table())
 	return FALSE;
-    return create_rtl_catch_table();
+    if (! create_rtl_catch_table())
+	return FALSE;
+    /* Update pc2branchindex:  */
+    if (RTEST(ISEQ_COVERAGE(iseq)) && ISEQ_BRANCH_COVERAGE(iseq)) {
+	VALUE data, ary = rb_ary_tmp_new(0);
+	
+	for (pos = 0; pos < (size_t) RARRAY_LEN(ISEQ_PC2BRANCHINDEX(iseq)); pos++) {
+	    data = RARRAY_AREF(ISEQ_PC2BRANCHINDEX(iseq), pos);
+	    if (data != Qnil) {
+		size_t new_pos = VARR_ADDR(size_t, new_insn_offsets)[pos];
+		
+		while ((size_t) RARRAY_LEN(ary) <= new_pos) {
+		    rb_ary_push(ary, Qnil);
+		}
+		RARRAY_ASET(ary, new_pos, data);
+	    }
+	}
+	ISEQ_PC2BRANCHINDEX_SET(iseq, ary);
+    }
+#if RTL_GEN_DEBUG
+    if (rtl_gen_debug_p) {
+        VALUE *code = curr_iseq->body->rtl_encoded;
+	for (pos = 0; pos < curr_iseq->body->rtl_size; pos += insn_len(code[pos]))
+	    rb_iseq_disasm_insn(0, code, pos, curr_iseq, 0, -1);
+    }
+#endif
+    return  TRUE;
 }
 
 /* Initiate stack insns to RTL generator.  Return FALSE if we failed

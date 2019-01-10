@@ -382,10 +382,6 @@ rb_event_flag_t ruby_vm_event_flags;
 rb_event_flag_t ruby_vm_event_enabled_global_flags;
 unsigned int    ruby_vm_event_local_num;
 
-rb_serial_t ruby_vm_global_method_state = 1;
-rb_serial_t ruby_vm_global_constant_state = 1;
-rb_serial_t ruby_vm_class_serial = 1;
-
 static void thread_free(void *ptr);
 
 void

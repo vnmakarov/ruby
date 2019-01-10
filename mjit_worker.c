@@ -993,7 +993,7 @@ compile_prelude(FILE *f)
 /* Compile ISeq in UNIT and return function pointer of JIT-ed code.
    It may return NOT_COMPILED_JIT_ISEQ_FUNC if something went wrong. */
 static mjit_func_t
-convert_unit_to_func(struct rb_mjit_unit *unit, struct rb_call_cache *cd_entries, union iseq_inline_storage_entry *is_entries)
+convert_unit_to_func(struct rb_mjit_unit *unit, struct rb_call_data *cd_entries, union iseq_inline_storage_entry *is_entries)
 {
     char c_file_buff[MAXPATHLEN], *c_file = c_file_buff, *so_file, funcname[35]; /* TODO: reconsider `35` */
     int success;

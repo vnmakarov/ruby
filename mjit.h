@@ -63,6 +63,8 @@ struct mjit_options {
     /* Maximal permitted number of iseq JIT codes in a MJIT memory
        cache.  */
     int max_cache_size;
+    /* Enable FP optimizations.  */
+    char fp_opt;
 };
 
 struct rb_mjit_compile_info;

@@ -575,7 +575,7 @@ rb_iseq_init_trace(rb_iseq_t *iseq)
 {
     iseq->aux.exec.global_trace_events = 0;
     if (ruby_vm_event_enabled_global_flags & ISEQ_TRACE_EVENTS) {
-        rb_iseq_trace_set(iseq, ruby_vm_event_enabled_global_flags & ISEQ_TRACE_EVENTS);
+	rb_iseq_trace_set(iseq, ruby_vm_event_enabled_global_flags & ISEQ_TRACE_EVENTS);
     }
 }
 
@@ -1708,7 +1708,9 @@ validate_get_insn_info(const rb_iseq_t *iseq, int iseq_rtl_p)
 {
     const struct rb_iseq_constant_body *const body = iseq->body;
     size_t i;
-    for (i = 0; i < body->iseq_size; i++) {
+    unsigned int iseq_size = iseq_rtl_p ? body->rtl_size : body->iseq_size;
+
+    for (i = 0; i < iseq_size; i++) {
 	if (get_insn_info_linear_search(iseq, i, iseq_rtl_p) != get_insn_info(iseq, i, iseq_rtl_p)) {
 	    rb_bug("validate_get_insn_info: get_insn_info_linear_search(iseq, %"PRIuSIZE", %d) != get_insn_info(iseq, %"PRIuSIZE", %d)",
 		   i, iseq_rtl_p, i, iseq_rtl_p);
@@ -1743,14 +1745,14 @@ rb_iseq_event_flags(const rb_iseq_t *iseq, size_t pos, int rtl_p)
 }
 
 void
-rb_iseq_clear_event_flags(const rb_iseq_t *iseq, size_t pos, rb_event_flag_t reset)
+rb_iseq_clear_event_flags(const rb_iseq_t *iseq, size_t pos, int rtl_p, rb_event_flag_t reset)
 {
-    struct iseq_insn_info_entry *entry = (struct iseq_insn_info_entry *)get_insn_info(iseq, pos);
+  struct iseq_insn_info_entry *entry = (struct iseq_insn_info_entry *)get_insn_info(iseq, pos, rtl_p);
     if (entry) {
         entry->events &= ~reset;
         if (!(entry->events & iseq->aux.exec.global_trace_events)) {
-            void rb_iseq_trace_flag_cleared(const rb_iseq_t *iseq, size_t pos);
-            rb_iseq_trace_flag_cleared(iseq, pos);
+	    void rb_iseq_trace_flag_cleared(const rb_iseq_t *iseq, size_t pos, int rtl_p);
+            rb_iseq_trace_flag_cleared(iseq, pos, rtl_p);
         }
     }
 }
@@ -3098,8 +3100,105 @@ typedef struct insn_data_struct {
     int insn_len;
     void *notrace_encoded_insn;
     void *trace_encoded_insn;
+    void *safe_trace_encoded_insn;
+    void *safe_notrace_encoded_insn;
 } insn_data_t;
 static insn_data_t insn_data[VM_INSTRUCTION_SIZE/2];
+
+static VALUE
+get_safe_insn(VALUE insn, int change_p) {
+    switch (insn) {
+    case BIN(not): case BIN(spec_not): return change_p ? BIN(not) : BIN(unot);
+    case BIN(plus): case BIN(iplus): case BIN(fplus): return change_p ? BIN(plus) : BIN(uplus);
+    case BIN(minus): case BIN(iminus): case BIN(fminus): return change_p ? BIN(minus) : BIN(uminus);
+    case BIN(mult): case BIN(imult): case BIN(fmult): return change_p ? BIN(mult) : BIN(umult);
+    case BIN(div): case BIN(idiv): case BIN(fdiv): return change_p ? BIN(div) : BIN(udiv);
+    case BIN(mod): case BIN(imod): case BIN(fmod): return change_p ? BIN(mod) : BIN(umod);
+    case BIN(or): case BIN(ior): return change_p ? BIN(or) : BIN(uor);
+    case BIN(and): case BIN(iand): return change_p ? BIN(and) : BIN(uand);
+    case BIN(eq): case BIN(ieq): case BIN(feq): return change_p ? BIN(eq) : BIN(ueq);
+    case BIN(ne): case BIN(ine): case BIN(fne): return change_p ? BIN(ne) : BIN(une);
+    case BIN(lt): case BIN(ilt): case BIN(flt): return change_p ? BIN(lt) : BIN(ult);
+    case BIN(gt): case BIN(igt): case BIN(fgt): return change_p ? BIN(gt) : BIN(ugt);
+    case BIN(le): case BIN(ile): case BIN(fle): return change_p ? BIN(le) : BIN(ule);
+    case BIN(ge): case BIN(ige): case BIN(fge): return change_p ? BIN(ge) : BIN(uge);
+    case BIN(splus): case BIN(siplus): case BIN(sfplus): return change_p ? BIN(splus) : BIN(suplus);
+    case BIN(sminus): case BIN(siminus): case BIN(sfminus): return change_p ? BIN(sminus) : BIN(suminus);
+    case BIN(smult): case BIN(simult): case BIN(sfmult): return change_p ? BIN(smult) : BIN(sumult);
+    case BIN(sdiv): case BIN(sidiv): case BIN(sfdiv): return change_p ? BIN(sdiv) : BIN(sudiv);
+    case BIN(smod): case BIN(simod): case BIN(sfmod): return change_p ? BIN(smod) : BIN(sumod);
+    case BIN(sor): case BIN(sior): return change_p ? BIN(sdiv) : BIN(sudiv);
+    case BIN(sand): case BIN(siand): return change_p ? BIN(smod) : BIN(sumod);
+    case BIN(seq): case BIN(sieq): case BIN(sfeq): return change_p ? BIN(seq) : BIN(sueq);
+    case BIN(sne): case BIN(sine): case BIN(sfne): return change_p ? BIN(sne) : BIN(sune);
+    case BIN(slt): case BIN(silt): case BIN(sflt): return change_p ? BIN(slt) : BIN(sult);
+    case BIN(sgt): case BIN(sigt): case BIN(sfgt): return change_p ? BIN(sgt) : BIN(sugt);
+    case BIN(sle): case BIN(sile): case BIN(sfle): return change_p ? BIN(sle) : BIN(sule);
+    case BIN(sge): case BIN(sige): case BIN(sfge): return change_p ? BIN(sge) : BIN(suge);
+    case BIN(plusi): case BIN(iplusi): return change_p ? BIN(plusi) : BIN(uplusi);
+    case BIN(minusi): case BIN(iminusi): return change_p ? BIN(minusi) : BIN(uminusi);
+    case BIN(multi): case BIN(imulti): return change_p ? BIN(multi) : BIN(umulti);
+    case BIN(divi): case BIN(idivi): return change_p ? BIN(divi) : BIN(udivi);
+    case BIN(modi): case BIN(imodi): return change_p ? BIN(modi) : BIN(umodi);
+    case BIN(ori): case BIN(iori): return change_p ? BIN(ori) : BIN(uori);
+    case BIN(andi): case BIN(iandi): return change_p ? BIN(andi) : BIN(uandi);
+    case BIN(eqi): case BIN(ieqi): return change_p ? BIN(eqi) : BIN(ueqi);
+    case BIN(nei): case BIN(inei): return change_p ? BIN(nei) : BIN(unei);
+    case BIN(lti): case BIN(ilti): return change_p ? BIN(lti) : BIN(ulti);
+    case BIN(gti): case BIN(igti): return change_p ? BIN(gti) : BIN(ugti);
+    case BIN(lei): case BIN(ilei): return change_p ? BIN(lei) : BIN(ulei);
+    case BIN(gei): case BIN(igei): return change_p ? BIN(gei) : BIN(ugei);
+    case BIN(plusf): case BIN(fplusf): return change_p ? BIN(plusf) : BIN(uplusf);
+    case BIN(minusf): case BIN(fminusf): return change_p ? BIN(minusf) : BIN(uminusf);
+    case BIN(multf): case BIN(fmultf): return change_p ? BIN(multf) : BIN(umultf);
+    case BIN(divf): case BIN(fdivf): return change_p ? BIN(divf) : BIN(udivf);
+    case BIN(modf): case BIN(fmodf): return change_p ? BIN(modf) : BIN(umodf);
+    case BIN(eqf): case BIN(feqf): return change_p ? BIN(eqf) : BIN(ueqf);
+    case BIN(nef): case BIN(fnef): return change_p ? BIN(nef) : BIN(unef);
+    case BIN(ltf): case BIN(fltf): return change_p ? BIN(ltf) : BIN(ultf);
+    case BIN(gtf): case BIN(fgtf): return change_p ? BIN(gtf) : BIN(ugtf);
+    case BIN(lef): case BIN(flef): return change_p ? BIN(lef) : BIN(ulef);
+    case BIN(gef): case BIN(fgef): return change_p ? BIN(gef) : BIN(ugef);
+    case BIN(bteq): case BIN(ibteq): case BIN(fbteq): return change_p ? BIN(bteq) : BIN(ubteq);
+    case BIN(btne): case BIN(ibtne): case BIN(fbtne): return change_p ? BIN(btne) : BIN(ubtne);
+    case BIN(btlt): case BIN(ibtlt): case BIN(fbtlt): return change_p ? BIN(btlt) : BIN(ubtlt);
+    case BIN(btgt): case BIN(ibtgt): case BIN(fbtgt): return change_p ? BIN(btgt) : BIN(ubtgt);
+    case BIN(btle): case BIN(ibtle): case BIN(fbtle): return change_p ? BIN(btle) : BIN(ubtle);
+    case BIN(btge): case BIN(ibtge): case BIN(fbtge): return change_p ? BIN(btge) : BIN(ubtge);
+    case BIN(bteqi): case BIN(ibteqi): return change_p ? BIN(bteqi) : BIN(ubteqi);
+    case BIN(btnei): case BIN(ibtnei): return change_p ? BIN(btnei) : BIN(ubtnei);
+    case BIN(btlti): case BIN(ibtlti): return change_p ? BIN(btlti) : BIN(ubtlti);
+    case BIN(btgti): case BIN(ibtgti): return change_p ? BIN(btgti) : BIN(ubtgti);
+    case BIN(btlei): case BIN(ibtlei): return change_p ? BIN(btlei) : BIN(ubtlei);
+    case BIN(btgei): case BIN(ibtgei): return change_p ? BIN(btgei) : BIN(ubtgei);
+    case BIN(bteqf): case BIN(fbteqf): return change_p ? BIN(bteqf) : BIN(ubteqf);
+    case BIN(btnef): case BIN(fbtnef): return change_p ? BIN(btnef) : BIN(ubtnef);
+    case BIN(btltf): case BIN(fbtltf): return change_p ? BIN(btltf) : BIN(ubtltf);
+    case BIN(btgtf): case BIN(fbtgtf): return change_p ? BIN(btgtf) : BIN(ubtgtf);
+    case BIN(btlef): case BIN(fbtlef): return change_p ? BIN(btlef) : BIN(ubtlef);
+    case BIN(btgef): case BIN(fbtgef): return change_p ? BIN(btgef) : BIN(ubtgef);
+    case BIN(bfeq): case BIN(ibfeq): case BIN(fbfeq): return change_p ? BIN(bfeq) : BIN(ubfeq);
+    case BIN(bfne): case BIN(ibfne): case BIN(fbfne): return change_p ? BIN(bfne) : BIN(ubfne);
+    case BIN(bflt): case BIN(ibflt): case BIN(fbflt): return change_p ? BIN(bflt) : BIN(ubflt);
+    case BIN(bfgt): case BIN(ibfgt): case BIN(fbfgt): return change_p ? BIN(bfgt) : BIN(ubfgt);
+    case BIN(bfle): case BIN(ibfle): case BIN(fbfle): return change_p ? BIN(bfle) : BIN(ubfle);
+    case BIN(bfge): case BIN(ibfge): case BIN(fbfge): return change_p ? BIN(bfge) : BIN(ubfge);
+    case BIN(bfeqi): case BIN(ibfeqi): return change_p ? BIN(bfeqi) : BIN(ubfeqi);
+    case BIN(bfnei): case BIN(ibfnei): return change_p ? BIN(bfnei) : BIN(ubfnei);
+    case BIN(bflti): case BIN(ibflti): return change_p ? BIN(bflti) : BIN(ubflti);
+    case BIN(bfgti): case BIN(ibfgti): return change_p ? BIN(bfgti) : BIN(ubfgti);
+    case BIN(bflei): case BIN(ibflei): return change_p ? BIN(bflei) : BIN(ubflei);
+    case BIN(bfgei): case BIN(ibfgei): return change_p ? BIN(bfgei) : BIN(ubfgei);
+    case BIN(bfeqf): case BIN(fbfeqf): return change_p ? BIN(bfeqf) : BIN(ubfeqf);
+    case BIN(bfnef): case BIN(fbfnef): return change_p ? BIN(bfnef) : BIN(ubfnef);
+    case BIN(bfltf): case BIN(fbfltf): return change_p ? BIN(bfltf) : BIN(ubfltf);
+    case BIN(bfgtf): case BIN(fbfgtf): return change_p ? BIN(bfgtf) : BIN(ubfgtf);
+    case BIN(bflef): case BIN(fbflef): return change_p ? BIN(bflef) : BIN(ubflef);
+    case BIN(bfgef): case BIN(fbfgef): return change_p ? BIN(bfgef) : BIN(ubfgef);
+    default:
+	return insn;
+    }
+}
 
 void
 rb_vm_encoded_insn_data_table_init(void)
@@ -3121,6 +3220,8 @@ rb_vm_encoded_insn_data_table_init(void)
         insn_data[insn].insn_len = insn_len(insn);
         insn_data[insn].notrace_encoded_insn = (void *) key1;
         insn_data[insn].trace_encoded_insn = (void *) key2;
+        insn_data[insn].safe_trace_encoded_insn = (void *) INSN_CODE(get_safe_insn(insn, FALSE) + VM_INSTRUCTION_SIZE/2);
+        insn_data[insn].safe_notrace_encoded_insn = (void *) INSN_CODE(get_safe_insn(insn, TRUE));
 
         st_add_direct(encoded_insn_data, key1, (st_data_t)&insn_data[insn]);
         st_add_direct(encoded_insn_data, key2, (st_data_t)&insn_data[insn]);
@@ -3149,7 +3250,7 @@ encoded_iseq_trace_instrument(VALUE *iseq_encoded_insn, rb_event_flag_t turnon)
 
     if (st_lookup(encoded_insn_data, key, &val)) {
         insn_data_t *e = (insn_data_t *)val;
-        *iseq_encoded_insn = (VALUE) (turnon ? e->trace_encoded_insn : e->notrace_encoded_insn);
+        *iseq_encoded_insn = (VALUE) (turnon ? e->safe_trace_encoded_insn : e->notrace_encoded_insn);
         return e->insn_len;
     }
 
@@ -3157,10 +3258,10 @@ encoded_iseq_trace_instrument(VALUE *iseq_encoded_insn, rb_event_flag_t turnon)
 }
 
 void
-rb_iseq_trace_flag_cleared(const rb_iseq_t *iseq, size_t pos)
+rb_iseq_trace_flag_cleared(const rb_iseq_t *iseq, size_t pos, int rtl_p)
 {
     const struct rb_iseq_constant_body *const body = iseq->body;
-    VALUE *iseq_encoded = (VALUE *)body->iseq_encoded;
+    VALUE *iseq_encoded = rtl_p ? (VALUE *)body->rtl_encoded : (VALUE *)body->iseq_encoded;
     encoded_iseq_trace_instrument(&iseq_encoded[pos], 0);
 }
 
@@ -3170,12 +3271,12 @@ iseq_add_local_tracepoint(const rb_iseq_t *iseq, rb_event_flag_t turnon_events, 
     unsigned int pc;
     int n = 0;
     const struct rb_iseq_constant_body *const body = iseq->body;
-    VALUE *iseq_encoded = (VALUE *)body->iseq_encoded;
+    VALUE *iseq_encoded = (VALUE *)body->rtl_encoded;
 
     VM_ASSERT(ISEQ_EXECUTABLE_P(iseq));
 
-    for (pc=0; pc<body->iseq_size;) {
-        const struct iseq_insn_info_entry *entry = get_insn_info(iseq, pc);
+    for (pc=0; pc<body->rtl_size;) {
+      const struct iseq_insn_info_entry *entry = get_insn_info(iseq, pc, TRUE);
         rb_event_flag_t pc_events = entry->events;
         rb_event_flag_t target_events = turnon_events;
         unsigned int line = (int)entry->line_no;
@@ -3215,7 +3316,7 @@ iseq_add_local_tracepoint_i(const rb_iseq_t *iseq, void *p)
 {
     struct trace_set_local_events_struct *data = (struct trace_set_local_events_struct *)p;
     data->n += iseq_add_local_tracepoint(iseq, data->turnon_events, data->tpval, data->target_line);
-    iseq_iterate_children(iseq, iseq_add_local_tracepoint_i, p);
+    iseq_iterate_children(iseq, TRUE, iseq_add_local_tracepoint_i, p);
 }
 
 int
@@ -3228,19 +3329,20 @@ rb_iseq_add_local_tracepoint_recursively(const rb_iseq_t *iseq, rb_event_flag_t 
     data.n = 0;
 
     iseq_add_local_tracepoint_i(iseq, (void *)&data);
-    if (0) rb_funcall(Qnil, rb_intern("puts"), 1, rb_iseq_disasm(iseq)); /* for debug */
+    if (0) rb_funcall(Qnil, rb_intern("puts"), 1, rb_iseq_disasm(iseq, TRUE)); /* for debug */
     return data.n;
 }
 
 static int
-iseq_remove_local_tracepoint(const rb_iseq_t *iseq, VALUE tpval)
+iseq_remove_local_tracepoint(const rb_iseq_t *iseq, int rtl_p, VALUE tpval)
 {
     int n = 0;
 
     if (iseq->aux.exec.local_hooks) {
         unsigned int pc;
         const struct rb_iseq_constant_body *const body = iseq->body;
-        VALUE *iseq_encoded = (VALUE *)body->iseq_encoded;
+        VALUE *iseq_encoded = rtl_p ? (VALUE *)body->rtl_encoded : (VALUE *)body->iseq_encoded;
+	size_t iseq_size = rtl_p ? body->rtl_size : body->iseq_size;
         rb_event_flag_t local_events = 0;
 
         rb_hook_list_remove_tracepoint(iseq->aux.exec.local_hooks, tpval);
@@ -3253,8 +3355,8 @@ iseq_remove_local_tracepoint(const rb_iseq_t *iseq, VALUE tpval)
             ((rb_iseq_t *)iseq)->aux.exec.local_hooks = NULL;
         }
 
-        for (pc = 0; pc<body->iseq_size;) {
-            rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pc);
+        for (pc = 0; pc<iseq_size;) {
+	    rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pc, rtl_p);
             pc += encoded_iseq_trace_instrument(&iseq_encoded[pc], pc_events & (local_events | iseq->aux.exec.global_trace_events));
         }
     }
@@ -3270,8 +3372,8 @@ static void
 iseq_remove_local_tracepoint_i(const rb_iseq_t *iseq, void *p)
 {
     struct trace_clear_local_events_struct *data = (struct trace_clear_local_events_struct *)p;
-    data->n += iseq_remove_local_tracepoint(iseq, data->tpval);
-    iseq_iterate_children(iseq, iseq_remove_local_tracepoint_i, p);
+    data->n += iseq_remove_local_tracepoint(iseq, TRUE, data->tpval);
+    iseq_iterate_children(iseq, TRUE, iseq_remove_local_tracepoint_i, p);
 }
 
 int
@@ -3306,7 +3408,7 @@ rb_iseq_trace_set(const rb_iseq_t *iseq, rb_event_flag_t turnon_events)
         enabled_events = turnon_events | local_events;
 
         for (pc=0; pc<body->rtl_size;) {
-	  rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pc, TRUE);
+	    rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pc, TRUE);
             pc += encoded_iseq_trace_instrument(&iseq_encoded[pc], pc_events & enabled_events);
 	}
     }

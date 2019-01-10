@@ -507,7 +507,9 @@ duphash
 ()
 (VALUE val)
 {
+#if STACK_INSN_CODE
     val = rb_hash_dup(hash);
+#endif
 }
 
 /* if TOS is an array expand, expand it to num objects.
@@ -2889,6 +2891,15 @@ clone_array
 ()
 {
     clone_array_f(reg_cfp, get_temp_addr(reg_cfp, res), arr);
+}
+
+DEFINE_INSN
+clone_hash
+(tindex_t res, VALUE hash)
+()
+()
+{
+    clone_hash_f(reg_cfp, get_temp_addr(reg_cfp, res), hash);
 }
 
 /* op1 is always in a temporary variable and it is a location of the
