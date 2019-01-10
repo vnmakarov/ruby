@@ -101,6 +101,26 @@ RB_DEBUG_COUNTER(lvar_set)
 RB_DEBUG_COUNTER(lvar_set_dynamic)
 RB_DEBUG_COUNTER(lvar_set_slowpath)
 
+/* GC counts:
+ *
+ * * count: simple count
+ * * _minor: minor gc
+ * * _major: major gc
+ * * other suffix is corresponding to last_gc_info or
+ *   gc_profile_record_flag in gc.c.
+ */
+RB_DEBUG_COUNTER(gc_count)
+RB_DEBUG_COUNTER(gc_minor_newobj)
+RB_DEBUG_COUNTER(gc_minor_malloc)
+RB_DEBUG_COUNTER(gc_minor_method)
+RB_DEBUG_COUNTER(gc_minor_capi)
+RB_DEBUG_COUNTER(gc_minor_stress)
+RB_DEBUG_COUNTER(gc_major_nofree)
+RB_DEBUG_COUNTER(gc_major_oldgen)
+RB_DEBUG_COUNTER(gc_major_shady)
+RB_DEBUG_COUNTER(gc_major_force)
+RB_DEBUG_COUNTER(gc_major_oldmalloc)
+
 /* object allocation counts:
  *
  * * obj_newobj: newobj counts
@@ -121,6 +141,7 @@ RB_DEBUG_COUNTER(lvar_set_slowpath)
  * * [attr]
  *   * _ptr: R?? is not embed.
  *   * _embed: R?? is embed.
+ *   * _transient: R?? uses transient heap.
  * * type specific attr.
  *   * str_shared: str is shared.
  *   * str_nofree:        nofree
@@ -142,8 +163,9 @@ RB_DEBUG_COUNTER(obj_free)
 RB_DEBUG_COUNTER(obj_promote)
 RB_DEBUG_COUNTER(obj_wb_unprotect)
 
-RB_DEBUG_COUNTER(obj_obj_ptr)
 RB_DEBUG_COUNTER(obj_obj_embed)
+RB_DEBUG_COUNTER(obj_obj_transient)
+RB_DEBUG_COUNTER(obj_obj_ptr)
 
 RB_DEBUG_COUNTER(obj_str_ptr)
 RB_DEBUG_COUNTER(obj_str_embed)
@@ -151,16 +173,23 @@ RB_DEBUG_COUNTER(obj_str_shared)
 RB_DEBUG_COUNTER(obj_str_nofree)
 RB_DEBUG_COUNTER(obj_str_fstr)
 
-RB_DEBUG_COUNTER(obj_ary_ptr)
 RB_DEBUG_COUNTER(obj_ary_embed)
+RB_DEBUG_COUNTER(obj_ary_transient)
+RB_DEBUG_COUNTER(obj_ary_ptr)
 
 RB_DEBUG_COUNTER(obj_hash_empty)
 RB_DEBUG_COUNTER(obj_hash_under4)
 RB_DEBUG_COUNTER(obj_hash_ge4)
 RB_DEBUG_COUNTER(obj_hash_ge8)
+RB_DEBUG_COUNTER(obj_hash_ar)
+RB_DEBUG_COUNTER(obj_hash_st)
+RB_DEBUG_COUNTER(obj_hash_transient)
 
-RB_DEBUG_COUNTER(obj_struct_ptr)
+RB_DEBUG_COUNTER(obj_hash_force_convert)
+
 RB_DEBUG_COUNTER(obj_struct_embed)
+RB_DEBUG_COUNTER(obj_struct_transient)
+RB_DEBUG_COUNTER(obj_struct_ptr)
 
 RB_DEBUG_COUNTER(obj_regexp_ptr)
 
@@ -198,6 +227,11 @@ RB_DEBUG_COUNTER(obj_module_ptr)
 RB_DEBUG_COUNTER(heap_xmalloc)
 RB_DEBUG_COUNTER(heap_xrealloc)
 RB_DEBUG_COUNTER(heap_xfree)
+
+/* transient_heap */
+RB_DEBUG_COUNTER(theap_alloc)
+RB_DEBUG_COUNTER(theap_alloc_fail)
+RB_DEBUG_COUNTER(theap_evacuate)
 
 /* load (not implemented yet) */
 /*

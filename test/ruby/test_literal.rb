@@ -177,6 +177,12 @@ class TestRubyLiteral < Test::Unit::TestCase
     end
   end
 
+  def test_frozen_string_in_array_literal
+    list = eval("# frozen-string-literal: true\n""['foo', 'bar']")
+    assert_equal 2, list.length
+    list.each { |str| assert_predicate str, :frozen? }
+  end
+
   if defined?(RubyVM::InstructionSequence.compile_option) and
     RubyVM::InstructionSequence.compile_option.key?(:debug_frozen_string_literal)
     def test_debug_frozen_string
@@ -188,6 +194,17 @@ class TestRubyLiteral < Test::Unit::TestCase
       assert_raise_with_message(FrozenError, /created at #{Regexp.quote(f)}:#{n}/) {
         str << "x"
       }
+    end
+
+    def test_debug_frozen_string_in_array_literal
+      src = '["foo"]'; f = "test.rb"; n = 1
+      opt = {frozen_string_literal: true, debug_frozen_string_literal: true}
+      ary = RubyVM::InstructionSequence.compile(src, f, f, n, opt).eval
+      assert_equal("foo", ary.first)
+      assert_predicate(ary.first, :frozen?)
+      assert_raise_with_message(FrozenError, /created at #{Regexp.quote(f)}:#{n}/) {
+        ary.first << "x"
+      } unless ENV['RUBY_ISEQ_DUMP_DEBUG']
     end
   end
 

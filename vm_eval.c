@@ -290,8 +290,16 @@ rb_call0(rb_execution_context_t *ec,
 	 VALUE recv, ID mid, int argc, const VALUE *argv,
 	 call_type scope, VALUE self)
 {
-    const rb_callable_method_entry_t *me = rb_search_method_entry(recv, mid);
-    enum method_missing_reason call_status = rb_method_call_status(ec, me, scope, self);
+    const rb_callable_method_entry_t *me;
+    enum method_missing_reason call_status;
+
+    if (scope == CALL_PUBLIC) {
+        me = rb_callable_method_entry_with_refinements(CLASS_OF(recv), mid, NULL);
+    }
+    else {
+        me = rb_search_method_entry(recv, mid);
+    }
+    call_status = rb_method_call_status(ec, me, scope, self);
 
     if (call_status != MISSING_NONE) {
 	return method_missing(recv, mid, argc, argv, call_status);
@@ -764,7 +772,7 @@ rb_apply(VALUE recv, ID mid, VALUE args)
 	return ret;
     }
     argv = ALLOCA_N(VALUE, argc);
-    MEMCPY(argv, RARRAY_CONST_PTR(args), VALUE, argc);
+    MEMCPY(argv, RARRAY_CONST_PTR_TRANSIENT(args), VALUE, argc);
     return rb_call(recv, mid, argc, argv, CALL_FCALL);
 }
 
@@ -1285,6 +1293,8 @@ eval_make_iseq(VALUE src, VALUE fname, int line, const rb_binding_t *bind,
 	printf("%s\n", StringValuePtr(disasm));
     }
 
+    EXEC_EVENT_HOOK(GET_EC(), RUBY_EVENT_SCRIPT_COMPILED, GET_EC()->cfp->self, 0, 0, 0,
+                    rb_ary_new_from_args(2, src, (VALUE)iseq));
     return iseq;
 }
 
@@ -1955,16 +1965,9 @@ catch_i(VALUE tag, VALUE data)
  */
 
 static VALUE
-rb_f_catch(int argc, VALUE *argv)
+rb_f_catch(int argc, VALUE *argv, VALUE self)
 {
-    VALUE tag;
-
-    if (argc == 0) {
-	tag = rb_obj_alloc(rb_cObject);
-    }
-    else {
-	rb_scan_args(argc, argv, "01", &tag);
-    }
+    VALUE tag = rb_check_arity(argc, 0, 1) ? argv[0] : rb_obj_alloc(rb_cObject);
     return rb_catch_obj(tag, catch_i, 0);
 }
 
@@ -2023,8 +2026,7 @@ rb_catch_obj(VALUE t, VALUE (*func)(), VALUE data)
 static void
 local_var_list_init(struct local_var_list *vars)
 {
-    vars->tbl = rb_hash_new();
-    RHASH(vars->tbl)->ntbl = st_init_numtable(); /* compare_by_identity */
+    vars->tbl = rb_hash_new_compare_by_id();
     RBASIC_CLEAR_CLASS(vars->tbl);
 }
 
@@ -2050,10 +2052,9 @@ static void
 local_var_list_add(const struct local_var_list *vars, ID lid)
 {
     if (lid && rb_is_local_id(lid)) {
-	/* should skip temporary variable */
-	st_table *tbl = RHASH_TBL_RAW(vars->tbl);
-	st_data_t idx = 0;	/* tbl->num_entries */
-	st_update(tbl, ID2SYM(lid), local_var_list_update, idx);
+        /* should skip temporary variable */
+        st_data_t idx = 0;	/* tbl->num_entries */
+        rb_hash_stlike_update(vars->tbl, ID2SYM(lid), local_var_list_update, idx);
     }
 }
 

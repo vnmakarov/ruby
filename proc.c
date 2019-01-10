@@ -800,22 +800,22 @@ rb_block_lambda(void)
     return proc_new(rb_cProc, TRUE);
 }
 
-/*  Document-method: ===
+/*  Document-method: Proc#===
  *
  *  call-seq:
  *     proc === obj   -> result_of_proc
  *
- *  Invokes the block with +obj+ as the proc's parameter like Proc#call.  It
- *  is to allow a proc object to be a target of +when+ clause in a case
- *  statement.
+ *  Invokes the block with +obj+ as the proc's parameter like Proc#call.
+ *  This allows a proc object to be the target of a +when+ clause
+ *  in a case statement.
  */
 
 /* CHECKME: are the argument checking semantics correct? */
 
 /*
- *  Document-method: []
- *  Document-method: call
- *  Document-method: yield
+ *  Document-method: Proc#[]
+ *  Document-method: Proc#call
+ *  Document-method: Proc#yield
  *
  *  call-seq:
  *     prc.call(params,...)   -> obj
@@ -1482,6 +1482,11 @@ method_entry_defined_class(const rb_method_entry_t *me)
  *     meth.call(9)                 #=> 81
  *     [ 1, 2, 3 ].collect(&meth)   #=> [1, 4, 9]
  *
+ *     [ 1, 2, 3 ].each(&method(:puts)) #=> prints 1, 2, 3
+ *
+ *     require 'date'
+ *     %w[2017-03-01 2017-03-02].collect(&Date.method(:parse))
+ *     #=> [#<Date: 2017-03-01 ((2457814j,0s,0n),+0s,2299161j)>, #<Date: 2017-03-02 ((2457815j,0s,0n),+0s,2299161j)>]
  */
 
 /*
@@ -1576,6 +1581,8 @@ method_unbind(VALUE obj)
  *     meth.receiver    -> object
  *
  *  Returns the bound receiver of the method object.
+ *
+ *    (1..3).method(:map).receiver # => 1..3
  */
 
 static VALUE
@@ -1630,6 +1637,9 @@ method_original_name(VALUE obj)
  *     meth.owner    -> class_or_module
  *
  *  Returns the class or module that defines the method.
+ *  See also receiver.
+ *
+ *    (1..3).method(:map).owner #=> Enumerable
  */
 
 static VALUE
@@ -1712,6 +1722,18 @@ obj_method(VALUE obj, VALUE vid, int scope)
  *     l = Demo.new('Fred')
  *     m = l.method("hello")
  *     m.call   #=> "Hello, @iv = Fred"
+ *
+ *  Note that <code>Method</code> implements <code>to_proc</code> method,
+ *  which means it can be used with iterators.
+ *
+ *     [ 1, 2, 3 ].each(&method(:puts)) # => prints 3 lines to stdout
+ *
+ *     out = File.open('test.txt', 'w')
+ *     [ 1, 2, 3 ].each(&out.method(:puts)) # => prints 3 lines to file
+ *
+ *     require 'date'
+ *     %w[2017-03-01 2017-03-02].collect(&Date.method(:parse))
+ *     #=> [#<Date: 2017-03-01 ((2457814j,0s,0n),+0s,2299161j)>, #<Date: 2017-03-02 ((2457815j,0s,0n),+0s,2299161j)>]
  */
 
 VALUE
@@ -2060,6 +2082,24 @@ method_clone(VALUE self)
     return clone;
 }
 
+/*  Document-method: Method#===
+ *
+ *  call-seq:
+ *     method === obj   -> result_of_method
+ *
+ *  Invokes the method with +obj+ as the parameter like #call.
+ *  This allows a method object to be the target of a +when+ clause
+ *  in a case statement.
+ *
+ *      require 'prime'
+ *
+ *      case 1373
+ *      when Prime.method(:prime?)
+ *        # ...
+ *      end
+ */
+
+
 /*
  *  call-seq:
  *     meth.call(args, ...)    -> obj
@@ -2302,7 +2342,7 @@ rb_method_entry_min_max_arity(const rb_method_entry_t *me, int *max)
 	def = def->body.alias.original_me->def;
 	goto again;
       case VM_METHOD_TYPE_BMETHOD:
-	return rb_proc_min_max_arity(def->body.proc, max);
+        return rb_proc_min_max_arity(def->body.bmethod.proc, max);
       case VM_METHOD_TYPE_ISEQ:
 	return rb_iseq_min_max_arity(rb_iseq_check(def->body.iseq.iseqptr), max);
       case VM_METHOD_TYPE_UNDEF:
@@ -2438,8 +2478,8 @@ rb_obj_method_arity(VALUE obj, ID id)
     return rb_mod_method_arity(CLASS_OF(obj), id);
 }
 
-static inline const rb_method_definition_t *
-method_def(VALUE method)
+const rb_method_definition_t *
+rb_method_def(VALUE method)
 {
     const struct METHOD *data;
 
@@ -2454,7 +2494,7 @@ method_def_iseq(const rb_method_definition_t *def)
       case VM_METHOD_TYPE_ISEQ:
 	return rb_iseq_check(def->body.iseq.iseqptr);
       case VM_METHOD_TYPE_BMETHOD:
-	return rb_proc_get_iseq(def->body.proc, 0);
+        return rb_proc_get_iseq(def->body.bmethod.proc, 0);
       case VM_METHOD_TYPE_ALIAS:
 	return method_def_iseq(def->body.alias.original_me->def);
       case VM_METHOD_TYPE_CFUNC:
@@ -2474,13 +2514,13 @@ method_def_iseq(const rb_method_definition_t *def)
 const rb_iseq_t *
 rb_method_iseq(VALUE method)
 {
-    return method_def_iseq(method_def(method));
+    return method_def_iseq(rb_method_def(method));
 }
 
 static const rb_cref_t *
 method_cref(VALUE method)
 {
-    const rb_method_definition_t *def = method_def(method);
+    const rb_method_definition_t *def = rb_method_def(method);
 
   again:
     switch (def->type) {
@@ -2536,7 +2576,7 @@ rb_obj_method_location(VALUE obj, ID id)
 VALUE
 rb_method_location(VALUE method)
 {
-    return method_def_location(method_def(method));
+    return method_def_location(rb_method_def(method));
 }
 
 /*
@@ -2573,9 +2613,13 @@ rb_method_parameters(VALUE method)
  *   meth.to_s      ->  string
  *   meth.inspect   ->  string
  *
- *  Returns the name of the underlying method.
+ *  Returns a human-readable description of the underlying method.
  *
  *    "cat".method(:count).inspect   #=> "#<Method: String#count>"
+ *    (1..3).method(:map).inspect    #=> "#<Method: Range(Enumerable)#map>"
+ *
+ *  In the latter case, the method description includes the "owner" of the
+ *  original method (+Enumerable+ module, which is included into +Range+).
  */
 
 static VALUE
@@ -2949,8 +2993,7 @@ proc_curry(int argc, const VALUE *argv, VALUE self)
     int sarity, max_arity, min_arity = rb_proc_min_max_arity(self, &max_arity);
     VALUE arity;
 
-    rb_scan_args(argc, argv, "01", &arity);
-    if (NIL_P(arity)) {
+    if (rb_check_arity(argc, 0, 1) == 0 || NIL_P(arity = argv[0])) {
 	arity = INT2FIX(min_arity);
     }
     else {
@@ -3002,6 +3045,136 @@ rb_method_curry(int argc, const VALUE *argv, VALUE self)
     return proc_curry(argc, argv, proc);
 }
 
+static VALUE
+compose(VALUE dummy, VALUE args, int argc, VALUE *argv, VALUE passed_proc)
+{
+    VALUE f, g, fargs;
+    f = RARRAY_AREF(args, 0);
+    g = RARRAY_AREF(args, 1);
+
+    if (rb_obj_is_proc(g))
+        fargs = rb_proc_call_with_block(g, argc, argv, passed_proc);
+    else
+        fargs = rb_funcall_with_block(g, idCall, argc, argv, passed_proc);
+
+    if (rb_obj_is_proc(f))
+        return rb_proc_call(f, rb_ary_new3(1, fargs));
+    else
+        return rb_funcallv(f, idCall, 1, &fargs);
+}
+
+/*
+ *  call-seq:
+ *     prc << g -> a_proc
+ *
+ *  Returns a proc that is the composition of this proc and the given <i>g</i>.
+ *  The returned proc takes a variable number of arguments, calls <i>g</i> with them
+ *  then calls this proc with the result.
+ *
+ *     f = proc {|x| x * x }
+ *     g = proc {|x| x + x }
+ *     p (f << g).call(2) #=> 16
+ */
+static VALUE
+proc_compose_to_left(VALUE self, VALUE g)
+{
+    VALUE proc, args, procs[2];
+    rb_proc_t *procp;
+    int is_lambda;
+
+    procs[0] = self;
+    procs[1] = g;
+    args = rb_ary_tmp_new_from_values(0, 2, procs);
+
+    GetProcPtr(self, procp);
+    is_lambda = procp->is_lambda;
+
+    proc = rb_proc_new(compose, args);
+    GetProcPtr(proc, procp);
+    procp->is_lambda = is_lambda;
+
+    return proc;
+}
+
+/*
+ *  call-seq:
+ *     prc >> g -> a_proc
+ *
+ *  Returns a proc that is the composition of this proc and the given <i>g</i>.
+ *  The returned proc takes a variable number of arguments, calls <i>g</i> with them
+ *  then calls this proc with the result.
+ *
+ *     f = proc {|x| x * x }
+ *     g = proc {|x| x + x }
+ *     p (f >> g).call(2) #=> 8
+ */
+static VALUE
+proc_compose_to_right(VALUE self, VALUE g)
+{
+    VALUE proc, args, procs[2];
+    rb_proc_t *procp;
+    int is_lambda;
+
+    procs[0] = g;
+    procs[1] = self;
+    args = rb_ary_tmp_new_from_values(0, 2, procs);
+
+    GetProcPtr(self, procp);
+    is_lambda = procp->is_lambda;
+
+    proc = rb_proc_new(compose, args);
+    GetProcPtr(proc, procp);
+    procp->is_lambda = is_lambda;
+
+    return proc;
+}
+
+/*
+ *  call-seq:
+ *     meth << g -> a_proc
+ *
+ *  Returns a proc that is the composition of this method and the given <i>g</i>.
+ *  The returned proc takes a variable number of arguments, calls <i>g</i> with them
+ *  then calls this method with the result.
+ *
+ *     def f(x)
+ *       x * x
+ *     end
+ *
+ *     f = self.method(:f)
+ *     g = proc {|x| x + x }
+ *     p (f << g).call(2) #=> 16
+ */
+static VALUE
+rb_method_compose_to_left(VALUE self, VALUE g)
+{
+    VALUE proc = method_to_proc(self);
+    return proc_compose_to_left(proc, g);
+}
+
+/*
+ *  call-seq:
+ *     meth >> g -> a_proc
+ *
+ *  Returns a proc that is the composition of this method and the given <i>g</i>.
+ *  The returned proc takes a variable number of arguments, calls <i>g</i> with them
+ *  then calls this method with the result.
+ *
+ *     def f(x)
+ *       x * x
+ *     end
+ *
+ *     f = self.method(:f)
+ *     g = proc {|x| x + x }
+ *     p (f >> g).call(2) #=> 8
+ */
+static VALUE
+rb_method_compose_to_right(VALUE self, VALUE g)
+{
+    VALUE proc = method_to_proc(self);
+    return proc_compose_to_right(proc, g);
+}
+
 /*
  *  Document-class: LocalJumpError
  *
@@ -3046,12 +3219,25 @@ rb_method_curry(int argc, const VALUE *argv, VALUE self)
  */
 
 /*
- *  <code>Proc</code> objects are blocks of code that have been bound to
- *  a set of local variables. Once bound, the code may be called in
- *  different contexts and still access those variables.
+ *  Document-class: Proc
+ *
+ * A +Proc+ object is an encapsulation of a block of code, which can be stored
+ * in a local variable, passed to a method or another Proc, and can be called.
+ * Proc is an essential concept in Ruby and a core of its functional
+ * programming features.
+ *
+ *      square = Proc.new {|x| x**2 }
+ *
+ *      square.call(3)  #=> 9
+ *      # shorthands:
+ *      square.(3)      #=> 9
+ *      square[3]       #=> 9
+ *
+ * Proc objects are _closures_, meaning they remember and can use the entire
+ * context in which they were created.
  *
  *     def gen_times(factor)
- *       return Proc.new {|n| n*factor }
+ *       Proc.new {|n| n*factor } # remembers the value of factor at the moment of creation
  *     end
  *
  *     times3 = gen_times(3)
@@ -3061,7 +3247,159 @@ rb_method_curry(int argc, const VALUE *argv, VALUE self)
  *     times5.call(5)                #=> 25
  *     times3.call(times5.call(4))   #=> 60
  *
+ * == Creation
+ *
+ * There are several methods to create a Proc
+ *
+ * * Use the Proc class constructor:
+ *
+ *      proc1 = Proc.new {|x| x**2 }
+ *
+ * * Use the Kernel#proc method as a shorthand of Proc.new:
+ *
+ *      proc2 = proc {|x| x**2 }
+ *
+ * * Receiving a block of code into proc argument (note the <code>&</code>):
+ *
+ *      def make_proc(&block)
+ *        block
+ *      end
+ *
+ *      proc3 = make_proc {|x| x**2 }
+ *
+ * * Construct a proc with lambda semantics using the Kernel#lambda method
+ *   (see below for explanations about lambdas):
+ *
+ *      lambda1 = lambda {|x| x**2 }
+ *
+ * * Use the Lambda literal syntax (also constructs a proc with lambda semantics):
+ *
+ *      lambda2 = ->(x) { x**2 }
+ *
+ * == Lambda and non-lambda semantics
+ *
+ * Procs are coming in two flavors: lambda and non-lambda (regular procs).
+ * Differences are:
+ *
+ * * In lambdas, +return+ means exit from this lambda;
+ * * In regular procs, +return+ means exit from embracing method
+ *   (and will throw +LocalJumpError+ if invoked outside the method);
+ * * In lambdas, arguments are treated in the same way as in methods: strict,
+ *   with +ArgumentError+ for mismatching argument number,
+ *   and no additional argument processing;
+ * * Regular procs accept arguments more generously: missing arguments
+ *   are filled with +nil+, single Array arguments are deconstructed if the
+ *   proc has multiple arguments, and there is no error raised on extra
+ *   arguments.
+ *
+ * Examples:
+ *
+ *      p = proc {|x, y| "x=#{x}, y=#{y}" }
+ *      p.call(1, 2)      #=> "x=1, y=2"
+ *      p.call([1, 2])    #=> "x=1, y=2", array deconstructed
+ *      p.call(1, 2, 8)   #=> "x=1, y=2", extra argument discarded
+ *      p.call(1)         #=> "x=1, y=", nil substituted instead of error
+ *
+ *      l = lambda {|x, y| "x=#{x}, y=#{y}" }
+ *      l.call(1, 2)      #=> "x=1, y=2"
+ *      l.call([1, 2])    # ArgumentError: wrong number of arguments (given 1, expected 2)
+ *      l.call(1, 2, 8)   # ArgumentError: wrong number of arguments (given 3, expected 2)
+ *      l.call(1)         # ArgumentError: wrong number of arguments (given 1, expected 2)
+ *
+ *      def test_return
+ *        -> { return 3 }.call      # just returns from lambda into method body
+ *        proc { return 4 }.call    # returns from method
+ *        return 5
+ *      end
+ *
+ *      test_return # => 4, return from proc
+ *
+ * Lambdas are useful as self-sufficient functions, in particular useful as
+ * arguments to higher-order functions, behaving exactly like Ruby methods.
+ *
+ * Procs are useful for implementing iterators:
+ *
+ *      def test
+ *        [[1, 2], [3, 4], [5, 6]].map {|a, b| return a if a + b > 10 }
+ *                                  #  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ *      end
+ *
+ * Inside +map+, the block of code is treated as a regular (non-lambda) proc,
+ * which means that the internal arrays will be deconstructed to pairs of
+ * arguments, and +return+ will exit from the method +test+. That would
+ * not be possible with a stricter lambda.
+ *
+ * You can tell a lambda from a regular proc by using the #lambda? instance method.
+ *
+ * Lambda semantics is typically preserved during the proc lifetime, including
+ * <code>&</code>-deconstruction to a block of code:
+ *
+ *      p = proc {|x, y| x }
+ *      l = lambda {|x, y| x }
+ *      [[1, 2], [3, 4]].map(&p) #=> [1, 2]
+ *      [[1, 2], [3, 4]].map(&l) # ArgumentError: wrong number of arguments (given 1, expected 2)
+ *
+ * The only exception is dynamic method definition: even if defined by
+ * passing a non-lambda proc, methods still have normal semantics of argument
+ * checking.
+ *
+ *   class C
+ *     define_method(:e, &proc {})
+ *   end
+ *   C.new.e(1,2)       #=> ArgumentError
+ *   C.new.method(:e).to_proc.lambda?   #=> true
+ *
+ * This exception ensures that methods never have unusual argument passing
+ * conventions, and makes it easy to have wrappers defining methods that
+ * behave as usual.
+ *
+ *   class C
+ *     def self.def2(name, &body)
+ *       define_method(name, &body)
+ *     end
+ *
+ *     def2(:f) {}
+ *   end
+ *   C.new.f(1,2)       #=> ArgumentError
+ *
+ * The wrapper <i>def2</i> receives <code>body</code> as a non-lambda proc,
+ * yet defines a method which has normal semantics.
+ *
+ * == Conversion of other objects to procs
+ *
+ * Any object that implements the +to_proc+ method can be converted into
+ * a proc by the <code>&</code> operator, and therefore con be
+ * consumed by iterators.
+ *
+ *      class Greater
+ *        def initialize(greating)
+ *          @greating = greating
+ *        end
+ *
+ *        def to_proc
+ *          proc {|name| "#{@greating}, #{name}!" }
+ *        end
+ *      end
+ *
+ *      hi = Greater.new("Hi")
+ *      hey = Greater.new("Hey")
+ *      ["Bob", "Jane"].map(&hi)    #=> ["Hi, Bob!", "Hi, Jane!"]
+ *      ["Bob", "Jane"].map(&hey)   #=> ["Hey, Bob!", "Hey, Jane!"]
+ *
+ * Of the Ruby core classes, this method is implemented by Symbol,
+ * Method, and Hash.
+ *
+ *      :to_s.to_proc.call(1)           #=> "1"
+ *      [1, 2].map(&:to_s)              #=> ["1", "2"]
+ *
+ *      method(:puts).to_proc.call(1)   # prints 1
+ *      [1, 2].each(&method(:puts))     # prints 1, 2
+ *
+ *      {test: 1}.to_proc.call(:test)       #=> 1
+ *      %i[test many keys].map(&{test: 1})  #=> [1, nil, nil]
+ *
  */
+
 
 void
 Init_Proc(void)
@@ -3098,6 +3436,8 @@ Init_Proc(void)
     rb_define_method(rb_cProc, "lambda?", rb_proc_lambda_p, 0);
     rb_define_method(rb_cProc, "binding", proc_binding, 0);
     rb_define_method(rb_cProc, "curry", proc_curry, -1);
+    rb_define_method(rb_cProc, "<<", proc_compose_to_left, 1);
+    rb_define_method(rb_cProc, ">>", proc_compose_to_right, 1);
     rb_define_method(rb_cProc, "source_location", rb_proc_location, 0);
     rb_define_method(rb_cProc, "parameters", rb_proc_parameters, 0);
 
@@ -3124,6 +3464,8 @@ Init_Proc(void)
     rb_define_method(rb_cMethod, "call", rb_method_call, -1);
     rb_define_method(rb_cMethod, "===", rb_method_call, -1);
     rb_define_method(rb_cMethod, "curry", rb_method_curry, -1);
+    rb_define_method(rb_cMethod, "<<", rb_method_compose_to_left, 1);
+    rb_define_method(rb_cMethod, ">>", rb_method_compose_to_right, 1);
     rb_define_method(rb_cMethod, "[]", rb_method_call, -1);
     rb_define_method(rb_cMethod, "arity", method_arity_m, 0);
     rb_define_method(rb_cMethod, "inspect", method_inspect, 0);

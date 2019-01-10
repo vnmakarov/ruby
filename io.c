@@ -135,6 +135,15 @@ off_t __syscall(quad_t number, ...);
 #define rename(f, t)	rb_w32_urename((f), (t))
 #endif
 
+#if defined(_WIN32)
+#  define RUBY_PIPE_NONBLOCK_DEFAULT    (0)
+#elif defined(O_NONBLOCK)
+  /* disabled for [Bug #15356] (Rack::Deflater + rails) failure: */
+#  define RUBY_PIPE_NONBLOCK_DEFAULT    (0)
+#else /* any platforms where O_NONBLOCK does not exist? */
+#  define RUBY_PIPE_NONBLOCK_DEFAULT    (0)
+#endif
+
 VALUE rb_cIO;
 VALUE rb_eEOFError;
 VALUE rb_eIOError;
@@ -185,14 +194,22 @@ static rb_atomic_t max_file_descriptor = NOFILE;
 void
 rb_update_max_fd(int fd)
 {
-    struct stat buf;
     rb_atomic_t afd = (rb_atomic_t)fd;
     rb_atomic_t max_fd = max_file_descriptor;
+    int err;
 
     if (afd <= max_fd)
         return;
 
-    if (fstat(fd, &buf) != 0 && errno == EBADF) {
+#if defined(HAVE_FCNTL) && defined(F_GETFL)
+    err = fcntl(fd, F_GETFL) == -1;
+#else
+    {
+        struct stat buf;
+        err = fstat(fd, &buf) != 0;
+    }
+#endif
+    if (err && errno == EBADF) {
         rb_bug("rb_update_max_fd: invalid fd (%d) given.", fd);
     }
 
@@ -217,7 +234,7 @@ rb_maygvl_fd_fix_cloexec(int fd)
         flags2 = flags | FD_CLOEXEC; /* Set CLOEXEC for non-standard file descriptors: 3, 4, 5, ... */
     if (flags != flags2) {
         ret = fcntl(fd, F_SETFD, flags2);
-        if (ret == -1) {
+        if (ret != 0) {
             rb_bug("rb_maygvl_fd_fix_cloexec: fcntl(%d, F_SETFD, %d) failed: %s", fd, flags2, strerror(errno));
         }
     }
@@ -261,7 +278,7 @@ rb_cloexec_open(const char *pathname, int flags, mode_t mode)
     flags |= O_NOINHERIT;
 #endif
     ret = open(pathname, flags, mode);
-    if (ret == -1) return -1;
+    if (ret < 0) return ret;
     if (ret <= 2 || o_cloexec_state == 0) {
 	rb_maygvl_fd_fix_cloexec(ret);
     }
@@ -310,10 +327,28 @@ rb_cloexec_dup2(int oldfd, int newfd)
 #else
         ret = dup2(oldfd, newfd);
 #endif
-        if (ret == -1) return -1;
+        if (ret < 0) return ret;
     }
     rb_maygvl_fd_fix_cloexec(ret);
     return ret;
+}
+
+static int
+rb_fd_set_nonblock(int fd)
+{
+#ifdef _WIN32
+    return rb_w32_set_nonblock(fd);
+#elif defined(F_GETFL)
+    int oflags = fcntl(fd, F_GETFL);
+
+    if (oflags == -1)
+        return -1;
+    if (oflags & O_NONBLOCK)
+        return 0;
+    oflags |= O_NONBLOCK;
+    return fcntl(fd, F_SETFL, oflags);
+#endif
+    return 0;
 }
 
 int
@@ -324,7 +359,7 @@ rb_cloexec_pipe(int fildes[2])
 #if defined(HAVE_PIPE2)
     static int try_pipe2 = 1;
     if (try_pipe2) {
-        ret = pipe2(fildes, O_CLOEXEC);
+        ret = pipe2(fildes, O_CLOEXEC | RUBY_PIPE_NONBLOCK_DEFAULT);
         if (ret != -1)
             return ret;
         /* pipe2 is available since Linux 2.6.27, glibc 2.9. */
@@ -339,7 +374,7 @@ rb_cloexec_pipe(int fildes[2])
 #else
     ret = pipe(fildes);
 #endif
-    if (ret == -1) return -1;
+    if (ret < 0) return ret;
 #ifdef __CYGWIN__
     if (ret == 0 && fildes[1] == -1) {
 	close(fildes[0]);
@@ -350,6 +385,10 @@ rb_cloexec_pipe(int fildes[2])
 #endif
     rb_maygvl_fd_fix_cloexec(fildes[0]);
     rb_maygvl_fd_fix_cloexec(fildes[1]);
+    if (RUBY_PIPE_NONBLOCK_DEFAULT) {
+        rb_fd_set_nonblock(fildes[0]);
+        rb_fd_set_nonblock(fildes[1]);
+    }
     return ret;
 }
 
@@ -382,7 +421,7 @@ rb_cloexec_fcntl_dupfd(int fd, int minfd)
     ret = fcntl(fd, F_DUPFD, minfd);
 #elif defined(HAVE_DUP)
     ret = dup(fd);
-    if (ret != -1 && ret < minfd) {
+    if (ret >= 0 && ret < minfd) {
         const int prev_fd = ret;
         ret = rb_cloexec_fcntl_dupfd(fd, minfd);
         close(prev_fd);
@@ -391,7 +430,7 @@ rb_cloexec_fcntl_dupfd(int fd, int minfd)
 #else
 # error "dup() or fcntl(F_DUPFD) must be supported."
 #endif
-    if (ret == -1) return -1;
+    if (ret < 0) return ret;
     rb_maygvl_fd_fix_cloexec(ret);
     return ret;
 }
@@ -615,7 +654,8 @@ static void
 io_fd_check_closed(int fd)
 {
     if (fd < 0) {
-	rb_raise(rb_eIOError, closed_stream);
+        rb_thread_check_ints(); /* check for ruby_error_stream_closed */
+        rb_raise(rb_eIOError, closed_stream);
     }
 }
 
@@ -920,6 +960,7 @@ io_alloc(VALUE klass)
 
 struct io_internal_read_struct {
     int fd;
+    int nonblock;
     void *buf;
     size_t capa;
 };
@@ -938,11 +979,24 @@ struct io_internal_writev_struct {
 };
 #endif
 
+static int nogvl_wait_for_single_fd(int fd, short events);
 static VALUE
 internal_read_func(void *ptr)
 {
     struct io_internal_read_struct *iis = ptr;
-    return read(iis->fd, iis->buf, iis->capa);
+    ssize_t r;
+retry:
+    r = read(iis->fd, iis->buf, iis->capa);
+    if (r < 0 && !iis->nonblock) {
+        int e = errno;
+        if (e == EAGAIN || e == EWOULDBLOCK) {
+            if (nogvl_wait_for_single_fd(iis->fd, RB_WAITFD_IN) != -1) {
+                goto retry;
+            }
+            errno = e;
+        }
+    }
+    return r;
 }
 
 #if defined __APPLE__
@@ -980,7 +1034,9 @@ static ssize_t
 rb_read_internal(int fd, void *buf, size_t count)
 {
     struct io_internal_read_struct iis;
+
     iis.fd = fd;
+    iis.nonblock = 0;
     iis.buf = buf;
     iis.capa = count;
 
@@ -1102,7 +1158,6 @@ io_fflush(rb_io_t *fptr)
     rb_io_check_closed(fptr);
     if (fptr->wbuf.len == 0)
         return 0;
-    rb_io_check_closed(fptr);
     while (fptr->wbuf.len > 0 && io_flush_buffer(fptr) != 0) {
 	if (!rb_io_wait_writable(fptr->fd))
 	    return -1;
@@ -1255,8 +1310,8 @@ io_binwrite_string(VALUE arg)
 
 	r = rb_writev_internal(fptr->fd, iov, 2);
 
-        if (r == -1)
-            return -1;
+        if (r < 0)
+            return r;
 
 	if (fptr->wbuf.len <= r) {
 	    r -= fptr->wbuf.len;
@@ -1487,7 +1542,7 @@ io_write(VALUE io, VALUE str, int nosync)
     rb_io_check_writable(fptr);
 
     n = io_fwrite(str, fptr, nosync);
-    if (n == -1L) rb_sys_fail_path(fptr->pathv);
+    if (n < 0L) rb_sys_fail_path(fptr->pathv);
 
     return LONG2FIX(n);
 }
@@ -1674,7 +1729,7 @@ io_writev(int argc, VALUE *argv, VALUE io)
 	    /* sync at last item */
 	    n = io_fwrite(rb_obj_as_string(argv[i]), fptr, (i < argc-1));
 	}
-	if (n == -1L) rb_sys_fail_path(fptr->pathv);
+        if (n < 0L) rb_sys_fail_path(fptr->pathv);
 	total = rb_fix_plus(LONG2FIX(n), total);
     }
 
@@ -1974,6 +2029,16 @@ rb_io_rewind(VALUE io)
 }
 
 static int
+fptr_wait_readable(rb_io_t *fptr)
+{
+    int ret = rb_io_wait_readable(fptr->fd);
+
+    if (ret)
+        rb_io_check_closed(fptr);
+    return ret;
+}
+
+static int
 io_fillbuf(rb_io_t *fptr)
 {
     ssize_t r;
@@ -1993,7 +2058,7 @@ io_fillbuf(rb_io_t *fptr)
 	    r = rb_read_internal(fptr->fd, fptr->rbuf.ptr, fptr->rbuf.capa);
 	}
         if (r < 0) {
-            if (rb_io_wait_readable(fptr->fd))
+            if (fptr_wait_readable(fptr))
                 goto retry;
 	    {
 		int e = errno;
@@ -2340,7 +2405,7 @@ io_bufread(char *ptr, long len, rb_io_t *fptr)
 	    c = rb_read_internal(fptr->fd, ptr+offset, n);
 	    if (c == 0) break;
 	    if (c < 0) {
-                if (rb_io_wait_readable(fptr->fd))
+                if (fptr_wait_readable(fptr))
                     goto again;
 		return -1;
 	    }
@@ -2526,7 +2591,7 @@ fill_cbuf(rb_io_t *fptr, int ec_flags)
         if (res == econv_source_buffer_empty) {
             if (fptr->rbuf.len == 0) {
 		READ_CHECK(fptr);
-                if (io_fillbuf(fptr) == -1) {
+                if (io_fillbuf(fptr) < 0) {
 		    if (!fptr->readconv) {
 			return MORE_CHAR_FINISHED;
 		    }
@@ -2696,41 +2761,23 @@ read_all(rb_io_t *fptr, long siz, VALUE str)
 void
 rb_io_set_nonblock(rb_io_t *fptr)
 {
-#ifdef _WIN32
-    if (rb_w32_set_nonblock(fptr->fd) != 0) {
+    if (rb_fd_set_nonblock(fptr->fd) != 0) {
 	rb_sys_fail_path(fptr->pathv);
     }
-#else
-    int oflags;
-#ifdef F_GETFL
-    oflags = fcntl(fptr->fd, F_GETFL);
-    if (oflags == -1) {
-        rb_sys_fail_path(fptr->pathv);
-    }
-#else
-    oflags = 0;
-#endif
-    if ((oflags & O_NONBLOCK) == 0) {
-        oflags |= O_NONBLOCK;
-        if (fcntl(fptr->fd, F_SETFL, oflags) == -1) {
-            rb_sys_fail_path(fptr->pathv);
-        }
-    }
-#endif
 }
-
-struct read_internal_arg {
-    int fd;
-    char *str_ptr;
-    long len;
-};
 
 static VALUE
 read_internal_call(VALUE arg)
 {
-    struct read_internal_arg *p = (struct read_internal_arg *)arg;
-    p->len = rb_read_internal(p->fd, p->str_ptr, p->len);
-    return Qundef;
+    struct io_internal_read_struct *iis = (struct io_internal_read_struct *)arg;
+
+    return rb_thread_io_blocking_region(internal_read_func, iis, iis->fd);
+}
+
+static long
+read_internal_locktmp(VALUE str, struct io_internal_read_struct *iis)
+{
+    return (long)rb_str_locktmp_ensure(str, read_internal_call, (VALUE)iis);
 }
 
 static int
@@ -2749,7 +2796,7 @@ io_getpartial(int argc, VALUE *argv, VALUE io, VALUE opts, int nonblock)
     rb_io_t *fptr;
     VALUE length, str;
     long n, len;
-    struct read_internal_arg arg;
+    struct io_internal_read_struct iis;
     int shrinkable;
 
     rb_scan_args(argc, argv, "11", &length, &str);
@@ -2776,14 +2823,14 @@ io_getpartial(int argc, VALUE *argv, VALUE io, VALUE opts, int nonblock)
             rb_io_set_nonblock(fptr);
         }
 	io_setstrbuf(&str, len);
-	arg.fd = fptr->fd;
-	arg.str_ptr = RSTRING_PTR(str);
-	arg.len = len;
-	rb_str_locktmp_ensure(str, read_internal_call, (VALUE)&arg);
-	n = arg.len;
+        iis.fd = fptr->fd;
+        iis.nonblock = nonblock;
+        iis.buf = RSTRING_PTR(str);
+        iis.capa = len;
+        n = read_internal_locktmp(str, &iis);
         if (n < 0) {
 	    int e = errno;
-            if (!nonblock && rb_io_wait_readable(fptr->fd))
+            if (!nonblock && fptr_wait_readable(fptr))
                 goto again;
 	    if (nonblock && (e == EWOULDBLOCK || e == EAGAIN)) {
                 if (no_exception_p(opts))
@@ -2890,7 +2937,7 @@ io_read_nonblock(VALUE io, VALUE length, VALUE str, VALUE ex)
 {
     rb_io_t *fptr;
     long n, len;
-    struct read_internal_arg arg;
+    struct io_internal_read_struct iis;
     int shrinkable;
 
     if ((len = NUM2LONG(length)) < 0) {
@@ -2909,11 +2956,11 @@ io_read_nonblock(VALUE io, VALUE length, VALUE str, VALUE ex)
     if (n <= 0) {
 	rb_io_set_nonblock(fptr);
 	shrinkable |= io_setstrbuf(&str, len);
-	arg.fd = fptr->fd;
-	arg.str_ptr = RSTRING_PTR(str);
-	arg.len = len;
-	rb_str_locktmp_ensure(str, read_internal_call, (VALUE)&arg);
-	n = arg.len;
+        iis.fd = fptr->fd;
+        iis.nonblock = 1;
+        iis.buf = RSTRING_PTR(str);
+        iis.capa = len;
+        n = read_internal_locktmp(str, &iis);
         if (n < 0) {
 	    int e = errno;
 	    if ((e == EWOULDBLOCK || e == EAGAIN)) {
@@ -2953,8 +3000,9 @@ io_write_nonblock(VALUE io, VALUE str, VALUE ex)
 
     rb_io_set_nonblock(fptr);
     n = write(fptr->fd, RSTRING_PTR(str), RSTRING_LEN(str));
+    RB_GC_GUARD(str);
 
-    if (n == -1) {
+    if (n < 0) {
 	int e = errno;
 	if (e == EWOULDBLOCK || e == EAGAIN) {
 	    if (ex == Qfalse) {
@@ -4212,8 +4260,18 @@ rb_io_ungetbyte(VALUE io, VALUE b)
     rb_io_check_byte_readable(fptr);
     if (NIL_P(b)) return Qnil;
     if (FIXNUM_P(b)) {
-	char cc = FIX2INT(b);
-	b = rb_str_new(&cc, 1);
+        int i = FIX2INT(b);
+        if (0 <= i && i <= UCHAR_MAX) {
+            unsigned char cc = i & 0xFF;
+            b = rb_str_new((const char *)&cc, 1);
+        }
+        else {
+            rb_raise(rb_eRangeError,
+                "integer %d too big to convert into `unsigned char'", i);
+        }
+    }
+    else if (RB_TYPE_P(b, T_BIGNUM)) {
+        rb_raise(rb_eRangeError, "bignum too big to convert into `unsigned char'");
     }
     else {
 	SafeStringValue(b);
@@ -4385,7 +4443,7 @@ rb_io_set_close_on_exec(VALUE io, VALUE arg)
             if ((ret & FD_CLOEXEC) != flag) {
                 ret = (ret & ~FD_CLOEXEC) | flag;
                 ret = fcntl(fd, F_SETFD, ret);
-                if (ret == -1) rb_sys_fail_path(fptr->pathv);
+                if (ret != 0) rb_sys_fail_path(fptr->pathv);
             }
         }
 
@@ -4397,7 +4455,7 @@ rb_io_set_close_on_exec(VALUE io, VALUE arg)
         if ((ret & FD_CLOEXEC) != flag) {
             ret = (ret & ~FD_CLOEXEC) | flag;
             ret = fcntl(fd, F_SETFD, ret);
-            if (ret == -1) rb_sys_fail_path(fptr->pathv);
+            if (ret != 0) rb_sys_fail_path(fptr->pathv);
         }
     }
     return Qnil;
@@ -4527,7 +4585,8 @@ static void free_io_buffer(rb_io_buffer_t *buf);
 static void clear_codeconv(rb_io_t *fptr);
 
 static void
-fptr_finalize_flush(rb_io_t *fptr, int noraise, int keepgvl)
+fptr_finalize_flush(rb_io_t *fptr, int noraise, int keepgvl,
+                    struct list_head *busy)
 {
     VALUE err = Qnil;
     int fd = fptr->fd;
@@ -4558,6 +4617,14 @@ fptr_finalize_flush(rb_io_t *fptr, int noraise, int keepgvl)
     fptr->fd = -1;
     fptr->stdio_file = 0;
     fptr->mode &= ~(FMODE_READABLE|FMODE_WRITABLE);
+
+    /*
+     * ensure waiting_fd users do not hit EBADF, wait for them
+     * to exit before we call close().
+     */
+    if (busy) {
+        do rb_thread_schedule(); while (!list_empty(busy));
+    }
 
     if (IS_PREP_STDIO(fptr) || fd <= 2) {
 	/* need to keep FILE objects of stdin, stdout and stderr */
@@ -4591,7 +4658,7 @@ fptr_finalize_flush(rb_io_t *fptr, int noraise, int keepgvl)
 static void
 fptr_finalize(rb_io_t *fptr, int noraise)
 {
-    fptr_finalize_flush(fptr, noraise, FALSE);
+    fptr_finalize_flush(fptr, noraise, FALSE, 0);
     free_io_buffer(&fptr->rbuf);
     free_io_buffer(&fptr->wbuf);
     clear_codeconv(fptr);
@@ -4716,8 +4783,8 @@ io_close_fptr(VALUE io)
     if (fptr->fd < 0) return 0;
 
     if (rb_notify_fd_close(fptr->fd, &busy)) {
-	fptr_finalize_flush(fptr, FALSE, KEEPGVL); /* calls close(fptr->fd) */
-	do rb_thread_schedule(); while (!list_empty(&busy));
+        /* calls close(fptr->fd): */
+        fptr_finalize_flush(fptr, FALSE, KEEPGVL, &busy);
     }
     rb_io_fptr_cleanup(fptr, FALSE);
     return fptr;
@@ -4987,7 +5054,7 @@ rb_io_sysseek(int argc, VALUE *argv, VALUE io)
     }
     errno = 0;
     pos = lseek(fptr->fd, pos, whence);
-    if (pos == -1 && errno) rb_sys_fail_path(fptr->pathv);
+    if (pos < 0 && errno) rb_sys_fail_path(fptr->pathv);
 
     return OFFT2NUM(pos);
 }
@@ -5027,7 +5094,7 @@ rb_io_syswrite(VALUE io, VALUE str)
     tmp = rb_str_tmp_frozen_acquire(str);
     RSTRING_GETMEM(tmp, ptr, len);
     n = rb_write_internal(fptr->fd, ptr, len);
-    if (n == -1) rb_sys_fail_path(fptr->pathv);
+    if (n < 0) rb_sys_fail_path(fptr->pathv);
     rb_str_tmp_frozen_release(str, tmp);
 
     return LONG2FIX(n);
@@ -5059,7 +5126,7 @@ rb_io_sysread(int argc, VALUE *argv, VALUE io)
     VALUE len, str;
     rb_io_t *fptr;
     long n, ilen;
-    struct read_internal_arg arg;
+    struct io_internal_read_struct iis;
     int shrinkable;
 
     rb_scan_args(argc, argv, "11", &len, &str);
@@ -5087,14 +5154,13 @@ rb_io_sysread(int argc, VALUE *argv, VALUE io)
     rb_io_check_closed(fptr);
 
     io_setstrbuf(&str, ilen);
-    rb_str_locktmp(str);
-    arg.fd = fptr->fd;
-    arg.str_ptr = RSTRING_PTR(str);
-    arg.len = ilen;
-    rb_ensure(read_internal_call, (VALUE)&arg, rb_str_unlocktmp, str);
-    n = arg.len;
+    iis.fd = fptr->fd;
+    iis.nonblock = 1; /* for historical reasons, maybe (see above) */
+    iis.buf = RSTRING_PTR(str);
+    iis.capa = ilen;
+    n = read_internal_locktmp(str, &iis);
 
-    if (n == -1) {
+    if (n < 0) {
 	rb_sys_fail_path(fptr->pathv);
     }
     io_set_read_length(str, n, shrinkable);
@@ -5179,7 +5245,7 @@ rb_io_pread(int argc, VALUE *argv, VALUE io)
     rb_str_locktmp(str);
     n = (ssize_t)rb_ensure(pread_internal_call, (VALUE)&arg, rb_str_unlocktmp, str);
 
-    if (n == -1) {
+    if (n < 0) {
 	rb_sys_fail_path(fptr->pathv);
     }
     io_set_read_length(str, n, shrinkable);
@@ -5245,7 +5311,7 @@ rb_io_pwrite(VALUE io, VALUE str, VALUE offset)
     arg.count = (size_t)RSTRING_LEN(tmp);
 
     n = (ssize_t)rb_thread_io_blocking_region(internal_pwrite_func, &arg, fptr->fd);
-    if (n == -1) rb_sys_fail_path(fptr->pathv);
+    if (n < 0) rb_sys_fail_path(fptr->pathv);
     rb_str_tmp_frozen_release(str, tmp);
 
     return SSIZET2NUM(n);
@@ -6292,7 +6358,7 @@ rb_pipe(int *pipes)
 {
     int ret;
     ret = rb_cloexec_pipe(pipes);
-    if (ret == -1) {
+    if (ret < 0) {
         if (rb_gc_for_fd(errno)) {
             ret = rb_cloexec_pipe(pipes);
         }
@@ -6369,9 +6435,9 @@ linux_get_maxfd(void)
     char buf[4096], *p, *np, *e;
     ssize_t ss;
     fd = rb_cloexec_open("/proc/self/status", O_RDONLY|O_NOCTTY, 0);
-    if (fd == -1) return -1;
+    if (fd < 0) return fd;
     ss = read(fd, buf, sizeof(buf));
-    if (ss == -1) goto err;
+    if (ss < 0) goto err;
     p = buf;
     e = buf + ss;
     while ((int)sizeof("FDSize:\t0\n")-1 <= e-p &&
@@ -6390,7 +6456,7 @@ linux_get_maxfd(void)
 
   err:
     close(fd);
-    return -1;
+    return (int)ss;
 }
 #endif
 
@@ -6560,7 +6626,7 @@ pipe_open(VALUE execarg_obj, const char *modestr, int fmode,
 #   if defined(HAVE_SPAWNVE)
 	if (eargp->envp_str) envp = (char **)RSTRING_PTR(eargp->envp_str);
 #   endif
-	while ((pid = DO_SPAWN(cmd, args, envp)) == -1) {
+        while ((pid = DO_SPAWN(cmd, args, envp)) < 0) {
 	    /* exec failed */
 	    switch (e = errno) {
 	      case EAGAIN:
@@ -6593,7 +6659,7 @@ pipe_open(VALUE execarg_obj, const char *modestr, int fmode,
     }
 
     /* parent */
-    if (pid == -1) {
+    if (pid < 0) {
 # if defined(HAVE_WORKING_FORK)
 	e = errno;
 # endif
@@ -7812,12 +7878,7 @@ rb_obj_display(int argc, VALUE *argv, VALUE self)
 {
     VALUE out;
 
-    if (argc == 0) {
-	out = rb_stdout;
-    }
-    else {
-	rb_scan_args(argc, argv, "01", &out);
-    }
+    out = (!rb_check_arity(argc, 0, 1) ? rb_stdout : argv[0]);
     rb_io_write(out, self);
 
     return Qnil;
@@ -8193,7 +8254,7 @@ rb_io_initialize(int argc, VALUE *argv, VALUE io)
     oflags = fcntl(fd, F_GETFL);
     if (oflags == -1) rb_sys_fail(0);
 #else
-    if (fstat(fd, &st) == -1) rb_sys_fail(0);
+    if (fstat(fd, &st) < 0) rb_sys_fail(0);
 #endif
     rb_update_max_fd(fd);
 #if defined(HAVE_FCNTL) && defined(F_GETFL)
@@ -10163,7 +10224,7 @@ rb_io_s_pipe(int argc, VALUE *argv, VALUE klass)
     VALUE ret;
 
     argc = rb_scan_args(argc, argv, "02:", &v1, &v2, &opt);
-    if (rb_pipe(pipes) == -1)
+    if (rb_pipe(pipes) < 0)
         rb_sys_fail(0);
 
     args[0] = klass;
@@ -10637,11 +10698,11 @@ struct copy_stream_struct {
 
     int src_fd;
     int dst_fd;
-    int close_src;
-    int close_dst;
+    unsigned close_src : 1;
+    unsigned close_dst : 1;
+    int error_no;
     off_t total;
     const char *syserr;
-    int error_no;
     const char *notimp;
     VALUE th;
 };
@@ -10707,6 +10768,7 @@ nogvl_wait_for_single_fd(int fd, short events)
     return poll(&fds, 1, -1);
 }
 #else /* !USE_POLL */
+#  include "vm_core.h"
 #  define IOWAIT_SYSCALL "select"
 static int
 nogvl_wait_for_single_fd(int fd, short events)
@@ -10725,7 +10787,7 @@ nogvl_wait_for_single_fd(int fd, short events)
         ret = rb_fd_select(fd + 1, 0, &fds, 0, 0);
         break;
       default:
-        assert(0 && "not supported yet, should never get here");
+        VM_UNREACHABLE(nogvl_wait_for_single_fd);
     }
 
     rb_fd_term(&fds);
@@ -10745,12 +10807,12 @@ maygvl_copy_stream_wait_read(int has_gvl, struct copy_stream_struct *stp)
 	else {
 	    ret = nogvl_wait_for_single_fd(stp->src_fd, RB_WAITFD_IN);
 	}
-    } while (ret == -1 && maygvl_copy_stream_continue_p(has_gvl, stp));
+    } while (ret < 0 && maygvl_copy_stream_continue_p(has_gvl, stp));
 
-    if (ret == -1) {
+    if (ret < 0) {
         stp->syserr = IOWAIT_SYSCALL;
         stp->error_no = errno;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -10762,12 +10824,12 @@ nogvl_copy_stream_wait_write(struct copy_stream_struct *stp)
 
     do {
 	ret = nogvl_wait_for_single_fd(stp->dst_fd, RB_WAITFD_OUT);
-    } while (ret == -1 && maygvl_copy_stream_continue_p(0, stp));
+    } while (ret < 0 && maygvl_copy_stream_continue_p(0, stp));
 
-    if (ret == -1) {
+    if (ret < 0) {
         stp->syserr = IOWAIT_SYSCALL;
         stp->error_no = errno;
-        return -1;
+        return ret;
     }
     return 0;
 }
@@ -10787,30 +10849,31 @@ simple_copy_file_range(int in_fd, off_t *in_offset, int out_fd, off_t *out_offse
 static int
 nogvl_copy_file_range(struct copy_stream_struct *stp)
 {
-    struct stat src_stat, dst_stat;
+    struct stat sb;
     ssize_t ss;
+    off_t src_size;
     int ret;
-
     off_t copy_length, src_offset, *src_offset_ptr;
 
-    ret = fstat(stp->src_fd, &src_stat);
-    if (ret == -1) {
+    ret = fstat(stp->src_fd, &sb);
+    if (ret < 0) {
         stp->syserr = "fstat";
         stp->error_no = errno;
-        return -1;
+        return ret;
     }
-    if (!S_ISREG(src_stat.st_mode))
+    if (!S_ISREG(sb.st_mode))
         return 0;
 
-    ret = fstat(stp->dst_fd, &dst_stat);
-    if (ret == -1) {
+    src_size = sb.st_size;
+    ret = fstat(stp->dst_fd, &sb);
+    if (ret < 0) {
         stp->syserr = "fstat";
         stp->error_no = errno;
-        return -1;
+        return ret;
     }
 
     src_offset = stp->src_offset;
-    if (src_offset != (off_t)-1) {
+    if (src_offset >= (off_t)0) {
 	src_offset_ptr = &src_offset;
     }
     else {
@@ -10818,20 +10881,20 @@ nogvl_copy_file_range(struct copy_stream_struct *stp)
     }
 
     copy_length = stp->copy_length;
-    if (copy_length == (off_t)-1) {
-	if (src_offset == (off_t)-1) {
+    if (copy_length < (off_t)0) {
+        if (src_offset < (off_t)0) {
 	    off_t current_offset;
             errno = 0;
             current_offset = lseek(stp->src_fd, 0, SEEK_CUR);
-            if (current_offset == (off_t)-1 && errno) {
+            if (current_offset < (off_t)0 && errno) {
                 stp->syserr = "lseek";
                 stp->error_no = errno;
-                return -1;
+                return (int)current_offset;
             }
-	    copy_length = src_stat.st_size - current_offset;
+            copy_length = src_size - current_offset;
 	}
 	else {
-	    copy_length = src_stat.st_size - src_offset;
+            copy_length = src_size - src_offset;
 	}
     }
 
@@ -10850,7 +10913,7 @@ nogvl_copy_file_range(struct copy_stream_struct *stp)
             goto retry_copy_file_range;
         }
     }
-    if (ss == -1) {
+    if (ss < 0) {
 	if (maygvl_copy_stream_continue_p(0, stp)) {
             goto retry_copy_file_range;
 	}
@@ -10869,8 +10932,10 @@ nogvl_copy_file_range(struct copy_stream_struct *stp)
 #if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
 	  case EWOULDBLOCK:
 #endif
-            if (nogvl_copy_stream_wait_write(stp) == -1)
-                return -1;
+            {
+                int ret = nogvl_copy_stream_wait_write(stp);
+                if (ret < 0) return ret;
+            }
             goto retry_copy_file_range;
 	  case EBADF:
 	    {
@@ -10885,7 +10950,7 @@ nogvl_copy_file_range(struct copy_stream_struct *stp)
         }
         stp->syserr = "copy_file_range";
         stp->error_no = errno;
-        return -1;
+        return (int)ss;
     }
     return 1;
 }
@@ -10924,7 +10989,7 @@ simple_sendfile(int out_fd, int in_fd, off_t *offset, off_t count)
 #  else
     r = sendfile(in_fd, out_fd, pos, (size_t)count, NULL, &sbytes, 0);
 #  endif
-    if (r != 0 && sbytes == 0) return -1;
+    if (r != 0 && sbytes == 0) return r;
     if (offset) {
 	*offset += sbytes;
     }
@@ -10942,51 +11007,52 @@ simple_sendfile(int out_fd, int in_fd, off_t *offset, off_t count)
 static int
 nogvl_copy_stream_sendfile(struct copy_stream_struct *stp)
 {
-    struct stat src_stat, dst_stat;
+    struct stat sb;
     ssize_t ss;
     int ret;
-
+    off_t src_size;
     off_t copy_length;
     off_t src_offset;
     int use_pread;
 
-    ret = fstat(stp->src_fd, &src_stat);
-    if (ret == -1) {
+    ret = fstat(stp->src_fd, &sb);
+    if (ret < 0) {
         stp->syserr = "fstat";
         stp->error_no = errno;
-        return -1;
+        return ret;
     }
-    if (!S_ISREG(src_stat.st_mode))
+    if (!S_ISREG(sb.st_mode))
         return 0;
 
-    ret = fstat(stp->dst_fd, &dst_stat);
-    if (ret == -1) {
+    src_size = sb.st_size;
+    ret = fstat(stp->dst_fd, &sb);
+    if (ret < 0) {
         stp->syserr = "fstat";
         stp->error_no = errno;
-        return -1;
+        return ret;
     }
 #ifndef __linux__
-    if ((dst_stat.st_mode & S_IFMT) != S_IFSOCK)
+    if ((sb.st_mode & S_IFMT) != S_IFSOCK)
 	return 0;
 #endif
 
     src_offset = stp->src_offset;
-    use_pread = src_offset != (off_t)-1;
+    use_pread = src_offset >= (off_t)0;
 
     copy_length = stp->copy_length;
-    if (copy_length == (off_t)-1) {
+    if (copy_length < (off_t)0) {
         if (use_pread)
-            copy_length = src_stat.st_size - src_offset;
+            copy_length = src_size - src_offset;
         else {
             off_t cur;
             errno = 0;
             cur = lseek(stp->src_fd, 0, SEEK_CUR);
-            if (cur == (off_t)-1 && errno) {
+            if (cur < (off_t)0 && errno) {
                 stp->syserr = "lseek";
                 stp->error_no = errno;
-                return -1;
+                return (int)cur;
             }
-            copy_length = src_stat.st_size - cur;
+            copy_length = src_size - cur;
         }
     }
 
@@ -11010,7 +11076,7 @@ nogvl_copy_stream_sendfile(struct copy_stream_struct *stp)
             goto retry_sendfile;
         }
     }
-    if (ss == -1) {
+    if (ss < 0) {
 	if (maygvl_copy_stream_continue_p(0, stp))
 	    goto retry_sendfile;
         switch (errno) {
@@ -11023,24 +11089,27 @@ nogvl_copy_stream_sendfile(struct copy_stream_struct *stp)
 #if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
 	  case EWOULDBLOCK:
 #endif
+            {
+                int ret;
 #ifndef __linux__
-           /*
-            * Linux requires stp->src_fd to be a mmap-able (regular) file,
-            * select() reports regular files to always be "ready", so
-            * there is no need to select() on it.
-            * Other OSes may have the same limitation for sendfile() which
-            * allow us to bypass maygvl_copy_stream_wait_read()...
-            */
-            if (maygvl_copy_stream_wait_read(0, stp) == -1)
-                return -1;
+               /*
+                * Linux requires stp->src_fd to be a mmap-able (regular) file,
+                * select() reports regular files to always be "ready", so
+                * there is no need to select() on it.
+                * Other OSes may have the same limitation for sendfile() which
+                * allow us to bypass maygvl_copy_stream_wait_read()...
+                */
+                ret = maygvl_copy_stream_wait_read(0, stp);
+                if (ret < 0) return ret;
 #endif
-            if (nogvl_copy_stream_wait_write(stp) == -1)
-                return -1;
+                ret = nogvl_copy_stream_wait_write(stp);
+                if (ret < 0) return ret;
+            }
             goto retry_sendfile;
         }
         stp->syserr = "sendfile";
         stp->error_no = errno;
-        return -1;
+        return (int)ss;
     }
     return 1;
 }
@@ -11060,7 +11129,7 @@ maygvl_copy_stream_read(int has_gvl, struct copy_stream_struct *stp, char *buf, 
 {
     ssize_t ss;
   retry_read:
-    if (offset == (off_t)-1) {
+    if (offset < (off_t)0) {
         ss = maygvl_read(has_gvl, stp->src_fd, buf, len);
     }
     else {
@@ -11074,7 +11143,7 @@ maygvl_copy_stream_read(int has_gvl, struct copy_stream_struct *stp, char *buf, 
     if (ss == 0) {
         return 0;
     }
-    if (ss == -1) {
+    if (ss < 0) {
 	if (maygvl_copy_stream_continue_p(has_gvl, stp))
 	    goto retry_read;
         switch (errno) {
@@ -11082,18 +11151,19 @@ maygvl_copy_stream_read(int has_gvl, struct copy_stream_struct *stp, char *buf, 
 #if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
 	  case EWOULDBLOCK:
 #endif
-            if (maygvl_copy_stream_wait_read(has_gvl, stp) == -1)
-                return -1;
+            {
+                int ret = maygvl_copy_stream_wait_read(has_gvl, stp);
+                if (ret < 0) return ret;
+            }
             goto retry_read;
 #ifdef ENOSYS
 	  case ENOSYS:
             stp->notimp = "pread";
-            return -1;
+            return ss;
 #endif
         }
-        stp->syserr = offset == (off_t)-1 ?  "read" : "pread";
+        stp->syserr = offset < (off_t)0 ?  "read" : "pread";
         stp->error_no = errno;
-        return -1;
     }
     return ss;
 }
@@ -11105,17 +11175,17 @@ nogvl_copy_stream_write(struct copy_stream_struct *stp, char *buf, size_t len)
     int off = 0;
     while (len) {
         ss = write(stp->dst_fd, buf+off, len);
-        if (ss == -1) {
-	    if (maygvl_copy_stream_continue_p(0, stp))
-		continue;
+        if (ss < 0) {
+            if (maygvl_copy_stream_continue_p(0, stp))
+                continue;
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                if (nogvl_copy_stream_wait_write(stp) == -1)
-                    return -1;
+                int ret = nogvl_copy_stream_wait_write(stp);
+                if (ret < 0) return ret;
                 continue;
             }
             stp->syserr = "write";
             stp->error_no = errno;
-            return -1;
+            return (int)ss;
         }
         off += (int)ss;
         len -= (int)ss;
@@ -11137,15 +11207,15 @@ nogvl_copy_stream_read_write(struct copy_stream_struct *stp)
     int use_pread;
 
     copy_length = stp->copy_length;
-    use_eof = copy_length == (off_t)-1;
+    use_eof = copy_length < (off_t)0;
     src_offset = stp->src_offset;
-    use_pread = src_offset != (off_t)-1;
+    use_pread = src_offset >= (off_t)0;
 
     if (use_pread && stp->close_src) {
         off_t r;
 	errno = 0;
         r = lseek(stp->src_fd, src_offset, SEEK_SET);
-        if (r == (off_t)-1 && errno) {
+        if (r < (off_t)0 && errno) {
             stp->syserr = "lseek";
             stp->error_no = errno;
             return;
@@ -11220,7 +11290,7 @@ copy_stream_fallback_body(VALUE arg)
     off_t off = stp->src_offset;
     ID read_method = id_readpartial;
 
-    if (stp->src_fd == -1) {
+    if (stp->src_fd < 0) {
 	if (!rb_respond_to(stp->src, read_method)) {
 	    read_method = id_read;
 	}
@@ -11229,7 +11299,7 @@ copy_stream_fallback_body(VALUE arg)
     while (1) {
         long numwrote;
         long l;
-        if (stp->copy_length == (off_t)-1) {
+        if (stp->copy_length < (off_t)0) {
             l = buflen;
         }
         else {
@@ -11239,7 +11309,7 @@ copy_stream_fallback_body(VALUE arg)
 	    }
             l = buflen < rest ? buflen : (long)rest;
         }
-        if (stp->src_fd == -1) {
+        if (stp->src_fd < 0) {
             VALUE rc = rb_funcall(stp->src, read_method, 2, INT2FIX(l), buf);
 
             if (read_method == id_read && NIL_P(rc))
@@ -11250,11 +11320,11 @@ copy_stream_fallback_body(VALUE arg)
             rb_str_resize(buf, buflen);
             ss = maygvl_copy_stream_read(1, stp, RSTRING_PTR(buf), l, off);
             rb_str_resize(buf, ss > 0 ? ss : 0);
-            if (ss == -1)
+            if (ss < 0)
                 return Qnil;
             if (ss == 0)
                 rb_eof_error();
-            if (off != (off_t)-1)
+            if (off >= (off_t)0)
                 off += ss;
         }
         n = rb_io_write(stp->dst, buf);
@@ -11272,7 +11342,7 @@ copy_stream_fallback_body(VALUE arg)
 static VALUE
 copy_stream_fallback(struct copy_stream_struct *stp)
 {
-    if (stp->src_fd == -1 && stp->src_offset != (off_t)-1) {
+    if (stp->src_fd < 0 && stp->src_offset >= (off_t)0) {
 	rb_raise(rb_eArgError, "cannot specify src_offset for non-IO");
     }
     rb_rescue2(copy_stream_fallback_body, (VALUE)stp,
@@ -11362,10 +11432,10 @@ copy_stream_body(VALUE arg)
     if (dst_fptr)
 	io_ascii8bit_binmode(dst_fptr);
 
-    if (stp->src_offset == (off_t)-1 && src_fptr && src_fptr->rbuf.len) {
+    if (stp->src_offset < (off_t)0 && src_fptr && src_fptr->rbuf.len) {
         size_t len = src_fptr->rbuf.len;
         VALUE str;
-        if (stp->copy_length != (off_t)-1 && stp->copy_length < (off_t)len) {
+        if (stp->copy_length >= (off_t)0 && stp->copy_length < (off_t)len) {
             len = (size_t)stp->copy_length;
         }
         str = rb_str_buf_new(len);
@@ -11379,7 +11449,7 @@ copy_stream_body(VALUE arg)
 	    rb_io_write(dst_io, str);
         rb_str_resize(str, 0);
         stp->total += len;
-        if (stp->copy_length != (off_t)-1)
+        if (stp->copy_length >= (off_t)0)
             stp->copy_length -= len;
     }
 
@@ -11390,7 +11460,7 @@ copy_stream_body(VALUE arg)
     if (stp->copy_length == 0)
         return Qnil;
 
-    if (src_fd == -1 || dst_fd == -1) {
+    if (src_fd < 0 || dst_fd < 0) {
         return copy_stream_fallback(stp);
     }
 

@@ -144,7 +144,9 @@ struct ruby_cmdline_options {
     VALUE req_list;
     unsigned int features;
     unsigned int dump;
+#if USE_MJIT
     struct mjit_options mjit;
+#endif
     int safe_level;
     int sflag, xflag;
     unsigned int warning: 1;
@@ -252,8 +254,8 @@ usage(const char *name, int help)
 	M("-w",		   "",			   "turn warnings on for your script"),
 	M("-W[level=2]",   "",			   "set warning level; 0=silence, 1=medium, 2=verbose"),
 	M("-x[directory]", "",			   "strip off text before #!ruby line and perhaps cd to directory"),
-        M("--jit",         "",                     "enable MJIT with default options (experimental)"),
-        M("--jit-[option]","",                     "enable MJIT with an option (experimental)"),
+        M("--jit",         "",                     "enable JIT with default options (experimental)"),
+        M("--jit-[option]","",                     "enable JIT with an option (experimental)"),
 	M("-h",		   "",			   "show this message, --help for more info"),
     };
     static const struct message help_msg[] = {
@@ -279,14 +281,14 @@ usage(const char *name, int help)
 	M("did_you_mean", "",   "did_you_mean (default: "DEFAULT_RUBYGEMS_ENABLED")"),
 	M("rubyopt", "",        "RUBYOPT environment variable (default: enabled)"),
 	M("frozen-string-literal", "", "freeze all string literals (default: disabled)"),
-        M("jit", "",            "MJIT (default: disabled)"),
+        M("jit", "",            "JIT compiler (default: disabled)"),
     };
     static const struct message mjit_options[] = {
-        M("--jit-warnings",      "", "Enable printing MJIT warnings"),
-        M("--jit-debug",         "", "Enable MJIT debugging (very slow)"),
+        M("--jit-warnings",      "", "Enable printing JIT warnings"),
+        M("--jit-debug",         "", "Enable JIT debugging (very slow)"),
         M("--jit-wait",          "", "Wait until JIT compilation is finished everytime (for testing)"),
-        M("--jit-save-temps",    "", "Save MJIT temporary files in $TMP or /tmp (for testing)"),
-        M("--jit-verbose=num",   "", "Print MJIT logs of level num or less to stderr (default: 0)"),
+        M("--jit-save-temps",    "", "Save JIT temporary files in $TMP or /tmp (for testing)"),
+        M("--jit-verbose=num",   "", "Print JIT logs of level num or less to stderr (default: 0)"),
         M("--jit-max-cache=num", "", "Max number of methods to be JIT-ed in a cache (default: 1000)"),
         M("--jit-min-calls=num", "", "Number of calls to trigger JIT (for testing, default: 5)"),
         M("--jit-mutations=num", "", "Maximum number of permitted iseq mutations"),
@@ -309,7 +311,7 @@ usage(const char *name, int help)
     puts("Features:");
     for (i = 0; i < numberof(features); ++i)
 	SHOW(features[i]);
-    puts("MJIT options (experimental):");
+    puts("JIT options (experimental):");
     for (i = 0; i < numberof(mjit_options); ++i)
 	SHOW(mjit_options[i]);
 }
@@ -951,6 +953,7 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 #define set_source_encoding_once(opt, e, elen) \
     set_option_encoding_once("source", &(opt)->src.enc.name, (e), (elen))
 
+#if USE_MJIT
 static void
 setup_mjit_options(const char *s, struct mjit_options *mjit_opt)
 {
@@ -984,6 +987,7 @@ setup_mjit_options(const char *s, struct mjit_options *mjit_opt)
                  "invalid MJIT option `%s' (--help will show valid MJIT options)", s + 1);
     }
 }
+#endif
 
 static long
 proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
@@ -1338,8 +1342,12 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 		ruby_verbose = Qtrue;
 	    }
             else if (strncmp("jit", s, 3) == 0) {
+#if USE_MJIT
                 opt->features |= FEATURE_BIT(jit);
                 setup_mjit_options(s + 3, &opt->mjit);
+#else
+                rb_warn("MJIT support is disabled.");
+#endif
             }
 	    else if (strcmp("yydebug", s) == 0) {
 		if (envopt) goto noenvopt_long;
@@ -1427,6 +1435,7 @@ opt_enc_index(VALUE enc_name)
 #define rb_progname      (GET_VM()->progname)
 #define rb_orig_progname (GET_VM()->orig_progname)
 VALUE rb_argv0;
+VALUE rb_e_script;
 
 static VALUE
 false_value(void)
@@ -1580,11 +1589,15 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     if (opt->src.enc.name)
 	rb_warning("-K is specified; it is for 1.8 compatibility and may cause odd behavior");
 
+#if USE_MJIT
     if (opt->features & FEATURE_BIT(jit)) {
         opt->mjit.on = TRUE; /* set mjit.on for ruby_show_version() API and check to call mjit_init() */
     }
+#endif
     if (opt->dump & (DUMP_BIT(version) | DUMP_BIT(version_v))) {
+#if USE_MJIT
         mjit_opts.on = opt->mjit.on; /* used by ruby_show_version(). mjit_init() still can't be called here. */
+#endif
 	ruby_show_version();
 	if (opt->dump & DUMP_BIT(version)) return Qtrue;
     }
@@ -1637,9 +1650,11 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     ruby_gc_set_params(opt->safe_level);
     ruby_init_loadpath_safe(opt->safe_level);
 
+#if USE_MJIT
     if (opt->mjit.on)
         /* Using TMP_RUBY_PREFIX created by ruby_init_loadpath_safe(). */
         mjit_init(&opt->mjit);
+#endif
 
     Init_ruby_description();
     Init_enc();
@@ -1854,6 +1869,10 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     rb_define_readonly_boolean("$-p", opt->do_print);
     rb_define_readonly_boolean("$-l", opt->do_line);
     rb_define_readonly_boolean("$-a", opt->do_split);
+
+    if ((rb_e_script = opt->e_script) != 0) {
+        rb_gc_register_mark_object(opt->e_script);
+    }
 
     rb_set_safe_level(opt->safe_level);
 

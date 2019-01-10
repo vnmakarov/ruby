@@ -271,9 +271,10 @@ vm_push_frame(rb_execution_context_t *ec,
     }
     {
         rb_control_frame_t *prev_cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
-        int cur_ruby_frame = VM_FRAME_RUBYFRAME_P(cfp);
-        int pre_ruby_frame = VM_FRAME_RUBYFRAME_P(prev_cfp);
         if (RUBY_VM_END_CONTROL_FRAME(ec) != prev_cfp) {
+            int cur_ruby_frame = VM_FRAME_RUBYFRAME_P(cfp);
+            int pre_ruby_frame = VM_FRAME_RUBYFRAME_P(prev_cfp);
+
             pre_ruby_frame ? (cur_ruby_frame ? RB_DEBUG_COUNTER_INC(frame_R2R) :
                                                RB_DEBUG_COUNTER_INC(frame_R2C)):
                              (cur_ruby_frame ? RB_DEBUG_COUNTER_INC(frame_C2R) :
@@ -978,13 +979,13 @@ vm_getivar(VALUE obj, ID id, IC ic, struct rb_call_cache *cc, int is_attr)
 		    if (index < ROBJECT_NUMIV(obj)) {
 			val = ROBJECT_IVPTR(obj)[index];
 		    }
-		    if (!is_attr) {
-			ic->ic_value.index = index;
-			ic->ic_serial = RCLASS_SERIAL(RBASIC(obj)->klass);
-		    }
-		    else { /* call_info */
-			cc->aux.index = (int)index + 1;
-		    }
+                    if (!is_attr) {
+                        ic->ic_value.index = index;
+                        ic->ic_serial = RCLASS_SERIAL(RBASIC(obj)->klass);
+                    }
+                    else { /* call_info */
+                        cc->aux.index = (int)index + 1;
+                    }
 		}
 	    }
 	}
@@ -1033,10 +1034,10 @@ vm_setivar(VALUE obj, ID id, VALUE val, IC ic, struct rb_call_cache *cc, int is_
 	    struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(obj);
 
 	    if (iv_index_tbl && st_lookup(iv_index_tbl, (st_data_t)id, &index)) {
-		if (!is_attr) {
-		    ic->ic_value.index = index;
-		    ic->ic_serial = RCLASS_SERIAL(klass);
-		}
+                if (!is_attr) {
+                    ic->ic_value.index = index;
+                    ic->ic_serial = RCLASS_SERIAL(klass);
+                }
 		else if (index >= INT_MAX) {
 		    rb_raise(rb_eArgError, "too many instance variables");
 		}
@@ -1356,11 +1357,14 @@ vm_expandarray(VALUE *sp, VALUE ary, rb_num_t num, int flag)
 	len = 1;
     }
     else {
-	ptr = RARRAY_CONST_PTR(ary);
+        ptr = RARRAY_CONST_PTR_TRANSIENT(ary);
 	len = (rb_num_t)RARRAY_LEN(ary);
     }
 
-    if (flag & 0x02) {
+    if (space_size == 0) {
+        /* no space left on stack */
+    }
+    else if (flag & 0x02) {
 	/* post: ..., nil ,ary[-1], ..., ary[0..-num] # top */
 	rb_num_t i = 0, j;
 
@@ -1697,15 +1701,6 @@ static VALUE vm_call_method_each_type(rb_execution_context_t *ec, rb_control_fra
 static inline VALUE vm_call_method(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc);
 
 static vm_call_handler vm_call_iseq_setup_func(const struct rb_call_info *ci, const int param_size, const int local_size);
-
-static const rb_iseq_t *
-def_iseq_ptr(rb_method_definition_t *def)
-{
-#if VM_CHECK_MODE > 0
-    if (def->type != VM_METHOD_TYPE_ISEQ) rb_bug("def_iseq_ptr: not iseq (%d)", def->type);
-#endif
-    return rb_iseq_check(def->body.iseq.iseqptr);
-}
 
 static VALUE
 vm_call_iseq_setup_tailcall_0start(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_calling_info *calling, const struct rb_call_info *ci, struct rb_call_cache *cc)
@@ -2087,9 +2082,8 @@ vm_call_bmethod_body(rb_execution_context_t *ec, struct rb_calling_info *calling
     VALUE val;
 
     /* control block frame */
-    ec->passed_bmethod_me = cc->me;
-    GetProcPtr(cc->me->def->body.proc, proc);
-    val = rb_vm_invoke_bmethod(ec, proc, calling->recv, calling->argc, argv, calling->block_handler);
+    GetProcPtr(cc->me->def->body.bmethod.proc, proc);
+    val = rb_vm_invoke_bmethod(ec, proc, calling->recv, calling->argc, argv, calling->block_handler, cc->me);
 
     return val;
 }
@@ -2657,13 +2651,12 @@ block_proc_is_lambda(const VALUE procval)
 static VALUE
 vm_yield_with_cfunc(rb_execution_context_t *ec,
 		    const struct rb_captured_block *captured,
-		    VALUE self, int argc, const VALUE *argv, VALUE block_handler)
+                    VALUE self, int argc, const VALUE *argv, VALUE block_handler,
+                    const rb_callable_method_entry_t *me)
 {
     int is_lambda = FALSE; /* TODO */
     VALUE val, arg, blockarg;
     const struct vm_ifunc *ifunc = captured->code.ifunc;
-    const rb_callable_method_entry_t *me = ec->passed_bmethod_me;
-    ec->passed_bmethod_me = NULL;
 
     if (is_lambda) {
 	arg = rb_ary_new4(argc, argv);
@@ -2678,10 +2671,11 @@ vm_yield_with_cfunc(rb_execution_context_t *ec,
     blockarg = rb_vm_bh_to_procval(ec, block_handler);
 
     vm_push_frame(ec, (const rb_iseq_t *)captured->code.ifunc,
-		  VM_FRAME_MAGIC_IFUNC | VM_FRAME_FLAG_CFRAME,
+                  VM_FRAME_MAGIC_IFUNC | VM_FRAME_FLAG_CFRAME |
+                  (me ? VM_FRAME_FLAG_BMETHOD : 0),
 		  self,
 		  VM_GUARDED_PREV_EP(captured->ep),
-		  (VALUE)me,
+                  (VALUE)me,
 		  0, ec->cfp->sp, 0, 0);
     val = (*ifunc->func)(arg, ifunc->data, argc, argv, blockarg);
     rb_vm_pop_frame(ec);
@@ -2828,7 +2822,7 @@ vm_invoke_ifunc_block(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
     int argc;
     CALLER_SETUP_ARG(ec->cfp, calling, ci);
     argc = calling->argc;
-    val = vm_yield_with_cfunc(ec, captured, captured->self, argc, STACK_ADDR_FROM_TOP(argc), calling->block_handler);
+    val = vm_yield_with_cfunc(ec, captured, captured->self, argc, STACK_ADDR_FROM_TOP(argc), calling->block_handler, NULL);
     POPN(argc); /* TODO: should put before C/yield? */
     return val;
 }
@@ -3354,7 +3348,7 @@ vm_opt_newarray_max(rb_num_t num, const VALUE *ptr)
 	else {
 	    struct cmp_opt_data cmp_opt = { 0, 0 };
 	    VALUE result = *ptr;
-	    rb_num_t i = num - 1;
+            rb_snum_t i = num - 1;
 	    while (i-- > 0) {
 		const VALUE v = *++ptr;
 		if (OPTIMIZED_CMP(v, result, cmp_opt) > 0) {
@@ -3380,7 +3374,7 @@ vm_opt_newarray_min(rb_num_t num, const VALUE *ptr)
 	else {
 	    struct cmp_opt_data cmp_opt = { 0, 0 };
 	    VALUE result = *ptr;
-	    rb_num_t i = num - 1;
+            rb_snum_t i = num - 1;
 	    while (i-- > 0) {
 		const VALUE v = *++ptr;
 		if (OPTIMIZED_CMP(v, result, cmp_opt) < 0) {
@@ -3472,7 +3466,7 @@ vm_case_dispatch(CDHASH hash, OFFSET else_offset, VALUE key)
 		    key = FIXABLE(kval) ? LONG2FIX((long)kval) : rb_dbl2big(kval);
 		}
 	    }
-	    if (st_lookup(RHASH_TBL_RAW(hash), key, &val)) {
+            if (rb_hash_stlike_lookup(hash, key, &val)) {
 		return FIX2LONG((VALUE)val);
 	    }
 	    else {
@@ -3598,7 +3592,7 @@ vm_opt_div(VALUE recv, VALUE obj)
     }
     else if (FLONUM_2_P(recv, obj) &&
 	     BASIC_OP_UNREDEFINED_P(BOP_DIV, FLOAT_REDEFINED_OP_FLAG)) {
-	return DBL2NUM(RFLOAT_VALUE(recv) / RFLOAT_VALUE(obj));
+        return rb_flo_div_flo(recv, obj);
     }
     else if (SPECIAL_CONST_P(recv) || SPECIAL_CONST_P(obj)) {
 	return Qundef;
@@ -3606,7 +3600,7 @@ vm_opt_div(VALUE recv, VALUE obj)
     else if (RBASIC_CLASS(recv) == rb_cFloat &&
 	     RBASIC_CLASS(obj)  == rb_cFloat &&
 	     BASIC_OP_UNREDEFINED_P(BOP_DIV, FLOAT_REDEFINED_OP_FLAG)) {
-	return DBL2NUM(RFLOAT_VALUE(recv) / RFLOAT_VALUE(obj));
+        return rb_flo_div_flo(recv, obj);
     }
     else {
 	return Qundef;
@@ -3909,17 +3903,39 @@ vm_opt_empty_p(VALUE recv)
 #endif /* #if STACK_INSN_CODE */
 
 static VALUE
+fix_succ(VALUE x)
+{
+    switch (x) {
+      case ~0UL:
+        /* 0xFFFF_FFFF == INT2FIX(-1)
+         * `-1.succ` is of course 0. */
+        return INT2FIX(0);
+      case RSHIFT(~0UL, 1):
+        /* 0x7FFF_FFFF == LONG2FIX(0x3FFF_FFFF)
+         * 0x3FFF_FFFF + 1 == 0x4000_0000, which is a Bignum. */
+        return rb_uint2big(1UL << (SIZEOF_LONG * CHAR_BIT - 2));
+      default:
+        /*    LONG2FIX(FIX2LONG(x)+FIX2LONG(y))
+         * == ((lx*2+1)/2 + (ly*2+1)/2)*2+1
+         * == lx*2 + ly*2 + 1
+         * == (lx*2+1) + (ly*2+1) - 1
+         * == x + y - 1
+         *
+         * Here, if we put y := INT2FIX(1):
+         *
+         * == x + INT2FIX(1) - 1
+         * == x + 2 .
+         */
+        return x + 2;
+    }
+}
+
+static VALUE
 vm_opt_succ(VALUE recv)
 {
     if (FIXNUM_P(recv) &&
 	BASIC_OP_UNREDEFINED_P(BOP_SUCC, INTEGER_REDEFINED_OP_FLAG)) {
-	/* fixnum + INT2FIX(1) */
-	if (recv == LONG2FIX(FIXNUM_MAX)) {
-	    return LONG2NUM(FIXNUM_MAX + 1);
-	}
-	else {
-	    return recv - 1 + INT2FIX(1);
-	}
+        return fix_succ(recv);
     }
     else if (SPECIAL_CONST_P(recv)) {
 	return Qundef;
@@ -3975,23 +3991,62 @@ rb_event_flag_t rb_iseq_event_flags(const rb_iseq_t *iseq, size_t pos, int rtl_p
 
 NOINLINE(static void vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *pc));
 
+static inline void
+vm_trace_hook(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *pc,
+              rb_event_flag_t pc_events, rb_event_flag_t target_event,
+              rb_hook_list_t *global_hooks, rb_hook_list_t *local_hooks, VALUE val)
+{
+    rb_event_flag_t event = pc_events & target_event;
+    VALUE self = GET_SELF();
+
+    VM_ASSERT(rb_popcount64((uint64_t)event) == 1);
+
+    if (event & global_hooks->events) {
+        /* increment PC because source line is calculated with PC-1 */
+        reg_cfp->pc++;
+        vm_dtrace(event, ec);
+        rb_exec_event_hook_orig(ec, global_hooks, event, self, 0, 0, 0 , val, 0);
+        reg_cfp->pc--;
+    }
+
+    if (local_hooks != NULL) {
+        if (event & local_hooks->events) {
+            /* increment PC because source line is calculated with PC-1 */
+            reg_cfp->pc++;
+            rb_exec_event_hook_orig(ec, local_hooks, event, self, 0, 0, 0 , val, 0);
+            reg_cfp->pc--;
+        }
+    }
+}
+
+#define VM_TRACE_HOOK(target_event, val) do { \
+    if ((pc_events & (target_event)) & enabled_flags) { \
+        vm_trace_hook(ec, reg_cfp, pc, pc_events, (target_event), global_hooks, local_hooks, (val)); \
+    } \
+} while (0)
+
 static void
 vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *pc)
 {
-    rb_event_flag_t vm_event_flags = ruby_vm_event_flags;
+    rb_event_flag_t enabled_flags = ruby_vm_event_flags & ISEQ_TRACE_EVENTS;
 
-    if (vm_event_flags == 0) {
-	return;
+    if (enabled_flags == 0 && ruby_vm_event_local_num == 0) {
+        return;
     }
     else {
 	const rb_iseq_t *iseq = reg_cfp->iseq;
 	size_t pos = pc - iseq->body->rtl_encoded;
-	rb_event_flag_t events = rb_iseq_event_flags(iseq, pos, TRUE);
-	rb_event_flag_t event;
+        rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pos, TRUE);
+        rb_hook_list_t *local_hooks = iseq->aux.exec.local_hooks;
+        rb_event_flag_t local_hook_events = local_hooks != NULL ? local_hooks->events : 0;
+        enabled_flags |= local_hook_events;
 
-	if ((events & vm_event_flags) == 0) {
+        VM_ASSERT((local_hook_events & ~ISEQ_TRACE_EVENTS) == 0);
+
+        if ((pc_events & enabled_flags) == 0) {
 #if 0
 	    /* disable trace */
+            /* TODO: incomplete */
 	    rb_iseq_trace_set(iseq, vm_event_flags & ISEQ_TRACE_EVENTS);
 #else
 	    /* do not disable trace because of performance problem
@@ -3999,71 +4054,53 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VALUE *p
 	     */
 #endif
 	    return;
-	}
+        }
+        else if (ec->trace_arg != NULL) {
+            /* already tracing */
+            return;
+        }
+        else {
+            rb_hook_list_t *global_hooks = rb_vm_global_hooks(ec);
 
-	if (ec->trace_arg != NULL) return;
+            if (0) {
+                fprintf(stderr, "vm_trace>>%4d (%4x) - %s:%d %s\n",
+                        (int)pos,
+                        (int)pc_events,
+                        RSTRING_PTR(rb_iseq_path(iseq)),
+                        (int)rb_iseq_line_no(iseq, pos, TRUE),
+                        RSTRING_PTR(rb_iseq_label(iseq)));
+            }
+            VM_ASSERT(reg_cfp->pc == pc);
+            VM_ASSERT(pc_events != 0);
+            VM_ASSERT(enabled_flags & pc_events);
 
-	if (0) {
-	    fprintf(stderr, "vm_trace>>%4d (%4x) - %s:%d %s\n",
-		    (int)pos,
-		    (int)events,
-		    RSTRING_PTR(rb_iseq_path(iseq)),
-		    (int)rb_iseq_line_no(iseq, pos, TRUE),
-		    RSTRING_PTR(rb_iseq_label(iseq)));
-	}
+            /* check traces */
+            VM_TRACE_HOOK(RUBY_EVENT_CLASS | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL,   Qundef);
+            VM_TRACE_HOOK(RUBY_EVENT_LINE,                                          Qundef);
+            VM_TRACE_HOOK(RUBY_EVENT_COVERAGE_LINE,                                 Qundef);
+            VM_TRACE_HOOK(RUBY_EVENT_COVERAGE_BRANCH,                               Qundef);
+	    if ((pc_events & (RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN)) & enabled_flags) {
+	      VALUE val;
+	      int insn;
 
-	VM_ASSERT(reg_cfp->pc == pc);
-	VM_ASSERT(events != 0);
-	VM_ASSERT(vm_event_flags & events);
-
-	/* increment PC because source line is calculated with PC-1 */
-        if ((event = (events & (RUBY_EVENT_CLASS | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL))) != 0) {
-	    VM_ASSERT(event == RUBY_EVENT_CLASS ||
-		      event == RUBY_EVENT_CALL  ||
-		      event == RUBY_EVENT_B_CALL);
-	    reg_cfp->pc++;
-	    vm_dtrace(event, ec);
-	    EXEC_EVENT_HOOK(ec, event, GET_SELF(), 0, 0, 0, Qundef);
-	    reg_cfp->pc--;
-	}
-	if (events & RUBY_EVENT_LINE) {
-	    reg_cfp->pc++;
-	    vm_dtrace(RUBY_EVENT_LINE, ec);
- 	    EXEC_EVENT_HOOK(ec, RUBY_EVENT_LINE, GET_SELF(), 0, 0, 0, Qundef);
-	    reg_cfp->pc--;
-	}
-	if (events & RUBY_EVENT_COVERAGE_LINE) {
-	    reg_cfp->pc++;
-	    vm_dtrace(RUBY_EVENT_COVERAGE_LINE, ec);
- 	    EXEC_EVENT_HOOK(ec, RUBY_EVENT_COVERAGE_LINE, GET_SELF(), 0, 0, 0, Qundef);
-	    reg_cfp->pc--;
-	}
-	if ((event = (events & (RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN)))) {
-	    VALUE v;
-	    int insn;
-
-	    VM_ASSERT(event == RUBY_EVENT_END ||
-		      event == RUBY_EVENT_RETURN  ||
-		      event == RUBY_EVENT_B_RETURN);
 #if OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE
-            insn = rb_vm_insn_addr2insn((void *)reg_cfp->pc[0]);
+	      insn = rb_vm_insn_addr2insn((void *)reg_cfp->pc[0]);
 #else
-            insn = (int)reg_cfp->pc[0];
+	      insn = (int)reg_cfp->pc[0];
 #endif
-	    if (insn == BIN(trace_val_ret)) {
-	      v = reg_cfp->pc[1];
-	    } else if (insn == BIN(trace_loc_ret) || insn == BIN(trace_temp_ret)) {
-	      ptrdiff_t offset = reg_cfp->pc[1];
-	      
-	      v = *((offset < 0 ? reg_cfp->bp : reg_cfp->ep) - offset);
-	    } else {
-	      v = TOPN(0);
+	      if (insn == BIN(trace_val_ret)) {
+		val = reg_cfp->pc[1];
+	      } else if (insn == BIN(trace_loc_ret) || insn == BIN(trace_temp_ret)) {
+		ptrdiff_t offset = reg_cfp->pc[1];
+		
+		val = *((offset < 0 ? reg_cfp->bp : reg_cfp->ep) - offset);
+	      } else {
+		val = TOPN(0);
+	      }
+	      vm_trace_hook(ec, reg_cfp, pc, pc_events, (RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN),
+			    global_hooks, local_hooks, val);
 	    }
-	    reg_cfp->pc += 2;
-	    vm_dtrace(event, ec);
-	    EXEC_EVENT_HOOK(ec, event, GET_SELF(), 0, 0, 0, v);
-	    reg_cfp->pc -= 2;
-	}
+        }
     }
 }
 

@@ -17,6 +17,7 @@
 #include "ruby/thread.h"
 #include "ruby/util.h"
 #include "vm_core.h"
+#include "hrtime.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -915,6 +916,8 @@ do_waitpid(rb_pid_t pid, int *st, int flags)
 #endif
 }
 
+#define WAITPID_LOCK_ONLY ((struct waitpid_state *)-1)
+
 struct waitpid_state {
     struct list_node wnode;
     rb_execution_context_t *ec;
@@ -931,7 +934,7 @@ void rb_native_mutex_unlock(rb_nativethread_lock_t *);
 void rb_native_cond_signal(rb_nativethread_cond_t *);
 void rb_native_cond_wait(rb_nativethread_cond_t *, rb_nativethread_lock_t *);
 int rb_sigwait_fd_get(const rb_thread_t *);
-void rb_sigwait_sleep(const rb_thread_t *, int fd, const struct timespec *);
+void rb_sigwait_sleep(const rb_thread_t *, int fd, const rb_hrtime_t *);
 void rb_sigwait_fd_put(const rb_thread_t *, int fd);
 void rb_thread_sleep_interruptible(void);
 
@@ -1026,11 +1029,11 @@ waitpid_state_init(struct waitpid_state *w, rb_pid_t pid, int options)
     w->options = options;
 }
 
-static const struct timespec *
+static const rb_hrtime_t *
 sigwait_sleep_time(void)
 {
     if (SIGCHLD_LOSSY) {
-        static const struct timespec busy_wait = { 0, 100000000 };
+        static const rb_hrtime_t busy_wait = 100 * RB_HRTIME_PER_MSEC;
 
         return &busy_wait;
     }
@@ -1471,6 +1474,39 @@ before_exec_non_async_signal_safe(void)
      * Nowadays, we always stop the timer thread completely to allow redirects.
      */
     rb_thread_stop_timer_thread();
+}
+
+#define WRITE_CONST(fd, str) (void)(write((fd),(str),sizeof(str)-1)<0)
+#ifdef _WIN32
+int rb_w32_set_nonblock2(int fd, int nonblock);
+#endif
+
+static int
+set_blocking(int fd)
+{
+#ifdef _WIN32
+    return rb_w32_set_nonblock2(fd, 0);
+#elif defined(F_GETFL) && defined(F_SETFL)
+    int fl = fcntl(fd, F_GETFL); /* async-signal-safe */
+
+    /* EBADF ought to be possible */
+    if (fl == -1) return fl;
+    if (fl & O_NONBLOCK) {
+        fl &= ~O_NONBLOCK;
+        return fcntl(fd, F_SETFL, fl);
+    }
+    return 0;
+#endif
+}
+
+static void
+stdfd_clear_nonblock(void)
+{
+    /* many programs cannot deal with non-blocking stdin/stdout/stderr */
+    int fd;
+    for (fd = 0; fd < 3; fd++) {
+        (void)set_blocking(fd); /* can't do much about errors anyhow */
+    }
 }
 
 static void
@@ -2213,7 +2249,7 @@ rb_check_exec_options(VALUE opthash, VALUE execarg_obj)
 {
     if (RHASH_EMPTY_P(opthash))
         return;
-    st_foreach(rb_hash_tbl_raw(opthash), check_exec_options_i, (st_data_t)execarg_obj);
+    rb_hash_stlike_foreach(opthash, check_exec_options_i, (st_data_t)execarg_obj);
 }
 
 VALUE
@@ -2224,7 +2260,7 @@ rb_execarg_extract_options(VALUE execarg_obj, VALUE opthash)
         return Qnil;
     args[0] = execarg_obj;
     args[1] = Qnil;
-    st_foreach(rb_hash_tbl_raw(opthash), check_exec_options_i_extract, (st_data_t)args);
+    rb_hash_stlike_foreach(opthash, check_exec_options_i_extract, (st_data_t)args);
     return args[1];
 }
 
@@ -2268,7 +2304,7 @@ rb_check_exec_env(VALUE hash, VALUE *path)
 
     env[0] = hide_obj(rb_ary_new());
     env[1] = Qfalse;
-    st_foreach(rb_hash_tbl_raw(hash), check_exec_env_i, (st_data_t)env);
+    rb_hash_stlike_foreach(hash, check_exec_env_i, (st_data_t)env);
     *path = env[1];
 
     return env[0];
@@ -2548,16 +2584,6 @@ rb_exec_fillarg(VALUE prog, int argc, VALUE *argv, VALUE env, VALUE opthash, VAL
     RB_GC_GUARD(execarg_obj);
 }
 
-VALUE
-rb_execarg_new(int argc, const VALUE *argv, int accept_shell, int allow_exc_opt)
-{
-    VALUE execarg_obj;
-    struct rb_execarg *eargp;
-    execarg_obj = TypedData_Make_Struct(0, struct rb_execarg, &exec_arg_data_type, eargp);
-    rb_execarg_init(argc, argv, accept_shell, execarg_obj, allow_exc_opt);
-    return execarg_obj;
-}
-
 struct rb_execarg *
 rb_execarg_get(VALUE execarg_obj)
 {
@@ -2566,7 +2592,7 @@ rb_execarg_get(VALUE execarg_obj)
     return eargp;
 }
 
-VALUE
+static VALUE
 rb_execarg_init(int argc, const VALUE *orig_argv, int accept_shell, VALUE execarg_obj, int allow_exc_opt)
 {
     struct rb_execarg *eargp = rb_execarg_get(execarg_obj);
@@ -2588,6 +2614,16 @@ rb_execarg_init(int argc, const VALUE *orig_argv, int accept_shell, VALUE execar
     ret = eargp->use_shell ? eargp->invoke.sh.shell_script : eargp->invoke.cmd.command_name;
     RB_GC_GUARD(execarg_obj);
     return ret;
+}
+
+VALUE
+rb_execarg_new(int argc, const VALUE *argv, int accept_shell, int allow_exc_opt)
+{
+    VALUE execarg_obj;
+    struct rb_execarg *eargp;
+    execarg_obj = TypedData_Make_Struct(0, struct rb_execarg, &exec_arg_data_type, eargp);
+    rb_execarg_init(argc, argv, accept_shell, execarg_obj, allow_exc_opt);
+    return execarg_obj;
 }
 
 void
@@ -2732,7 +2768,7 @@ rb_execarg_parent_start1(VALUE execarg_obj)
         }
         envp_buf = rb_str_buf_new(0);
         hide_obj(envp_buf);
-        st_foreach(RHASH_TBL_RAW(envtbl), fill_envp_buf_i, (st_data_t)envp_buf);
+        rb_hash_stlike_foreach(envtbl, fill_envp_buf_i, (st_data_t)envp_buf);
         envp_str = rb_str_buf_new(sizeof(char*) * (RHASH_SIZE(envtbl) + 1));
         hide_obj(envp_str);
         p = RSTRING_PTR(envp_buf);
@@ -2910,7 +2946,7 @@ rb_f_exec(int argc, const VALUE *argv)
 
     execarg_obj = rb_execarg_new(argc, argv, TRUE, FALSE);
     eargp = rb_execarg_get(execarg_obj);
-    if (mjit_enabled) mjit_pause(FALSE); /* do not leak children */
+    if (mjit_enabled) mjit_finish(FALSE); /* avoid leaking resources, and do not leave files. XXX: JIT-ed handle can leak after exec error is rescued. */
     before_exec(); /* stop timer thread before redirects */
     rb_execarg_parent_start(execarg_obj);
     fail_str = eargp->use_shell ? eargp->invoke.sh.shell_script : eargp->invoke.cmd.command_name;
@@ -3444,6 +3480,11 @@ rb_execarg_run_options(const struct rb_execarg *eargp, struct rb_execarg *sargp,
             rb_execarg_allocate_dup2_tmpbuf(sargp, RARRAY_LEN(ary));
         }
     }
+    {
+        int preserve = errno;
+        stdfd_clear_nonblock();
+        errno = preserve;
+    }
 
     return 0;
 }
@@ -3643,6 +3684,12 @@ static ssize_t
 read_retry(int fd, void *buf, size_t len)
 {
     ssize_t r;
+
+    if (set_blocking(fd) != 0) {
+#ifndef _WIN32
+        rb_async_bug_errno("set_blocking failed reading child error", errno);
+#endif
+    }
 
     do {
 	r = read(fd, buf, len);
@@ -3871,16 +3918,23 @@ COMPILER_WARNING_IGNORED(-Wdeprecated-declarations)
 static rb_pid_t
 retry_fork_async_signal_safe(int *status, int *ep,
         int (*chfunc)(void*, char *, size_t), void *charg,
-        char *errmsg, size_t errmsg_buflen)
+        char *errmsg, size_t errmsg_buflen,
+        struct waitpid_state *w)
 {
     rb_pid_t pid;
     volatile int try_gc = 1;
     struct child_handler_disabler_state old;
     int err;
+    rb_nativethread_lock_t *const waitpid_lock_init =
+        (w && WAITPID_USE_SIGCHLD) ? &GET_VM()->waitpid_lock : 0;
 
     while (1) {
+        rb_nativethread_lock_t *waitpid_lock = waitpid_lock_init;
         prefork();
         disable_child_handler_before_fork(&old);
+        if (waitpid_lock) {
+            rb_native_mutex_lock(waitpid_lock);
+        }
 #ifdef HAVE_WORKING_VFORK
         if (!has_privilege())
             pid = vfork();
@@ -3905,6 +3959,14 @@ retry_fork_async_signal_safe(int *status, int *ep,
 #endif
         }
 	err = errno;
+        waitpid_lock = waitpid_lock_init;
+        if (waitpid_lock) {
+            if (pid > 0 && w != WAITPID_LOCK_ONLY) {
+                w->pid = pid;
+                list_add(&GET_VM()->waiting_pids, &w->wnode);
+            }
+            rb_native_mutex_unlock(waitpid_lock);
+        }
 	disable_child_handler_fork_parent(&old);
         if (0 < pid) /* fork succeed, parent process */
             return pid;
@@ -3915,34 +3977,56 @@ retry_fork_async_signal_safe(int *status, int *ep,
 }
 COMPILER_WARNING_POP
 
-rb_pid_t
-rb_fork_async_signal_safe(int *status, int (*chfunc)(void*, char *, size_t), void *charg, VALUE fds,
-        char *errmsg, size_t errmsg_buflen)
+static rb_pid_t
+fork_check_err(int *status, int (*chfunc)(void*, char *, size_t), void *charg,
+        VALUE fds, char *errmsg, size_t errmsg_buflen,
+        struct rb_execarg *eargp)
 {
     rb_pid_t pid;
     int err;
     int ep[2];
     int error_occurred;
+    struct waitpid_state *w;
+
+    w = eargp && eargp->waitpid_state ? eargp->waitpid_state : 0;
 
     if (status) *status = 0;
 
     if (pipe_nocrash(ep, fds)) return -1;
-    pid = retry_fork_async_signal_safe(status, ep, chfunc, charg, errmsg, errmsg_buflen);
+    pid = retry_fork_async_signal_safe(status, ep, chfunc, charg,
+                                       errmsg, errmsg_buflen, w);
     if (pid < 0)
         return pid;
     close(ep[1]);
     error_occurred = recv_child_error(ep[0], &err, errmsg, errmsg_buflen);
     if (error_occurred) {
         if (status) {
+            VM_ASSERT((w == 0 || w == WAITPID_LOCK_ONLY) &&
+                      "only used by extensions");
             rb_protect(proc_syswait, (VALUE)pid, status);
         }
-        else {
+        else if (!w) {
             rb_syswait(pid);
         }
         errno = err;
         return -1;
     }
     return pid;
+}
+
+/*
+ * The "async_signal_safe" name is a lie, but it is used by pty.c and
+ * maybe other exts.  fork() is not async-signal-safe due to pthread_atfork
+ * and future POSIX revisions will remove it from a list of signal-safe
+ * functions.  rb_waitpid is not async-signal-safe since MJIT, either.
+ * For our purposes, we do not need async-signal-safety, here
+ */
+rb_pid_t
+rb_fork_async_signal_safe(int *status,
+                          int (*chfunc)(void*, char *, size_t), void *charg,
+                          VALUE fds, char *errmsg, size_t errmsg_buflen)
+{
+    return fork_check_err(status, chfunc, charg, fds, errmsg, errmsg_buflen, 0);
 }
 
 COMPILER_WARNING_PUSH
@@ -3960,12 +4044,14 @@ rb_fork_ruby(int *status)
 
     while (1) {
 	prefork();
+        if (mjit_enabled) mjit_pause(FALSE); /* Don't leave locked mutex to child. Note: child_handler must be enabled to pause MJIT. */
 	disable_child_handler_before_fork(&old);
 	before_fork_ruby();
 	pid = fork();
 	err = errno;
-	after_fork_ruby();
+        after_fork_ruby();
 	disable_child_handler_fork_parent(&old); /* yes, bad name */
+        if (mjit_enabled && pid > 0) mjit_resume(); /* child (pid == 0) is cared by rb_thread_atfork */
 	if (pid >= 0) /* fork succeed */
 	    return pid;
 	/* fork failed */
@@ -4233,7 +4319,8 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
 #endif
 
 #if defined HAVE_WORKING_FORK && !USE_SPAWNV
-    pid = rb_fork_async_signal_safe(NULL, rb_exec_atfork, eargp, eargp->redirect_fds, errmsg, errmsg_buflen);
+    pid = fork_check_err(0, rb_exec_atfork, eargp, eargp->redirect_fds,
+                         errmsg, errmsg_buflen, eargp);
 #else
     prog = eargp->use_shell ? eargp->invoke.sh.shell_script : eargp->invoke.cmd.command_name;
 
@@ -4260,7 +4347,9 @@ rb_spawn_process(struct rb_execarg *eargp, char *errmsg, size_t errmsg_buflen)
     rb_last_status_set((status & 0xff) << 8, 0);
     pid = 1;			/* dummy */
 # endif
-
+    if (eargp->waitpid_state && eargp->waitpid_state != WAITPID_LOCK_ONLY) {
+        eargp->waitpid_state->pid = pid;
+    }
     rb_execarg_run_options(&sarg, NULL, errmsg, errmsg_buflen);
 #endif
     return pid;
@@ -4287,6 +4376,15 @@ static rb_pid_t
 rb_execarg_spawn(VALUE execarg_obj, char *errmsg, size_t errmsg_buflen)
 {
     struct spawn_args args;
+    struct rb_execarg *eargp = rb_execarg_get(execarg_obj);
+
+    /*
+     * Prevent a race with MJIT where the compiler process where
+     * can hold an FD of ours in between vfork + execve
+     */
+    if (!eargp->waitpid_state && mjit_enabled) {
+        eargp->waitpid_state = WAITPID_LOCK_ONLY;
+    }
 
     args.execarg = execarg_obj;
     args.errmsg.ptr = errmsg;
@@ -4352,37 +4450,39 @@ rb_spawn(int argc, const VALUE *argv)
 static VALUE
 rb_f_system(int argc, VALUE *argv)
 {
-    rb_pid_t pid;
-    int status;
+    /*
+     * n.b. using alloca for now to simplify future Thread::Light code
+     * when we need to use malloc for non-native Fiber
+     */
+    struct waitpid_state *w = alloca(sizeof(struct waitpid_state));
+    rb_pid_t pid; /* may be different from waitpid_state.pid on exec failure */
     VALUE execarg_obj;
     struct rb_execarg *eargp;
+    int exec_errnum;
 
     execarg_obj = rb_execarg_new(argc, argv, TRUE, TRUE);
-    TypedData_Get_Struct(execarg_obj, struct rb_execarg, &exec_arg_data_type, eargp);
-#if RUBY_SIGCHLD
-    eargp->nocldwait_prev = ruby_nocldwait;
-    ruby_nocldwait = 0;
-#endif
-    pid = rb_execarg_spawn(execarg_obj, NULL, 0);
+    eargp = rb_execarg_get(execarg_obj);
+    w->ec = GET_EC();
+    waitpid_state_init(w, 0, 0);
+    eargp->waitpid_state = w;
+    pid = rb_execarg_spawn(execarg_obj, 0, 0);
+    exec_errnum = pid < 0 ? errno : 0;
+
 #if defined(HAVE_WORKING_FORK) || defined(HAVE_SPAWNV)
-    if (pid > 0) {
-        int ret, status;
-        ret = rb_waitpid(pid, &status, 0);
-        if (ret == (rb_pid_t)-1) {
-# if RUBY_SIGCHLD
-            ruby_nocldwait = eargp->nocldwait_prev;
-# endif
-            RB_GC_GUARD(execarg_obj);
-            rb_sys_fail("Another thread waited the process started by system().");
+    if (w->pid > 0) {
+        /* `pid' (not w->pid) may be < 0 here if execve failed in child */
+        if (WAITPID_USE_SIGCHLD) {
+            rb_ensure(waitpid_sleep, (VALUE)w, waitpid_cleanup, (VALUE)w);
         }
+        else {
+            waitpid_no_SIGCHLD(w);
+        }
+        rb_last_status_set(w->status, w->ret);
     }
 #endif
-#if RUBY_SIGCHLD
-    ruby_nocldwait = eargp->nocldwait_prev;
-#endif
-    if (pid < 0) {
+    if (w->pid < 0 /* fork failure */ || pid < 0 /* exec failure */) {
         if (eargp->exception) {
-            int err = errno;
+            int err = exec_errnum ? exec_errnum : w->errnum;
             VALUE command = eargp->invoke.sh.shell_script;
             RB_GC_GUARD(execarg_obj);
             rb_syserr_fail_str(err, command);
@@ -4391,12 +4491,11 @@ rb_f_system(int argc, VALUE *argv)
             return Qnil;
         }
     }
-    status = PST2INT(rb_last_status_get());
-    if (status == EXIT_SUCCESS) return Qtrue;
+    if (w->status == EXIT_SUCCESS) return Qtrue;
     if (eargp->exception) {
         VALUE command = eargp->invoke.sh.shell_script;
         VALUE str = rb_str_new_cstr("Command failed with");
-        rb_str_cat_cstr(pst_message_status(str, status), ": ");
+        rb_str_cat_cstr(pst_message_status(str, w->status), ": ");
         rb_str_append(str, command);
         RB_GC_GUARD(execarg_obj);
         rb_exc_raise(rb_exc_new_str(rb_eRuntimeError, str));
@@ -6383,10 +6482,11 @@ rb_daemon(int nochdir, int noclose)
 {
     int err = 0;
 #ifdef HAVE_DAEMON
+    if (mjit_enabled) mjit_pause(FALSE); /* Don't leave locked mutex to child. */
     before_fork_ruby();
     err = daemon(nochdir, noclose);
     after_fork_ruby();
-    rb_thread_atfork();
+    rb_thread_atfork(); /* calls mjit_resume() */
 #else
     int n;
 

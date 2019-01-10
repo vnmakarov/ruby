@@ -548,8 +548,7 @@ class TestIO < Test::Unit::TestCase
 
   if have_nonblock?
     def test_copy_stream_no_busy_wait
-      # JIT has busy wait on GC. It's hard to test this with JIT.
-      skip "MJIT has busy wait on GC. We can't test this with JIT." if RubyVM::MJIT.enabled?
+      skip "MJIT has busy wait on GC. This sometimes fails with --jit." if RubyVM::MJIT.enabled?
       skip "multiple threads already active" if Thread.list.size > 1
 
       msg = 'r58534 [ruby-core:80969] [Backport #13533]'
@@ -2147,11 +2146,9 @@ class TestIO < Test::Unit::TestCase
   end
 
   def test_autoclose_true_closed_by_finalizer
-    if RubyVM::MJIT.enabled?
-      # This is skipped but this test passes with AOT mode.
-      # At least it should not be a JIT compiler's bug.
-      skip "MJIT worker does IO which is unexpected for this test"
-    end
+    # http://ci.rvm.jp/results/trunk-mjit@silicon-docker/1465760
+    # http://ci.rvm.jp/results/trunk-mjit@silicon-docker/1469765
+    skip 'this randomly fails with MJIT' if RubyVM::MJIT.enabled?
 
     feature2250 = '[ruby-core:26222]'
     pre = 'ft2250'
@@ -3258,17 +3255,12 @@ __END__
 
       assert_equal 100, buf.bytesize
 
-      begin
+      msg = /can't modify string; temporarily locked/
+      assert_raise_with_message(RuntimeError, msg) do
         buf.replace("")
-      rescue RuntimeError => e
-        assert_match(/can't modify string; temporarily locked/, e.message)
-        Thread.pass
-      end until buf.empty?
-
-      assert_empty(buf, bug6099)
+      end
       assert_predicate(th, :alive?)
       w.write(data)
-      Thread.pass while th.alive?
       th.join
     end
     assert_equal(data, buf, bug6099)
@@ -3782,14 +3774,6 @@ __END__
             th = Thread.new { r.read(1) }
             w.write(dot)
 
-            # XXX not sure why this is needed on Linux, otherwise
-            # the "good" reader thread doesn't always join properly
-            # because the reader never sees the first write
-            if RUBY_PLATFORM =~ /linux/
-              # assert_equal can fail if this is another char...
-              w.write(dot)
-            end
-
             assert_same th, th.join(15), '"good" reader timeout'
             assert_equal(dot, th.value)
           end
@@ -3808,9 +3792,6 @@ __END__
           end
           Thread.pass until th.stop?
 
-          # XXX not sure why, this reduces Linux CI failures
-          assert_nil th.join(0.001)
-
           r.close
           assert_same th, th.join(30), '"bad" reader timeout'
           assert_match(/stream closed/, th.value.message)
@@ -3823,7 +3804,6 @@ __END__
   end
 
   def test_select_leak
-    skip 'MJIT uses too much memory' if RubyVM::MJIT.enabled?
     # avoid malloc arena explosion from glibc and jemalloc:
     env = {
       'MALLOC_ARENA_MAX' => '1',

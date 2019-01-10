@@ -8,7 +8,7 @@ require_relative '../lib/jit_support'
 
 class TestRubyOptions < Test::Unit::TestCase
   NO_JIT_DESCRIPTION =
-    if RubyVM::MJIT.enabled?
+    if RubyVM::MJIT.enabled? # checking -DMJIT_FORCE_ENABLE
       RUBY_DESCRIPTION.sub(/\+JIT /, '')
     else
       RUBY_DESCRIPTION
@@ -117,7 +117,7 @@ class TestRubyOptions < Test::Unit::TestCase
   def test_verbose
     assert_in_out_err(["-vve", ""]) do |r, e|
       assert_match(VERSION_PATTERN, r[0])
-      if RubyVM::MJIT.enabled? && !mjit_force_enabled?
+      if RubyVM::MJIT.enabled? && !mjit_force_enabled? # checking -DMJIT_FORCE_ENABLE
         assert_equal(NO_JIT_DESCRIPTION, r[0])
       else
         assert_equal(RUBY_DESCRIPTION, r[0])
@@ -180,13 +180,15 @@ class TestRubyOptions < Test::Unit::TestCase
   def test_version
     assert_in_out_err(%w(--version)) do |r, e|
       assert_match(VERSION_PATTERN, r[0])
-      if RubyVM::MJIT.enabled?
+      if RubyVM::MJIT.enabled? # checking -DMJIT_FORCE_ENABLE
         assert_equal(EnvUtil.invoke_ruby(['-e', 'print RUBY_DESCRIPTION'], '', true).first, r[0])
       else
         assert_equal(RUBY_DESCRIPTION, r[0])
       end
       assert_equal([], e)
     end
+
+    return if RbConfig::CONFIG["MJIT_SUPPORT"] == 'no'
 
     [
       %w(--version --jit --disable=jit),
@@ -208,7 +210,7 @@ class TestRubyOptions < Test::Unit::TestCase
       ].each do |args|
         assert_in_out_err(args) do |r, e|
           assert_match(VERSION_PATTERN_WITH_JIT, r[0])
-          if RubyVM::MJIT.enabled?
+          if RubyVM::MJIT.enabled? # checking -DMJIT_FORCE_ENABLE
             assert_equal(RUBY_DESCRIPTION, r[0])
           else
             assert_equal(EnvUtil.invoke_ruby(['--jit', '-e', 'print RUBY_DESCRIPTION'], '', true).first, r[0])
@@ -778,20 +780,6 @@ class TestRubyOptions < Test::Unit::TestCase
     feature7730 = '[ruby-core:51580]'
     assert_in_out_err(["-w", "-"], "a=1", [], ["-:1: warning: assigned but unused variable - a"], feature7730)
     assert_in_out_err(["-w", "-"], "eval('a=1')", [], [], feature7730)
-  end
-
-  def test_shadowing_variable
-    bug4130 = '[ruby-dev:42718]'
-    assert_in_out_err(["-we", "def foo\n""  a=1\n""  1.times do |a| end\n""  a\n""end"],
-                      "", [], ["-e:3: warning: shadowing outer local variable - a"], bug4130)
-    assert_in_out_err(["-we", "def foo\n""  a=1\n""  1.times do |a| end\n""end"],
-                      "", [],
-                      ["-e:3: warning: shadowing outer local variable - a",
-                       "-e:2: warning: assigned but unused variable - a",
-                      ], bug4130)
-    feature6693 = '[ruby-core:46160]'
-    assert_in_out_err(["-we", "def foo\n""  _a=1\n""  1.times do |_a| end\n""end"],
-                      "", [], [], feature6693)
   end
 
   def test_script_from_stdin

@@ -188,7 +188,24 @@ VALUE rb_complex_raw(VALUE, VALUE);
 VALUE rb_complex_new(VALUE, VALUE);
 #define rb_complex_new1(x) rb_complex_new((x), INT2FIX(0))
 #define rb_complex_new2(x,y) rb_complex_new((x), (y))
-VALUE rb_complex_polar(VALUE, VALUE);
+VALUE rb_complex_new_polar(VALUE abs, VALUE arg);
+DEPRECATED_BY(rb_complex_new_polar, VALUE rb_complex_polar(VALUE abs, VALUE arg));
+VALUE rb_complex_real(VALUE z);
+VALUE rb_complex_imag(VALUE z);
+VALUE rb_complex_plus(VALUE x, VALUE y);
+VALUE rb_complex_minus(VALUE x, VALUE y);
+VALUE rb_complex_mul(VALUE x, VALUE y);
+VALUE rb_complex_div(VALUE x, VALUE y);
+VALUE rb_complex_uminus(VALUE z);
+VALUE rb_complex_conjugate(VALUE z);
+VALUE rb_complex_abs(VALUE z);
+VALUE rb_complex_arg(VALUE z);
+VALUE rb_complex_pow(VALUE base, VALUE exp);
+VALUE rb_dbl_complex_new(double real, double imag);
+#define rb_complex_add rb_complex_plus
+#define rb_complex_sub rb_complex_minus
+#define rb_complex_nagate rb_complex_uminus
+
 VALUE rb_Complex(VALUE, VALUE);
 #define rb_Complex1(x) rb_Complex((x), INT2FIX(0))
 #define rb_Complex2(x,y) rb_Complex((x), (y))
@@ -244,6 +261,13 @@ VALUE rb_enumeratorize_with_size(VALUE, VALUE, int, const VALUE *, rb_enumerator
 	    return SIZED_ENUMERATOR(obj, argc, argv, size_fn);		\
     } while (0)
 #define RETURN_ENUMERATOR(obj, argc, argv) RETURN_SIZED_ENUMERATOR(obj, argc, argv, 0)
+typedef struct {
+    VALUE begin;
+    VALUE end;
+    VALUE step;
+    int exclude_end;
+} rb_arithmetic_sequence_components_t;
+int rb_arithmetic_sequence_extract(VALUE, rb_arithmetic_sequence_components_t *);
 /* error.c */
 VALUE rb_exc_new(VALUE, const char*, long);
 VALUE rb_exc_new_cstr(VALUE, const char*);
@@ -479,7 +503,7 @@ VALUE rb_file_directory_p(VALUE,VALUE);
 VALUE rb_str_encode_ospath(VALUE);
 int rb_is_absolute_path(const char *);
 /* gc.c */
-NORETURN(void rb_memerror(void));
+COLDFUNC NORETURN(void rb_memerror(void));
 PUREFUNC(int rb_during_gc(void));
 void rb_gc_mark_locations(const VALUE*, const VALUE*);
 void rb_mark_tbl(struct st_table*);
@@ -520,11 +544,12 @@ VALUE rb_hash_delete(VALUE,VALUE);
 VALUE rb_hash_set_ifnone(VALUE hash, VALUE ifnone);
 typedef VALUE rb_hash_update_func(VALUE newkey, VALUE oldkey, VALUE value);
 VALUE rb_hash_update_by(VALUE hash1, VALUE hash2, rb_hash_update_func *func);
-struct st_table *rb_hash_tbl(VALUE);
+struct st_table *rb_hash_tbl(VALUE, const char *file, int line);
 int rb_path_check(const char*);
 int rb_env_path_tainted(void);
 VALUE rb_env_clear(void);
 VALUE rb_hash_size(VALUE);
+void rb_hash_free(VALUE);
 /* io.c */
 #define rb_defout rb_stdout
 RUBY_EXTERN VALUE rb_fs;

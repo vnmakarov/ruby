@@ -5,6 +5,7 @@
 #include "internal.h"
 #include "node.h"
 #include "vm_core.h"
+#include "iseq.h"
 
 static VALUE rb_mAST;
 static VALUE rb_cNode;
@@ -51,78 +52,204 @@ ast_new_internal(rb_ast_t *ast, NODE *node)
     return obj;
 }
 
-/*
- *  call-seq:
- *     RubyVM::AST.parse(string) -> RubyVM::AST::Node
- *
- *  Parses the given string into an abstract syntax tree,
- *  returning the root node of that tree.
- *
- *  Returns <code>nil</code> if the given string is invalid syntax.
- *
- *    RubyVM::AST.parse("x = 1 + 2")
- *    # => #<RubyVM::AST::Node(NODE_SCOPE(0) 1:0, 1:9): >
- */
+static VALUE rb_ast_parse_str(VALUE str);
+static VALUE rb_ast_parse_file(VALUE path);
+static VALUE rb_ast_parse_array(VALUE array);
+
 static VALUE
-rb_ast_s_parse(VALUE module, VALUE str)
+ast_parse_new(void)
 {
-    VALUE obj;
-    rb_ast_t *ast = 0;
+    return rb_parser_set_context(rb_parser_new(), NULL, 0);
+}
 
-    const VALUE parser = rb_parser_new();
-
-    str = rb_check_string_type(str);
-    rb_parser_set_context(parser, NULL, 0);
-    ast = rb_parser_compile_string_path(parser, rb_str_new_cstr("no file name"), str, 1);
-
+static VALUE
+ast_parse_done(rb_ast_t *ast)
+{
     if (!ast->body.root) {
         rb_ast_dispose(ast);
         rb_exc_raise(GET_EC()->errinfo);
     }
 
-    obj = ast_new_internal(ast, (NODE *)ast->body.root);
-
-    return obj;
+    return ast_new_internal(ast, (NODE *)ast->body.root);
 }
 
 /*
  *  call-seq:
- *     RubyVM::AST.parse_file(pathname) -> RubyVM::AST::Node
+ *     RubyVM::AbstractSyntaxTree.parse(string) -> RubyVM::AbstractSyntaxTree::Node
+ *
+ *  Parses the given string into an abstract syntax tree,
+ *  returning the root node of that tree.
+ *
+ *  SyntaxError is raised if the given string is invalid syntax.
+ *
+ *    RubyVM::AbstractSyntaxTree.parse("x = 1 + 2")
+ *    # => #<RubyVM::AbstractSyntaxTree::Node(NODE_SCOPE(0) 1:0, 1:9): >
+ */
+static VALUE
+rb_ast_s_parse(VALUE module, VALUE str)
+{
+    return rb_ast_parse_str(str);
+}
+
+static VALUE
+rb_ast_parse_str(VALUE str)
+{
+    rb_ast_t *ast = 0;
+
+    str = rb_check_string_type(str);
+    ast = rb_parser_compile_string_path(ast_parse_new(), Qnil, str, 1);
+    return ast_parse_done(ast);
+}
+
+/*
+ *  call-seq:
+ *     RubyVM::AbstractSyntaxTree.parse_file(pathname) -> RubyVM::AbstractSyntaxTree::Node
  *
  *   Reads the file from <code>pathname</code>, then parses it like ::parse,
  *   returning the root node of the abstract syntax tree.
  *
- *   Returns <code>nil</code> if <code>pathname</code>'s contents are not
+ *   SyntaxError is raised if <code>pathname</code>'s contents are not
  *   valid Ruby syntax.
  *
- *     RubyVM::AST.parse_file("my-app/app.rb")
- *     # => #<RubyVM::AST::Node(NODE_SCOPE(0) 1:0, 31:3): >
+ *     RubyVM::AbstractSyntaxTree.parse_file("my-app/app.rb")
+ *     # => #<RubyVM::AbstractSyntaxTree::Node(NODE_SCOPE(0) 1:0, 31:3): >
  */
 static VALUE
 rb_ast_s_parse_file(VALUE module, VALUE path)
 {
-    VALUE obj, f;
+    return rb_ast_parse_file(path);
+}
+
+static VALUE
+rb_ast_parse_file(VALUE path)
+{
+    VALUE f;
     rb_ast_t *ast = 0;
     rb_encoding *enc = rb_utf8_encoding();
-
-    const VALUE parser = rb_parser_new();
 
     FilePathValue(path);
     f = rb_file_open_str(path, "r");
     rb_funcall(f, rb_intern("set_encoding"), 2, rb_enc_from_encoding(enc), rb_str_new_cstr("-"));
-    rb_parser_set_context(parser, NULL, 0);
-    ast = rb_parser_compile_file_path(parser, path, f, 1);
-
+    ast = rb_parser_compile_file_path(ast_parse_new(), Qnil, f, 1);
     rb_io_close(f);
+    return ast_parse_done(ast);
+}
 
-    if (!ast->body.root) {
-        rb_ast_dispose(ast);
-        rb_exc_raise(GET_EC()->errinfo);
+static VALUE
+lex_array(VALUE array, int index)
+{
+    VALUE str = rb_ary_entry(array, index);
+    if (!NIL_P(str)) {
+        StringValue(str);
+        if (!rb_enc_asciicompat(rb_enc_get(str))) {
+            rb_raise(rb_eArgError, "invalid source encoding");
+        }
+    }
+    return str;
+}
+
+static VALUE
+rb_ast_parse_array(VALUE array)
+{
+    rb_ast_t *ast = 0;
+
+    array = rb_check_array_type(array);
+    ast = rb_parser_compile_generic(ast_parse_new(), lex_array, Qnil, array, 1);
+    return ast_parse_done(ast);
+}
+
+static VALUE node_children(rb_ast_t*, NODE*);
+
+static VALUE
+node_find(VALUE self, const int node_id)
+{
+    VALUE ary;
+    long i;
+    struct ASTNodeData *data;
+    TypedData_Get_Struct(self, struct ASTNodeData, &rb_node_type, data);
+
+    if (nd_node_id(data->node) == node_id) return self;
+
+    ary = node_children(data->ast, data->node);
+
+    for (i = 0; i < RARRAY_LEN(ary); i++) {
+        VALUE child = RARRAY_AREF(ary, i);
+
+        if (CLASS_OF(child) == rb_cNode) {
+            VALUE result = node_find(child, node_id);
+            if (RTEST(result)) return result;
+        }
     }
 
-    obj = ast_new_internal(ast, (NODE *)ast->body.root);
+    return Qnil;
+}
 
-    return obj;
+extern VALUE rb_e_script;
+
+static VALUE
+script_lines(VALUE path)
+{
+    VALUE hash, lines;
+    ID script_lines;
+    CONST_ID(script_lines, "SCRIPT_LINES__");
+    if (!rb_const_defined_at(rb_cObject, script_lines)) return Qnil;
+    hash = rb_const_get_at(rb_cObject, script_lines);
+    if (!RB_TYPE_P(hash, T_HASH)) return Qnil;
+    lines = rb_hash_lookup(hash, path);
+    if (!RB_TYPE_P(lines, T_ARRAY)) return Qnil;
+    return lines;
+}
+
+/*
+ *  call-seq:
+ *     RubyVM::AbstractSyntaxTree.of(proc)   -> RubyVM::AbstractSyntaxTree::Node
+ *     RubyVM::AbstractSyntaxTree.of(method) -> RubyVM::AbstractSyntaxTree::Node
+ *
+ *   Returns AST nodes of the given proc or method.
+ *
+ *     RubyVM::AbstractSyntaxTree.of(proc {1 + 2})
+ *     # => #<RubyVM::AbstractSyntaxTree::Node(NODE_SCOPE(0) 1:35, 1:42): >
+ *
+ *     def hello
+ *       puts "hello, world"
+ *     end
+ *
+ *     RubyVM::AbstractSyntaxTree.of(method(:hello))
+ *     # => #<RubyVM::AbstractSyntaxTree::Node(NODE_SCOPE(0) 1:0, 3:3): >
+ */
+static VALUE
+rb_ast_s_of(VALUE module, VALUE body)
+{
+    VALUE path, node, lines;
+    int node_id;
+    const rb_iseq_t *iseq = NULL;
+
+    if (rb_obj_is_proc(body)) {
+        iseq = vm_proc_iseq(body);
+
+        if (!rb_obj_is_iseq((VALUE)iseq)) {
+            iseq = NULL;
+        }
+    }
+    else {
+        iseq = rb_method_iseq(body);
+    }
+
+    if (!iseq) return Qnil;
+
+    path = rb_iseq_path(iseq);
+    node_id = iseq->body->location.node_id;
+    if (!NIL_P(lines = script_lines(path))) {
+        node = rb_ast_parse_array(lines);
+    }
+    else if (RSTRING_LEN(path) == 2 && memcmp(RSTRING_PTR(path), "-e", 2) == 0) {
+        node = rb_ast_parse_str(rb_e_script);
+    }
+    else {
+        node = rb_ast_parse_file(path);
+    }
+
+    return node_find(node, node_id);
 }
 
 static VALUE
@@ -135,21 +262,21 @@ rb_ast_node_alloc(VALUE klass)
 }
 
 static const char*
-node_type_to_str(NODE *node)
+node_type_to_str(const NODE *node)
 {
-    return ruby_node_name(nd_type(node));
+    return (ruby_node_name(nd_type(node)) + rb_strlen_lit("NODE_"));
 }
 
 /*
  *  call-seq:
- *     node.type -> string
+ *     node.type -> symbol
  *
- *  Returns the type of this node as a string.
+ *  Returns the type of this node as a symbol.
  *
- *    root = RubyVM::AST.parse("x = 1 + 2")
- *    root.type # => "NODE_SCOPE"
+ *    root = RubyVM::AbstractSyntaxTree.parse("x = 1 + 2")
+ *    root.type # => :SCOPE
  *    call = root.children[2]
- *    call.type # => "NODE_OPCALL"
+ *    call.type # => :OPCALL
  */
 static VALUE
 rb_ast_node_type(VALUE self)
@@ -157,7 +284,7 @@ rb_ast_node_type(VALUE self)
     struct ASTNodeData *data;
     TypedData_Get_Struct(self, struct ASTNodeData, &rb_node_type, data);
 
-    return rb_fstring_cstr(node_type_to_str(data->node));
+    return rb_sym_intern_ascii_cstr(node_type_to_str(data->node));
 }
 
 #define NEW_CHILD(ast, node) node ? ast_new_internal(ast, node) : Qnil
@@ -605,20 +732,21 @@ void
 Init_ast(void)
 {
     /*
-     * AST provides methods to parse Ruby code into
+     * AbstractSyntaxTree provides methods to parse Ruby code into
      * abstract syntax trees. The nodes in the tree
-     * are instances of RubyVM::AST::Node.
+     * are instances of RubyVM::AbstractSyntaxTree::Node.
      */
-    rb_mAST = rb_define_module_under(rb_cRubyVM, "AST");
+    rb_mAST = rb_define_module_under(rb_cRubyVM, "AbstractSyntaxTree");
     /*
-     * RubyVM::AST::Node instances are created by parse methods in
-     * RubyVM::AST.
+     * RubyVM::AbstractSyntaxTree::Node instances are created by parse methods in
+     * RubyVM::AbstractSyntaxTree.
      */
     rb_cNode = rb_define_class_under(rb_mAST, "Node", rb_cObject);
 
     rb_undef_alloc_func(rb_cNode);
     rb_define_singleton_method(rb_mAST, "parse", rb_ast_s_parse, 1);
     rb_define_singleton_method(rb_mAST, "parse_file", rb_ast_s_parse_file, 1);
+    rb_define_singleton_method(rb_mAST, "of", rb_ast_s_of, 1);
     rb_define_method(rb_cNode, "type", rb_ast_node_type, 0);
     rb_define_method(rb_cNode, "first_lineno", rb_ast_node_first_lineno, 0);
     rb_define_method(rb_cNode, "first_column", rb_ast_node_first_column, 0);

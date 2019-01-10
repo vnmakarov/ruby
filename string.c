@@ -490,7 +490,7 @@ search_nonascii(const char *p, const char *e)
 	    }
 	}
 #endif
-#ifdef HAVE_BUILTIN___BUILTIN_ASSUME_ALIGNED
+#if defined(HAVE_BUILTIN___BUILTIN_ASSUME_ALIGNED) &&! UNALIGNED_WORD_ACCESS
 #define aligned_ptr(value) \
         __builtin_assume_aligned((value), sizeof(uintptr_t))
 #else
@@ -803,6 +803,11 @@ VALUE
 rb_str_new_cstr(const char *ptr)
 {
     must_not_null(ptr);
+    /* rb_str_new_cstr() can take pointer from non-malloc-generated
+     * memory regions, and that cannot be detected by the MSAN.  Just
+     * trust the programmer that the argument passed here is a sane C
+     * string. */
+    __msan_unpoison_string(ptr);
     return rb_str_new(ptr, strlen(ptr));
 }
 
@@ -2006,9 +2011,7 @@ rb_str_format_m(VALUE str, VALUE arg)
     VALUE tmp = rb_check_array_type(arg);
 
     if (!NIL_P(tmp)) {
-	VALUE rv = rb_str_format(RARRAY_LENINT(tmp), RARRAY_CONST_PTR(tmp), str);
-	RB_GC_GUARD(tmp);
-	return rv;
+        return rb_str_format(RARRAY_LENINT(tmp), RARRAY_CONST_PTR(tmp), str);
     }
     return rb_str_format(1, &arg, str);
 }
@@ -2975,7 +2978,7 @@ rb_str_concat_literals(size_t num, const VALUE *strary)
 
 /*
  *  call-seq:
- *     str.concat(obj1, obj2,...)          -> str
+ *     str.concat(obj1, obj2, ...)          -> str
  *
  *  Concatenates the given object(s) to <i>str</i>. If an object is an
  *  <code>Integer</code>, it is considered a codepoint and converted
@@ -3095,7 +3098,7 @@ rb_str_concat(VALUE str1, VALUE str2)
 
 /*
  *  call-seq:
- *     str.prepend(other_str1, other_str2,...)  -> str
+ *     str.prepend(other_str1, other_str2, ...)  -> str
  *
  *  Prepend---Prepend the given strings to <i>str</i>.
  *
@@ -5410,7 +5413,8 @@ rb_str_setbyte(VALUE str, VALUE index, VALUE value)
     long pos = NUM2LONG(index);
     int byte = NUM2INT(value);
     long len = RSTRING_LEN(str);
-    char *head, *ptr, *left = 0;
+    char *head, *left = 0;
+    unsigned char *ptr;
     rb_encoding *enc;
     int cr = ENC_CODERANGE_UNKNOWN, width, nlen;
 
@@ -5418,17 +5422,21 @@ rb_str_setbyte(VALUE str, VALUE index, VALUE value)
         rb_raise(rb_eIndexError, "index %ld out of string", pos);
     if (pos < 0)
         pos += len;
+    if (byte < 0)
+        rb_raise(rb_eRangeError, "integer %d too small to convert into `unsigned char'", byte);
+    if (UCHAR_MAX < byte)
+        rb_raise(rb_eRangeError, "integer %d too big to convert into `unsigned char'", byte);
 
     if (!str_independent(str))
 	str_make_independent(str);
     enc = STR_ENC_GET(str);
     head = RSTRING_PTR(str);
-    ptr = &head[pos];
+    ptr = (unsigned char *)&head[pos];
     if (!STR_EMBED_P(str)) {
 	cr = ENC_CODERANGE(str);
 	switch (cr) {
 	  case ENC_CODERANGE_7BIT:
-	    left = ptr;
+            left = (char *)ptr;
 	    *ptr = byte;
 	    if (ISASCII(byte)) goto end;
 	    nlen = rb_enc_precise_mbclen(left, head+len, enc);
@@ -5716,16 +5724,9 @@ rb_str_include(VALUE str, VALUE arg)
 static VALUE
 rb_str_to_i(int argc, VALUE *argv, VALUE str)
 {
-    int base;
+    int base = 10;
 
-    if (argc == 0) base = 10;
-    else {
-	VALUE b;
-
-	rb_scan_args(argc, argv, "01", &b);
-	base = NUM2INT(b);
-    }
-    if (base < 0) {
+    if (rb_check_arity(argc, 0, 1) && (base = NUM2INT(argv[0])) < 0) {
 	rb_raise(rb_eArgError, "invalid radix %d", base);
     }
     return rb_str_to_inum(str, base, FALSE);
@@ -6182,7 +6183,7 @@ undump_after_backslash(VALUE undumped, const char **ss, const char *s_end, rb_en
     unsigned int c;
     int codelen;
     size_t hexlen;
-    char buf[6];
+    unsigned char buf[6];
     static rb_encoding *enc_utf8 = NULL;
 
     switch (*s) {
@@ -6200,8 +6201,8 @@ undump_after_backslash(VALUE undumped, const char **ss, const char *s_end, rb_en
       case 'b':
       case 'a':
       case 'e':
-	*buf = (char)unescape_ascii(*s);
-	rb_str_cat(undumped, buf, 1);
+        *buf = unescape_ascii(*s);
+        rb_str_cat(undumped, (char *)buf, 1);
 	s++;
 	break;
       case 'u':
@@ -6241,8 +6242,8 @@ undump_after_backslash(VALUE undumped, const char **ss, const char *s_end, rb_en
 		if (0xd800 <= c && c <= 0xdfff) {
 		    rb_raise(rb_eRuntimeError, "invalid Unicode codepoint");
 		}
-		codelen = rb_enc_mbcput(c, buf, *penc);
-		rb_str_cat(undumped, buf, codelen);
+                codelen = rb_enc_mbcput(c, (char *)buf, *penc);
+                rb_str_cat(undumped, (char *)buf, codelen);
 		s += hexlen;
 	    }
 	}
@@ -6254,8 +6255,8 @@ undump_after_backslash(VALUE undumped, const char **ss, const char *s_end, rb_en
 	    if (0xd800 <= c && c <= 0xdfff) {
 		rb_raise(rb_eRuntimeError, "invalid Unicode codepoint");
 	    }
-	    codelen = rb_enc_mbcput(c, buf, *penc);
-	    rb_str_cat(undumped, buf, codelen);
+            codelen = rb_enc_mbcput(c, (char *)buf, *penc);
+            rb_str_cat(undumped, (char *)buf, codelen);
 	    s += hexlen;
 	}
 	break;
@@ -6271,7 +6272,7 @@ undump_after_backslash(VALUE undumped, const char **ss, const char *s_end, rb_en
 	if (hexlen != 2) {
 	    rb_raise(rb_eRuntimeError, "invalid hex escape");
 	}
-	rb_str_cat(undumped, buf, 1);
+        rb_str_cat(undumped, (char *)buf, 1);
 	s += hexlen;
 	break;
       default:
@@ -6683,7 +6684,7 @@ rb_str_downcase_bang(int argc, VALUE *argv, VALUE str)
  *    This option cannot be combined with any other option.
  *  :turkic ::
  *    Full Unicode case mapping, adapted for Turkic languages
- *    (Turkish, Azerbaijani,...). This means that upper case I is mapped to
+ *    (Turkish, Azerbaijani, ...). This means that upper case I is mapped to
  *    lower case dotless i, and so on.
  *  :lithuanian ::
  *    Currently, just full Unicode case mapping. In the future, full Unicode
@@ -6726,6 +6727,8 @@ rb_str_downcase(int argc, VALUE *argv, VALUE str)
  *
  *  Modifies <i>str</i> by converting the first character to uppercase and the
  *  remainder to lowercase. Returns <code>nil</code> if no changes are made.
+ *  There is an exception for modern Georgian (mkhedruli/MTAVRULI), where
+ *  the result is the same as for String#downcase, to avoid mixed case.
  *
  *  See String#downcase for meaning of +options+ and use with different encodings.
  *
@@ -6907,7 +6910,7 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
     int cflag = 0;
     unsigned int c, c0, last = 0;
     int modify = 0, i, l;
-    char *s, *send;
+    unsigned char *s, *send;
     VALUE hash = 0;
     int singlebyte = single_byte_optimizable(str);
     int termlen;
@@ -6991,18 +6994,18 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
     if (cr == ENC_CODERANGE_VALID && rb_enc_asciicompat(e1))
 	cr = ENC_CODERANGE_7BIT;
     str_modify_keep_cr(str);
-    s = RSTRING_PTR(str); send = RSTRING_END(str);
+    s = (unsigned char *)RSTRING_PTR(str); send = (unsigned char *)RSTRING_END(str);
     termlen = rb_enc_mbminlen(enc);
     if (sflag) {
 	int clen, tlen;
 	long offset, max = RSTRING_LEN(str);
 	unsigned int save = -1;
-	char *buf = ALLOC_N(char, max + termlen), *t = buf;
+        unsigned char *buf = ALLOC_N(unsigned char, max + termlen), *t = buf;
 
 	while (s < send) {
 	    int may_modify = 0;
 
-	    c0 = c = rb_enc_codepoint_len(s, send, &clen, e1);
+            c0 = c = rb_enc_codepoint_len((char *)s, (char *)send, &clen, e1);
 	    tlen = enc == e1 ? clen : rb_enc_codelen(c, enc);
 
 	    s += clen;
@@ -7038,7 +7041,7 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
 	    if ((offset = t - buf) + tlen > max) {
 		size_t MAYBE_UNUSED(old) = max + termlen;
 		max = offset + tlen + (send - s);
-		SIZED_REALLOC_N(buf, char, max + termlen, old);
+                SIZED_REALLOC_N(buf, unsigned char, max + termlen, old);
 		t = buf + offset;
 	    }
 	    rb_enc_mbcput(c, t, enc);
@@ -7051,8 +7054,8 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
 	if (!STR_EMBED_P(str)) {
 	    ruby_sized_xfree(STR_HEAP_PTR(str), STR_HEAP_SIZE(str));
 	}
-	TERM_FILL(t, termlen);
-	RSTRING(str)->as.heap.ptr = buf;
+        TERM_FILL((char *)t, termlen);
+        RSTRING(str)->as.heap.ptr = (char *)buf;
 	RSTRING(str)->as.heap.len = t - buf;
 	STR_SET_NOEMBED(str);
 	RSTRING(str)->as.heap.aux.capa = max;
@@ -7078,11 +7081,11 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
     else {
 	int clen, tlen;
 	long offset, max = (long)((send - s) * 1.2);
-	char *buf = ALLOC_N(char, max + termlen), *t = buf;
+        unsigned char *buf = ALLOC_N(unsigned char, max + termlen), *t = buf;
 
 	while (s < send) {
 	    int may_modify = 0;
-	    c0 = c = rb_enc_codepoint_len(s, send, &clen, e1);
+            c0 = c = rb_enc_codepoint_len((char *)s, (char *)send, &clen, e1);
 	    tlen = enc == e1 ? clen : rb_enc_codelen(c, enc);
 
 	    if (c < 256) {
@@ -7111,7 +7114,7 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
 	    if ((offset = t - buf) + tlen > max) {
 		size_t MAYBE_UNUSED(old) = max + termlen;
 		max = offset + tlen + (long)((send - s) * 1.2);
-		SIZED_REALLOC_N(buf, char, max + termlen, old);
+                SIZED_REALLOC_N(buf, unsigned char, max + termlen, old);
 		t = buf + offset;
 	    }
 	    if (s != t) {
@@ -7127,8 +7130,8 @@ tr_trans(VALUE str, VALUE src, VALUE repl, int sflag)
 	if (!STR_EMBED_P(str)) {
 	    ruby_sized_xfree(STR_HEAP_PTR(str), STR_HEAP_SIZE(str));
 	}
-	TERM_FILL(t, termlen);
-	RSTRING(str)->as.heap.ptr = buf;
+        TERM_FILL((char *)t, termlen);
+        RSTRING(str)->as.heap.ptr = (char *)buf;
 	RSTRING(str)->as.heap.len = t - buf;
 	STR_SET_NOEMBED(str);
 	RSTRING(str)->as.heap.aux.capa = max;
@@ -7397,7 +7400,7 @@ rb_str_squeeze_bang(int argc, VALUE *argv, VALUE str)
     char squeez[TR_TABLE_SIZE];
     rb_encoding *enc = 0;
     VALUE del = 0, nodel = 0;
-    char *s, *send, *t;
+    unsigned char *s, *send, *t;
     int i, modify = 0;
     int ascompat, singlebyte = single_byte_optimizable(str);
     unsigned int save;
@@ -7418,15 +7421,15 @@ rb_str_squeeze_bang(int argc, VALUE *argv, VALUE str)
     }
 
     str_modify_keep_cr(str);
-    s = t = RSTRING_PTR(str);
+    s = t = (unsigned char *)RSTRING_PTR(str);
     if (!s || RSTRING_LEN(str) == 0) return Qnil;
-    send = RSTRING_END(str);
+    send = (unsigned char *)RSTRING_END(str);
     save = -1;
     ascompat = rb_enc_asciicompat(enc);
 
     if (singlebyte) {
         while (s < send) {
-	    unsigned int c = *(unsigned char*)s++;
+            unsigned int c = *s++;
 	    if (c != save || (argc > 0 && !squeez[c])) {
 	        *t++ = save = c;
 	    }
@@ -7437,14 +7440,14 @@ rb_str_squeeze_bang(int argc, VALUE *argv, VALUE str)
 	    unsigned int c;
 	    int clen;
 
-	    if (ascompat && (c = *(unsigned char*)s) < 0x80) {
+            if (ascompat && (c = *s) < 0x80) {
 		if (c != save || (argc > 0 && !squeez[c])) {
 		    *t++ = save = c;
 		}
 		s++;
 	    }
 	    else {
-		c = rb_enc_codepoint_len(s, send, &clen, enc);
+                c = rb_enc_codepoint_len((char *)s, (char *)send, &clen, enc);
 
 		if (c != save || (argc > 0 && !tr_find(c, squeez, del, nodel))) {
 		    if (t != s) rb_enc_mbcput(c, t, enc);
@@ -7456,9 +7459,9 @@ rb_str_squeeze_bang(int argc, VALUE *argv, VALUE str)
 	}
     }
 
-    TERM_FILL(t, TERM_LEN(str));
-    if (t - RSTRING_PTR(str) != RSTRING_LEN(str)) {
-	STR_SET_LEN(str, t - RSTRING_PTR(str));
+    TERM_FILL((char *)t, TERM_LEN(str));
+    if ((char *)t - RSTRING_PTR(str) != RSTRING_LEN(str)) {
+        STR_SET_LEN(str, (char *)t - RSTRING_PTR(str));
 	modify = 1;
     }
 
@@ -8451,7 +8454,7 @@ rb_str_each_grapheme_cluster_size(VALUE str, VALUE args, VALUE eobj)
     rb_encoding *enc = rb_enc_from_index(ENCODING_GET(str));
     const char *ptr, *end;
 
-    if (!rb_enc_unicode_p(enc) || single_byte_optimizable(str)) {
+    if (!rb_enc_unicode_p(enc)) {
 	return rb_str_length(str);
     }
 
@@ -8477,15 +8480,15 @@ rb_str_enumerate_grapheme_clusters(VALUE str, VALUE ary)
     VALUE orig = str;
     regex_t *reg_grapheme_cluster = NULL;
     rb_encoding *enc = rb_enc_from_index(ENCODING_GET(str));
-    const char *ptr, *end;
+    const char *ptr0, *ptr, *end;
 
-    if (!rb_enc_unicode_p(enc) || single_byte_optimizable(str)) {
+    if (!rb_enc_unicode_p(enc)) {
 	return rb_str_enumerate_chars(str, ary);
     }
 
     if (!ary) str = rb_str_new_frozen(str);
     reg_grapheme_cluster = get_reg_grapheme_cluster(enc);
-    ptr = RSTRING_PTR(str);
+    ptr0 = ptr = RSTRING_PTR(str);
     end = RSTRING_END(str);
 
     while (ptr < end) {
@@ -8493,7 +8496,7 @@ rb_str_enumerate_grapheme_clusters(VALUE str, VALUE ary)
 				      (const OnigUChar *)ptr, (const OnigUChar *)end,
 				      (const OnigUChar *)ptr, NULL, 0);
 	if (len <= 0) break;
-	ENUM_ELEM(ary, rb_enc_str_new(ptr, len, enc));
+        ENUM_ELEM(ary, rb_str_subseq(str, ptr-ptr0, len));
 	ptr += len;
     }
     RB_GC_GUARD(str);
@@ -8822,11 +8825,11 @@ lstrip_offset(VALUE str, const char *s, const char *e, rb_encoding *enc)
  *  call-seq:
  *     str.lstrip!   -> self or nil
  *
- *  Removes leading whitespace from <i>str</i>, returning <code>nil</code> if no
- *  change was made. See also <code>String#rstrip!</code> and
- *  <code>String#strip!</code>.
+ *  Removes leading whitespace from the receiver.
+ *  Returns the altered receiver, or +nil+ if no change was made.
+ *  See also String#rstrip! and String#strip!.
  *
- *  Refer to <code>strip</code> for the definition of whitespace.
+ *  Refer to String#strip for the definition of whitespace.
  *
  *     "  hello  ".lstrip!  #=> "hello  "
  *     "hello  ".lstrip!    #=> nil
@@ -8862,10 +8865,10 @@ rb_str_lstrip_bang(VALUE str)
  *  call-seq:
  *     str.lstrip   -> new_str
  *
- *  Returns a copy of <i>str</i> with leading whitespace removed. See also
- *  <code>String#rstrip</code> and <code>String#strip</code>.
+ *  Returns a copy of the receiver with leading whitespace removed.
+ *  See also String#rstrip and String#strip.
  *
- *  Refer to <code>strip</code> for the definition of whitespace.
+ *  Refer to String#strip for the definition of whitespace.
  *
  *     "  hello  ".lstrip   #=> "hello  "
  *     "hello".lstrip       #=> "hello"
@@ -8912,11 +8915,11 @@ rstrip_offset(VALUE str, const char *s, const char *e, rb_encoding *enc)
  *  call-seq:
  *     str.rstrip!   -> self or nil
  *
- *  Removes trailing whitespace from <i>str</i>, returning <code>nil</code> if
- *  no change was made. See also <code>String#lstrip!</code> and
- *  <code>String#strip!</code>.
+ *  Removes trailing whitespace from the receiver.
+ *  Returns the altered receiver, or +nil+ if no change was made.
+ *  See also String#lstrip! and String#strip!.
  *
- *  Refer to <code>strip</code> for the definition of whitespace.
+ *  Refer to String#strip for the definition of whitespace.
  *
  *     "  hello  ".rstrip!  #=> "  hello"
  *     "  hello".rstrip!    #=> nil
@@ -8951,10 +8954,10 @@ rb_str_rstrip_bang(VALUE str)
  *  call-seq:
  *     str.rstrip   -> new_str
  *
- *  Returns a copy of <i>str</i> with trailing whitespace removed. See also
- *  <code>String#lstrip</code> and <code>String#strip</code>.
+ *  Returns a copy of the receiver with trailing whitespace removed.
+ *  See also String#lstrip and String#strip.
  *
- *  Refer to <code>strip</code> for the definition of whitespace.
+ *  Refer to String#strip for the definition of whitespace.
  *
  *     "  hello  ".rstrip   #=> "  hello"
  *     "hello".rstrip       #=> "hello"
@@ -8978,12 +8981,12 @@ rb_str_rstrip(VALUE str)
 
 /*
  *  call-seq:
- *     str.strip!   -> str or nil
+ *     str.strip!   -> self or nil
  *
- *  Removes leading and trailing whitespace from <i>str</i>. Returns
- *  <code>nil</code> if <i>str</i> was not altered.
+ *  Removes leading and trailing whitespace from the receiver.
+ *  Returns the altered receiver, or +nil+ if there was no change.
  *
- *  Refer to <code>strip</code> for the definition of whitespace.
+ *  Refer to String#strip for the definition of whitespace.
  *
  *     "  hello  ".strip!  #=> "hello"
  *     "hello".strip!      #=> nil
@@ -9022,7 +9025,7 @@ rb_str_strip_bang(VALUE str)
  *  call-seq:
  *     str.strip   -> new_str
  *
- *  Returns a copy of <i>str</i> with leading and trailing whitespace removed.
+ *  Returns a copy of the receiver with leading and trailing whitespace removed.
  *
  *  Whitespace is defined as any of the following characters:
  *  null, horizontal tab, line feed, vertical tab, form feed, carriage return, space.
@@ -9215,17 +9218,60 @@ rb_str_oct(VALUE str)
  *  call-seq:
  *     str.crypt(salt_str)   -> new_str
  *
- *  Applies a one-way cryptographic hash to <i>str</i> by invoking the
- *  standard library function <code>crypt(3)</code> with the given
- *  salt string.  While the format and the result are system and
- *  implementation dependent, using a salt matching the regular
- *  expression <code>\A[a-zA-Z0-9./]{2}</code> should be valid and
- *  safe on any platform, in which only the first two characters are
- *  significant.
+ *  Returns the string generated by calling <code>crypt(3)</code>
+ *  standard library function with <code>str</code> and
+ *  <code>salt_str</code>, in this order, as its arguments.  Please do
+ *  not use this method any longer.  It is legacy; provided only for
+ *  backward compatibility with ruby scripts in earlier days.  It is
+ *  bad to use in contemporary programs for several reasons:
  *
- *  This method is for use in system specific scripts, so if you want
- *  a cross-platform hash function consider using Digest or OpenSSL
- *  instead.
+ *    * Behaviour of C's <code>crypt(3)</code> depends on the OS it is
+ *      run.  The generated string lacks data portability.
+ *
+ *    * On some OSes such as Mac OS, <code>crypt(3)</code> never fails
+ *      (i.e. silently ends up in unexpected results).
+ *
+ *    * On some OSes such as Mac OS, <code>crypt(3)</code> is not
+ *      thread safe.
+ *
+ *    * So-called "traditional" usage of <code>crypt(3)</code> is very
+ *      very very weak.  According to its manpage, Linux's traditional
+ *      <code>crypt(3)</code> output has only 2**56 variations; too
+ *      easy to brute force today.  And this is the default behaviour.
+ *
+ *    * In order to make things robust some OSes implement so-called
+ *      "modular" usage. To go through, you have to do a complex
+ *      build-up of the <code>salt_str</code> parameter, by hand.
+ *      Failure in generation of a proper salt string tends not to
+ *      yield any errors; typos in parameters are normally not
+ *      detectable.
+ *
+ *        * For instance, in the following example, the second invocation
+ *          of <code>String#crypt</code> is wrong; it has a typo in
+ *          "round=" (lacks "s").  However the call does not fail and
+ *          something unexpected is generated.
+ *
+ *             "foo".crypt("$5$rounds=1000$salt$") # OK, proper usage
+ *             "foo".crypt("$5$round=1000$salt$")  # Typo not detected
+ *
+ *    * Even in the "modular" mode, some hash functions are considered
+ *      archaic and no longer recommended at all; for instance module
+ *      <code>$1$</code> is officially abandoned by its author: see
+ *      http://phk.freebsd.dk/sagas/md5crypt_eol.html .  For another
+ *      instance module <code>$3$</code> is considered completely
+ *      broken: see the manpage of FreeBSD.
+ *
+ *    * On some OS such as Mac OS, there is no modular mode. Yet, as
+ *      written above, <code>crypt(3)</code> on Mac OS never fails.
+ *      This means even if you build up a proper salt string it
+ *      generates a traditional DES hash anyways, and there is no way
+ *      for you to be aware of.
+ *
+ *          "foo".crypt("$5$rounds=1000$salt$") # => "$5fNPQMxC5j6."
+ *
+ *  If for some reason you cannot migrate to other secure contemporary
+ *  password hashing algorithms, install the string-crypt gem and
+ *  <code>require 'string/crypt'</code> to continue using it.
  */
 
 static VALUE
@@ -9317,21 +9363,14 @@ rb_str_ord(VALUE s)
 static VALUE
 rb_str_sum(int argc, VALUE *argv, VALUE str)
 {
-    VALUE vbits;
-    int bits;
+    int bits = 16;
     char *ptr, *p, *pend;
     long len;
     VALUE sum = INT2FIX(0);
     unsigned long sum0 = 0;
 
-    if (argc == 0) {
-	bits = 16;
-    }
-    else {
-	rb_scan_args(argc, argv, "01", &vbits);
-	bits = NUM2INT(vbits);
-        if (bits < 0)
-            bits = 0;
+    if (rb_check_arity(argc, 0, 1) && (bits = NUM2INT(argv[0])) < 0) {
+        bits = 0;
     }
     ptr = p = RSTRING_PTR(str);
     len = RSTRING_LEN(str);
@@ -10346,7 +10385,7 @@ unicode_normalize_common(int argc, VALUE *argv, VALUE str, ID id)
 	UnicodeNormalizeRequired = 1;
     }
     argv2[0] = str;
-    rb_scan_args(argc, argv, "01", &argv2[1]);
+    if (rb_check_arity(argc, 0, 1)) argv2[1] = argv[0];
     return rb_funcallv(mUnicodeNormalize, id, argc+1, argv2);
 }
 

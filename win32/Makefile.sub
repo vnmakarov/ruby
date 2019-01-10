@@ -14,6 +14,12 @@ PWD = $(MAKEDIR)
 MFLAGS=-l
 !endif
 
+!ifndef REVISION_FORCE
+!if "$(HAVE_BASERUBY)" == "yes"
+REVISION_FORCE = PHONY
+!endif
+!endif
+
 !ifndef CROSS_COMPILING
 CROSS_COMPILING = no
 !endif
@@ -283,6 +289,19 @@ MISSING = $(MISSING) acosh.obj cbrt.obj erf.obj nan.obj tgamma.obj
 MISSING = $(MISSING) explicit_bzero.obj
 !endif
 DLNOBJ = dln.obj
+!if "$(ARCH)" == "x64"
+COROUTINE_OBJ = coroutine/Win64/Context.obj
+!elseif "$(ARCH)" == "i386"
+COROUTINE_OBJ = coroutine/Win32/Context.obj
+!else
+COROUTINE_OBJ =
+!endif
+!if "$(COROUTINE_OBJ)" == ""
+# get rid of empty value not to leave VPATH only in dependencies
+COROUTINE_H = coroutine/Win32/Context.h
+!else
+COROUTINE_H = $(COROUTINE_OBJ:.obj=.h)
+!endif
 
 ARFLAGS = -machine:$(MACHINE) -out:
 LD = $(CC)
@@ -301,6 +320,9 @@ LDSHARED_2 = @if exist $(@).manifest @$(RM) $(@:/=\).manifest
 CPPFLAGS = $(DEFS) $(ARCHDEFS) $(CPPFLAGS)
 !if "$(USE_RUBYGEMS)" == "no"
 CPPFLAGS = -DDISABLE_RUBYGEMS $(CPPFLAGS)
+!endif
+!ifndef MJIT_SUPPORT
+MJIT_SUPPORT = yes
 !endif
 !if "$(CPPOUTFLAG)" == ">"
 MJIT_HEADER_FLAGS =
@@ -848,6 +870,9 @@ $(CONFIG_H): $(MKFILES) $(srcdir)/win32/Makefile.sub $(win_srcdir)/Makefile.sub
 !if "$(MACHINE)" == "x86" || "$(ARCH)" == "x64" || "$(ARCH)" == "ia64"
 #define STACK_GROW_DIRECTION -1
 !endif
+!if "$(COROUTINE_OBJ)" != ""
+#define FIBER_USE_COROUTINE "$(COROUTINE_H)"
+!endif
 #define DEFAULT_KCODE KCODE_NONE
 #define LOAD_RELATIVE 1
 #define DLEXT ".so"
@@ -861,6 +886,11 @@ $(CONFIG_H): $(MKFILES) $(srcdir)/win32/Makefile.sub $(win_srcdir)/Makefile.sub
 #define RUBY_COREDLL "$(RT)"
 #define RUBY_PLATFORM "$(arch)"
 #define RUBY_SITEARCH "$(sitearch)"
+!if "$(MJIT_SUPPORT)" == "yes"
+#define USE_MJIT 1
+!else
+#define USE_MJIT 0
+!endif
 #endif /* $(guard) */
 <<
 
@@ -1049,6 +1079,7 @@ s,@srcdir@,$(srcdir),;t t
 s,@top_srcdir@,$(srcdir),;t t
 s,@try_header@,try_compile,;t t
 s,@ruby_pc@,$(ruby_pc),;t t
+s,@MJIT_SUPPORT@,$(MJIT_SUPPORT),;t t
 <<KEEP
 
 miniruby: miniruby$(EXEEXT)
@@ -1199,6 +1230,13 @@ $(ruby_pc): $(RBCONFIG)
 		-output=$@ -mode=$(INSTALL_DATA_MODE) -config=rbconfig.rb \
 		$(srcdir)/template/ruby.pc.in
 
+{$(srcdir)/coroutine/Win32}.asm{coroutine/Win32}.obj:
+	$(ECHO) assembling $(<:\=/)
+	$(Q) $(AS) $(ASFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(<:\=/)
+{$(srcdir)/coroutine/Win64}.asm{coroutine/Win64}.obj:
+	$(ECHO) assembling $(<:\=/)
+	$(Q) $(AS) $(ASFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(<:\=/)
+
 {$(srcdir)/enc/trans}.c.obj:
 	$(ECHO) compiling $(<:\=/)
 	$(Q) $(CC) $(CFLAGS) $(XCFLAGS) $(CPPFLAGS) $(COUTFLAG)$@ -c $(CSRCFLAG)$(<:\=/)
@@ -1271,8 +1309,8 @@ probes.h: {$(VPATH)}probes.dmyh
 #include "$(*F).dmyh"
 <<KEEP
 
-main: $(MJIT_PRECOMPILED_HEADER)
-mjit-headers: $(MJIT_PRECOMPILED_HEADER)
+main: mjit-headers
+yes-mjit-headers: $(MJIT_PRECOMPILED_HEADER)
 clean-local::
 	$(Q)$(RM) $(MJIT_PRECOMPILED_HEADER_NAME) $(MJIT_PRECOMPILED_HEADER_NAME:.pch=.)$(OBJEXT)
 	$(Q)$(RM) $(TIMESTAMPDIR)/$(MJIT_PRECOMPILED_HEADER_NAME:.pch=.time) mjit_config.h
@@ -1337,14 +1375,15 @@ loadpath: verconf.h
 	sed -e '1,/^const char ruby_initial_load_paths/d;/;/,$$d' \
 	    -e '/^^ /!d;s/ *"\\\\0"$$//;s/" *"//g'
 
-mjit_config.h:
+mjit_config.h: $(MKFILES) $(srcdir)/win32/Makefile.sub $(win_srcdir)/Makefile.sub
 	@echo making <<$@
 #ifndef RUBY_MJIT_CONFIG_H
 #define RUBY_MJIT_CONFIG_H 1
 
 #define MJIT_CONFIG_ESCAPED_EQ "="
-#define MJIT_BUILD_DIR "$(MAKEDIR)"
-#define MJIT_PRECOMPILED_HEADER_NAME "/$(MJIT_HEADER_INSTALL_DIR)/$(MJIT_PRECOMPILED_HEADER_NAME)"
+#define MJIT_HEADER_INSTALL_DIR "/$(MJIT_HEADER_INSTALL_DIR)"
+#define MJIT_MIN_HEADER_NAME "$(MJIT_MIN_HEADER_NAME)"
+#define MJIT_PRECOMPILED_HEADER_NAME "$(MJIT_PRECOMPILED_HEADER_NAME)"
 <<KEEP
 	@
 	@(set sep=#define MJIT_CC_COMMON ) & \

@@ -24,9 +24,6 @@ static ID id_beg, id_end, id_excl;
 
 static VALUE r_cover_p(VALUE, VALUE, VALUE, VALUE);
 
-#define RANGE_BEG(r) (RSTRUCT(r)->as.ary[0])
-#define RANGE_END(r) (RSTRUCT(r)->as.ary[1])
-#define RANGE_EXCL(r) (RSTRUCT(r)->as.ary[2])
 #define RANGE_SET_BEG(r, v) (RSTRUCT_SET(r, 0, v))
 #define RANGE_SET_END(r, v) (RSTRUCT_SET(r, 1, v))
 #define RANGE_SET_EXCL(r, v) (RSTRUCT_SET(r, 2, v))
@@ -397,12 +394,7 @@ range_step(int argc, VALUE *argv, VALUE range)
 
     b = RANGE_BEG(range);
     e = RANGE_END(range);
-    if (argc == 0) {
-        step = INT2FIX(1);
-    }
-    else {
-        rb_scan_args(argc, argv, "01", &step);
-    }
+    step = (!rb_check_arity(argc, 0, 1) ? INT2FIX(1) : argv[0]);
 
     if (!rb_block_given_p()) {
         if (rb_obj_is_kind_of(b, rb_cNumeric) && (NIL_P(e) || rb_obj_is_kind_of(e, rb_cNumeric))) {
@@ -1492,6 +1484,34 @@ range_alloc(VALUE klass)
  *     (-5..-1).to_a      #=> [-5, -4, -3, -2, -1]
  *     ('a'..'e').to_a    #=> ["a", "b", "c", "d", "e"]
  *     ('a'...'e').to_a   #=> ["a", "b", "c", "d"]
+ *
+ *  == Endless Ranges
+ *
+ *  An "endless range" represents a semi-infinite range.
+ *  Literal notation for an endless range is:
+ *
+ *     (1..)
+ *     # or similarly
+ *     (1...)
+ *
+ *  Which is equivalent to
+ *
+ *     (1..nil)  # or similarly (1...nil)
+ *     Range.new(1, nil) # or Range.new(1, nil, true)
+ *
+ *  Endless ranges are useful, for example, for idiomatic slicing of
+ *  arrays:
+ *
+ *    [1, 2, 3, 4, 5][2...]   # => [3, 4, 5]
+ *
+ *  Some implementation details:
+ *
+ *  * +end+ of endless range is +nil+;
+ *  * +each+ of endless range enumerates infinite sequence (may be
+ *    useful in combination with Enumerable#take_while or similar
+ *    methods);
+ *  * <code>(1..)</code> and <code>(1...)</code> are not equal,
+ *    although technically representing the same sequence.
  *
  *  == Custom Objects in Ranges
  *

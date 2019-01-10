@@ -1,7 +1,6 @@
 # frozen_string_literal: false
 require 'test/unit'
 require '-test-/time'
-require 'time'
 
 class TestTimeTZ < Test::Unit::TestCase
   has_right_tz = true
@@ -88,7 +87,9 @@ class TestTimeTZ < Test::Unit::TestCase
   has_lisbon_tz &&= have_tz_offset?("Europe/Lisbon")
   CORRECT_TOKYO_DST_1951 = with_tz("Asia/Tokyo") {
     if Time.local(1951, 5, 6, 12, 0, 0).dst? # noon, DST
-      Time.local(1951, 5, 6, 1, 0, 0).dst?   # DST with fixed tzdata
+      if Time.local(1951, 5, 6, 1, 0, 0).dst? # DST with fixed tzdata
+        Time.local(1951, 9, 8, 23, 0, 0).dst? ? "2018f" : "2018e"
+      end
     end
   }
   CORRECT_KIRITIMATI_SKIP_1994 = with_tz("Pacific/Kiritimati") {
@@ -388,12 +389,16 @@ Asia/Singapore  Sun Aug  8 16:30:00 1965 UTC = Mon Aug  9 00:00:00 1965 SGT isds
 Asia/Singapore  Thu Dec 31 16:29:59 1981 UTC = Thu Dec 31 23:59:59 1981 SGT isdst=0 gmtoff=27000
 Asia/Singapore  Thu Dec 31 16:30:00 1981 UTC = Fri Jan  1 00:30:00 1982 SGT isdst=0 gmtoff=28800
 End
-  gen_zdump_test CORRECT_TOKYO_DST_1951 ? <<'End' : <<'End'
+  gen_zdump_test CORRECT_TOKYO_DST_1951 ? <<'End' + (CORRECT_TOKYO_DST_1951 < "2018f" ? <<'2018e' : <<'2018f') : <<'End'
 Asia/Tokyo  Sat May  5 14:59:59 1951 UTC = Sat May  5 23:59:59 1951 JST isdst=0 gmtoff=32400
 Asia/Tokyo  Sat May  5 15:00:00 1951 UTC = Sun May  6 01:00:00 1951 JDT isdst=1 gmtoff=36000
+End
 Asia/Tokyo  Sat Sep  8 13:59:59 1951 UTC = Sat Sep  8 23:59:59 1951 JDT isdst=1 gmtoff=36000
 Asia/Tokyo  Sat Sep  8 14:00:00 1951 UTC = Sat Sep  8 23:00:00 1951 JST isdst=0 gmtoff=32400
-End
+2018e
+Asia/Tokyo  Sat Sep  8 14:59:59 1951 UTC = Sun Sep  9 00:59:59 1951 JDT isdst=1 gmtoff=36000
+Asia/Tokyo  Sat Sep  8 15:00:00 1951 UTC = Sun Sep  9 00:00:00 1951 JST isdst=0 gmtoff=32400
+2018f
 Asia/Tokyo  Sat May  5 16:59:59 1951 UTC = Sun May  6 01:59:59 1951 JST isdst=0 gmtoff=32400
 Asia/Tokyo  Sat May  5 17:00:00 1951 UTC = Sun May  6 03:00:00 1951 JDT isdst=1 gmtoff=36000
 Asia/Tokyo  Fri Sep  7 15:59:59 1951 UTC = Sat Sep  8 01:59:59 1951 JDT isdst=1 gmtoff=36000
@@ -487,97 +492,182 @@ End
       @offset = offset
     end
 
-    def add_offset(t, ofs)
-      Time::TM.new(*Time.send(:apply_offset, *t.to_a[0, 6].reverse, ofs))
-    rescue => e
-      raise e.class, sprintf("%s: %p %+d", e.message, t, ofs)
-    end
-
     def local_to_utc(t)
-      add_offset(t, +@offset)
+      t - @offset
     end
 
     def utc_to_local(t)
-      add_offset(t, -@offset)
+      t + @offset
     end
 
     def abbr(t)
       @abbr
     end
+
+    def ==(other)
+      @name == other.name and @abbr == other.abbr(0) and @offset == other.offset
+    end
+
+    def inspect
+      "#<TZ: #@name #@abbr #@offset>"
+    end
   end
 end
 
 module TestTimeTZ::WithTZ
-  def tz
-    @tz ||= TestTimeTZ::TZ.new(tzname, abbr, utc_offset)
-  end
-
-  def test_new
-    t = Time.new(2018, 9, 1, 12, 0, 0, tz)
+  def subtest_new(time_class, tz, tzarg, tzname, abbr, utc_offset)
+    t = time_class.new(2018, 9, 1, 12, 0, 0, tzarg)
     assert_equal([2018, 9, 1, 12, 0, 0, tz], [t.year, t.mon, t.mday, t.hour, t.min, t.sec, t.zone])
     h, m = (-utc_offset / 60).divmod(60)
-    assert_equal(Time.utc(2018, 9, 1, 12+h, m, 0).to_i, t.to_i)
+    assert_equal(time_class.utc(2018, 9, 1, 12+h, m, 0).to_i, t.to_i)
   end
 
-  def test_getlocal
-    t = Time.utc(2018, 9, 1, 12, 0, 0).getlocal(tz)
+  def subtest_getlocal(time_class, tz, tzarg, tzname, abbr, utc_offset)
+    t = time_class.utc(2018, 9, 1, 12, 0, 0).getlocal(tzarg)
     h, m = (utc_offset / 60).divmod(60)
     assert_equal([2018, 9, 1, 12+h, m, 0, tz], [t.year, t.mon, t.mday, t.hour, t.min, t.sec, t.zone])
-    assert_equal(Time.utc(2018, 9, 1, 12, 0, 0), t)
+    assert_equal(time_class.utc(2018, 9, 1, 12, 0, 0), t)
   end
 
-  def test_strftime
-    t = Time.new(2018, 9, 1, 12, 0, 0, tz)
+  def subtest_strftime(time_class, tz, tzarg, tzname, abbr, utc_offset)
+    t = time_class.new(2018, 9, 1, 12, 0, 0, tzarg)
     h, m = (utc_offset.abs / 60).divmod(60)
     h = -h if utc_offset < 0
     assert_equal("%+.2d%.2d %s" % [h, m, abbr], t.strftime("%z %Z"))
   end
 
-  def test_plus
-    t = Time.new(2018, 9, 1, 12, 0, 0, tz) + 4000
+  def subtest_plus(time_class, tz, tzarg, tzname, abbr, utc_offset)
+    t = time_class.new(2018, 9, 1, 12, 0, 0, tzarg) + 4000
     assert_equal([2018, 9, 1, 13, 6, 40, tz], [t.year, t.mon, t.mday, t.hour, t.min, t.sec, t.zone])
     m, s = (4000-utc_offset).divmod(60)
     h, m = m.divmod(60)
-    assert_equal(Time.utc(2018, 9, 1, 12+h, m, s), t)
+    assert_equal(time_class.utc(2018, 9, 1, 12+h, m, s), t)
   end
 
-  def test_marshal
-    t = Time.new(2018, 9, 1, 12, 0, 0, tz)
+  def subtest_at(time_class, tz, tzarg, tzname, abbr, utc_offset)
+    h, m = (utc_offset / 60).divmod(60)
+    utc = time_class.utc(2018, 9, 1, 12, 0, 0)
+    t = time_class.at(utc, in: tzarg)
+    assert_equal([2018, 9, 1, 12+h, m, 0, tz], [t.year, t.mon, t.mday, t.hour, t.min, t.sec, t.zone])
+    assert_equal(utc.to_i, t.to_i)
+    utc = utc.to_i
+    t = time_class.at(utc, in: tzarg)
+    assert_equal([2018, 9, 1, 12+h, m, 0, tz], [t.year, t.mon, t.mday, t.hour, t.min, t.sec, t.zone])
+    assert_equal(utc, t.to_i)
+  end
+
+  def subtest_marshal(time_class, tz, tzarg, tzname, abbr, utc_offset)
+    t = time_class.new(2018, 9, 1, 12, 0, 0, tzarg)
     t2 = Marshal.load(Marshal.dump(t))
     assert_equal(t, t2)
     assert_equal(t.utc_offset, t2.utc_offset)
     assert_equal(t.utc_offset, (t2+1).utc_offset)
+    assert_instance_of(t.zone.class, t2.zone)
+  end
+
+  def test_invalid_zone
+    make_timezone("INVALID", "INV", 0)
+  rescue => e
+    assert_kind_of(StandardError, e)
+  else
+    assert false, "ArgumentError expected but nothing was raised."
+  end
+
+  def nametest_marshal_compatibility(time_class, tzname, abbr, utc_offset)
+    data = [
+      "\x04\x08Iu:".b, Marshal.dump(time_class)[3..-1],
+      "\x0d""\xEF\xA7\x1D\x80\x00\x00\x00\x00".b,
+      Marshal.dump({offset: utc_offset, zone: abbr})[3..-1],
+    ].join('')
+    t = Marshal.load(data)
+    assert_equal(utc_offset, t.utc_offset)
+    assert_equal(utc_offset, (t+1).utc_offset)
+    # t.zone may be a mere String or timezone object.
+  end
+
+  ZONES = {
+    "Asia/Tokyo" => ["JST", +9*3600],
+    "America/Los_Angeles" => ["PDT", -7*3600],
+    "Africa/Ndjamena" => ["WAT", +1*3600],
+  }
+
+  def make_timezone(tzname, abbr, utc_offset)
+    self.class::TIME_CLASS.find_timezone(tzname)
+  end
+
+  instance_methods(false).grep(/\Asub(?=test_)/) do |subtest|
+    test = $'
+    ZONES.each_pair do |tzname, (abbr, utc_offset)|
+      define_method("#{test}@#{tzname}") do
+        tz = make_timezone(tzname, abbr, utc_offset)
+        time_class = self.class::TIME_CLASS
+        __send__(subtest, time_class, tz, tz, tzname, abbr, utc_offset)
+        __send__(subtest, time_class, tz, tzname, tzname, abbr, utc_offset)
+      end
+    end
+  end
+
+  instance_methods(false).grep(/\Aname(?=test_)/) do |subtest|
+    test = $'
+    ZONES.each_pair do |tzname, (abbr, utc_offset)|
+      define_method("#{test}@#{tzname}") do
+        time_class = self.class::TIME_CLASS
+        __send__(subtest, time_class, tzname, abbr, utc_offset)
+      end
+    end
   end
 end
 
-class TestTimeTZ::JST < Test::Unit::TestCase
+class TestTimeTZ::DummyTZ < Test::Unit::TestCase
   include TestTimeTZ::WithTZ
 
-  def tzname
-    "Asia/Tokyo"
+  class TIME_CLASS < ::Time
+    ZONES = TestTimeTZ::WithTZ::ZONES
+    def self.find_timezone(tzname)
+      tz = ZONES[tzname] or raise ArgumentError, "Unknown timezone: #{name}"
+      TestTimeTZ::TZ.new(tzname, *tz)
+    end
   end
 
-  def abbr
-    "JST"
-  end
-
-  def utc_offset
-    +9*3600
+  def self.make_timezone(tzname, abbr, utc_offset)
+    TestTimeTZ::TZ.new(tzname, abbr, utc_offset)
   end
 end
 
-class TestTimeTZ::EDT < Test::Unit::TestCase
-  include TestTimeTZ::WithTZ
+begin
+  require "tzinfo"
+rescue LoadError
+else
+  class TestTimeTZ::GemTZInfo < Test::Unit::TestCase
+    include TestTimeTZ::WithTZ
 
-  def tzname
-    "America/New_York"
+    class TIME_CLASS < ::Time
+      def self.find_timezone(tzname)
+        TZInfo::Timezone.get(tzname)
+      end
+    end
+
+    def tz
+      @tz ||= TZInfo::Timezone.get(tzname)
+    end
   end
+end
 
-  def abbr
-    "EDT"
-  end
+begin
+  require "timezone"
+rescue LoadError
+else
+  class TestTimeTZ::GemTimezone < Test::Unit::TestCase
+    include TestTimeTZ::WithTZ
 
-  def utc_offset
-    -4*3600
+    class TIME_CLASS < ::Time
+      def self.find_timezone(name)
+        Timezone.fetch(name)
+      end
+    end
+
+    def tz
+      @tz ||= Timezone[tzname]
+    end
   end
 end

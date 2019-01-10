@@ -54,7 +54,7 @@ class Gem::SpecFetcher
   # If you need to retrieve specifications from a different +source+, you can
   # send it as an argument.
 
-  def initialize sources = nil
+  def initialize(sources = nil)
     @sources = sources || Gem.sources
 
     @update_cache =
@@ -203,9 +203,9 @@ class Gem::SpecFetcher
 
     matches = if matches.empty? && type != :prerelease
                 suggest_gems_from_name gem_name, :prerelease
-    else
-      matches.uniq.sort_by { |name, dist| dist }
-    end
+              else
+                matches.uniq.sort_by { |name, dist| dist }
+              end
 
     matches.first(5).map { |name, dist| name }
   end
@@ -271,4 +271,3 @@ class Gem::SpecFetcher
   end
 
 end
-

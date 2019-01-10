@@ -3,6 +3,8 @@ require 'test/unit'
 require 'tmpdir'
 require_relative '../lib/jit_support'
 
+return if RbConfig::CONFIG["MJIT_SUPPORT"] == 'no'
+
 # Test for --jit option
 class TestJIT < Test::Unit::TestCase
   include JITSupport
@@ -237,6 +239,10 @@ class TestJIT < Test::Unit::TestCase
     assert_compile_once('a = 1; { a: a }', result_inspect: '{:a=>1}', insns: %i[newhash])
   end
 
+  def test_compile_insn_duphash
+    assert_compile_once('{ a: 1 }', result_inspect: '{:a=>1}', insns: %i[duphash])
+  end
+
   def test_compile_insn_newrange
     assert_compile_once('a = 1; 0..a', result_inspect: '0..1', insns: %i[newrange])
   end
@@ -438,7 +444,7 @@ class TestJIT < Test::Unit::TestCase
   end
 
   def test_compile_insn_inlinecache
-    assert_compile_once('Struct', result_inspect: 'Struct', insns: %i[getinlinecache setinlinecache])
+    assert_compile_once('Struct', result_inspect: 'Struct', insns: %i[opt_getinlinecache opt_setinlinecache])
   end
 
   def test_compile_insn_once
@@ -457,6 +463,7 @@ class TestJIT < Test::Unit::TestCase
 
   def test_compile_insn_opt_calc
     assert_compile_once('4 + 2 - ((2 * 3 / 2) % 2)', result_inspect: '5', insns: %i[opt_plus opt_minus opt_mult opt_div opt_mod])
+    assert_compile_once('4.0 + 2.0 - ((2.0 * 3.0 / 2.0) % 2.0)', result_inspect: '5.0', insns: %i[opt_plus opt_minus opt_mult opt_div opt_mod])
     assert_compile_once('4 + 2', result_inspect: '6')
   end
 
@@ -560,7 +567,7 @@ class TestJIT < Test::Unit::TestCase
     assert_match(/^Successful MJIT finish$/, err)
   end
 
-  def test_unload_units
+  def test_unload_units_and_compaction
     Dir.mktmpdir("jit_test_unload_units_") do |dir|
       # MIN_CACHE_SIZE is 10
       out, err = eval_with_jit({"TMPDIR"=>dir}, "#{<<~"begin;"}\n#{<<~'end;'}", verbose: 1, min_calls: 1, max_cache: 10)
@@ -574,6 +581,12 @@ class TestJIT < Test::Unit::TestCase
             mjit#{i}
           EOS
           i += 1
+        end
+
+        if defined?(fork)
+          # test the child does not try to delete files which are deleted by parent,
+          # and test possible deadlock on fork during MJIT unload and JIT compaction on child
+          Process.waitpid(Process.fork {})
         end
       end;
 
@@ -591,7 +604,7 @@ class TestJIT < Test::Unit::TestCase
       # On --jit-wait, when the number of JIT-ed code reaches --jit-max-cache,
       # it should trigger compaction.
       unless RUBY_PLATFORM.match?(/mswin|mingw/) # compaction is not supported on Windows yet
-        assert_equal(2, compactions.size, debug_info)
+        assert_equal(3, compactions.size, debug_info)
       end
 
       if appveyor_mswin?
@@ -660,6 +673,27 @@ class TestJIT < Test::Unit::TestCase
       end
 
       print wrapper(['1'], ['2'])
+    end;
+  end
+
+  def test_inlined_undefined_ivar
+    assert_eval_with_jit("#{<<~"begin;"}\n#{<<~"end;"}", stdout: "bbb", success_count: 2, min_calls: 3)
+    begin;
+      class Foo
+        def initialize
+          @a = :a
+        end
+
+        def bar
+          if @b.nil?
+            @b = :b
+          end
+        end
+      end
+
+      print(Foo.new.bar)
+      print(Foo.new.bar)
+      print(Foo.new.bar)
     end;
   end
 
@@ -742,6 +776,22 @@ class TestJIT < Test::Unit::TestCase
     end
   end
 
+  def test_clean_objects_on_exec
+    if /mswin|mingw/ =~ RUBY_PLATFORM
+      # TODO: check call stack and close handle of code which is not on stack, and remove objects on best-effort basis
+      skip 'Removing so file being used does not work on Windows'
+    end
+    Dir.mktmpdir("jit_test_clean_objects_on_exec_") do |dir|
+      eval_with_jit({"TMPDIR"=>dir}, "#{<<~"begin;"}\n#{<<~"end;"}", min_calls: 1)
+      begin;
+        def a; end; a
+        exec "true"
+      end;
+      error_message = "Undeleted files:\n  #{Dir.glob("#{dir}/*").join("\n  ")}\n"
+      assert_send([Dir, :empty?, dir], error_message)
+    end
+  end
+
   def test_lambda_longjmp
     assert_eval_with_jit("#{<<~"begin;"}\n#{<<~"end;"}", stdout: '5', success_count: 1)
     begin;
@@ -763,7 +813,7 @@ class TestJIT < Test::Unit::TestCase
     end;
   end
 
-  def test_program_pointer_with_regexpmatch
+  def test_program_counter_with_regexpmatch
     assert_eval_with_jit("#{<<~"begin;"}\n#{<<~"end;"}", stdout: "aa", success_count: 1)
     begin;
       2.times do
@@ -809,6 +859,36 @@ class TestJIT < Test::Unit::TestCase
     assert_equal("-e:8:in `a'\n", lines[0])
     assert_equal("-e:8:in `a'\n", lines[1])
   end
+
+  def test_fork_with_mjit_worker_thread
+    Dir.mktmpdir("jit_test_fork_with_mjit_worker_thread_") do |dir|
+      # min_calls: 2 to skip fork block
+      out, err = eval_with_jit({ "TMPDIR" => dir }, "#{<<~"begin;"}\n#{<<~"end;"}", min_calls: 2, verbose: 1)
+      begin;
+        def before_fork; end
+        def after_fork; end
+
+        before_fork; before_fork # the child should not delete this .o file
+        pid = Process.fork do # this child should not delete shared .pch file
+          after_fork; after_fork # this child does not share JIT-ed after_fork with parent
+        end
+        after_fork; after_fork # this parent does not share JIT-ed after_fork with child
+
+        Process.waitpid(pid)
+      end;
+      success_count = err.scan(/^#{JIT_SUCCESS_PREFIX}:/).size
+      assert_equal(3, success_count)
+
+      lines = err.lines
+      debug_info = "stdout:\n```\n#{out}\n```\n\nstderr:\n```\n#{err}```\n"
+
+      # assert no remove error
+      assert_equal("Successful MJIT finish\n" * 2, err.gsub(/^#{JIT_SUCCESS_PREFIX}:[^\n]+\n/, ''), debug_info)
+
+      # ensure objects are deleted
+      assert_send([Dir, :empty?, dir], debug_info)
+    end
+  end if defined?(fork)
 
   private
 

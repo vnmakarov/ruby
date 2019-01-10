@@ -793,9 +793,9 @@ rb_sigwait_fd_put(rb_thread_t *th, int fd)
     rb_bug("not implemented, should not be called");
 }
 
-NORETURN(void rb_sigwait_sleep(const rb_thread_t *, int, const struct timespec *));
+NORETURN(void rb_sigwait_sleep(const rb_thread_t *, int, const rb_hrtime_t *));
 void
-rb_sigwait_sleep(const rb_thread_t *th, int fd, const struct timespec *ts)
+rb_sigwait_sleep(const rb_thread_t *th, int fd, const rb_hrtime_t *rel)
 {
     rb_bug("not implemented, should not be called");
 }
@@ -811,6 +811,7 @@ native_set_thread_name(rb_thread_t *th)
 {
 }
 
+#if USE_MJIT
 static unsigned long __stdcall
 mjit_worker(void *arg)
 {
@@ -833,5 +834,6 @@ rb_thread_create_mjit_thread(void (*worker_func)(void))
     w32_resume_thread(thread_id);
     return TRUE;
 }
+#endif
 
 #endif /* THREAD_SYSTEM_DEPENDENT_IMPLEMENTATION */

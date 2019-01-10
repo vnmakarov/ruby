@@ -112,6 +112,9 @@ struct MT {
 #define genrand_initialized(mt) ((mt)->next != 0)
 #define uninit_genrand(mt) ((mt)->next = 0)
 
+NO_SANITIZE("unsigned-integer-overflow", static void init_genrand(struct MT *mt, unsigned int s));
+NO_SANITIZE("unsigned-integer-overflow", static void init_by_array(struct MT *mt, const uint32_t init_key[], int key_length));
+
 /* initializes state[N] with a seed */
 static void
 init_genrand(struct MT *mt, unsigned int s)
@@ -775,19 +778,17 @@ random_load(VALUE obj, VALUE dump)
     rb_random_t *rnd = get_rnd(obj);
     struct MT *mt = &rnd->mt;
     VALUE state, left = INT2FIX(1), seed = INT2FIX(0);
-    const VALUE *ary;
     unsigned long x;
 
     rb_check_copyable(obj, dump);
     Check_Type(dump, T_ARRAY);
-    ary = RARRAY_CONST_PTR(dump);
     switch (RARRAY_LEN(dump)) {
       case 3:
-	seed = ary[2];
+        seed = RARRAY_AREF(dump, 2);
       case 2:
-	left = ary[1];
+        left = RARRAY_AREF(dump, 1);
       case 1:
-	state = ary[0];
+        state = RARRAY_AREF(dump, 0);
 	break;
       default:
 	rb_raise(rb_eArgError, "wrong dump data");
@@ -1572,6 +1573,7 @@ init_seed(struct MT *mt)
 	seed.u32[i] = genrand_int32(mt);
 }
 
+NO_SANITIZE("unsigned-integer-overflow", extern st_index_t rb_hash_start(st_index_t h));
 st_index_t
 rb_hash_start(st_index_t h)
 {

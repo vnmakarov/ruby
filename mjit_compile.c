@@ -11,6 +11,9 @@
    GC (using ZALLOC, xmalloc, xfree, etc.) in this file. */
 
 #include "internal.h"
+
+#if USE_MJIT
+
 #include "vm_core.h"
 #include "vm_exec.h"
 #include "mjit.h"
@@ -31,6 +34,9 @@ struct compile_status {
     /* If TRUE, JIT-ed code will use local variables to store pushed values instead of
        using VM's stack and moving stack pointer. */
     int local_stack_p;
+    /* Safely-accessible cache entries copied from main thread. */
+    union iseq_inline_storage_entry *is_entries;
+    struct rb_call_cache *cc_entries;
 };
 
 /* Storage to keep data which is consistent in each conditional branch.
@@ -192,7 +198,7 @@ compile_cancel_handler(FILE *f, const struct rb_iseq_constant_body *body, struct
 
 /* Compile ISeq to C code in F.  It returns 1 if it succeeds to compile. */
 int
-mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *funcname)
+mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *funcname, struct rb_call_cache *cc_entries, union iseq_inline_storage_entry *is_entries)
 {
     struct compile_status status;
     status.success = TRUE;
@@ -201,6 +207,8 @@ mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *func
     if (status.stack_size_for_pos == NULL)
         return FALSE;
     memset(status.stack_size_for_pos, NOT_COMPILED_STACK_SIZE, sizeof(int) * body->iseq_size);
+    status.cc_entries = cc_entries;
+    status.is_entries = is_entries;
 
     /* For performance, we verify stack size only on compilation time (mjit_compile.inc.erb) without --jit-debug */
     if (!mjit_opts.debug) {
@@ -242,3 +250,5 @@ mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *func
     free(status.stack_size_for_pos);
     return status.success;
 }
+
+#endif /* USE_MJIT */

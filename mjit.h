@@ -11,6 +11,8 @@
 
 #include "ruby.h"
 
+#if USE_MJIT
+
 /* Make it non-zero if you want to collect and print statistics about
    execution of byte code insns and JIT generated code for the insns.
    Use non-zero for a performance analysis as it might considerably
@@ -79,15 +81,17 @@ extern void mjit_add_iseq_to_process(const rb_iseq_t *iseq);
 extern VALUE mjit_wait_call(rb_execution_context_t *ec, struct rb_iseq_constant_body *body);
 RUBY_SYMBOL_EXPORT_END
 
-extern int mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *funcname);
 extern int mjit_rtl_compile(FILE *f, const rb_iseq_t *iseq,
-			    struct rb_mjit_compile_info *ci, const char *funcname);
+			    struct rb_mjit_compile_info *ci, const char *funcname,
+			    struct rb_call_data *cd_entries, union iseq_inline_storage_entry *is_entries);
 extern struct rb_mjit_compile_info *mjit_create_rtl_compile_info(const rb_iseq_t *iseq);
 extern void mjit_free_rtl_compile_info(struct rb_mjit_compile_info *ci);
 
 extern struct rb_mjit_compile_info *mjit_iseq_compile_info(const rb_iseq_t *iseq);
+extern int mjit_compile(FILE *f, const struct rb_iseq_constant_body *body, const char *funcname, struct rb_call_cache *cc_entries, union iseq_inline_storage_entry *is_entries);
 extern void mjit_init(struct mjit_options *opts);
-extern void mjit_finish(void);
+extern void mjit_postponed_job_register_start_hook(void);
+extern void mjit_postponed_job_register_finish_hook(void);
 extern void mjit_gc_start_hook(void);
 extern void mjit_gc_finish_hook(void);
 extern void mjit_free_iseq(const rb_iseq_t *iseq);
@@ -195,4 +199,21 @@ mjit_exec(rb_execution_context_t *ec)
     return mjit_exec_iseq(ec, iseq, body, body->type);
 }
 
+void mjit_child_after_fork(void);
+
+#else /* USE_MJIT */
+static inline struct mjit_cont *mjit_cont_new(rb_execution_context_t *ec){return NULL;}
+static inline void mjit_cont_free(struct mjit_cont *cont){}
+static inline void mjit_postponed_job_register_start_hook(void){}
+static inline void mjit_postponed_job_register_finish_hook(void){}
+static inline void mjit_gc_start_hook(void){}
+static inline void mjit_gc_finish_hook(void){}
+static inline void mjit_free_iseq(const rb_iseq_t *iseq){}
+static inline void mjit_mark(void){}
+static inline void mjit_add_class_serial(rb_serial_t class_serial){}
+static inline void mjit_remove_class_serial(rb_serial_t class_serial){}
+static inline VALUE mjit_exec(rb_execution_context_t *ec) { return Qundef; /* unreachable */ }
+static inline void mjit_child_after_fork(void){}
+
+#endif /* USE_MJIT */
 #endif /* RUBY_MJIT_H */

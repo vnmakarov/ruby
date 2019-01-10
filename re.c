@@ -884,13 +884,51 @@ make_regexp(const char *s, long len, rb_encoding *enc, int flags, onig_errmsg_bu
 /*
  *  Document-class: MatchData
  *
- *  <code>MatchData</code> is the type of the special variable <code>$~</code>,
- *  and is the type of the object returned by <code>Regexp#match</code> and
- *  <code>Regexp.last_match</code>. It encapsulates all the results of a pattern
- *  match, results normally accessed through the special variables
- *  <code>$&</code>, <code>$'</code>, <code>$`</code>, <code>$1</code>,
- *  <code>$2</code>, and so on.
+ *  <code>MatchData</code> encapsulates the result of matching a Regexp against
+ *  string. It is returned by Regexp#match and
+ *  String#match, and also stored in a global variable returned by
+ *  Regexp.last_match.
  *
+ *  Usage:
+ *
+ *      url = 'https://docs.ruby-lang.org/en/2.5.0/MatchData.html'
+ *      m = url.match(/(\d\.?)+/)   # => #<MatchData "2.5.0" 1:"0">
+ *      m.string                    # => "https://docs.ruby-lang.org/en/2.5.0/MatchData.html"
+ *      m.regexp                    # => /(\d\.?)+/
+ *      # entire matched substring:
+ *      m[0]                        # => "2.5.0"
+ *
+ *      # Working with unnamed captures
+ *      m = url.match(%r{([^/]+)/([^/]+)\.html$})
+ *      m.captures                  # => ["2.5.0", "MatchData"]
+ *      m[1]                        # => "2.5.0"
+ *      m.values_at(1, 2)           # => ["2.5.0", "MatchData"]
+ *
+ *      # Working with named captures
+ *      m = url.match(%r{(?<version>[^/]+)/(?<module>[^/]+)\.html$})
+ *      m.captures                  # => ["2.5.0", "MatchData"]
+ *      m.named_captures            # => {"version"=>"2.5.0", "module"=>"MatchData"}
+ *      m[:version]                 # => "2.5.0"
+ *      m.values_at(:version, :module)
+ *                                  # => ["2.5.0", "MatchData"]
+ *      # Numerical indexes are working, too
+ *      m[1]                        # => "2.5.0"
+ *      m.values_at(1, 2)           # => ["2.5.0", "MatchData"]
+ *
+ *  == Global variables equivalence
+ *
+ *  Parts of last <code>MatchData</code> (returned by Regexp.last_match) are also
+ *  aliased as global variables:
+ *
+ *  * <code>$~</code> is <code>Regexp.last_match</code>;
+ *  * <code>$&</code> is <code>Regexp.last_match[0]</code>;
+ *  * <code>$1</code>, <code>$2</code>, and so on are
+ *    <code>Regexp.last_match[i]</code> (captures by number);
+ *  * <code>$`</code> is <code>Regexp.last_match.pre_match</code>;
+ *  * <code>$'</code> is <code>Regexp.last_match.post_match</code>;
+ *  * <code>$+</code> is <code>Regexp.last_match[-1]</code> (the last capture).
+ *
+ *  See also "Special global variables" section in Regexp documentation.
  */
 
 VALUE rb_cMatch;
@@ -2037,7 +2075,7 @@ match_aref(int argc, VALUE *argv, VALUE match)
 /*
  *  call-seq:
  *
- *     mtch.values_at([index]*)   -> array
+ *     mtch.values_at(index, ...)   -> array
  *
  *  Uses each <i>index</i> to access the matching values, returning an array of
  *  the corresponding matches.
@@ -2389,7 +2427,8 @@ unescape_escaped_nonascii(const char **pp, const char *end, rb_encoding *enc,
 {
     const char *p = *pp;
     int chmaxlen = rb_enc_mbmaxlen(enc);
-    char *chbuf = ALLOCA_N(char, chmaxlen);
+    unsigned char *area = ALLOCA_N(unsigned char, chmaxlen);
+    char *chbuf = (char *)area;
     int chlen = 0;
     int byte;
     int l;
@@ -2401,14 +2440,14 @@ unescape_escaped_nonascii(const char **pp, const char *end, rb_encoding *enc,
         return -1;
     }
 
-    chbuf[chlen++] = byte;
+    area[chlen++] = byte;
     while (chlen < chmaxlen &&
            MBCLEN_NEEDMORE_P(rb_enc_precise_mbclen(chbuf, chbuf+chlen, enc))) {
         byte = read_escaped_byte(&p, end, err);
         if (byte == -1) {
             return -1;
         }
-        chbuf[chlen++] = byte;
+        area[chlen++] = byte;
     }
 
     l = rb_enc_precise_mbclen(chbuf, chbuf+chlen, enc);
@@ -2416,7 +2455,7 @@ unescape_escaped_nonascii(const char **pp, const char *end, rb_encoding *enc,
         errcpy(err, "invalid multibyte escape");
         return -1;
     }
-    if (1 < chlen || (chbuf[0] & 0x80)) {
+    if (1 < chlen || (area[0] & 0x80)) {
         rb_str_buf_cat(buf, chbuf, chlen);
 
         if (*encp == 0)
@@ -2428,7 +2467,7 @@ unescape_escaped_nonascii(const char **pp, const char *end, rb_encoding *enc,
     }
     else {
         char escbuf[5];
-        snprintf(escbuf, sizeof(escbuf), "\\x%02X", chbuf[0]&0xff);
+        snprintf(escbuf, sizeof(escbuf), "\\x%02X", area[0]&0xff);
         rb_str_buf_cat(buf, escbuf, 4);
     }
     *pp = p;
@@ -2538,7 +2577,7 @@ unescape_nonascii(const char *p, const char *end, rb_encoding *enc,
         VALUE buf, rb_encoding **encp, int *has_property,
         onig_errmsg_buffer err)
 {
-    char c;
+    unsigned char c;
     char smallbuf[2];
 
     while (p < end) {
@@ -2601,8 +2640,9 @@ unescape_nonascii(const char *p, const char *end, rb_encoding *enc,
                 p = p-2;
 		if (enc == rb_usascii_encoding()) {
 		    const char *pbeg = p;
-		    c = read_escaped_byte(&p, end, err);
-		    if (c == (char)-1) return -1;
+                    int byte = read_escaped_byte(&p, end, err);
+                    if (byte == -1) return -1;
+                    c = byte;
 		    rb_str_buf_cat(buf, pbeg, p-pbeg);
 		}
 		else {
@@ -2651,7 +2691,7 @@ escape_asis:
             break;
 
           default:
-            rb_str_buf_cat(buf, &c, 1);
+            rb_str_buf_cat(buf, (char *)&c, 1);
             break;
         }
     }
@@ -3958,13 +3998,11 @@ match_setter(VALUE val)
 static VALUE
 rb_reg_s_last_match(int argc, VALUE *argv)
 {
-    VALUE nth;
-
-    if (argc > 0 && rb_scan_args(argc, argv, "01", &nth) == 1) {
+    if (rb_check_arity(argc, 0, 1) == 1) {
         VALUE match = rb_backref_get();
         int n;
         if (NIL_P(match)) return Qnil;
-        n = match_backref_number(match, nth);
+        n = match_backref_number(match, argv[0]);
 	return rb_reg_nth_match(n, match);
     }
     return match_getter();

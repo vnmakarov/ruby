@@ -147,9 +147,8 @@ ruby_deprecated_internal_feature(const char *func)
  * call-seq:
  *    warn(msg)  -> nil
  *
- * Writes warning message +msg+ to $stderr, followed by a newline
- * if the message does not end in a newline.  This method is called
- * by Ruby for all emitted warnings.
+ * Writes warning message +msg+ to $stderr. This method is called by
+ * Ruby for all emitted warnings.
  */
 
 static VALUE
@@ -830,6 +829,13 @@ rb_typeddata_is_kind_of(VALUE obj, const rb_data_type_t *data_type)
     return 1;
 }
 
+#undef rb_typeddata_is_instance_of
+int
+rb_typeddata_is_instance_of(VALUE obj, const rb_data_type_t *data_type)
+{
+    return rb_typeddata_is_instance_of_inline(obj, data_type);
+}
+
 void *
 rb_check_typeddata(VALUE obj, const rb_data_type_t *data_type)
 {
@@ -940,7 +946,7 @@ exc_initialize(int argc, VALUE *argv, VALUE exc)
 {
     VALUE arg;
 
-    rb_scan_args(argc, argv, "01", &arg);
+    arg = (!rb_check_arity(argc, 0, 1) ? Qnil : argv[0]);
     return exc_init(exc, arg);
 }
 

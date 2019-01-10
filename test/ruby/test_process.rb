@@ -263,7 +263,7 @@ class TestProcess < Test::Unit::TestCase
     }
   end
 
-  MANDATORY_ENVS = %w[RUBYLIB]
+  MANDATORY_ENVS = %w[RUBYLIB MJIT_SEARCH_BUILD_DIR]
   case RbConfig::CONFIG['target_os']
   when /linux/
     MANDATORY_ENVS << 'LD_PRELOAD'
@@ -273,6 +273,9 @@ class TestProcess < Test::Unit::TestCase
     MANDATORY_ENVS.concat(ENV.keys.grep(/\A__CF_/))
   end
   if e = RbConfig::CONFIG['LIBPATHENV']
+    MANDATORY_ENVS << e
+  end
+  if e = RbConfig::CONFIG['PRELOADENV'] and !e.empty?
     MANDATORY_ENVS << e
   end
   PREENVARG = ['-e', "%w[#{MANDATORY_ENVS.join(' ')}].each{|e|ENV.delete(e)}"]
@@ -762,6 +765,15 @@ class TestProcess < Test::Unit::TestCase
           Process.wait pid
         end
       }
+
+      # ensure standard FDs we redirect to are blocking for compatibility
+      with_pipes(3) do |pipes|
+        src = 'p [STDIN,STDOUT,STDERR].map(&:nonblock?)'
+        rdr = { 0 => pipes[0][0], 1 => pipes[1][1], 2 => pipes[2][1] }
+        pid = spawn(RUBY, '-rio/nonblock', '-e', src, rdr)
+        assert_equal("[false, false, false]\n", pipes[1][0].gets)
+        Process.wait pid
+      end
     end
   end
 
@@ -1497,6 +1509,9 @@ class TestProcess < Test::Unit::TestCase
 
   def test_sleep
     assert_raise(ArgumentError) { sleep(1, 1) }
+    [-1, -1.0, -1r].each do |sec|
+      assert_raise_with_message(ArgumentError, /not.*negative/) { sleep(sec) }
+    end
   end
 
   def test_getpgid
@@ -1614,7 +1629,7 @@ class TestProcess < Test::Unit::TestCase
       Process.wait pid
       assert sig_r.wait_readable(5), 'self-pipe not readable'
     end
-    if RubyVM::MJIT.enabled?  # MJIT may trigger extra SIGCHLD
+    if RubyVM::MJIT.enabled? # checking -DMJIT_FORCE_ENABLE. It may trigger extra SIGCHLD.
       assert_equal [true], signal_received.uniq, "[ruby-core:19744]"
     else
       assert_equal [true], signal_received, "[ruby-core:19744]"

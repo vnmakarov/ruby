@@ -14,9 +14,15 @@ describe "Dir.home" do
     Dir.home.should == home_directory
   end
 
-  platform_is_not :windows do
-    it "returns the named user's home directory as a string if called with an argument" do
-      Dir.home(ENV['USER']).should == ENV['HOME']
+  platform_is :solaris do
+    it "returns the named user's home directory, from the user database, as a string if called with an argument" do
+      Dir.home(ENV['USER']).should == `getent passwd #{ENV['USER']}|cut -d: -f6`.chomp
+    end
+  end
+
+  platform_is_not :windows, :solaris do
+    it "returns the named user's home directory, from the user database, as a string if called with an argument" do
+      Dir.home(ENV['USER']).should == `echo ~#{ENV['USER']}`.chomp
     end
   end
 

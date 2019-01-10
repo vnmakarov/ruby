@@ -280,6 +280,24 @@ class TestHash < Test::Unit::TestCase
     assert_same a.keys[0], b.keys[0]
   end
 
+  def test_ASET_fstring_non_literal_key
+    underscore = "_"
+    non_literal_strings = Proc.new{ ["abc#{underscore}def", "abc" * 5, "abc" + "def", "" << "ghi" << "jkl"] }
+
+    a, b = {}, {}
+    non_literal_strings.call.each do |string|
+      assert_equal 1, a[string] = 1
+    end
+
+    non_literal_strings.call.each do |string|
+      assert_equal 1, b[string] = 1
+    end
+
+    [a.keys, b.keys].transpose.each do |key_a, key_b|
+      assert_same key_a, key_b
+    end
+  end
+
   def test_hash_aset_fstring_identity
     h = {}.compare_by_identity
     h['abc'] = 1
@@ -735,6 +753,14 @@ class TestHash < Test::Unit::TestCase
     h = @cls[]
     h.replace(@cls[].compare_by_identity)
     assert_predicate(h, :compare_by_identity?)
+  end
+
+  def test_replace_bug15358
+    h1 = {}
+    h2 = {a:1,b:2,c:3,d:4,e:5}
+    h2.replace(h1)
+    GC.start
+    assert(true)
   end
 
   def test_shift
@@ -1684,6 +1710,15 @@ class TestHash < Test::Unit::TestCase
 
     assert_equal(0, 1_000_000.times.count{a=Object.new.hash; b=Object.new.hash; a < 0 && b < 0 && a + b > 0}, bug14218)
     assert_equal(0, 1_000_000.times.count{a=Object.new.hash; b=Object.new.hash; 0 + a + b != 0 + b + a}, bug14218)
+  end
+
+  def test_reserved_hash_val
+    s = Struct.new(:hash)
+    h = {}
+    keys = [*0..8]
+    keys.each {|i| h[s.new(i)]=true}
+    msg = proc {h.inspect}
+    assert_equal(keys, h.keys.map(&:hash), msg)
   end
 
   class TestSubHash < TestHash

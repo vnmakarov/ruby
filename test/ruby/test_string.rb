@@ -647,10 +647,6 @@ CODE
   end
 
   def test_crypt
-    if RubyVM::MJIT.enabled?
-      skip "This sometimes fails with -DMJIT_FORCE_ENABLE. This seems important to be fixed..."
-    end
-
     assert_equal(S('aaGUC/JkO9/Sc'), S("mypassword").crypt(S("aa")))
     assert_not_equal(S('aaGUC/JkO9/Sc'), S("mypassword").crypt(S("ab")))
     assert_raise(ArgumentError) {S("mypassword").crypt(S(""))}
@@ -977,6 +973,7 @@ CODE
 
   def test_each_grapheme_cluster
     [
+      "\u{0D 0A}",
       "\u{20 200d}",
       "\u{600 600}",
       "\u{600 20}",
@@ -990,15 +987,19 @@ CODE
     ].each do |g|
       assert_equal [g], g.each_grapheme_cluster.to_a
       assert_equal 1, g.each_grapheme_cluster.size
+      assert_predicate g.dup.taint.each_grapheme_cluster.to_a[0], :tainted?
     end
 
     [
-      ["\u{a 308}", ["\u000A", "\u0308"]],
-      ["\u{d 308}", ["\u000D", "\u0308"]],
+      ["\u{a 324}", ["\u000A", "\u0324"]],
+      ["\u{d 324}", ["\u000D", "\u0324"]],
       ["abc", ["a", "b", "c"]],
     ].each do |str, grapheme_clusters|
       assert_equal grapheme_clusters, str.each_grapheme_cluster.to_a
       assert_equal grapheme_clusters.size, str.each_grapheme_cluster.size
+      str.dup.taint.each_grapheme_cluster do |g|
+        assert_predicate g, :tainted?
+      end
     end
 
     s = ("x"+"\u{10ABCD}"*250000)
@@ -1019,10 +1020,11 @@ CODE
       "\u{1f469 200d 2764 fe0f 200d 1f469}",
     ].each do |g|
       assert_equal [g], g.grapheme_clusters
+      assert_predicate g.dup.taint.grapheme_clusters[0], :tainted?
     end
 
-    assert_equal ["\u000A", "\u0308"], "\u{a 308}".grapheme_clusters
-    assert_equal ["\u000D", "\u0308"], "\u{d 308}".grapheme_clusters
+    assert_equal ["\u000A", "\u0324"], "\u{a 324}".grapheme_clusters
+    assert_equal ["\u000D", "\u0324"], "\u{d 324}".grapheme_clusters
     assert_equal ["a", "b", "c"], "abc".b.grapheme_clusters
 
     if ENUMERATOR_WANTARRAY
@@ -1032,12 +1034,14 @@ CODE
     else
       warning = /passing a block to String#grapheme_clusters is deprecated/
       assert_warning(warning) {
-        s = "ABC".b
+        s = "ABC".b.taint
         res = []
         assert_same s, s.grapheme_clusters {|x| res << x }
+        assert_equal(3, res.size)
         assert_equal("A", res[0])
         assert_equal("B", res[1])
         assert_equal("C", res[2])
+        res.each {|g| assert_predicate(g, :tainted?)}
       }
     end
   end

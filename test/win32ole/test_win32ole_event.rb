@@ -78,7 +78,8 @@ if defined?(WIN32OLE_EVENT)
           tries = 0
           while tries < 5 && instance_variable_get(watch_ivar) == orig_ivar
             seconds = 2 ** tries # sleep at most 31s in total
-            $stderr.puts "test_win32ole_event.rb: sleeping #{seconds}s until #{watch_ivar} is changed from #{orig_ivar.inspect}..."
+            $stderr.puts "test_win32ole_event.rb: retrying and sleeping #{seconds}s until #{watch_ivar} is changed from #{orig_ivar.inspect}..."
+            WIN32OLE_EVENT.message_loop
             sleep(seconds)
             tries += 1
           end
@@ -116,7 +117,10 @@ if defined?(WIN32OLE_EVENT)
           message_loop
           GC.start
         end
-        assert_match(/OnObjectReady/, @event)
+
+        # @event randomly becomes "OnCompleted" here. Try to wait until it matches.
+        # https://ci.appveyor.com/project/ruby/ruby/builds/19963142/job/8gaxepksa0i3b998
+        assert_match_with_retries(/OnObjectReady/, :@event)
       end
 
       def test_on_event
@@ -134,7 +138,8 @@ if defined?(WIN32OLE_EVENT)
           handler1
         }
         message_loop
-        assert_equal("handler1", @event1)
+        # @event1 randomly becomes "" here: https://ci.appveyor.com/project/ruby/ruby/builds/20975541/job/b380m0q9ed0rdv7v
+        assert_match_with_retries(/\Ahandler1\z/, :@event1)
       end
 
       private
@@ -145,6 +150,19 @@ if defined?(WIN32OLE_EVENT)
           skip "No administrator privilege?"
         end
         raise
+      end
+
+      def assert_match_with_retries(regexp, ivarname)
+        ivar = instance_variable_get(ivarname)
+
+        tries = 0
+        while tries < 5 && !ivar.match(regexp)
+          $stderr.puts "test_win32ole_event.rb: retrying until #{ivarname} matches #{regexp} (tries: #{tries})..."
+          sleep(2 ** tries) # sleep at most 31s in total
+          ivar = instance_variable_get(ivarname)
+        end
+
+        assert_match(regexp, ivar)
       end
     end
   end

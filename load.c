@@ -8,6 +8,7 @@
 #include "dln.h"
 #include "eval_intern.h"
 #include "probes.h"
+#include "iseq.h"
 
 static VALUE ruby_dln_librefs;
 
@@ -566,7 +567,6 @@ rb_provide(const char *feature)
 }
 
 NORETURN(static void load_failed(VALUE));
-const rb_iseq_t *rb_iseq_load_iseq(VALUE fname);
 
 static int
 rb_load_internal0(rb_execution_context_t *ec, VALUE fname, int wrap)
@@ -608,6 +608,8 @@ rb_load_internal0(rb_execution_context_t *ec, VALUE fname, int wrap)
 			    fname, rb_realpath_internal(Qnil, fname, 1), NULL);
 	    rb_ast_dispose(ast);
 	}
+        EXEC_EVENT_HOOK(ec, RUBY_EVENT_SCRIPT_COMPILED,
+                        ec->cfp->self, 0, 0, 0, (VALUE)iseq);
 	rb_iseq_eval(iseq);
     }
     EC_POP_TAG();
@@ -940,6 +942,42 @@ load_ext(VALUE path)
 {
     rb_scope_visibility_set(METHOD_VISI_PUBLIC);
     return (VALUE)dln_load(RSTRING_PTR(path));
+}
+
+/*
+ *  call-seq:
+ *     RubyVM.resolve_feature_path(feature) -> [:rb or :so, path]
+ *
+ *  Identifies the file that will be loaded by "require(feature)".
+ *  This API is experimental and just for internal.
+ *
+ *     RubyVM.resolve_feature_path("set")
+ *       #=> [:rb, "/path/to/feature.rb"]
+ */
+
+VALUE
+rb_resolve_feature_path(VALUE klass, VALUE fname)
+{
+    VALUE path;
+    int found;
+    VALUE sym;
+
+    fname = rb_get_path_check(fname, 0);
+    path = rb_str_encode_ospath(fname);
+    found = search_required(path, &path, 0);
+
+    switch (found) {
+      case 'r':
+        sym = ID2SYM(rb_intern("rb"));
+        break;
+      case 's':
+        sym = ID2SYM(rb_intern("so"));
+        break;
+      default:
+        load_failed(fname);
+    }
+
+    return rb_ary_new_from_args(2, sym, path);
 }
 
 /*

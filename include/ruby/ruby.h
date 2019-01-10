@@ -1013,6 +1013,10 @@ struct RString {
      ((ptrvar) = RSTRING(str)->as.ary, (lenvar) = RSTRING_EMBED_LEN(str)) : \
      ((ptrvar) = RSTRING(str)->as.heap.ptr, (lenvar) = RSTRING(str)->as.heap.len))
 
+#ifndef USE_TRANSIENT_HEAP
+#define USE_TRANSIENT_HEAP 1
+#endif
+
 enum ruby_rarray_flags {
     RARRAY_EMBED_LEN_MAX = 3,
     RARRAY_EMBED_FLAG = RUBY_FL_USER1,
@@ -1020,12 +1024,20 @@ enum ruby_rarray_flags {
     RARRAY_EMBED_LEN_MASK = (RUBY_FL_USER4|RUBY_FL_USER3),
     RARRAY_EMBED_LEN_SHIFT = (RUBY_FL_USHIFT+3),
 
+#if USE_TRANSIENT_HEAP
+    RARRAY_TRANSIENT_FLAG = RUBY_FL_USER13,
+#define RARRAY_TRANSIENT_FLAG RARRAY_TRANSIENT_FLAG
+#else
+#define RARRAY_TRANSIENT_FLAG 0
+#endif
+
     RARRAY_ENUM_END
 };
 #define RARRAY_EMBED_FLAG (VALUE)RARRAY_EMBED_FLAG
 #define RARRAY_EMBED_LEN_MASK (VALUE)RARRAY_EMBED_LEN_MASK
 #define RARRAY_EMBED_LEN_MAX RARRAY_EMBED_LEN_MAX
 #define RARRAY_EMBED_LEN_SHIFT RARRAY_EMBED_LEN_SHIFT
+
 struct RArray {
     struct RBasic basic;
     union {
@@ -1046,9 +1058,26 @@ struct RArray {
 #define RARRAY_LEN(a) rb_array_len(a)
 #define RARRAY_LENINT(ary) rb_long2int(RARRAY_LEN(ary))
 #define RARRAY_CONST_PTR(a) rb_array_const_ptr(a)
+#define RARRAY_CONST_PTR_TRANSIENT(a) rb_array_const_ptr_transient(a)
 
-#define RARRAY_PTR_USE_START(a) ((VALUE *)RARRAY_CONST_PTR(a))
-#define RARRAY_PTR_USE_END(a) /* */
+#if USE_TRANSIENT_HEAP
+#define RARRAY_TRANSIENT_P(ary) FL_TEST_RAW((ary), RARRAY_TRANSIENT_FLAG)
+#else
+#define RARRAY_TRANSIENT_P(ary) 0
+#endif
+
+#define RARRAY_PTR_USE_START_TRANSIENT(a) rb_array_ptr_use_start(a, 1)
+#define RARRAY_PTR_USE_END_TRANSIENT(a) rb_array_ptr_use_end(a, 1)
+
+#define RARRAY_PTR_USE_TRANSIENT(ary, ptr_name, expr) do { \
+    const VALUE _ary = (ary); \
+    VALUE *ptr_name = (VALUE *)RARRAY_PTR_USE_START_TRANSIENT(_ary); \
+    expr; \
+    RARRAY_PTR_USE_END_TRANSIENT(_ary); \
+} while (0)
+
+#define RARRAY_PTR_USE_START(a) rb_array_ptr_use_start(a, 0)
+#define RARRAY_PTR_USE_END(a) rb_array_ptr_use_end(a, 0)
 
 #define RARRAY_PTR_USE(ary, ptr_name, expr) do { \
     const VALUE _ary = (ary); \
@@ -1057,12 +1086,13 @@ struct RArray {
     RARRAY_PTR_USE_END(_ary); \
 } while (0)
 
-#define RARRAY_AREF(a, i)    (RARRAY_CONST_PTR(a)[i])
+#define RARRAY_AREF(a, i) (RARRAY_CONST_PTR_TRANSIENT(a)[i])
 #define RARRAY_ASET(a, i, v) do { \
     const VALUE _ary = (a); \
-    VALUE *ptr = (VALUE *)RARRAY_PTR_USE_START(_ary); \
-    RB_OBJ_WRITE(_ary, &ptr[i], (v)); \
-    RARRAY_PTR_USE_END(_ary); \
+    const VALUE _v = (v); \
+    VALUE *ptr = (VALUE *)RARRAY_PTR_USE_START_TRANSIENT(_ary); \
+    RB_OBJ_WRITE(_ary, &ptr[i], _v); \
+    RARRAY_PTR_USE_END_TRANSIENT(_ary); \
 } while (0)
 
 #define RARRAY_PTR(a) ((VALUE *)RARRAY_CONST_PTR(RB_OBJ_WB_UNPROTECT_FOR(ARRAY, a)))
@@ -1079,11 +1109,13 @@ struct RRegexp {
 #define RREGEXP_SRC_LEN(r) RSTRING_LEN(RREGEXP(r)->src)
 #define RREGEXP_SRC_END(r) RSTRING_END(RREGEXP(r)->src)
 
-/* RHASH_TBL allocates st_table if not available. */
-#define RHASH_TBL(h) rb_hash_tbl(h)
+/* RHash is defined at internal.h */
+size_t rb_hash_size_num(VALUE hash);
+
+#define RHASH_TBL(h) rb_hash_tbl(h, __FILE__, __LINE__)
 #define RHASH_ITER_LEV(h) rb_hash_iter_lev(h)
 #define RHASH_IFNONE(h) rb_hash_ifnone(h)
-#define RHASH_SIZE(h) NUM2SIZET(rb_hash_size(h))
+#define RHASH_SIZE(h) rb_hash_size_num(h)
 #define RHASH_EMPTY_P(h) (RHASH_SIZE(h) == 0)
 #define RHASH_SET_IFNONE(h, ifnone) rb_hash_set_ifnone((VALUE)h, ifnone)
 
@@ -1689,11 +1721,11 @@ rb_alloc_tmp_buffer2(volatile VALUE *store, long count, size_t elsize)
 #else
 # define RUBY_ALLOCV_LIMIT 1024
 # define RB_ALLOCV(v, n) ((n) < RUBY_ALLOCV_LIMIT ? \
-		       (RB_GC_GUARD(v) = 0, alloca(n)) : \
+                       ((v) = 0, alloca(n)) : \
 		       rb_alloc_tmp_buffer(&(v), (n)))
 # define RB_ALLOCV_N(type, v, n) \
     ((type*)(((size_t)(n) < RUBY_ALLOCV_LIMIT / sizeof(type)) ? \
-	     (RB_GC_GUARD(v) = 0, alloca((size_t)(n) * sizeof(type))) : \
+             ((v) = 0, alloca((size_t)(n) * sizeof(type))) : \
 	     rb_alloc_tmp_buffer2(&(v), (long)(n), sizeof(type))))
 #endif
 #define RB_ALLOCV_END(v) rb_free_tmp_buffer(&(v))
@@ -1786,7 +1818,7 @@ VALUE rb_check_symbol(volatile VALUE *namep);
     do RUBY_CONST_ID_CACHE((var) =, (str)) while (0)
 #define CONST_ID_CACHE(result, str) RUBY_CONST_ID_CACHE(result, str)
 #define CONST_ID(var, str) RUBY_CONST_ID(var, str)
-#ifdef HAVE_BUILTIN___BUILTIN_CONSTANT_P
+#if defined(HAVE_BUILTIN___BUILTIN_CONSTANT_P) && defined(HAVE_STMT_AND_DECL_IN_EXPR)
 /* __builtin_constant_p and statement expression is available
  * since gcc-2.7.2.3 at least. */
 #define rb_intern(str) \
@@ -1869,7 +1901,7 @@ enum rb_io_wait_readwrite {RB_IO_WAIT_READABLE, RB_IO_WAIT_WRITABLE};
 
 PRINTF_ARGS(NORETURN(void rb_raise(VALUE, const char*, ...)), 2, 3);
 PRINTF_ARGS(NORETURN(void rb_fatal(const char*, ...)), 1, 2);
-PRINTF_ARGS(NORETURN(void rb_bug(const char*, ...)), 1, 2);
+COLDFUNC PRINTF_ARGS(NORETURN(void rb_bug(const char*, ...)), 1, 2);
 NORETURN(void rb_bug_errno(const char*, int));
 NORETURN(void rb_sys_fail(const char*));
 NORETURN(void rb_sys_fail_str(VALUE));
@@ -1893,7 +1925,7 @@ PRINTF_ARGS(void rb_warning(const char*, ...), 1, 2);
 PRINTF_ARGS(void rb_compile_warning(const char *, int, const char*, ...), 3, 4);
 PRINTF_ARGS(void rb_sys_warning(const char*, ...), 1, 2);
 /* reports always */
-PRINTF_ARGS(void rb_warn(const char*, ...), 1, 2);
+COLDFUNC PRINTF_ARGS(void rb_warn(const char*, ...), 1, 2);
 PRINTF_ARGS(void rb_compile_warn(const char *, int, const char*, ...), 3, 4);
 
 #define RUBY_BLOCK_CALL_FUNC_TAKES_BLOCKARG 1
@@ -2109,11 +2141,52 @@ rb_array_len(VALUE a)
 # define FIX_CONST_VALUE_PTR(x) (x)
 #endif
 
+/* internal function. do not use this function */
 static inline const VALUE *
-rb_array_const_ptr(VALUE a)
+rb_array_const_ptr_transient(VALUE a)
 {
     return FIX_CONST_VALUE_PTR((RBASIC(a)->flags & RARRAY_EMBED_FLAG) ?
 	RARRAY(a)->as.ary : RARRAY(a)->as.heap.ptr);
+}
+
+/* internal function. do not use this function */
+static inline const VALUE *
+rb_array_const_ptr(VALUE a)
+{
+#if USE_TRANSIENT_HEAP
+    void rb_ary_detransient(VALUE a);
+
+    if (RARRAY_TRANSIENT_P(a)) {
+        rb_ary_detransient(a);
+    }
+#endif
+    return rb_array_const_ptr_transient(a);
+}
+
+/* internal function. do not use this function */
+static inline VALUE *
+rb_array_ptr_use_start(VALUE a, int allow_transient)
+{
+    VALUE *rb_ary_ptr_use_start(VALUE ary);
+
+#if USE_TRANSIENT_HEAP
+    if (!allow_transient) {
+        if (RARRAY_TRANSIENT_P(a)) {
+            void rb_ary_detransient(VALUE a);
+            rb_ary_detransient(a);
+        }
+    }
+#endif
+
+    return rb_ary_ptr_use_start(a);
+}
+
+/* internal function. do not use this function */
+static inline void
+rb_array_ptr_use_end(VALUE a, int allow_transient)
+{
+    void rb_ary_ptr_use_end(VALUE a);
+    rb_ary_ptr_use_end(a);
 }
 
 #if defined(EXTLIB) && defined(USE_DLN_A_OUT)
@@ -2143,6 +2216,7 @@ int ruby_native_thread_p(void);
 #define RUBY_EVENT_THREAD_BEGIN      0x0400
 #define RUBY_EVENT_THREAD_END        0x0800
 #define RUBY_EVENT_FIBER_SWITCH      0x1000
+#define RUBY_EVENT_SCRIPT_COMPILED   0x2000
 #define RUBY_EVENT_TRACEPOINT_ALL    0xffff
 
 /* special events */
@@ -2278,10 +2352,10 @@ ERRORFUNC(("variable argument length doesn't match"), int rb_scan_args_length_mi
      rb_scan_args_length_mismatch(fmt, varc)))
 
 # if defined(__has_attribute) && __has_attribute(diagnose_if)
-#  define rb_scan_args_verify(fmt, varc) 0
+#  define rb_scan_args_verify(fmt, varc) (void)0
 # elif defined(__GNUC__)
 # define rb_scan_args_verify(fmt, varc) \
-    __extension__ ({ \
+    (void)__extension__ ({ \
 	int verify; \
 	_Pragma("GCC diagnostic push"); \
 	_Pragma("GCC diagnostic ignored \"-Warray-bounds\""); \
@@ -2291,7 +2365,7 @@ ERRORFUNC(("variable argument length doesn't match"), int rb_scan_args_length_mi
     })
 # else
 # define rb_scan_args_verify(fmt, varc) \
-    rb_scan_args_verify_count(fmt, varc)
+    (void)rb_scan_args_verify_count(fmt, varc)
 # endif
 
 ALWAYS_INLINE(static int rb_scan_args_lead_p(const char *fmt));

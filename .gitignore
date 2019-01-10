@@ -4,6 +4,7 @@
 *.a
 *.bak
 *.bc
+*.bundle
 *.dSYM
 *.dmyh
 *.dylib
@@ -20,6 +21,8 @@
 *.rej
 *.s
 *.sav
+*.sl
+*.so
 *.swp
 *.yarb
 *~
@@ -139,6 +142,10 @@ lcov*.info
 /enc/jis/props.h
 /enc/unicode/data
 
+# /coroutine/
+!/coroutine/**/*.s
+/coroutine/**/.time
+
 # /enc/trans/
 /enc/trans/*.c
 /enc/trans/*.def
@@ -147,6 +154,7 @@ lcov*.info
 /enc/trans/.time
 
 # /exe/
+/exe/goruby
 /exe/ruby
 /exe/.time
 

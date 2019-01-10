@@ -46,9 +46,11 @@
          `insn_stack_increase`.
 
        * handles_sp: If it is true, VM deals with sp in the insn.
+         Default is if the instruction takes ISEQ operand or not.
 
        * leaf: indicates that the instruction is "leaf" i.e. it does
-         not introduce new stack frame on top of it.  Default true.
+         not introduce new stack frame on top of it.
+         If an instruction handles sp, that can never be a leaf.
 
    - Attributes can access operands, but not stack (push/pop) variables.
 
@@ -387,7 +389,7 @@ putiseq
 (ISEQ iseq)
 ()
 (VALUE ret)
-// attr bool leaf = true; /* yes it is */
+// attr bool handles_sp = false; /* of course it doesn't */
 {
 #if STACK_INSN_CODE
     ret = (VALUE)iseq;
@@ -412,7 +414,7 @@ concatstrings
 (rb_num_t num)
 (...)
 (VALUE val)
-// attr rb_snum_t sp_inc = 1 - num;
+// attr rb_snum_t sp_inc = 1 - (rb_snum_t)num;
 {
 #if STACK_INSN_CODE
     val = rb_str_concat_literals(num, STACK_ADDR_FROM_TOP(num));
@@ -454,7 +456,7 @@ toregexp
 /* This instruction has StringValue(), which is a method call.  But it
  * seems that path is never covered. */
 // attr bool leaf = true; /* yes it is */
-// attr rb_snum_t sp_inc = 1 - cnt;
+// attr rb_snum_t sp_inc = 1 - (rb_snum_t)cnt;
 {
 #if STACK_INSN_CODE
     const VALUE ary = rb_ary_tmp_new_from_values(0, cnt, STACK_ADDR_FROM_TOP(cnt));
@@ -479,7 +481,7 @@ newarray
 (rb_num_t num)
 (...)
 (VALUE val)
-// attr rb_snum_t sp_inc = 1 - num;
+// attr rb_snum_t sp_inc = 1 - (rb_snum_t)num;
 {
 #if STACK_INSN_CODE
     val = rb_ary_new4(num, STACK_ADDR_FROM_TOP(num));
@@ -498,6 +500,16 @@ duparray
 #endif
 }
 
+/* dup hash */
+DEFINE_INSN
+duphash
+(VALUE hash)
+()
+(VALUE val)
+{
+    val = rb_hash_dup(hash);
+}
+
 /* if TOS is an array expand, expand it to num objects.
      if the number of the array is less than num, push nils to fill.
      if it is greater than num, exceeding elements are dropped.
@@ -513,7 +525,7 @@ expandarray
 (..., VALUE ary)
 (...)
 // attr bool leaf = false; /* has rb_check_array_type() */
-// attr rb_snum_t sp_inc = num - 1 + (flag & 1 ? 1 : 0);
+// attr rb_snum_t sp_inc = (rb_snum_t)num - 1 + (flag & 1 ? 1 : 0);
 {
 #if STACK_INSN_CODE
     vm_expandarray(GET_SP(), ary, num, (int)flag);
@@ -553,7 +565,7 @@ newhash
 (...)
 (VALUE val)
 // attr bool leaf = false; /* has rb_hash_key_str() */
-// attr rb_snum_t sp_inc = 1 - num;
+// attr rb_snum_t sp_inc = 1 - (rb_snum_t)num;
 {
 #if STACK_INSN_CODE
     RUBY_DTRACE_CREATE_HOOK(HASH, num);
@@ -766,19 +778,6 @@ checktype
 #endif
 }
 
-/* fire a coverage event (currently, this is used for line coverage and branch coverage) */
-DEFINE_INSN
-tracecoverage
-(rb_num_t nf, VALUE data)
-()
-()
-{
-    rb_event_flag_t flag = (rb_event_flag_t)nf;
-
-    vm_dtrace(flag, ec);
-    EXEC_EVENT_HOOK(ec, flag, GET_SELF(), 0, 0, 0 /* id and klass are resolved at callee */, data);
-}
-
 /**********************************************************/
 /* deal with control flow 1: class/module                 */
 /**********************************************************/
@@ -791,7 +790,6 @@ defineclass
 (ID id, ISEQ class_iseq, rb_num_t flags)
 (VALUE cbase, VALUE super)
 (VALUE val)
-// attr bool handles_sp = true;
 {
 #if STACK_INSN_CODE
     VALUE klass = vm_find_or_create_class_by_id(id, flags, cbase, super);
@@ -820,7 +818,6 @@ send
 (CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq)
 (...)
 (VALUE val)
-// attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = - (int)(ci->orig_argc + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0));
 {
 #if STACK_INSN_CODE
@@ -839,7 +836,6 @@ opt_send_without_block
 (CALL_INFO ci, CALL_CACHE cc)
 (...)
 (VALUE val)
-// attr bool leaf = false; /* Of course it isn't. */
 // attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = -ci->orig_argc;
 {
@@ -893,7 +889,7 @@ opt_newarray_max
  * necessary.  No way to detect such method calls beforehand.  We
  * cannot but mark it being not leaf. */
 // attr bool leaf = false; /* has rb_funcall() */
-// attr rb_snum_t sp_inc = 1 - num;
+// attr rb_snum_t sp_inc = 1 - (rb_snum_t)num;
 {
     val = vm_opt_newarray_max(num, STACK_ADDR_FROM_TOP(num));
 }
@@ -905,7 +901,7 @@ opt_newarray_min
 (VALUE val)
 /* Same discussion as opt_newarray_max. */
 // attr bool leaf = false; /* has rb_funcall() */
-// attr rb_snum_t sp_inc = 1 - num;
+// attr rb_snum_t sp_inc = 1 - (rb_snum_t)num;
 {
 #if STACK_INSN_CODE
     val = vm_opt_newarray_min(num, STACK_ADDR_FROM_TOP(num));
@@ -918,7 +914,6 @@ invokesuper
 (CALL_INFO ci, CALL_CACHE cc, ISEQ blockiseq)
 (...)
 (VALUE val)
-// attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = - (int)(ci->orig_argc + ((ci->flag & VM_CALL_ARGS_BLOCKARG) ? 1 : 0));
 {
 #if STACK_INSN_CODE
@@ -937,7 +932,6 @@ invokeblock
 (CALL_INFO ci)
 (...)
 (VALUE val)
-// attr bool leaf = false; /* Of course it isn't. */
 // attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = 1 - ci->orig_argc;
 {
@@ -1094,7 +1088,7 @@ branchnil
 
 /* push inline-cached value and go to dst if it is valid */
 DEFINE_INSN
-getinlinecache
+opt_getinlinecache
 (OFFSET dst, IC ic)
 ()
 (VALUE val)
@@ -1112,7 +1106,7 @@ getinlinecache
 
 /* set inline cache */
 DEFINE_INSN
-setinlinecache
+opt_setinlinecache
 (IC ic)
 (VALUE val)
 (VALUE val)

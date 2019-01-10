@@ -699,6 +699,12 @@ end.join
     assert_same(a, e.cause.cause)
   end
 
+  def test_cause_at_end
+    assert_in_out_err([], <<-'end;', [], [/-: unexpected return\n/, /.*undefined local variable or method `n'.*\n/])
+      END{n}; END{return}
+    end;
+  end
+
   def test_raise_with_cause
     msg = "[Feature #8257]"
     cause = ArgumentError.new("foobar")
@@ -1338,6 +1344,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
   def test_super_in_method_missing
     assert_separately([], "#{<<~"begin;"}\n#{<<~'end;'}")
     begin;
+      $VERBOSE = nil
       class Object
         def method_missing(name, *args, &block)
           super
