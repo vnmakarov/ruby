@@ -488,8 +488,8 @@ class TestJIT < Test::Unit::TestCase
   end
 
   def test_compile_insn_opt_aref
-    # optimized call (optimized JIT) -> send call
-    assert_eval_with_jit("#{<<~"begin;"}\n#{<<~"end;"}", stdout: '21', success_count: 2, min_calls: 1, insns: %i[opt_aref])
+    # optimized call (optimized JIT) -> send call (RTL ins speculation results in 1 successful compilation)
+    assert_eval_with_jit("#{<<~"begin;"}\n#{<<~"end;"}", stdout: '21', success_count: 1, min_calls: 1, insns: %i[opt_aref])
     begin;
       obj = Object.new
       def obj.[](h)

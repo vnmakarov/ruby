@@ -1,3 +1,8 @@
+2019-01-18  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* test/ruby/test_jit.rb (test_compile_insn_opt_aref): Decrease
+	success count.
+
 2019-01-10  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* insns.def (duphash): Switch off the code.
