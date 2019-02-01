@@ -1,3 +1,7 @@
+2019-02-01  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* README.md: Rewrite.
+
 2019-01-18  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* test/ruby/test_jit.rb (test_compile_insn_opt_aref): Decrease
