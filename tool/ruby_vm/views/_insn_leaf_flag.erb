@@ -1,0 +1,31 @@
+%# -*- mode:c; style:ruby; coding: utf-8; indent-tabs-mode: nil -*-
+%# Copyright (c) 2017 Urabe, Shyouhei.  All rights reserved.
+%#
+%# This file is a part of  the programming language Ruby.  Permission is hereby
+%# granted, to either  redistribute and/or modify this file,  provided that the
+%# conditions mentioned  in the  file COPYING  are met.   Consult the  file for
+%# details.
+%#
+PUREFUNC(MAYBE_UNUSED(static bool insn_leaf_flag(enum ruby_vminsn_type insn, const VALUE *opes)));
+
+bool
+insn_leaf_flag(enum ruby_vminsn_type insn, const VALUE *opes)
+{
+    switch(insn) {
+% RubyVM::Instructions.each do |i|
+%   next unless i.has_attribute?('leaf')
+    case <%= i.bin %>:
+        return attr_leaf_<%= i.name %>(<%=
+          i.opes.map.with_index do |v, j|
+            if v[:name] == '_'
+              nil
+            else
+              "(#{v[:type]})opes[#{j}]"
+            end
+          end.compact.join(", ")
+        %>);
+% end
+    default:
+        return true;
+    }
+}

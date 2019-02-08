@@ -1,3 +1,7 @@
+2019-02-08  Vladimir Makarov  <vmakarov@redhat.com>
+
+	* tool/ruby_vm/views/_insn_leaf_flag.erb: Add missed file.
+
 2019-02-01  Vladimir Makarov  <vmakarov@redhat.com>
 
 	* README.md: Rewrite.
