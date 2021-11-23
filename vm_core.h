@@ -348,6 +348,29 @@ struct rb_mjit_unit;
 typedef rb_darray(struct yjit_block_version *) rb_yjit_block_array_t;
 typedef rb_darray(rb_yjit_block_array_t) rb_yjit_block_array_array_t;
 
+enum rb_attr_val {
+    ATTR_UNKNOWN,
+    ATTR_FIXNUM,
+    ATTR_FLONUM,
+};
+
+struct rb_iseq_bbv {
+    /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch or leave */
+    int start, bound;
+    /* next bbv in the list with the same (iseq, start).  The list
+       head is always bbv with unknown attrs (default bbv) */
+    struct rb_iseq_bbv *next_bbv;
+    int bbv_encoded_size;
+    VALUE *bbv_encoded; /* NULL if the code is not generated yet */
+    int n_attrs; /* length of the next array */
+    /* map local var/stack slot -> attr, the last elem has always not
+     * unknown value, assume unknown attr for vars/temps beyond
+     * array: */
+    char attrs[1];
+};
+
+struct rb_iseq_bbv *get_bbv(rb_iseq_t *iseq, int start, int n_attrs, char *attrs);
+
 struct rb_iseq_constant_body {
     enum iseq_type {
 	ISEQ_TYPE_TOP,
@@ -363,6 +386,8 @@ struct rb_iseq_constant_body {
 
     unsigned int iseq_size;
     VALUE *iseq_encoded; /* encoded iseq (insn addr and operands) */
+    int n_bbvs;
+    struct rb_iseq_bbv **bbvs; /* array of pointers to default BB versions sorted by start */
 
     /**
      * parameter information
@@ -1130,6 +1155,9 @@ rb_iseq_t *rb_iseq_new_with_callback(const struct rb_iseq_new_with_callback_call
 
 VALUE rb_iseq_disasm(const rb_iseq_t *iseq);
 int rb_iseq_disasm_insn(VALUE str, const VALUE *iseqval, size_t pos, const rb_iseq_t *iseq, VALUE child);
+
+int rtl_gen_init(void);
+void rtl_gen_finish(void);
 
 VALUE rb_iseq_coverage(const rb_iseq_t *iseq);
 
@@ -2078,6 +2106,8 @@ rb_exec_event_hook_script_compiled(rb_execution_context_t *ec, const rb_iseq_t *
 }
 
 void rb_vm_trap_exit(rb_vm_t *vm);
+
+VALUE make_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 

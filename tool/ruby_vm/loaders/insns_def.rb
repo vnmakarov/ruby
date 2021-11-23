@@ -35,7 +35,7 @@ grammar = %r'
                  =                                         \g<ws>*
                  (?<pragma:expr> .+?;       )              \g<ws>* ){0}
     (?<insn>     DEFINE_INSN(_IF\((?<insn:if>\w+)\))?      \g<ws>+
-                 (?<insn:name>   \g<ident>  )              \g<ws>*
+                 (?<insn:names>  (\g<ws>* \g<ident>)+  )              \g<ws>*
      [(] \g<ws>* (?<insn:opes>   \g<argv>   ) \g<ws>* [)]  \g<ws>*
      [(] \g<ws>* (?<insn:pops>   \g<argv>   ) \g<ws>* [)]  \g<ws>*
      [(] \g<ws>* (?<insn:rets>   \g<argv>   ) \g<ws>* [)]  \g<ws>* ){0}
@@ -52,7 +52,7 @@ until scanner.eos? do
   }
 
   l1   = scanner.scan!(/\G#{grammar}\g<insn>/o)
-  name = scanner["insn:name"]
+  names = scanner["insn:names"].split
   opt  = scanner["insn:if"]
   ope  = split.(scanner["insn:opes"])
   pop  = split.(scanner["insn:pops"])
@@ -74,21 +74,23 @@ until scanner.eos? do
 
   l3 = scanner.scan!(/\G#{grammar}\g<block>/o)
   if opt.nil? || RubyVM::VmOptsH[opt]
-    json << {
-      name: name,
-      location: [path, l1],
-      signature: {
+    names.each do |name|
+      json << {
         name: name,
-        ope: ope,
-        pop: pop,
-        ret: ret,
-      },
-      attributes: attrs,
-      expr: {
-        location: [path, l3],
-        expr: scanner["block"],
-      },
-    }
+        location: [path, l1],
+        signature: {
+          name: name,
+          ope: ope,
+          pop: pop,
+          ret: ret,
+        },
+        attributes: attrs,
+        expr: {
+          location: [path, l3],
+          expr: scanner["block"],
+        },
+      }
+    end
   end
 end
 

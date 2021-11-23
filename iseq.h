@@ -27,6 +27,7 @@ typedef struct rb_iseq_struct rb_iseq_t;
 #endif
 
 extern const ID rb_iseq_shared_exc_local_tbl[];
+extern int rtl_code_p;
 
 #define ISEQ_COVERAGE(iseq)           iseq->body->variable.coverage
 #define ISEQ_COVERAGE_SET(iseq, cov)  RB_OBJ_WRITE(iseq, &iseq->body->variable.coverage, cov)

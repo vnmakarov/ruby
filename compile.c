@@ -1478,6 +1478,8 @@ iseq_setup_insn(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     return COMPILE_OK;
 }
 
+static void create_default_bbvs(rb_iseq_t *iseq);
+
 static int
 iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 {
@@ -1496,7 +1498,13 @@ iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     if (!iseq_set_optargs_table(iseq)) return COMPILE_NG;
 
     debugs("[compile step 5 (iseq_translate_threaded_code)] \n");
-    if (!rb_iseq_translate_threaded_code(iseq)) return COMPILE_NG;
+    if (rtl_code_p && iseq->body->type == ISEQ_TYPE_MAIN) {
+        create_default_bbvs(iseq);
+    }
+
+    if (!rb_iseq_translate_threaded_code(iseq)) {
+        return COMPILE_NG;
+    }
 
     debugs("[compile step 6 (update_catch_except_flags)] \n");
     update_catch_except_flags(iseq->body);
@@ -2345,7 +2353,6 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 
     list = FIRST_ELEMENT(anchor);
     insns_info_index = code_index = sp = 0;
-
     while (list) {
 	switch (list->type) {
 	  case ISEQ_ELEMENT_INSN:
@@ -3560,6 +3567,48 @@ tailcallable_p(rb_iseq_t *iseq)
     }
 }
 
+#if 0
+static int
+exper(rb_iseq_t *iseq, INSN *iobj)
+{
+    LINK_ELEMENT *next, *next2, *next3;
+    if (IS_INSN_ID(iobj, getlocal_WC_0) && (next = iobj->link.next) &&
+	IS_INSN(next) && IS_INSN_ID((INSN *)next, putobject_INT2FIX_1_) &&
+        (next2 = next->next) && IS_INSN(next2) && IS_INSN_ID((INSN *)next2, opt_plus) &&
+        (next3 = next2->next) && IS_INSN(next3) && IS_INSN_ID((INSN *)next3, setlocal_WC_0)) {
+        INSN *insn;
+        NODE dummy_line_node = generate_dummy_line_node(((INSN *)next2)->insn_info.line_no,
+                                                        ((INSN *)next2)->insn_info.node_id);
+        VALUE *operands = compile_data_calloc2(iseq, sizeof(VALUE), 3);
+        operands[0] = OPERAND_AT((INSN *)next3, 0);
+        operands[1] = OPERAND_AT(iobj, 0);
+        operands[2] = INT2FIX(1);
+        insn = new_insn_core(iseq, &dummy_line_node, BIN(opt_iplusvvi), 3, operands);
+        ELEM_REMOVE(next3);
+        ELEM_REMOVE(next2);
+        ELEM_REMOVE(next);
+        ELEM_REPLACE((LINK_ELEMENT *)iobj, (LINK_ELEMENT *)insn);
+    } else if (IS_INSN_ID(iobj, getlocal_WC_0) && (next = iobj->link.next) &&
+	IS_INSN(next) && IS_INSN_ID((INSN *)next, putobject) &&
+        (next2 = next->next) && IS_INSN(next2) && IS_INSN_ID((INSN *)next2, opt_lt) &&
+        (next3 = next2->next) && IS_INSN(next3) && IS_INSN_ID((INSN *)next3, branchif)) {
+        INSN *insn;
+        NODE dummy_line_node = generate_dummy_line_node(((INSN *)next3)->insn_info.line_no,
+                                                        ((INSN *)next3)->insn_info.node_id);
+        VALUE *operands = compile_data_calloc2(iseq, sizeof(VALUE), 3);
+        operands[0] = OPERAND_AT((INSN *)next3, 0);
+        operands[1] = OPERAND_AT(iobj, 0);
+        operands[2] = OPERAND_AT((INSN *)next, 0);
+        insn = new_insn_core(iseq, &dummy_line_node, BIN(opt_ibtltvi), 3, operands);
+        ELEM_REMOVE(next3);
+        ELEM_REMOVE(next2);
+        ELEM_REMOVE(next);
+        ELEM_REPLACE((LINK_ELEMENT *)iobj, (LINK_ELEMENT *)insn);
+    }
+    return COMPILE_OK;
+}
+#endif
+
 static int
 iseq_optimize(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 {
@@ -3613,6 +3662,15 @@ iseq_optimize(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 	list = list->next;
     }
 
+#if 0
+    list = FIRST_ELEMENT(anchor);
+    while (list) {
+	if (IS_INSN(list)) {
+            exper(iseq, (INSN *)list);
+	}
+	list = list->next;
+    }
+#endif
     if (do_block_optimization) {
         LINK_ELEMENT * le = FIRST_ELEMENT(anchor)->next;
         if (IS_INSN(le) && IS_INSN_ID((INSN *)le, nop)) {
@@ -13012,3 +13070,5 @@ rb_iseq_ibf_load_extra_data(VALUE str)
     RB_GC_GUARD(loader_obj);
     return extra_str;
 }
+
+#include "rtl_gen.c"

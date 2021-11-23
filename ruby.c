@@ -310,6 +310,7 @@ usage(const char *name, int help, int highlight, int columns)
 	M("-w",		   "",			   "turn warnings on for your script"),
 	M("-W[level=2|:category]",   "",	   "set warning level; 0=silence, 1=medium, 2=verbose"),
 	M("-x[directory]", "",			   "strip off text before #!ruby line and perhaps cd to directory"),
+        M("--rtl",         "",                     "enable RTL BBV interpretation (experimental)"),
         M("--jit",         "",                     "enable JIT with default options (experimental)"),
         M("--jit-[option]","",                     "enable JIT with an option (experimental)"),
         M("--yjit",        "",                     "enable in-process JIT compiler (experimental)"),
@@ -1139,6 +1140,8 @@ setup_mjit_options(const char *s, struct mjit_options *mjit_opt)
 }
 #endif
 
+int rtl_code_p;
+
 static long
 proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 {
@@ -1146,6 +1149,8 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
     const char *s;
     int warning = opt->warning;
 
+    rtl_code_p = FALSE;
+    
     if (argc <= 0 || !argv)
 	return 0;
 
@@ -1506,6 +1511,9 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 		opt->verbose = 1;
 		ruby_verbose = Qtrue;
 	    }
+            else if (strncmp("rtl", s, 3) == 0) {
+                rtl_code_p = TRUE;
+            }
             else if (strncmp("jit", s, 3) == 0) {
 #if USE_MJIT
                 FEATURE_SET(opt->features, FEATURE_BIT(jit));

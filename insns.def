@@ -1515,3 +1515,462 @@ answer
 {
     ret = INT2FIX(42);
 }
+
+DEFINE_INSN
+branch2
+(lindex_t tdst, lindex_t fdst)
+(VALUE val)
+()
+/* Same discussion as jump. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(RTEST(val) ? tdst : fdst);
+}
+
+DEFINE_INSN
+jump2
+(lindex_t dst)
+()
+()
+/* Same discussion as jump. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(dst);
+}
+
+DEFINE_INSN
+branchnil2
+(lindex_t nil_dst, lindex_t else_dst)
+(VALUE val)
+()
+/* Same discussion as jump. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(NIL_P(val) ? nil_dst : else_dst);
+}
+
+/* push inline-cached value and go to dst if it is valid */
+DEFINE_INSN
+opt_getinlinecache2
+(lindex_t dst, lindex_t dst2, IC ic)
+()
+(VALUE val)
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    struct iseq_inline_constant_cache_entry *ice = ic->entry;
+    if (ice && vm_ic_hit_p(ice, GET_EP())) {
+        val = ice->value;
+        ABS_JUMP(dst);
+    }
+    else {
+	val = Qnil;
+        ABS_JUMP(dst2);
+    }
+}
+
+DEFINE_INSN
+mov
+(lindex_t res, lindex_t op)
+()
+()
+{
+    VALUE v = *(GET_EP() - op);
+    vm_env_write(GET_EP(), -(int)res, v);
+}
+
+DEFINE_INSN
+movi
+(lindex_t res, VALUE imm)
+()
+()
+{
+    vm_env_write(GET_EP(), -(int)res, imm);
+}
+
+DEFINE_INSN
+opt_iplussvv opt_iminussvv opt_imultsvv opt_idivsvv opt_imodsvv opt_iorsvv opt_iandsvv opt_ieqsvv opt_ineqsvv
+opt_iltsvv opt_igtsvv opt_ilesvv opt_igesvv
+opt_fplussvv opt_fminussvv opt_fmultsvv opt_fdivsvv opt_fmodsvv opt_feqsvv opt_fneqsvv
+opt_fltsvv opt_fgtsvv opt_flesvv opt_fgesvv
+opt_iarefsvv
+(lindex_t op1, lindex_t op2)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+}
+
+DEFINE_INSN
+opt_iplussvi opt_iminussvi opt_imultsvi opt_idivsvi opt_imodsvi opt_iorsvi opt_iandsvi opt_ieqsvi opt_ineqsvi
+opt_iltsvi opt_igtsvi opt_ilesvi opt_igesvi
+opt_fplussvi opt_fminussvi opt_fmultsvi opt_fdivsvi opt_fmodsvi opt_feqsvi opt_fneqsvi
+opt_fltsvi opt_fgtsvi opt_flesvi opt_fgesvi
+opt_iarefsvi
+(lindex_t op1, VALUE imm)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+}
+
+DEFINE_INSN
+opt_iplussvs opt_iminussvs opt_imultsvs opt_idivsvs opt_imodsvs opt_iorsvs opt_iandsvs opt_ieqsvs opt_ineqsvs
+opt_iltsvs opt_igtsvs opt_ilesvs opt_igesvs
+opt_fplussvs opt_fminussvs opt_fmultsvs opt_fdivsvs opt_fmodsvs opt_feqsvs opt_fneqsvs
+opt_fltsvs opt_fgtsvs opt_flesvs opt_fgesvs
+opt_iarefsvs
+(lindex_t op1)
+(VALUE v2)
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+}
+
+DEFINE_INSN
+opt_iplusssv opt_iminusssv opt_imultssv opt_idivssv opt_imodssv opt_iorssv opt_iandssv opt_ieqssv opt_ineqssv
+opt_iltssv opt_igtssv opt_ilessv opt_igessv
+opt_fplusssv opt_fminusssv opt_fmultssv opt_fdivssv opt_fmodssv opt_feqssv opt_fneqssv
+opt_fltssv opt_fgtssv opt_flessv opt_fgessv
+opt_iarefssv
+(lindex_t op2)
+(VALUE v1)
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+}
+
+DEFINE_INSN
+opt_iplusssi opt_iminusssi opt_imultssi opt_idivssi opt_imodssi opt_iorssi opt_iandssi opt_ieqssi opt_ineqssi
+opt_iltssi opt_igtssi opt_ilessi opt_igessi
+opt_fplusssi opt_fminusssi opt_fmultssi opt_fdivssi opt_fmodssi opt_feqssi opt_fneqssi
+opt_fltssi opt_fgtssi opt_flessi opt_fgessi
+opt_iarefssi
+(VALUE imm)
+(VALUE v1)
+(VALUE val)
+{
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+}
+
+DEFINE_INSN
+opt_iplussss opt_iminussss opt_imultsss opt_idivsss opt_imodsss opt_iorsss opt_iandsss opt_ieqsss opt_ineqsss
+opt_iltsss opt_igtsss opt_ilesss opt_igesss
+opt_fplussss opt_fminussss opt_fmultsss opt_fdivsss opt_fmodsss opt_feqsss opt_fneqsss
+opt_fltsss opt_fgtsss opt_flesss opt_fgesss
+opt_iarefsss
+()
+(VALUE v1, VALUE v2)
+(VALUE val)
+{
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+}
+
+DEFINE_INSN
+opt_iplusvvv opt_iminusvvv opt_imultvvv opt_idivvvv opt_imodvvv opt_iorvvv opt_iandvvv opt_ieqvvv opt_ineqvvv
+opt_iltvvv opt_igtvvv opt_ilevvv opt_igevvv
+opt_fplusvvv opt_fminusvvv opt_fmultvvv opt_fdivvvv opt_fmodvvv opt_feqvvv opt_fneqvvv
+opt_fltvvv opt_fgtvvv opt_flevvv opt_fgevvv
+opt_iarefvvv
+(lindex_t res, lindex_t op1, lindex_t op2)
+()
+()
+{
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iplusvvi opt_iminusvvi opt_imultvvi opt_idivvvi opt_imodvvi opt_iorvvi opt_iandvvi opt_ieqvvi opt_ineqvvi
+opt_iltvvi opt_igtvvi opt_ilevvi opt_igevvi
+opt_fplusvvi opt_fminusvvi opt_fmultvvi opt_fdivvvi opt_fmodvvi opt_feqvvi opt_fneqvvi
+opt_fltvvi opt_fgtvvi opt_flevvi opt_fgevvi
+opt_iarefvvi
+(lindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    VALUE v1 = *(GET_EP() - op1), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iplusvvs opt_iminusvvs opt_imultvvs opt_idivvvs opt_imodvvs opt_iorvvs opt_iandvvs opt_ieqvvs opt_ineqvvs
+opt_iltvvs opt_igtvvs opt_ilevvs opt_igevvs
+opt_fplusvvs opt_fminusvvs opt_fmultvvs opt_fdivvvs opt_fmodvvs opt_feqvvs opt_fneqvvs
+opt_fltvvs opt_fgtvvs opt_flevvs opt_fgevvs
+opt_iarefvvs
+(lindex_t res, lindex_t op1)
+(VALUE v2)
+()
+{
+    VALUE v1 = *(GET_EP() - op1), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iplusvsv opt_iminusvsv opt_imultvsv opt_idivvsv opt_imodvsv opt_iorvsv opt_iandvsv opt_ieqvsv opt_ineqvsv
+opt_iltvsv opt_igtvsv opt_ilevsv opt_igevsv
+opt_fplusvsv opt_fminusvsv opt_fmultvsv opt_fdivvsv opt_fmodvsv opt_feqvsv opt_fneqvsv
+opt_fltvsv opt_fgtvsv opt_flevsv opt_fgevsv
+opt_iarefvsv
+(lindex_t res, lindex_t op2)
+(VALUE v1)
+()
+{
+    VALUE v2 = *(GET_EP() - op2), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iplusvsi opt_iminusvsi opt_imultvsi opt_idivvsi opt_imodvsi opt_iorvsi opt_iandvsi opt_ieqvsi opt_ineqvsi
+opt_iltvsi opt_igtvsi opt_ilevsi opt_igevsi
+opt_fplusvsi opt_fminusvsi opt_fmultvsi opt_fdivvsi opt_fmodvsi opt_feqvsi opt_fneqvsi
+opt_fltvsi opt_fgtvsi opt_flevsi opt_fgevsi
+opt_iarefvsi
+(lindex_t res, VALUE imm)
+(VALUE v1)
+()
+{
+    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iplusvss opt_iminusvss opt_imultvss opt_idivvss opt_imodvss opt_iorvss opt_iandvss opt_ieqvss opt_ineqvss
+opt_iltvss opt_igtvss opt_ilevss opt_igevss
+opt_fplusvss opt_fminusvss opt_fmultvss opt_fdivvss opt_fmodvss opt_feqvss opt_fneqvss
+opt_fltvss opt_fgtvss opt_flevss opt_fgevss
+opt_iarefvss
+(lindex_t res)
+(VALUE v1, VALUE v2)
+()
+{
+    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iasetsvv
+(lindex_t ind_idx, lindex_t set_idx)
+(VALUE arr)
+()
+{
+    VALUE ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetsiv
+(VALUE ind, lindex_t set_idx)
+(VALUE arr)
+()
+{
+    VALUE set = *(GET_EP() - set_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetsvs
+(lindex_t ind_idx)
+(VALUE arr, VALUE set)
+()
+{
+    VALUE ind = *(GET_EP() - ind_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetssv
+(lindex_t set_idx)
+(VALUE arr, VALUE ind)
+()
+{
+    VALUE set = *(GET_EP() - set_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetsis
+(VALUE ind_idx)
+(VALUE arr, VALUE set)
+()
+{
+    VALUE ind = *(GET_EP() - ind_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetsss
+()
+(VALUE arr, VALUE ind, VALUE set)
+()
+{
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetvvv
+(lindex_t arr_idx, lindex_t ind_idx, lindex_t set_idx)
+()
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetviv
+(lindex_t arr_idx, VALUE ind, lindex_t set_idx)
+()
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetvvs
+(lindex_t arr_idx, lindex_t ind_idx)
+(VALUE set)
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetvsv
+(lindex_t arr_idx, lindex_t set_idx)
+(VALUE ind)
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetvis
+(lindex_t arr_idx, VALUE ind)
+(VALUE set)
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_iasetvss
+(lindex_t arr_idx)
+(VALUE ind, VALUE set)
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(arr, ind, set);
+}
+
+DEFINE_INSN
+opt_ibeqss opt_ibneqss opt_ibltss opt_ibgtss opt_ibless opt_ibgess
+opt_fbeqss opt_fbneqss opt_fbltss opt_fbgtss opt_fbless opt_fbgess
+(lindex_t tdst, lindex_t fdst)
+(VALUE v1, VALUE v2)
+()
+/* Same discussion as leave. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(RTEST(val) ? tdst : fdst);
+}
+
+DEFINE_INSN
+opt_ibeqvv opt_ibneqvv opt_ibltvv opt_ibgtvv opt_iblevv opt_ibgevv
+opt_fbeqvv opt_fbneqvv opt_fbltvv opt_fbgtvv opt_fblevv opt_fbgevv
+(lindex_t tdst, lindex_t fdst, lindex_t op1, lindex_t op2)
+()
+()
+/* Same discussion as leave. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(RTEST(val) ? tdst : fdst);
+}
+
+DEFINE_INSN
+opt_ibeqvi opt_ibneqvi opt_ibltvi opt_ibgtvi opt_iblevi opt_ibgevi
+opt_fbeqvi opt_fbneqvi opt_fbltvi opt_fbgtvi opt_fblevi opt_fbgevi
+(lindex_t tdst, lindex_t fdst, lindex_t op1, VALUE imm)
+()
+()
+/* Same discussion as leave. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    VALUE val, v1 = *(GET_EP() - op1);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(RTEST(val) ? tdst : fdst);
+}
+
+DEFINE_INSN
+opt_ibeqvs opt_ibneqvs opt_ibltvs opt_ibgtvs opt_iblevs opt_ibgevs
+opt_fbeqvs opt_fbneqvs opt_fbltvs opt_fbgtvs opt_fblevs opt_fbgevs
+(lindex_t tdst, lindex_t fdst, lindex_t op1)
+(VALUE v2)
+()
+/* Same discussion as leave. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    VALUE val, v1 = *(GET_EP() - op1);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(RTEST(val) ? tdst : fdst);
+}
+
+DEFINE_INSN
+opt_ibeqsv opt_ibneqsv opt_ibltsv opt_ibgtsv opt_iblesv opt_ibgesv
+opt_fbeqsv opt_fbneqsv opt_fbltsv opt_fbgtsv opt_fblesv opt_fbgesv
+(lindex_t tdst, lindex_t fdst, lindex_t op2)
+(VALUE v1)
+()
+/* Same discussion as leave. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    VALUE v2 = *(GET_EP() - op2), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN) (v1, v2);
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(RTEST(val) ? tdst : fdst);
+}
+
+DEFINE_INSN
+opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
+opt_fbeqsi opt_fbneqsi opt_fbltsi opt_fbgtsi opt_fblesi opt_fbgesi
+(lindex_t tdst, lindex_t fdst, VALUE imm)
+(VALUE v1)
+()
+/* Same discussion as leave. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN) (v1, imm);
+    RUBY_VM_CHECK_INTS(ec);
+    ABS_JUMP(RTEST(val) ? tdst : fdst);
+}
+
+DEFINE_INSN
+make_rtl_bbv
+(lindex_t bbv, OFFSET origin)
+()
+()
+/* Same discussion as leave. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    VALUE dst = make_rtl_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (VALUE *)GET_PC() + origin);
+    ABS_JUMP(dst);
+}
