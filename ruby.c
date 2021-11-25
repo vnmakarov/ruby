@@ -1150,7 +1150,7 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
     int warning = opt->warning;
 
     rtl_code_p = FALSE;
-    
+
     if (argc <= 0 || !argv)
 	return 0;
 

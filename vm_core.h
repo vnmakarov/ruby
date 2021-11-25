@@ -860,7 +860,10 @@ typedef struct rb_control_frame_struct {
     VALUE *bp_check;		/* cfp[7] */
 #endif
     // Return address for YJIT code
-    void *jit_return;
+    union {
+        struct rb_iseq_bbv *curr_bbv; /* or NULL for non-rtl code */
+        void *jit_return;
+    };
 } rb_control_frame_t;
 
 extern const rb_data_type_t ruby_threadptr_data_type;
@@ -2107,7 +2110,8 @@ rb_exec_event_hook_script_compiled(rb_execution_context_t *ec, const rb_iseq_t *
 
 void rb_vm_trap_exit(rb_vm_t *vm);
 
-VALUE make_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place);
+VALUE make_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv);
+VALUE gen_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 

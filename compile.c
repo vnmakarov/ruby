@@ -1498,7 +1498,7 @@ iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     if (!iseq_set_optargs_table(iseq)) return COMPILE_NG;
 
     debugs("[compile step 5 (iseq_translate_threaded_code)] \n");
-    if (rtl_code_p && iseq->body->type == ISEQ_TYPE_MAIN) {
+    if (rtl_code_p) {
         create_default_bbvs(iseq);
     }
 
@@ -2255,6 +2255,18 @@ add_adjust_info(struct iseq_insn_info_entry *insns_info, unsigned int *positions
     return FALSE;
 }
 
+static int
+add_make_rtl_bbv(rb_iseq_t *iseq, LINK_ELEMENT *after) {
+    NODE dummy_line_node = generate_dummy_line_node(0, -1);
+    /* make enough space for jump2 */
+    INSN *nobj = new_insn_body(iseq, &dummy_line_node, BIN(make_rtl_bbv),
+                               2, (VALUE)LONG2FIX(0), (VALUE)LONG2FIX(0));
+    int len = insn_data_length(nobj);
+    VM_ASSERT(len == 3 && insn_len(BIN(jump2)) == 3);
+    ELEM_INSERT_NEXT(after, (LINK_ELEMENT *)nobj);
+    return len;
+}
+
 /**
   ruby insn object list -> raw instruction sequence
  */
@@ -2265,7 +2277,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     struct iseq_insn_info_entry *insns_info;
     struct rb_iseq_constant_body *const body = iseq->body;
     unsigned int *positions;
-    LINK_ELEMENT *list;
+    LINK_ELEMENT *list, *next;
     VALUE *generated_iseq;
     rb_event_flag_t events = 0;
     long data = 0;
@@ -2277,7 +2289,9 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 
     /* fix label position */
     insn_num = code_index = 0;
-    for (list = FIRST_ELEMENT(anchor); list; list = list->next) {
+    if (rtl_code_p) add_make_rtl_bbv(iseq, &anchor->anchor);
+    for (list = FIRST_ELEMENT(anchor); list; list = next) {
+        next = list->next;
 	switch (list->type) {
 	  case ISEQ_ELEMENT_INSN:
 	    {
@@ -2304,7 +2318,25 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                 code_index += insn_data_length(iobj);
 		events = 0;
                 data = 0;
-		break;
+                if (rtl_code_p) {
+                    switch (iobj->insn_id) {
+                    case BIN(jump):
+                    case BIN(branchif):
+                    case BIN(branchunless):
+                    case BIN(branchnil):
+                    case BIN(opt_getinlinecache): /* insert make_rtl_bbv */
+                        if (next != NULL && !IS_LABEL(next)) {
+                            code_index += add_make_rtl_bbv(iseq, list);
+                            insn_num++;
+                        }
+                        break;
+                    case BIN(opt_case_dispatch): /* ??? TODO now it would be switching to original code */
+                        break;
+                    default:
+                        break;
+                    }
+                }
+                break;
 	    }
 	  case ISEQ_ELEMENT_LABEL:
 	    {
@@ -2316,6 +2348,10 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                            lobj->label_no, lobj->sp, sp);
                 }
 		sp = lobj->sp;
+                if (rtl_code_p && next != NULL && !IS_LABEL(next)) {
+                    code_index += add_make_rtl_bbv(iseq, list);
+                    insn_num++;
+                }
 		break;
 	    }
 	  case ISEQ_ELEMENT_TRACE:

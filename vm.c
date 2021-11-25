@@ -2451,9 +2451,11 @@ rb_iseq_eval_main(const rb_iseq_t *iseq)
     VALUE val;
 
     vm_set_main_stack(ec, iseq);
+#if 0
     if (rtl_code_p) {
-        ec->cfp->pc = (VALUE *)make_rtl_bbv(ec->cfp, get_bbv((rb_iseq_t *)iseq, 0, 0, NULL), NULL);
+        ec->cfp->pc = (VALUE *)gen_rtl_bbv(ec->cfp, get_bbv((rb_iseq_t *)iseq, 0, 0, NULL), NULL);
     }
+#endif
     val = vm_exec(ec, true);
     return val;
 }

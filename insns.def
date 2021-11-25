@@ -1518,19 +1518,25 @@ answer
 
 DEFINE_INSN
 branch2
-(lindex_t tdst, lindex_t fdst)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv)
 (VALUE val)
 ()
 /* Same discussion as jump. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     RUBY_VM_CHECK_INTS(ec);
-    ABS_JUMP(RTEST(val) ? tdst : fdst);
+    if (RTEST(val)) {
+        ABS_JUMP(tdst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)tdst_bbv;
+    } else {
+        ABS_JUMP(fdst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+    }
 }
 
 DEFINE_INSN
 jump2
-(lindex_t dst)
+(lindex_t dst, lindex_t dst_bbv)
 ()
 ()
 /* Same discussion as jump. */
@@ -1538,24 +1544,31 @@ jump2
 {
     RUBY_VM_CHECK_INTS(ec);
     ABS_JUMP(dst);
+    GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)dst_bbv;
 }
 
 DEFINE_INSN
 branchnil2
-(lindex_t nil_dst, lindex_t else_dst)
+(lindex_t nil_dst, lindex_t nil_bbv, lindex_t else_dst, lindex_t else_bbv)
 (VALUE val)
 ()
 /* Same discussion as jump. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     RUBY_VM_CHECK_INTS(ec);
-    ABS_JUMP(NIL_P(val) ? nil_dst : else_dst);
+    if (NIL_P(val)) {
+        ABS_JUMP(nil_dst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)nil_bbv;
+    } else {
+        ABS_JUMP(else_dst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)else_bbv;
+    }
 }
 
 /* push inline-cached value and go to dst if it is valid */
 DEFINE_INSN
 opt_getinlinecache2
-(lindex_t dst, lindex_t dst2, IC ic)
+(lindex_t dst, lindex_t dst_bbv, lindex_t dst2, lindex_t dst2_bbv, IC ic)
 ()
 (VALUE val)
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
@@ -1564,10 +1577,12 @@ opt_getinlinecache2
     if (ice && vm_ic_hit_p(ice, GET_EP())) {
         val = ice->value;
         ABS_JUMP(dst);
+        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)dst_bbv;
     }
     else {
 	val = Qnil;
         ABS_JUMP(dst2);
+        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)dst2_bbv;
     }
 }
 
@@ -2163,7 +2178,7 @@ opt_iasetvss
 DEFINE_INSN
 opt_ibeqss opt_ibneqss opt_ibltss opt_ibgtss opt_ibless opt_ibgess
 opt_fbeqss opt_fbneqss opt_fbltss opt_fbgtss opt_fbless opt_fbgess
-(lindex_t tdst, lindex_t fdst, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t stack_pc)
 (VALUE v1, VALUE v2)
 ()
 /* Same discussion as leave. */
@@ -2171,13 +2186,19 @@ opt_fbeqss opt_fbneqss opt_fbltss opt_fbgtss opt_fbless opt_fbgess
 {
     VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
     RUBY_VM_CHECK_INTS(ec);
-    ABS_JUMP(RTEST(val) ? tdst : fdst);
+    if (RTEST(val)) {
+        ABS_JUMP(tdst);
+        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+    } else {
+        ABS_JUMP(fdst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+    }
 }
 
 DEFINE_INSN
 opt_ibeqvv opt_ibneqvv opt_ibltvv opt_ibgtvv opt_iblevv opt_ibgevv
 opt_fbeqvv opt_fbneqvv opt_fbltvv opt_fbgtvv opt_fblevv opt_fbgevv
-(lindex_t tdst, lindex_t fdst, lindex_t op1, lindex_t op2, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1, lindex_t op2, lindex_t stack_pc)
 ()
 ()
 /* Same discussion as leave. */
@@ -2186,13 +2207,19 @@ opt_fbeqvv opt_fbneqvv opt_fbltvv opt_fbgtvv opt_fblevv opt_fbgevv
     VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
     RUBY_VM_CHECK_INTS(ec);
-    ABS_JUMP(RTEST(val) ? tdst : fdst);
+    if (RTEST(val)) {
+        ABS_JUMP(tdst);
+        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+    } else {
+        ABS_JUMP(fdst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+    }
 }
 
 DEFINE_INSN
 opt_ibeqvi opt_ibneqvi opt_ibltvi opt_ibgtvi opt_iblevi opt_ibgevi
 opt_fbeqvi opt_fbneqvi opt_fbltvi opt_fbgtvi opt_fblevi opt_fbgevi
-(lindex_t tdst, lindex_t fdst, lindex_t op1, VALUE imm, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1, VALUE imm, lindex_t stack_pc)
 ()
 ()
 /* Same discussion as leave. */
@@ -2201,13 +2228,19 @@ opt_fbeqvi opt_fbneqvi opt_fbltvi opt_fbgtvi opt_fblevi opt_fbgevi
     VALUE val, v1 = *(GET_EP() - op1);
     val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
     RUBY_VM_CHECK_INTS(ec);
-    ABS_JUMP(RTEST(val) ? tdst : fdst);
+    if (RTEST(val)) {
+        ABS_JUMP(tdst);
+        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+    } else {
+        ABS_JUMP(fdst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+    }
 }
 
 DEFINE_INSN
 opt_ibeqvs opt_ibneqvs opt_ibltvs opt_ibgtvs opt_iblevs opt_ibgevs
 opt_fbeqvs opt_fbneqvs opt_fbltvs opt_fbgtvs opt_fblevs opt_fbgevs
-(lindex_t tdst, lindex_t fdst, lindex_t op1, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1, lindex_t stack_pc)
 (VALUE v2)
 ()
 /* Same discussion as leave. */
@@ -2216,13 +2249,19 @@ opt_fbeqvs opt_fbneqvs opt_fbltvs opt_fbgtvs opt_fblevs opt_fbgevs
     VALUE val, v1 = *(GET_EP() - op1);
     val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
     RUBY_VM_CHECK_INTS(ec);
-    ABS_JUMP(RTEST(val) ? tdst : fdst);
+    if (RTEST(val)) {
+        ABS_JUMP(tdst);
+        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+    } else {
+        ABS_JUMP(fdst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+    }
 }
 
 DEFINE_INSN
 opt_ibeqsv opt_ibneqsv opt_ibltsv opt_ibgtsv opt_iblesv opt_ibgesv
 opt_fbeqsv opt_fbneqsv opt_fbltsv opt_fbgtsv opt_fblesv opt_fbgesv
-(lindex_t tdst, lindex_t fdst, lindex_t op2, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op2, lindex_t stack_pc)
 (VALUE v1)
 ()
 /* Same discussion as leave. */
@@ -2230,13 +2269,19 @@ opt_fbeqsv opt_fbneqsv opt_fbltsv opt_fbgtsv opt_fblesv opt_fbgesv
 {
     VALUE v2 = *(GET_EP() - op2), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN) (v1, v2);
     RUBY_VM_CHECK_INTS(ec);
-    ABS_JUMP(RTEST(val) ? tdst : fdst);
+    if (RTEST(val)) {
+        ABS_JUMP(tdst);
+        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+    } else {
+        ABS_JUMP(fdst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+    }
 }
 
 DEFINE_INSN
 opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
 opt_fbeqsi opt_fbneqsi opt_fbltsi opt_fbgtsi opt_fblesi opt_fbgesi
-(lindex_t tdst, lindex_t fdst, VALUE imm, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, VALUE imm, lindex_t stack_pc)
 (VALUE v1)
 ()
 /* Same discussion as leave. */
@@ -2244,17 +2289,37 @@ opt_fbeqsi opt_fbneqsi opt_fbltsi opt_fbgtsi opt_fblesi opt_fbgesi
 {
     VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN) (v1, imm);
     RUBY_VM_CHECK_INTS(ec);
-    ABS_JUMP(RTEST(val) ? tdst : fdst);
+    if (RTEST(val)) {
+        ABS_JUMP(tdst);
+        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+    } else {
+        ABS_JUMP(fdst);
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+    }
 }
 
 DEFINE_INSN
-make_rtl_bbv
+gen_rtl_bbv
 (lindex_t bbv, OFFSET origin)
 ()
 ()
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE dst = make_rtl_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (VALUE *)GET_PC() + origin);
+    VALUE dst = gen_rtl_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (VALUE *)GET_PC() + origin);
     ABS_JUMP(dst);
+}
+
+DEFINE_INSN
+make_rtl_bbv
+(lindex_t dummy1, lindex_t dummy2)
+()
+()
+{
+    struct rb_iseq_bbv *dst_bbv;
+    VALUE dst = make_rtl_bbv(GET_CFP(), &dst_bbv);
+
+    ABS_JUMP(dst);
+    GET_CFP()->curr_bbv = dst_bbv;
+    END_INSN(make_rtl_bbv); /* to skip pc increase */
 }
