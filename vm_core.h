@@ -362,6 +362,7 @@ struct rb_iseq_bbv {
     struct rb_iseq_bbv *next_bbv;
     int bbv_encoded_size;
     VALUE *bbv_encoded; /* NULL if the code is not generated yet */
+    int *pos_map;/* bbv pos(index) to original pos, NULL when bbv_encoded==NULL */
     int n_attrs; /* length of the next array */
     /* map local var/stack slot -> attr, the last elem has always not
      * unknown value, assume unknown attr for vars/temps beyond
