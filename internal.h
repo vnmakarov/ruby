@@ -18,12 +18,6 @@
 #define LIKELY(x) RB_LIKELY(x)
 #define UNLIKELY(x) RB_UNLIKELY(x)
 
-#if defined(__GNUC__)
-#define do_inline inline __attribute__ ((__always_inline__))
-#else
-#define do_inline inline
-#endif
-
 #define numberof(array) ((int)(sizeof(array) / sizeof((array)[0])))
 #define roomof(x, y) (((x) + (y) - 1) / (y))
 #define type_roomof(x, y) roomof(sizeof(x), sizeof(y))

@@ -6,6 +6,14 @@
 
 **********************************************************************/
 
+#include "rtl.h"
+#include "internal/compile.h"
+#include "vm_callinfo.h"
+
+#include "builtin.h"
+#include "insns.inc"
+#include "insns_info.inc"
+
 /* To generate RTL insns we passes stack insns several times.  First
    we calculate possible stack values on the label.  It is a forward
    data flow problem (the final fixed point is only temporaries on the
@@ -421,8 +429,8 @@ typedef struct rb_iseq_bbv *rb_iseq_bbv_t;
 DEF_VARR(rb_iseq_bbv_t);
 static VARR(rb_iseq_bbv_t) *bbvs;
 
-static void
-create_default_bbvs(rb_iseq_t *iseq) {
+void
+rb_rtl_create_default_bbvs(rb_iseq_t *iseq) {
     int i, curr_bb_start;
     enum ruby_vminsn_type insn_id;
     struct rb_iseq_constant_body *body = iseq->body;
@@ -649,7 +657,7 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound) {
     int i, len;
 
     for (i = start;;) {
-	insn_id = rb_vm_insn_addr2insn((void *)code[i]);
+	insn_id = rb_vm_insn_decode((VALUE)code[i]);
         if (insn_id == BIN(gen_rtl_bbv)) {
             rb_iseq_bbv_t bbv = (rb_iseq_bbv_t)code[i + 1];
             fprintf(stderr, "  # 0x%llx: gen_rtl_bbv(BBV 0x%llx)\n",
@@ -1044,7 +1052,7 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
 }
 
 VALUE
-make_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv) {
+rb_rtl_make_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv) {
     VALUE *pc = (VALUE *)cfp->pc;
     struct rb_iseq_bbv *bbv = get_bbv((rb_iseq_t *)cfp->iseq, pc - cfp->iseq->body->iseq_encoded, 0, NULL);
     gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__);
@@ -1058,7 +1066,7 @@ make_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv) {
 }
 
 VALUE
-gen_rtl_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, VALUE *label_place) {
+rb_rtl_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place) {
     gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__);
     if (label_place != NULL) *label_place = (VALUE)bbv->bbv_encoded;
     return (VALUE)bbv->bbv_encoded;
@@ -1067,7 +1075,7 @@ gen_rtl_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, VALUE *label_place) {
 /* Initiate stack insns to RTL generator.  Return FALSE if we failed
    to do this.  */
 int
-rtl_gen_init(void) {
+rb_rtl_gen_init(void) {
 #if RTL_GEN_DEBUG
     rtl_gen_debug_p = getenv("MRI_RTL_GEN_DEBUG") != NULL;
 #endif
@@ -1084,7 +1092,7 @@ rtl_gen_init(void) {
 
 /* Finish stack insns to RTL generator.  */
 void
-rtl_gen_finish(void) {
+rb_rtl_gen_finish(void) {
     VARR_DESTROY(int, stack);
     VARR_DESTROY(char, attrs);
     VARR_DESTROY(int, pos_map);

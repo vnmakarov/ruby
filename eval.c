@@ -83,8 +83,6 @@ ruby_setup(void)
     rb_vm_encoded_insn_data_table_init();
     Init_vm_objects();
 
-    if (! rtl_gen_init())
-        return 1;
     EC_PUSH_TAG(GET_EC());
     if ((state = EC_EXEC_TAG()) == TAG_NONE) {
 	rb_call_inits();
@@ -264,7 +262,6 @@ rb_ec_cleanup(rb_execution_context_t *ec, int ex0)
     th = th0;
     rb_thread_stop_timer_thread();
     ruby_vm_destruct(th->vm);
-    rtl_gen_finish();
     if (state) ruby_default_signal(state);
 
     return sysex;

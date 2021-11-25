@@ -28,6 +28,7 @@
 #include "internal/sanitizers.h"
 #include "iseq.h"
 #include "mjit.h"
+#include "rtl.h"
 #include "yjit.h"
 #include "ruby/st.h"
 #include "ruby/vm.h"

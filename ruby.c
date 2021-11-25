@@ -60,6 +60,7 @@
 #include "internal/variable.h"
 #include "mjit.h"
 #include "yjit.h"
+#include "rtl.h"
 #include "ruby/encoding.h"
 #include "ruby/thread.h"
 #include "ruby/util.h"
@@ -190,6 +191,7 @@ struct ruby_cmdline_options {
     struct mjit_options mjit;
 #endif
     struct rb_yjit_options yjit;
+    struct rb_rtl_options rtl;
 
     int sflag, xflag;
     unsigned int warning: 1;
@@ -310,10 +312,10 @@ usage(const char *name, int help, int highlight, int columns)
 	M("-w",		   "",			   "turn warnings on for your script"),
 	M("-W[level=2|:category]",   "",	   "set warning level; 0=silence, 1=medium, 2=verbose"),
 	M("-x[directory]", "",			   "strip off text before #!ruby line and perhaps cd to directory"),
-        M("--rtl",         "",                     "enable RTL BBV interpretation (experimental)"),
         M("--jit",         "",                     "enable JIT with default options (experimental)"),
         M("--jit-[option]","",                     "enable JIT with an option (experimental)"),
         M("--yjit",        "",                     "enable in-process JIT compiler (experimental)"),
+        M("--rtl",         "",                     "enable RTL BBV interpretation (experimental)"),
 	M("-h",		   "",			   "show this message, --help for more info"),
     };
     static const struct message help_msg[] = {
@@ -343,10 +345,18 @@ usage(const char *name, int help, int highlight, int columns)
 	M("frozen-string-literal", "", "freeze all string literals (default: disabled)"),
         M("jit", "",            "JIT compiler (default: disabled)"),
         M("yjit", "",           "in-process JIT compiler (default: disabled)"),
+        M("rtl", "",            "RTL BBV generation and interpretation (default: disabled)"),
     };
     static const struct message warn_categories[] = {
         M("deprecated", "",       "deprecated features"),
         M("experimental", "",     "experimental features"),
+    };
+    static const struct message rtl_options[] = {
+#if RTL_EXEC_STATS
+        M("--rtl-stats",             "", "Enable collecting RTL BBV execution statistics"),
+#endif
+        M("--rtl-max-versions",      "", "Maximum number of versions per RTL basic block (default: 4)"),
+        M("--rtl-debug",             "", "Print RTL basic block generation to stderr"),
     };
     static const struct message mjit_options[] = {
         M("--jit-warnings",      "", "Enable printing JIT warnings"),
@@ -392,6 +402,9 @@ usage(const char *name, int help, int highlight, int columns)
     printf("%s""Warning categories:%s\n", sb, se);
     for (i = 0; i < numberof(warn_categories); ++i)
 	SHOW(warn_categories[i]);
+    printf("%s""RTL BBV interpretation options (experimental):%s\n", sb, se);
+    for (i = 0; i < numberof(rtl_options); ++i)
+	SHOW(rtl_options[i]);
     printf("%s""MJIT options (experimental):%s\n", sb, se);
     for (i = 0; i < numberof(mjit_options); ++i)
 	SHOW(mjit_options[i]);
@@ -1067,6 +1080,11 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 #define yjit_opt_match_arg(s, l, name) \
     opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (rb_raise(rb_eRuntimeError, "--yjit-" name " needs an argument"), 0))
 
+#define rtl_opt_match_noarg(s, l, name) \
+    opt_match(s, l, name) && (*(s) ? (rb_warn("argument to --rtl-" name " is ignored"), 1) : 1)
+#define rtl_opt_match_arg(s, l, name) \
+    opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (rb_raise(rb_eRuntimeError, "--rtl-" name " needs an argument"), 0))
+
 static bool
 setup_yjit_options(const char *s, struct rb_yjit_options *yjit_opt)
 {
@@ -1140,7 +1158,34 @@ setup_mjit_options(const char *s, struct mjit_options *mjit_opt)
 }
 #endif
 
-int rtl_code_p;
+static bool
+setup_rtl_options(const char *s, struct rb_rtl_options *rtl_opt)
+{
+    const char prefix[] = "rtl-";
+    if (strncmp(prefix, s, sizeof(prefix)-1) != 0) {
+        return FALSE;
+    }
+    s += sizeof(prefix) - 1;
+    const size_t l = strlen(s);
+    if (l == 0) {
+        return FALSE;
+    }
+
+    if (rtl_opt_match_arg(s, l, "max-versions")) {
+        rtl_opt->max_versions = atoi(s + 1);
+    }
+    else if (rtl_opt_match_noarg(s, l, "debug")) {
+        rtl_opt->debug_p = TRUE;
+    }
+    else if (rtl_opt_match_noarg(s, l, "stats")) {
+        rtl_opt->exec_stats_p = TRUE;
+    }
+    else {
+        rb_raise(rb_eRuntimeError,
+                 "invalid RTL option `%s' (--help will show valid RTL options)", s);
+    }
+    return true;
+}
 
 static long
 proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
@@ -1148,8 +1193,6 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
     long n, argc0 = argc;
     const char *s;
     int warning = opt->warning;
-
-    rtl_code_p = FALSE;
 
     if (argc <= 0 || !argv)
 	return 0;
@@ -1511,9 +1554,6 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 		opt->verbose = 1;
 		ruby_verbose = Qtrue;
 	    }
-            else if (strncmp("rtl", s, 3) == 0) {
-                rtl_code_p = TRUE;
-            }
             else if (strncmp("jit", s, 3) == 0) {
 #if USE_MJIT
                 FEATURE_SET(opt->features, FEATURE_BIT(jit));
@@ -1528,6 +1568,9 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
 #else
                 rb_warn("Ruby was built without JIT support");
 #endif
+            }
+            else if (strcmp("rtl", s) == 0 || setup_rtl_options(s, &opt->rtl)) {
+                opt->rtl.rtl_enabled_p = TRUE;
             }
 	    else if (strcmp("yydebug", s) == 0) {
 		if (envopt) goto noenvopt_long;
@@ -1909,6 +1952,7 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
 #endif
         rb_yjit_init(&opt->yjit);
     }
+    rb_rtl_init(&opt->rtl);
     if (opt->dump & (DUMP_BIT(version) | DUMP_BIT(version_v))) {
 #if USE_MJIT
         mjit_opts.on = opt->mjit.on; /* used by ruby_show_version(). mjit_init() still can't be called here. */

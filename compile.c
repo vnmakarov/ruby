@@ -34,6 +34,7 @@
 #include "internal/thread.h"
 #include "internal/variable.h"
 #include "iseq.h"
+#include "rtl.h"
 #include "ruby/re.h"
 #include "ruby/util.h"
 #include "vm_core.h"
@@ -1478,8 +1479,6 @@ iseq_setup_insn(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     return COMPILE_OK;
 }
 
-static void create_default_bbvs(rb_iseq_t *iseq);
-
 static int
 iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 {
@@ -1498,8 +1497,8 @@ iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     if (!iseq_set_optargs_table(iseq)) return COMPILE_NG;
 
     debugs("[compile step 5 (iseq_translate_threaded_code)] \n");
-    if (rtl_code_p) {
-        create_default_bbvs(iseq);
+    if (rb_rtl_enabled_p()) {
+        rb_rtl_create_default_bbvs(iseq);
     }
 
     if (!rb_iseq_translate_threaded_code(iseq)) {
@@ -2284,12 +2283,13 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 
     int insn_num, code_index, insns_info_index, sp = 0;
     int stack_max = fix_sp_depth(iseq, anchor);
+    int rtl_p = rb_rtl_enabled_p();
 
     if (stack_max < 0) return COMPILE_NG;
 
     /* fix label position */
     insn_num = code_index = 0;
-    if (rtl_code_p) add_make_rtl_bbv(iseq, &anchor->anchor);
+    if (rtl_p) add_make_rtl_bbv(iseq, &anchor->anchor);
     for (list = FIRST_ELEMENT(anchor); list; list = next) {
         next = list->next;
 	switch (list->type) {
@@ -2318,7 +2318,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                 code_index += insn_data_length(iobj);
 		events = 0;
                 data = 0;
-                if (rtl_code_p) {
+                if (rtl_p) {
                     switch (iobj->insn_id) {
                     case BIN(jump):
                     case BIN(branchif):
@@ -2348,7 +2348,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                            lobj->label_no, lobj->sp, sp);
                 }
 		sp = lobj->sp;
-                if (rtl_code_p && next != NULL && !IS_LABEL(next)) {
+                if (rtl_p && next != NULL && !IS_LABEL(next)) {
                     code_index += add_make_rtl_bbv(iseq, list);
                     insn_num++;
                 }
@@ -11177,7 +11177,7 @@ ibf_dump_code(struct ibf_dump *dump, const rb_iseq_t *iseq)
         int op_index;
 
         /* opcode */
-        if (insn >= 0x100) { rb_raise(rb_eRuntimeError, "invalid instruction"); }
+        if (insn >= 0x200) { rb_raise(rb_eRuntimeError, "invalid instruction"); }
         ibf_dump_write_small_value(dump, insn);
 
         /* operands */
@@ -13064,5 +13064,3 @@ rb_iseq_ibf_load_extra_data(VALUE str)
     RB_GC_GUARD(loader_obj);
     return extra_str;
 }
-
-#include "rtl_gen.c"

@@ -2306,7 +2306,7 @@ gen_rtl_bbv
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE dst = gen_rtl_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (VALUE *)GET_PC() + origin);
+    VALUE dst = rb_rtl_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (VALUE *)GET_PC() + origin);
     ABS_JUMP(dst);
 }
 
@@ -2317,7 +2317,7 @@ make_rtl_bbv
 ()
 {
     struct rb_iseq_bbv *dst_bbv;
-    VALUE dst = make_rtl_bbv(GET_CFP(), &dst_bbv);
+    VALUE dst = rb_rtl_make_bbv(GET_CFP(), &dst_bbv);
 
     ABS_JUMP(dst);
     GET_CFP()->curr_bbv = dst_bbv;
