@@ -1607,7 +1607,7 @@ movi
 
 DEFINE_INSN
 opt_iplussvv opt_iminussvv opt_imultsvv
-(lindex_t op1, lindex_t op2, lindex_t stack_pc)
+(lindex_t op1, lindex_t op2)
 ()
 (VALUE val)
 {
@@ -1618,7 +1618,7 @@ opt_iplussvv opt_iminussvv opt_imultsvv
 
 DEFINE_INSN
 opt_iplussvi opt_iminussvi opt_imultsvi
-(lindex_t op1, VALUE imm, lindex_t stack_pc)
+(lindex_t op1, VALUE imm)
 ()
 (VALUE val)
 {
@@ -1629,7 +1629,7 @@ opt_iplussvi opt_iminussvi opt_imultsvi
 
 DEFINE_INSN
 opt_iplussvs opt_iminussvs opt_imultsvs
-(lindex_t op1, lindex_t stack_pc)
+(lindex_t op1)
 (VALUE v2)
 (VALUE val)
 {
@@ -1640,7 +1640,7 @@ opt_iplussvs opt_iminussvs opt_imultsvs
 
 DEFINE_INSN
 opt_iplusssv opt_iminusssv opt_imultssv
-(lindex_t op2, lindex_t stack_pc)
+(lindex_t op2)
 (VALUE v1)
 (VALUE val)
 {
@@ -1651,7 +1651,7 @@ opt_iplusssv opt_iminusssv opt_imultssv
 
 DEFINE_INSN
 opt_iplusssi opt_iminusssi opt_imultssi
-(VALUE imm, lindex_t stack_pc)
+(VALUE imm)
 (VALUE v1)
 (VALUE val)
 {
@@ -1661,7 +1661,7 @@ opt_iplusssi opt_iminusssi opt_imultssi
 
 DEFINE_INSN
 opt_iplussss opt_iminussss opt_imultsss
-(lindex_t stack_pc)
+()
 (VALUE v1, VALUE v2)
 (VALUE val)
 {
@@ -1671,7 +1671,7 @@ opt_iplussss opt_iminussss opt_imultsss
 
 DEFINE_INSN
 opt_iplusvvv opt_iminusvvv opt_imultvvv
-(lindex_t res, lindex_t op1, lindex_t op2, lindex_t stack_pc)
+(lindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
 {
@@ -1683,7 +1683,7 @@ opt_iplusvvv opt_iminusvvv opt_imultvvv
 
 DEFINE_INSN
 opt_iplusvvi opt_iminusvvi opt_imultvvi
-(lindex_t res, lindex_t op1, VALUE imm, lindex_t stack_pc)
+(lindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -1695,7 +1695,7 @@ opt_iplusvvi opt_iminusvvi opt_imultvvi
 
 DEFINE_INSN
 opt_iplusvvs opt_iminusvvs opt_imultvvs
-(lindex_t res, lindex_t op1, lindex_t stack_pc)
+(lindex_t res, lindex_t op1)
 (VALUE v2)
 ()
 {
@@ -1707,7 +1707,7 @@ opt_iplusvvs opt_iminusvvs opt_imultvvs
 
 DEFINE_INSN
 opt_iplusvsv opt_iminusvsv opt_imultvsv
-(lindex_t res, lindex_t op2, lindex_t stack_pc)
+(lindex_t res, lindex_t op2)
 (VALUE v1)
 ()
 {
@@ -1719,7 +1719,7 @@ opt_iplusvsv opt_iminusvsv opt_imultvsv
 
 DEFINE_INSN
 opt_iplusvsi opt_iminusvsi opt_imultvsi
-(lindex_t res, VALUE imm, lindex_t stack_pc)
+(lindex_t res, VALUE imm)
 (VALUE v1)
 ()
 {
@@ -1731,7 +1731,7 @@ opt_iplusvsi opt_iminusvsi opt_imultvsi
 
 DEFINE_INSN
 opt_iplusvss opt_iminusvss opt_imultvss
-(lindex_t res, lindex_t stack_pc)
+(lindex_t res)
 (VALUE v1, VALUE v2)
 ()
 {
@@ -1743,7 +1743,7 @@ opt_iplusvss opt_iminusvss opt_imultvss
 
 DEFINE_INSN
 opt_idivsvv opt_imodsvv
-(lindex_t op1, lindex_t op2, lindex_t stack_pc)
+(lindex_t op1, lindex_t op2)
 ()
 (VALUE val)
 {
@@ -1755,7 +1755,7 @@ opt_idivsvv opt_imodsvv
 
 DEFINE_INSN
 opt_idivsvi opt_imodsvi
-(lindex_t op1, VALUE imm, lindex_t stack_pc)
+(lindex_t op1, VALUE imm)
 ()
 (VALUE val)
 {
@@ -1767,7 +1767,7 @@ opt_idivsvi opt_imodsvi
 
 DEFINE_INSN
 opt_idivsvs opt_imodsvs
-(lindex_t op1, lindex_t stack_pc)
+(lindex_t op1)
 (VALUE v2)
 (VALUE val)
 {
@@ -1779,7 +1779,7 @@ opt_idivsvs opt_imodsvs
 
 DEFINE_INSN
 opt_idivssv opt_imodssv
-(lindex_t op2, lindex_t stack_pc)
+(lindex_t op2)
 (VALUE v1)
 (VALUE val)
 {
@@ -1791,7 +1791,7 @@ opt_idivssv opt_imodssv
 
 DEFINE_INSN
 opt_idivssi opt_imodssi
-(VALUE imm, lindex_t stack_pc)
+(VALUE imm)
 (VALUE v1)
 (VALUE val)
 {
@@ -1802,7 +1802,7 @@ opt_idivssi opt_imodssi
 
 DEFINE_INSN
 opt_idivsss opt_imodsss
-(lindex_t stack_pc)
+()
 (VALUE v1, VALUE v2)
 (VALUE val)
 {
@@ -1813,7 +1813,7 @@ opt_idivsss opt_imodsss
 
 DEFINE_INSN
 opt_idivvvv opt_imodvvv
-(lindex_t res, lindex_t op1, lindex_t op2, lindex_t stack_pc)
+(lindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
 {
@@ -1826,7 +1826,7 @@ opt_idivvvv opt_imodvvv
 
 DEFINE_INSN
 opt_idivvvi opt_imodvvi
-(lindex_t res, lindex_t op1, VALUE imm, lindex_t stack_pc)
+(lindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -1839,7 +1839,7 @@ opt_idivvvi opt_imodvvi
 
 DEFINE_INSN
 opt_idivvvs opt_imodvvs
-(lindex_t res, lindex_t op1, lindex_t stack_pc)
+(lindex_t res, lindex_t op1)
 (VALUE v2)
 ()
 {
@@ -1852,7 +1852,7 @@ opt_idivvvs opt_imodvvs
 
 DEFINE_INSN
 opt_idivvsv opt_imodvsv
-(lindex_t res, lindex_t op2, lindex_t stack_pc)
+(lindex_t res, lindex_t op2)
 (VALUE v1)
 ()
 {
@@ -1865,7 +1865,7 @@ opt_idivvsv opt_imodvsv
 
 DEFINE_INSN
 opt_idivvsi opt_imodvsi
-(lindex_t res, VALUE imm, lindex_t stack_pc)
+(lindex_t res, VALUE imm)
 (VALUE v1)
 ()
 {
@@ -1878,7 +1878,7 @@ opt_idivvsi opt_imodvsi
 
 DEFINE_INSN
 opt_idivvss opt_imodvss
-(lindex_t res, lindex_t stack_pc)
+(lindex_t res)
 (VALUE v1, VALUE v2)
 ()
 {
@@ -1895,7 +1895,7 @@ opt_iltsvv opt_igtsvv opt_ilesvv opt_igesvv
 opt_fplussvv opt_fminussvv opt_fmultsvv opt_fdivsvv opt_fmodsvv opt_feqsvv opt_fneqsvv
 opt_fltsvv opt_fgtsvv opt_flesvv opt_fgesvv
 opt_iarefsvv
-(lindex_t op1, lindex_t op2, lindex_t stack_pc)
+(lindex_t op1, lindex_t op2)
 ()
 (VALUE val)
 {
@@ -1909,7 +1909,7 @@ opt_iltsvi opt_igtsvi opt_ilesvi opt_igesvi
 opt_fplussvi opt_fminussvi opt_fmultsvi opt_fdivsvi opt_fmodsvi opt_feqsvi opt_fneqsvi
 opt_fltsvi opt_fgtsvi opt_flesvi opt_fgesvi
 opt_iarefsvi
-(lindex_t op1, VALUE imm, lindex_t stack_pc)
+(lindex_t op1, VALUE imm)
 ()
 (VALUE val)
 {
@@ -1923,7 +1923,7 @@ opt_iltsvs opt_igtsvs opt_ilesvs opt_igesvs
 opt_fplussvs opt_fminussvs opt_fmultsvs opt_fdivsvs opt_fmodsvs opt_feqsvs opt_fneqsvs
 opt_fltsvs opt_fgtsvs opt_flesvs opt_fgesvs
 opt_iarefsvs
-(lindex_t op1, lindex_t stack_pc)
+(lindex_t op1)
 (VALUE v2)
 (VALUE val)
 {
@@ -1937,7 +1937,7 @@ opt_iltssv opt_igtssv opt_ilessv opt_igessv
 opt_fplusssv opt_fminusssv opt_fmultssv opt_fdivssv opt_fmodssv opt_feqssv opt_fneqssv
 opt_fltssv opt_fgtssv opt_flessv opt_fgessv
 opt_iarefssv
-(lindex_t op2, lindex_t stack_pc)
+(lindex_t op2)
 (VALUE v1)
 (VALUE val)
 {
@@ -1951,7 +1951,7 @@ opt_iltssi opt_igtssi opt_ilessi opt_igessi
 opt_fplusssi opt_fminusssi opt_fmultssi opt_fdivssi opt_fmodssi opt_feqssi opt_fneqssi
 opt_fltssi opt_fgtssi opt_flessi opt_fgessi
 opt_iarefssi
-(VALUE imm, lindex_t stack_pc)
+(VALUE imm)
 (VALUE v1)
 (VALUE val)
 {
@@ -1964,7 +1964,7 @@ opt_iltsss opt_igtsss opt_ilesss opt_igesss
 opt_fplussss opt_fminussss opt_fmultsss opt_fdivsss opt_fmodsss opt_feqsss opt_fneqsss
 opt_fltsss opt_fgtsss opt_flesss opt_fgesss
 opt_iarefsss
-(lindex_t stack_pc)
+()
 (VALUE v1, VALUE v2)
 (VALUE val)
 {
@@ -1977,7 +1977,7 @@ opt_iltvvv opt_igtvvv opt_ilevvv opt_igevvv
 opt_fplusvvv opt_fminusvvv opt_fmultvvv opt_fdivvvv opt_fmodvvv opt_feqvvv opt_fneqvvv
 opt_fltvvv opt_fgtvvv opt_flevvv opt_fgevvv
 opt_iarefvvv
-(lindex_t res, lindex_t op1, lindex_t op2, lindex_t stack_pc)
+(lindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
 {
@@ -1992,7 +1992,7 @@ opt_iltvvi opt_igtvvi opt_ilevvi opt_igevvi
 opt_fplusvvi opt_fminusvvi opt_fmultvvi opt_fdivvvi opt_fmodvvi opt_feqvvi opt_fneqvvi
 opt_fltvvi opt_fgtvvi opt_flevvi opt_fgevvi
 opt_iarefvvi
-(lindex_t res, lindex_t op1, VALUE imm, lindex_t stack_pc)
+(lindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
 {
@@ -2006,7 +2006,7 @@ opt_iltvvs opt_igtvvs opt_ilevvs opt_igevvs
 opt_fplusvvs opt_fminusvvs opt_fmultvvs opt_fdivvvs opt_fmodvvs opt_feqvvs opt_fneqvvs
 opt_fltvvs opt_fgtvvs opt_flevvs opt_fgevvs
 opt_iarefvvs
-(lindex_t res, lindex_t op1, lindex_t stack_pc)
+(lindex_t res, lindex_t op1)
 (VALUE v2)
 ()
 {
@@ -2020,7 +2020,7 @@ opt_iltvsv opt_igtvsv opt_ilevsv opt_igevsv
 opt_fplusvsv opt_fminusvsv opt_fmultvsv opt_fdivvsv opt_fmodvsv opt_feqvsv opt_fneqvsv
 opt_fltvsv opt_fgtvsv opt_flevsv opt_fgevsv
 opt_iarefvsv
-(lindex_t res, lindex_t op2, lindex_t stack_pc)
+(lindex_t res, lindex_t op2)
 (VALUE v1)
 ()
 {
@@ -2034,7 +2034,7 @@ opt_iltvsi opt_igtvsi opt_ilevsi opt_igevsi
 opt_fplusvsi opt_fminusvsi opt_fmultvsi opt_fdivvsi opt_fmodvsi opt_feqvsi opt_fneqvsi
 opt_fltvsi opt_fgtvsi opt_flevsi opt_fgevsi
 opt_iarefvsi
-(lindex_t res, VALUE imm, lindex_t stack_pc)
+(lindex_t res, VALUE imm)
 (VALUE v1)
 ()
 {
@@ -2048,7 +2048,7 @@ opt_iltvss opt_igtvss opt_ilevss opt_igevss
 opt_fplusvss opt_fminusvss opt_fmultvss opt_fdivvss opt_fmodvss opt_feqvss opt_fneqvss
 opt_fltvss opt_fgtvss opt_flevss opt_fgevss
 opt_iarefvss
-(lindex_t res, lindex_t stack_pc)
+(lindex_t res)
 (VALUE v1, VALUE v2)
 ()
 {
@@ -2058,7 +2058,7 @@ opt_iarefvss
 
 DEFINE_INSN
 opt_iasetsvv
-(lindex_t ind_idx, lindex_t set_idx, lindex_t stack_pc)
+(lindex_t ind_idx, lindex_t set_idx)
 (VALUE arr)
 ()
 {
@@ -2068,7 +2068,7 @@ opt_iasetsvv
 
 DEFINE_INSN
 opt_iasetsiv
-(VALUE ind, lindex_t set_idx, lindex_t stack_pc)
+(VALUE ind, lindex_t set_idx)
 (VALUE arr)
 ()
 {
@@ -2078,7 +2078,7 @@ opt_iasetsiv
 
 DEFINE_INSN
 opt_iasetsvs
-(lindex_t ind_idx, lindex_t stack_pc)
+(lindex_t ind_idx)
 (VALUE arr, VALUE set)
 ()
 {
@@ -2088,7 +2088,7 @@ opt_iasetsvs
 
 DEFINE_INSN
 opt_iasetssv
-(lindex_t set_idx, lindex_t stack_pc)
+(lindex_t set_idx)
 (VALUE arr, VALUE ind)
 ()
 {
@@ -2098,7 +2098,7 @@ opt_iasetssv
 
 DEFINE_INSN
 opt_iasetsis
-(VALUE ind_idx, lindex_t stack_pc)
+(VALUE ind_idx)
 (VALUE arr, VALUE set)
 ()
 {
@@ -2108,7 +2108,7 @@ opt_iasetsis
 
 DEFINE_INSN
 opt_iasetsss
-(lindex_t stack_pc)
+()
 (VALUE arr, VALUE ind, VALUE set)
 ()
 {
@@ -2117,7 +2117,7 @@ opt_iasetsss
 
 DEFINE_INSN
 opt_iasetvvv
-(lindex_t arr_idx, lindex_t ind_idx, lindex_t set_idx, lindex_t stack_pc)
+(lindex_t arr_idx, lindex_t ind_idx, lindex_t set_idx)
 ()
 ()
 {
@@ -2127,7 +2127,7 @@ opt_iasetvvv
 
 DEFINE_INSN
 opt_iasetviv
-(lindex_t arr_idx, VALUE ind, lindex_t set_idx, lindex_t stack_pc)
+(lindex_t arr_idx, VALUE ind, lindex_t set_idx)
 ()
 ()
 {
@@ -2137,7 +2137,7 @@ opt_iasetviv
 
 DEFINE_INSN
 opt_iasetvvs
-(lindex_t arr_idx, lindex_t ind_idx, lindex_t stack_pc)
+(lindex_t arr_idx, lindex_t ind_idx)
 (VALUE set)
 ()
 {
@@ -2147,7 +2147,7 @@ opt_iasetvvs
 
 DEFINE_INSN
 opt_iasetvsv
-(lindex_t arr_idx, lindex_t set_idx, lindex_t stack_pc)
+(lindex_t arr_idx, lindex_t set_idx)
 (VALUE ind)
 ()
 {
@@ -2157,7 +2157,7 @@ opt_iasetvsv
 
 DEFINE_INSN
 opt_iasetvis
-(lindex_t arr_idx, VALUE ind, lindex_t stack_pc)
+(lindex_t arr_idx, VALUE ind)
 (VALUE set)
 ()
 {
@@ -2167,7 +2167,7 @@ opt_iasetvis
 
 DEFINE_INSN
 opt_iasetvss
-(lindex_t arr_idx, lindex_t stack_pc)
+(lindex_t arr_idx)
 (VALUE ind, VALUE set)
 ()
 {
@@ -2178,7 +2178,7 @@ opt_iasetvss
 DEFINE_INSN
 opt_ibeqss opt_ibneqss opt_ibltss opt_ibgtss opt_ibless opt_ibgess
 opt_fbeqss opt_fbneqss opt_fbltss opt_fbgtss opt_fbless opt_fbgess
-(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv)
 (VALUE v1, VALUE v2)
 ()
 /* Same discussion as leave. */
@@ -2198,7 +2198,7 @@ opt_fbeqss opt_fbneqss opt_fbltss opt_fbgtss opt_fbless opt_fbgess
 DEFINE_INSN
 opt_ibeqvv opt_ibneqvv opt_ibltvv opt_ibgtvv opt_iblevv opt_ibgevv
 opt_fbeqvv opt_fbneqvv opt_fbltvv opt_fbgtvv opt_fblevv opt_fbgevv
-(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1, lindex_t op2, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1, lindex_t op2)
 ()
 ()
 /* Same discussion as leave. */
@@ -2219,7 +2219,7 @@ opt_fbeqvv opt_fbneqvv opt_fbltvv opt_fbgtvv opt_fblevv opt_fbgevv
 DEFINE_INSN
 opt_ibeqvi opt_ibneqvi opt_ibltvi opt_ibgtvi opt_iblevi opt_ibgevi
 opt_fbeqvi opt_fbneqvi opt_fbltvi opt_fbgtvi opt_fblevi opt_fbgevi
-(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1, VALUE imm, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1, VALUE imm)
 ()
 ()
 /* Same discussion as leave. */
@@ -2240,7 +2240,7 @@ opt_fbeqvi opt_fbneqvi opt_fbltvi opt_fbgtvi opt_fblevi opt_fbgevi
 DEFINE_INSN
 opt_ibeqvs opt_ibneqvs opt_ibltvs opt_ibgtvs opt_iblevs opt_ibgevs
 opt_fbeqvs opt_fbneqvs opt_fbltvs opt_fbgtvs opt_fblevs opt_fbgevs
-(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op1)
 (VALUE v2)
 ()
 /* Same discussion as leave. */
@@ -2261,7 +2261,7 @@ opt_fbeqvs opt_fbneqvs opt_fbltvs opt_fbgtvs opt_fblevs opt_fbgevs
 DEFINE_INSN
 opt_ibeqsv opt_ibneqsv opt_ibltsv opt_ibgtsv opt_iblesv opt_ibgesv
 opt_fbeqsv opt_fbneqsv opt_fbltsv opt_fbgtsv opt_fblesv opt_fbgesv
-(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op2, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, lindex_t op2)
 (VALUE v1)
 ()
 /* Same discussion as leave. */
@@ -2281,7 +2281,7 @@ opt_fbeqsv opt_fbneqsv opt_fbltsv opt_fbgtsv opt_fblesv opt_fbgesv
 DEFINE_INSN
 opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
 opt_fbeqsi opt_fbneqsi opt_fbltsi opt_fbgtsi opt_fblesi opt_fbgesi
-(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, VALUE imm, lindex_t stack_pc)
+(lindex_t tdst, lindex_t tdst_bbv, lindex_t fdst, lindex_t fdst_bbv, VALUE imm)
 (VALUE v1)
 ()
 /* Same discussion as leave. */

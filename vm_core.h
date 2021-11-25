@@ -360,9 +360,9 @@ struct rb_iseq_bbv {
     /* next bbv in the list with the same (iseq, start).  The list
        head is always bbv with unknown attrs (default bbv) */
     struct rb_iseq_bbv *next_bbv;
-    int bbv_encoded_size;
     VALUE *bbv_encoded; /* NULL if the code is not generated yet */
     int *pos_map;/* bbv pos(index) to original pos, NULL when bbv_encoded==NULL */
+    VALUE *iseq_encoded; /* for faster access */
     int n_attrs; /* length of the next array */
     /* map local var/stack slot -> attr, the last elem has always not
      * unknown value, assume unknown attr for vars/temps beyond

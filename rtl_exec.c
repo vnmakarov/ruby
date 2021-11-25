@@ -206,23 +206,32 @@ RTL_BR_FUNCS(vm_opt_fbgt, vm_opt_fgt)
 RTL_BR_FUNCS(vm_opt_fble, vm_opt_fle)
 RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
 
-#define RTL_EXEC_INSN3(iname, push_fname, v1, v2, v3)	\
-    if (RTL_FUNC_NAME(iname)(v1, v2, v3) == Qundef) {   \
-        ABS_JUMP(stack_pc);				\
-        push_fname(GET_CFP(), v1, v2, v3);		\
-        END_INSN(iname);				\
+static do_inline const VALUE *
+get_stack_pc(rb_control_frame_t *cfp, const VALUE *pc) {
+    const struct rb_iseq_bbv *bbv = cfp->curr_bbv;
+    int pos = pc - bbv->bbv_encoded;
+    int stack_pos = bbv->pos_map[pos];
+    RTL_EXEC_ASSERT(cfp->pc == pc);
+    return bbv->iseq_encoded + stack_pos;
+}
+
+#define RTL_EXEC_INSN3(iname, push_fname, v1, v2, v3)		\
+    if (RTL_FUNC_NAME(iname)(v1, v2, v3) == Qundef) {   	\
+        ABS_JUMP(get_stack_pc(GET_CFP(), reg_pc));		\
+        push_fname(GET_CFP(), v1, v2, v3);			\
+        END_INSN(iname);					\
     }
 
-#define CHECK_FIXNUM(iname, push_fname, res, v1, v2)    \
-    if (!FIXNUM_P(res)) {      				\
-        ABS_JUMP(stack_pc);				\
-        push_fname(GET_CFP(), v1, v2);			\
-        END_INSN(iname);				\
+#define CHECK_FIXNUM(iname, push_fname, res, v1, v2)    	\
+    if (!FIXNUM_P(res)) {      					\
+        ABS_JUMP(get_stack_pc(GET_CFP(), reg_pc));		\
+        push_fname(GET_CFP(), v1, v2);				\
+        END_INSN(iname);					\
     }
 
-#define CHECK_ZERO(iname, push_fname, v1, v2)   \
-    if (v2 == LONG2FIX(0)) {			\
-        ABS_JUMP(stack_pc);             	\
-        push_fname(GET_CFP(), v1, v2);		\
-        END_INSN(iname); 			\
+#define CHECK_ZERO(iname, push_fname, v1, v2)   		\
+    if (v2 == LONG2FIX(0)) {					\
+        ABS_JUMP(get_stack_pc(GET_CFP(), reg_pc));   		\
+        push_fname(GET_CFP(), v1, v2);				\
+        END_INSN(iname); 					\
     }
