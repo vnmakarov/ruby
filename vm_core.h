@@ -356,13 +356,11 @@ enum rb_attr_val {
 
 struct rb_iseq_bbv {
     /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch or leave */
-    int start, bound;
+    int iseq_start, iseq_bound;
     /* next bbv in the list with the same (iseq, start).  The list
        head is always bbv with unknown attrs (default bbv) */
     struct rb_iseq_bbv *next_bbv;
-    VALUE *bbv_encoded; /* NULL if the code is not generated yet */
-    int *pos_map;/* bbv pos(index) to original pos, NULL when bbv_encoded==NULL */
-    VALUE *iseq_encoded; /* for faster access */
+    int bbv_start; /* start pos in bbv_code */
     int n_attrs; /* length of the next array */
     /* map local var/stack slot -> attr, the last elem has always not
      * unknown value, assume unknown attr for vars/temps beyond
@@ -387,8 +385,13 @@ struct rb_iseq_constant_body {
 
     unsigned int iseq_size;
     VALUE *iseq_encoded; /* encoded iseq (insn addr and operands) */
+
+    /* The following are use for RTL BBV interpretation: */
     int n_bbvs;
     struct rb_iseq_bbv **bbvs; /* array of pointers to default BB versions sorted by start */
+    int bbv_code_bound, bbv_code_free;
+    VALUE *bbv_code; /* container for RTL BBV insns, can be reallocated */
+    int *bbv_pos_map; /* array of bbv_code_bound: bbv pos(index) to original pos */
 
     /**
      * parameter information
@@ -866,18 +869,11 @@ typedef struct rb_control_frame_struct {
 } rb_control_frame_t;
 
 static inline const VALUE *
-rb_rtl_get_stack_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
-    const struct rb_iseq_bbv *bbv = cfp->curr_bbv;
-    int pos = pc - bbv->bbv_encoded;
-    int stack_pos = bbv->pos_map[pos];
-    VM_ASSERT(cfp->pc == pc);
-    return bbv->iseq_encoded + stack_pos;
-}
-
-static inline const VALUE *
 rb_iseq_pc (const rb_control_frame_t *cfp) {
-    if (cfp->curr_bbv == NULL) return cfp->pc;
-    return rb_rtl_get_stack_pc(cfp, cfp->pc);
+    const VALUE *pc = cfp->pc;
+    const struct rb_iseq_constant_body *body = cfp->iseq->body;
+    if (body->bbv_code > pc || pc >= body->bbv_code + body->bbv_code_bound) return pc;
+    return body->iseq_encoded + body->bbv_pos_map[pc - body->bbv_code];
 }
 
 extern const rb_data_type_t ruby_threadptr_data_type;

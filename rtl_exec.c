@@ -237,8 +237,17 @@ RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
         END_INSN(iname); 					\
     }
 
-static inline void
+static rtl_inline void
 check_bbv_dst (struct rb_iseq_bbv *dst_bbv, VALUE *dst) {
     RTL_EXEC_ASSERT(dst_bbv->bbv_encoded == NULL || dst_bbv->bbv_encoded == dst
                     || *dst == (VALUE)rb_vm_get_insns_address_table()[BIN(gen_rtl_bbv)]);
+}
+
+static rtl_inline const VALUE *
+rb_rtl_get_stack_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
+    const struct rb_iseq_constant_body *body = cfp->iseq->body;
+    VM_ASSERT(cfp->pc == pc && body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_size);
+    int pos = pc - body->bbv_code;
+    int stack_pos = body->bbv_pos_map[pos];
+    return body->iseq_encoded + stack_pos;
 }

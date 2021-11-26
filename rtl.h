@@ -33,8 +33,8 @@ void rb_rtl_init(struct rb_rtl_options *options);
 int rb_rtl_gen_init(void);
 void rb_rtl_gen_finish(void);
 void rb_rtl_create_default_bbvs(rb_iseq_t *iseq);
-VALUE rb_rtl_make_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv);
-VALUE rb_rtl_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place);
+int rb_rtl_make_bbv(rb_control_frame_t *cfp);
+int rb_rtl_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int branch_offset, int first_p);
 void rb_rtl_iseq_free(struct rb_iseq_constant_body *body);
 
 #endif /* #ifndef RTL_H */
