@@ -860,12 +860,25 @@ typedef struct rb_control_frame_struct {
 #if VM_DEBUG_BP_CHECK
     VALUE *bp_check;		/* cfp[7] */
 #endif
+    struct rb_iseq_bbv *curr_bbv; /* or NULL for non-rtl code */
     // Return address for YJIT code
-    union {
-        struct rb_iseq_bbv *curr_bbv; /* or NULL for non-rtl code */
-        void *jit_return;
-    };
+    void *jit_return;
 } rb_control_frame_t;
+
+static inline const VALUE *
+rb_rtl_get_stack_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
+    const struct rb_iseq_bbv *bbv = cfp->curr_bbv;
+    int pos = pc - bbv->bbv_encoded;
+    int stack_pos = bbv->pos_map[pos];
+    VM_ASSERT(cfp->pc == pc);
+    return bbv->iseq_encoded + stack_pos;
+}
+
+static inline const VALUE *
+rb_iseq_pc (const rb_control_frame_t *cfp) {
+    if (cfp->curr_bbv == NULL) return cfp->pc;
+    return rb_rtl_get_stack_pc(cfp, cfp->pc);
+}
 
 extern const rb_data_type_t ruby_threadptr_data_type;
 

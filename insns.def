@@ -1528,9 +1528,11 @@ branch2
     if (RTEST(val)) {
         ABS_JUMP(tdst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)tdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)tdst_bbv, (VALUE *)tdst);
     } else {
         ABS_JUMP(fdst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)fdst_bbv, (VALUE *)fdst);
     }
 }
 
@@ -1545,6 +1547,7 @@ jump2
     RUBY_VM_CHECK_INTS(ec);
     ABS_JUMP(dst);
     GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)dst_bbv;
+    check_bbv_dst((struct rb_iseq_bbv *)dst_bbv, (VALUE *)dst);
 }
 
 DEFINE_INSN
@@ -1559,9 +1562,11 @@ branchnil2
     if (NIL_P(val)) {
         ABS_JUMP(nil_dst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)nil_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)nil_bbv, (VALUE *)nil_dst);
     } else {
         ABS_JUMP(else_dst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)else_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)else_bbv, (VALUE *)else_dst);
     }
 }
 
@@ -1577,12 +1582,14 @@ opt_getinlinecache2
     if (ice && vm_ic_hit_p(ice, GET_EP())) {
         val = ice->value;
         ABS_JUMP(dst);
-        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)dst_bbv;
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)dst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)dst_bbv, (VALUE *)dst);
     }
     else {
 	val = Qnil;
         ABS_JUMP(dst2);
-        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)dst2_bbv;
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)dst2_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)dst2_bbv, (VALUE *)dst2);
     }
 }
 
@@ -2188,10 +2195,12 @@ opt_fbeqss opt_fbneqss opt_fbltss opt_fbgtss opt_fbless opt_fbgess
     RUBY_VM_CHECK_INTS(ec);
     if (RTEST(val)) {
         ABS_JUMP(tdst);
-        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)tdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)tdst_bbv, (VALUE *)tdst);
     } else {
         ABS_JUMP(fdst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)fdst_bbv, (VALUE *)fdst);
     }
 }
 
@@ -2209,10 +2218,12 @@ opt_fbeqvv opt_fbneqvv opt_fbltvv opt_fbgtvv opt_fblevv opt_fbgevv
     RUBY_VM_CHECK_INTS(ec);
     if (RTEST(val)) {
         ABS_JUMP(tdst);
-        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)tdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)tdst_bbv, (VALUE *)tdst);
     } else {
         ABS_JUMP(fdst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)fdst_bbv, (VALUE *)fdst);
     }
 }
 
@@ -2230,10 +2241,12 @@ opt_fbeqvi opt_fbneqvi opt_fbltvi opt_fbgtvi opt_fblevi opt_fbgevi
     RUBY_VM_CHECK_INTS(ec);
     if (RTEST(val)) {
         ABS_JUMP(tdst);
-        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)tdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)tdst_bbv, (VALUE *)tdst);
     } else {
         ABS_JUMP(fdst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)fdst_bbv, (VALUE *)fdst);
     }
 }
 
@@ -2251,10 +2264,12 @@ opt_fbeqvs opt_fbneqvs opt_fbltvs opt_fbgtvs opt_fblevs opt_fbgevs
     RUBY_VM_CHECK_INTS(ec);
     if (RTEST(val)) {
         ABS_JUMP(tdst);
-        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)tdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)tdst_bbv, (VALUE *)tdst);
     } else {
         ABS_JUMP(fdst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)fdst_bbv, (VALUE *)fdst);
     }
 }
 
@@ -2271,10 +2286,12 @@ opt_fbeqsv opt_fbneqsv opt_fbltsv opt_fbgtsv opt_fblesv opt_fbgesv
     RUBY_VM_CHECK_INTS(ec);
     if (RTEST(val)) {
         ABS_JUMP(tdst);
-        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)tdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)tdst_bbv, (VALUE *)tdst);
     } else {
         ABS_JUMP(fdst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)fdst_bbv, (VALUE *)fdst);
     }
 }
 
@@ -2291,10 +2308,12 @@ opt_fbeqsi opt_fbneqsi opt_fbltsi opt_fbgtsi opt_fblesi opt_fbgesi
     RUBY_VM_CHECK_INTS(ec);
     if (RTEST(val)) {
         ABS_JUMP(tdst);
-        GET_CFP()->curr_bbv  = (struct rb_iseq_bbv *)tdst_bbv;
+        GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)tdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)tdst_bbv, (VALUE *)tdst);
     } else {
         ABS_JUMP(fdst);
         GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)fdst_bbv;
+	check_bbv_dst((struct rb_iseq_bbv *)fdst_bbv, (VALUE *)fdst);
     }
 }
 
@@ -2307,6 +2326,8 @@ gen_rtl_bbv
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE dst = rb_rtl_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (VALUE *)GET_PC() + origin);
+    GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)bbv;
+    RTL_EXEC_ASSERT(((struct rb_iseq_bbv *)bbv)->bbv_encoded == (VALUE *)dst);
     ABS_JUMP(dst);
 }
 
@@ -2320,6 +2341,7 @@ make_rtl_bbv
     VALUE dst = rb_rtl_make_bbv(GET_CFP(), &dst_bbv);
 
     ABS_JUMP(dst);
-    GET_CFP()->curr_bbv = dst_bbv;
+    GET_CFP()->curr_bbv = (struct rb_iseq_bbv *)dst_bbv;
+    RTL_EXEC_ASSERT(dst_bbv->bbv_encoded == (VALUE*)dst);
     END_INSN(make_rtl_bbv); /* to skip pc increase */
 }

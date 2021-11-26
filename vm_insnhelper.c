@@ -390,11 +390,11 @@ vm_push_frame(rb_execution_context_t *ec,
 #if VM_DEBUG_BP_CHECK
         .bp_check   = sp,
 #endif
-        .jit_return = NULL
+        .curr_bbv = NULL,
+        .jit_return = NULL,
     };
 
     ec->cfp = cfp;
-
     if (VMDEBUG == 2) {
 	SDR();
     }
@@ -1460,7 +1460,7 @@ vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_c
 	    while (escape_cfp < eocfp) {
 		if (escape_cfp->ep == ep) {
 		    const rb_iseq_t *const iseq = escape_cfp->iseq;
-		    const VALUE epc = escape_cfp->pc - iseq->body->iseq_encoded;
+		    const VALUE epc = rb_iseq_pc(escape_cfp) - iseq->body->iseq_encoded;
 		    const struct iseq_catch_table *const ct = iseq->body->catch_table;
 		    unsigned int i;
 
@@ -5470,7 +5470,7 @@ rb_vm_opt_cfunc_p(CALL_CACHE cc, int insn)
 static void
 vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
 {
-    const VALUE *pc = reg_cfp->pc;
+    const VALUE *pc = rb_iseq_pc(reg_cfp);
     rb_event_flag_t enabled_flags = ruby_vm_event_flags & ISEQ_TRACE_EVENTS;
 
     if (enabled_flags == 0 && ruby_vm_event_local_num == 0) {
@@ -5513,7 +5513,7 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
                                   (int)rb_iseq_line_no(iseq, pos),
                                   RSTRING_PTR(rb_iseq_label(iseq)));
             }
-            VM_ASSERT(reg_cfp->pc == pc);
+            VM_ASSERT(rb_iseq_pc(reg_cfp) == pc);
             VM_ASSERT(pc_events != 0);
             VM_ASSERT(enabled_flags & pc_events);
 

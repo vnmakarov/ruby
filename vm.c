@@ -2249,7 +2249,7 @@ vm_exec_handle_exception(rb_execution_context_t *ec, enum ruby_tag_type state,
 	}
 
 	cfp = ec->cfp;
-	epc = cfp->pc - cfp->iseq->body->iseq_encoded;
+	epc = rb_iseq_pc(cfp) - cfp->iseq->body->iseq_encoded;
 
 	escape_cfp = NULL;
 	if (state == TAG_BREAK || state == TAG_RETURN) {
@@ -2330,6 +2330,7 @@ vm_exec_handle_exception(rb_execution_context_t *ec, enum ruby_tag_type state,
 			escape_cfp = THROW_DATA_CATCH_FRAME(err);
 			if (cfp == escape_cfp) {
 			    cfp->pc = cfp->iseq->body->iseq_encoded + entry->cont;
+                            cfp->curr_bbv = NULL;
 			    ec->errinfo = Qnil;
 			    return Qundef;
 			}
@@ -2360,6 +2361,7 @@ vm_exec_handle_exception(rb_execution_context_t *ec, enum ruby_tag_type state,
 		    }
 		    else if (entry->type == type) {
 			cfp->pc = cfp->iseq->body->iseq_encoded + entry->cont;
+                        cfp->curr_bbv = NULL;
 			cfp->sp = vm_base_ptr(cfp) + entry->sp;
 
 			if (state != TAG_REDO) {
@@ -2399,6 +2401,7 @@ vm_exec_handle_exception(rb_execution_context_t *ec, enum ruby_tag_type state,
 	    rb_iseq_check(catch_iseq);
 	    cfp->sp = vm_base_ptr(cfp) + cont_sp;
 	    cfp->pc = cfp->iseq->body->iseq_encoded + cont_pc;
+            cfp->curr_bbv = NULL;
 
 	    /* push block frame */
 	    cfp->sp[0] = (VALUE)err;
@@ -3741,6 +3744,7 @@ Init_VM(void)
         rb_gc_register_mark_object((VALUE)iseq);
 	th->ec->cfp->iseq = iseq;
 	th->ec->cfp->pc = iseq->body->iseq_encoded;
+	th->ec->cfp->curr_bbv = NULL;
 	th->ec->cfp->self = th->top_self;
 
 	VM_ENV_FLAGS_UNSET(th->ec->cfp->ep, VM_FRAME_FLAG_CFRAME);

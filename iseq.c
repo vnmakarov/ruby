@@ -35,6 +35,7 @@
 #include "internal/variable.h"
 #include "iseq.h"
 #include "mjit.h"
+#include "rtl.h"
 #include "ruby/util.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
@@ -111,6 +112,7 @@ rb_iseq_free(const rb_iseq_t *iseq)
 	struct rb_iseq_constant_body *const body = iseq->body;
 	mjit_free_iseq(iseq); /* Notify MJIT */
         rb_yjit_iseq_free(body);
+        rb_rtl_iseq_free(body);
 	ruby_xfree((void *)body->iseq_encoded);
 	ruby_xfree((void *)body->insns_info.body);
 	if (body->insns_info.positions) ruby_xfree((void *)body->insns_info.positions);

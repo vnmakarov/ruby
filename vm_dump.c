@@ -118,7 +118,7 @@ control_frame_dump(const rb_execution_context_t *ec, const rb_control_frame_t *c
 	}
 	else {
             iseq = cfp->iseq;
-	    pc = cfp->pc - iseq->body->iseq_encoded;
+	    pc = rb_iseq_pc(cfp) - iseq->body->iseq_encoded;
 	    iseq_name = RSTRING_PTR(iseq->body->location.label);
 	    line = rb_vm_get_sourceline(cfp);
 	    if (line) {
@@ -366,7 +366,7 @@ rb_vmdebug_debug_print_register(const rb_execution_context_t *ec)
     ptrdiff_t cfpi;
 
     if (VM_FRAME_RUBYFRAME_P(cfp)) {
-	pc = cfp->pc - cfp->iseq->body->iseq_encoded;
+	pc = rb_iseq_pc(cfp) - cfp->iseq->body->iseq_encoded;
     }
 
     if (ep < 0 || (size_t)ep > ec->vm_stack_size) {
@@ -455,7 +455,7 @@ rb_vmdebug_thread_dump_state(VALUE self)
     rb_control_frame_t *cfp = th->ec->cfp;
 
     fprintf(stderr, "Thread state dump:\n");
-    fprintf(stderr, "pc : %p, sp : %p\n", (void *)cfp->pc, (void *)cfp->sp);
+    fprintf(stderr, "pc : %p, iseq pc : %p, sp : %p\n", (void *)cfp->pc, (void *)rb_iseq_pc(cfp), (void *)cfp->sp);
     fprintf(stderr, "cfp: %p, ep : %p\n", (void *)cfp, (void *)cfp->ep);
 
     return Qnil;

@@ -33,10 +33,6 @@ static const int follow_jumps_p = TRUE;
 /* Use nonzero to print debug info abou the generator.  */
 #define RTL_GEN_DEBUG 0
 
-#if RTL_GEN_DEBUG
-static int rtl_gen_debug_p = FALSE;
-#endif
-
 /* Long jump buffer used to finish the generator work in case of a
    failure.  */
 static rb_jmpbuf_t rtl_gen_jump_buf;
@@ -504,8 +500,9 @@ add_insn(int orig_pos, enum ruby_vminsn_type insn_id, int nops, ...) {
     va_start (va, nops);
     start = (int)VARR_LENGTH(VALUE, bbv_encoded);
     VARR_PUSH(VALUE, bbv_encoded, (VALUE)insn_id);
-    for (i = 0; i < nops; i++)
+    for (i = 0; i < nops; i++) {
         VARR_PUSH(VALUE, bbv_encoded, va_arg(va, VALUE));
+    }
     va_end (va);
     update_pos_map(start, orig_pos);
     return start;
@@ -517,10 +514,21 @@ add_insn_arr(int orig_pos, enum ruby_vminsn_type insn_id, int nops, VALUE *opera
 
     start = (int)VARR_LENGTH(VALUE, bbv_encoded);
     VARR_PUSH(VALUE, bbv_encoded, (VALUE)insn_id);
-    for (i = 0; i < nops; i++)
+    for (i = 0; i < nops; i++) {
         VARR_PUSH(VALUE, bbv_encoded, operands[i]);
+    }
     update_pos_map(start, orig_pos);
     return start;
+}
+
+DEF_VARR(char);
+static VARR(char) *labeled_p;
+
+static void
+update_labeled(int pos) {
+    while ((int)VARR_LENGTH(char, labeled_p) <= pos)
+        VARR_PUSH(char, labeled_p, FALSE);
+    VARR_SET(char, labeled_p, pos, TRUE);
 }
 
 static void
@@ -540,7 +548,10 @@ remove_nops(void) {
          curr_ind += len) { /* remove nops */
 	insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, curr_ind);
         len = insn_len(insn_id);
-        if (insn_id == BIN(nop)) continue;
+        if (insn_id == BIN(nop)
+            && (curr_ind >= (int)VARR_LENGTH(char, labeled_p)
+                || !VARR_GET(char, labeled_p, curr_ind)))
+            continue;
         last_rtl_ind = new_curr_ind;
         if (curr_ind == new_curr_ind) {
             new_curr_ind += len;
@@ -558,14 +569,13 @@ remove_nops(void) {
     return last_rtl_ind;
 }
 
-DEF_VARR(char);
 static VARR(char) *attrs;
 
 static void
 compact_attrs(void) {
     int i;
 
-    for (i = (int) VARR_LENGTH(char, attrs) - 1; i >= 0; i--)
+    for (i = (int)VARR_LENGTH(char, attrs) - 1; i >= 0; i--)
         if (VARR_GET(char, attrs, i) != ATTR_UNKNOWN)
             break;
     VARR_TRUNC(char, attrs, i + 1);
@@ -698,12 +708,30 @@ get_op(int op_insn_pos, int *local_p, VALUE *local, VALUE *val) {
     }
 }
 
+static int
+pos_in_catch_table_p(rb_iseq_t *iseq, int pos) {
+    int i;
+    const struct rb_iseq_constant_body *const body = iseq->body;
+
+    if (body->catch_table != NULL) {
+        for (i = 0; i < (int)body->catch_table->size; i++) {
+            const struct iseq_catch_table_entry *entry =
+                UNALIGNED_MEMBER_PTR(body->catch_table, entries[i]);
+            if (pos == (int)entry->start) return TRUE;
+            if (pos == (int)entry->end) return TRUE;
+            if (pos == (int)entry->cont) return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 static void
 gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
     enum ruby_vminsn_type insn_id = BIN(nop), next_insn_id;
     enum ruby_vminsn_type new_insn_id, op_insn_id;
     int i, curr_orig_insn_pos, len, nops, last_rtl_ind, inc, br_p, dest2_p, stack_size;
     int op_insn_pos, op3_insn_pos, op2_insn_pos, local_p, local2_p, local3_p;
+    int debug_p = rb_rtl_debug_p();
     int disp = 0, disp2 = 0; /* for removing uninitialized warning */
     OFFSET dest = 0, dest2 = 0; /* for removing uninitialized warning */
     VALUE val, val2, val3, local, local2, local3, *operands, new_operands[10];
@@ -712,21 +740,24 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
     rb_iseq_bbv_t dest_bbv;
     enum rb_attr_val attr, op2_attr, op3_attr;
 
-    fprintf(stderr, "\nGeneration BBV 0x%llx:", (unsigned long long) bbv);
-    for (i = 0; i < bbv->n_attrs; i++)
-        if (bbv->attrs[i] != ATTR_UNKNOWN)
-            fprintf (stderr, " %d:%s", i, bbv->attrs[i] == ATTR_FIXNUM ? "fix" : "flo");
-    fprintf(stderr, "\n");
-    fprintf(stderr, "Original BB:\n");
-    print_bb(iseq, body->iseq_encoded, bbv->start, bbv->bound);
+    if (debug_p) {
+        fprintf(stderr, "\nGeneration BBV 0x%llx:", (unsigned long long) bbv);
+        for (i = 0; i < bbv->n_attrs; i++)
+            if (bbv->attrs[i] != ATTR_UNKNOWN)
+                fprintf (stderr, " %d:%s", i, bbv->attrs[i] == ATTR_FIXNUM ? "fix" : "flo");
+        fprintf(stderr, "\n");
+        fprintf(stderr, "Original BB:\n");
+        print_bb(iseq, body->iseq_encoded, bbv->start, bbv->bound);
+    }
     RTL_GEN_ASSERT(bbv->bbv_encoded == NULL);
     br_p = dest2_p = FALSE;
     disp = disp2 = dest = dest2 = 0;
     VARR_TRUNC(VALUE, bbv_encoded, 0);
+    VARR_TRUNC(char, labeled_p, 0);
     copy_attrs(bbv->attrs, bbv->n_attrs);
     VARR_TRUNC(int, stack, 0);
     VARR_TRUNC(int, pos_map, 0);
-    while (init_stack_size > (int) VARR_LENGTH(int, stack))
+    while (init_stack_size > (int)VARR_LENGTH(int, stack))
         VARR_PUSH(int, stack, -1); /* stack temp definitions are out of block */
     RTL_GEN_ASSERT(bbv->bound < 0 || bbv->start < bbv->bound);
     for (curr_orig_insn_pos = bbv->start;;) {
@@ -735,8 +766,13 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
         len = insn_len(insn_id);
         operands = &body->iseq_encoded[curr_orig_insn_pos + 1];
         switch (insn_id) {
+        case BIN(nop):
         case BIN(make_rtl_bbv):
-        case BIN(jump2): /* ignore make_rtl_bbv or former make_rtl_bbv */
+        case BIN(jump2): /* nops not labeled by catch table will be removed */
+            if (pos_in_catch_table_p (iseq, curr_orig_insn_pos)) {
+                last_rtl_ind = add_insn(curr_orig_insn_pos, BIN(nop), 0);
+                update_labeled(last_rtl_ind);
+            }
             break;
         case BIN(opt_plus):
         case BIN(opt_minus):
@@ -862,7 +898,7 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             goto stack_update;
         case BIN(branchif):
         case BIN(branchunless):
-            stack_size = (int) VARR_LENGTH(int, stack);
+            stack_size = (int)VARR_LENGTH(int, stack);
             if (stack_size == 0 || (op_insn_pos = VARR_LAST(int, stack)) < 0) {
                 add_insn(curr_orig_insn_pos, BIN(branch2), 4, (VALUE)0, (VALUE)0, (VALUE)0, (VALUE)0);
             } else {
@@ -1045,10 +1081,12 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
         }
     }
     bbv_encode(bbv->bbv_encoded, len);
-    fprintf(stderr, "Specialized BBV (code addr=0x%llx):\n",
-            (unsigned long long) bbv->bbv_encoded);
-    print_bb(iseq, bbv->bbv_encoded, 0, len);
-    print_pos_map();
+    if (debug_p) {
+        fprintf(stderr, "Specialized BBV (code addr=0x%llx):\n",
+                (unsigned long long) bbv->bbv_encoded);
+        print_bb(iseq, bbv->bbv_encoded, 0, len);
+        print_pos_map();
+    }
 }
 
 VALUE
@@ -1061,7 +1099,7 @@ rb_rtl_make_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv) {
     pc[0] = (VALUE)dispatch_table[BIN(jump2)];
     pc[1] = (VALUE)bbv->bbv_encoded;
     pc[2] = (VALUE)bbv;
-    *dst_bbv == bbv;
+    *dst_bbv = bbv;
     return pc[1];
 }
 
@@ -1072,18 +1110,33 @@ rb_rtl_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_pl
     return (VALUE)bbv->bbv_encoded;
 }
 
+void
+rb_rtl_iseq_free(struct rb_iseq_constant_body *body) {
+    struct rb_iseq_bbv *bbv, *curr_bbv, *next_bbv;
+    int i;
+
+    for (i = 0; i < body->n_bbvs; i++) {
+        bbv = body->bbvs[i];
+        for (curr_bbv = bbv; curr_bbv != NULL; curr_bbv = next_bbv) {
+            next_bbv = curr_bbv->next_bbv;
+            ruby_xfree((void *)curr_bbv->bbv_encoded);
+            ruby_xfree((void *)curr_bbv->pos_map);
+            ruby_xfree((void *)curr_bbv);
+        }
+    }
+    ruby_xfree((void *)body->bbvs);
+}
+
 /* Initiate stack insns to RTL generator.  Return FALSE if we failed
    to do this.  */
 int
 rb_rtl_gen_init(void) {
-#if RTL_GEN_DEBUG
-    rtl_gen_debug_p = getenv("MRI_RTL_GEN_DEBUG") != NULL;
-#endif
     if (RUBY_SETJMP(rtl_gen_jump_buf) != 0)
 	return FALSE;
     dispatch_table = rb_vm_get_insns_address_table();
     VARR_CREATE(int, stack, 0);
     VARR_CREATE(char, attrs, 0);
+    VARR_CREATE(char, labeled_p, 0);
     VARR_CREATE(int, pos_map, 0);
     VARR_CREATE(VALUE, bbv_encoded, 0);
     VARR_CREATE(rb_iseq_bbv_t, bbvs, 0);
@@ -1095,6 +1148,7 @@ void
 rb_rtl_gen_finish(void) {
     VARR_DESTROY(int, stack);
     VARR_DESTROY(char, attrs);
+    VARR_DESTROY(char, labeled_p);
     VARR_DESTROY(int, pos_map);
     VARR_DESTROY(VALUE, bbv_encoded);
     VARR_DESTROY(rb_iseq_bbv_t, bbvs);
