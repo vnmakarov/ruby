@@ -863,7 +863,6 @@ typedef struct rb_control_frame_struct {
 #if VM_DEBUG_BP_CHECK
     VALUE *bp_check;		/* cfp[7] */
 #endif
-    struct rb_iseq_bbv *curr_bbv; /* or NULL for non-rtl code */
     // Return address for YJIT code
     void *jit_return;
 } rb_control_frame_t;

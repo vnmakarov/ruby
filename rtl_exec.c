@@ -217,7 +217,6 @@ RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
     if (RTL_FUNC_NAME(iname)(v1, v2, v3) == Qundef) {   	\
         ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
         push_fname(GET_CFP(), v1, v2, v3);			\
-        GET_CFP()->curr_bbv = NULL;				\
         END_INSN(iname);					\
     }
 
@@ -225,7 +224,6 @@ RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
     if (!FIXNUM_P(res)) {      					\
         ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
         push_fname(GET_CFP(), v1, v2);				\
-        GET_CFP()->curr_bbv = NULL;				\
         END_INSN(iname);                                \
     }
 
@@ -233,15 +231,8 @@ RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
     if (v2 == LONG2FIX(0)) {					\
         ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
         push_fname(GET_CFP(), v1, v2);				\
-        GET_CFP()->curr_bbv = NULL;				\
         END_INSN(iname); 					\
     }
-
-static rtl_inline void
-check_bbv_dst (struct rb_iseq_bbv *dst_bbv, VALUE *dst) {
-    RTL_EXEC_ASSERT(dst_bbv->bbv_encoded == NULL || dst_bbv->bbv_encoded == dst
-                    || *dst == (VALUE)rb_vm_get_insns_address_table()[BIN(gen_rtl_bbv)]);
-}
 
 static rtl_inline const VALUE *
 rb_rtl_get_stack_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
