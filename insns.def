@@ -2099,11 +2099,10 @@ opt_iasetssv
 
 DEFINE_INSN
 opt_iasetsis
-(VALUE ind_idx)
+(VALUE ind)
 (VALUE arr, VALUE set)
 ()
 {
-    VALUE ind = *(GET_EP() - ind_idx);
     RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushsis, arr, ind, set);
 }
 
