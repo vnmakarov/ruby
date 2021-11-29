@@ -50,6 +50,8 @@
          not introduce new stack frame on top of it.
          If an instruction handles sp, that can never be a leaf.
 
+       * retn: Used to dynamically calculate how many top stack values are defined by insn
+
    - Attributes can access operands, but not stack (push/pop) variables.
 
    - An instruction's body is a pure C block, copied verbatimly into
@@ -489,6 +491,7 @@ expandarray
 (...)
 // attr bool leaf = false; /* has rb_check_array_type() */
 // attr rb_snum_t sp_inc = (rb_snum_t)num - 1 + (flag & 1 ? 1 : 0);
+// attr rb_snum_t retn = (rb_snum_t)num + (flag & 1 ? 1 : 0);
 {
     vm_expandarray(GET_SP(), ary, num, (int)flag);
 }
@@ -579,6 +582,7 @@ dupn
 (...)
 (...)
 // attr rb_snum_t sp_inc = n;
+// attr rb_snum_t retn = n;
 {
     void *dst = GET_SP();
     void *src = STACK_ADDR_FROM_TOP(n);

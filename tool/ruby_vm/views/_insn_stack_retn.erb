@@ -1,0 +1,45 @@
+%# -*- C -*-
+%# Copyright (c) 2017 Urabe, Shyouhei.  All rights reserved.
+%#
+%# This file is a part of  the programming language Ruby.  Permission is hereby
+%# granted, to either  redistribute and/or modify this file,  provided that the
+%# conditions mentioned  in the  file COPYING  are met.   Consult the  file for
+%# details.
+%#
+PUREFUNC(MAYBE_UNUSED(static rb_snum_t insn_stack_retn(enum ruby_vminsn_type insn, const VALUE *opes)));
+
+rb_snum_t
+insn_stack_retn(enum ruby_vminsn_type insn, const VALUE *opes)
+{
+    static const signed char t[] = {
+% RubyVM::Instructions.each_slice 8 do |a|
+        <%= a.map { |i|
+          if i.has_attribute?('retn')
+            '-127'
+          else
+            sprintf("%4d", i.rets.size)
+          end
+        }.join(', ') -%>,
+% end
+    };
+    signed char c = t[insn];
+
+    ASSERT_VM_INSTRUCTION_SIZE(t);
+    if (c != -127) {
+        return c;
+    }
+    else switch(insn) {
+    default:
+        UNREACHABLE;
+% RubyVM::Instructions.each do |i|
+%   next unless i.has_attribute?('retn')
+%   attr_function = "attr_retn_#{i.name}"
+    case <%= i.bin %>:
+        return <%= attr_function %>(<%=
+          i.opes.map.with_index do |v, j|
+            "(" + v[:type] + ")opes[#{j}]"
+          end.join(", ")
+        %>);
+% end
+    }
+}
