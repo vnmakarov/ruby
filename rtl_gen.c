@@ -726,11 +726,24 @@ pos_in_catch_table_p(rb_iseq_t *iseq, int pos) {
 static int
 get_bbv_code_space(rb_iseq_t *iseq, int len) {
     struct rb_iseq_constant_body *body = iseq->body;
-    int bbv_start = body->bbv_code_free;
+    const rb_execution_context_t *ec;
+    rb_control_frame_t *cfp;
+    VALUE *old_bbv_code;
+    int add_len, bbv_start = body->bbv_code_free;
+
     if (bbv_start + len > body->bbv_code_bound) {
-        body->bbv_code_bound = (bbv_start + len) * 3 / 2;
+        add_len = body->bbv_code == NULL ? (int)body->iseq_size : len;
+        body->bbv_code_bound = (bbv_start + add_len) * 3 / 2;
+        old_bbv_code = body->bbv_code;
         RB_REALLOC_N(body->bbv_code, VALUE, body->bbv_code_bound);
         RB_REALLOC_N(body->bbv_pos_map, int, body->bbv_code_bound);
+        if (old_bbv_code != NULL && body->bbv_code != old_bbv_code) {
+            ec = GET_EC();
+            for (cfp = ec->cfp + 1; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
+                if (cfp->iseq == iseq)
+                    cfp->pc += body->bbv_code - old_bbv_code;
+            }
+        }
     }
     body->bbv_code_free += len;
     return bbv_start;
@@ -746,7 +759,7 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
     int disp = 0, disp2 = 0; /* for removing uninitialized warning */
     OFFSET dest = 0, dest2 = 0; /* for removing uninitialized warning */
     VALUE val, val2, val3, local, local2, local3, *operands, new_operands[10];
-    int offset, offset2, dest_bbv_start, dest_bbv_start2 = -1; /* to remove false warning */
+    int offset, offset2, dest_bbv_start = -1, dest_bbv_start2 = -1; /* to remove false warning */
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t dest_bbv;
     enum rb_attr_val attr, op2_attr, op3_attr;
