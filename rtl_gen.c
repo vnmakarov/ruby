@@ -811,7 +811,8 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             stack_size = VARR_LENGTH(int, stack);
             n = (int) operands[0];
             RTL_GEN_ASSERT(stack_size > n);
-            VARR_SET(int, stack, stack_size - n - 1, -1); /* flag of unknown insn */
+            for (i = 0; i <= n; i++) /* we can not use stack above n w/o change setn arg */
+                VARR_SET(int, stack, stack_size - i - 1, -1); /* flag of unknown insn */
             setup_attr(get_temp_num(iseq, stack_size - n - 1), ATTR_UNKNOWN);
             add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
             break;
