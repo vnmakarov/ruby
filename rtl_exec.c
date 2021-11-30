@@ -35,19 +35,35 @@
 #define RTL_CONCAT(a, b) a ## b
 #define RTL_FUNC_NAME(insn_name) RTL_CONCAT(vm_, insn_name)
 
-#define RTL_FUNCS(iname)                                           \
-    static rtl_inline VALUE RTL_CONCAT(iname, svv)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, svi)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, svs)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, ssv)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, ssi)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, sss)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+#define RTL_FUNCS2(iname, fname)			                                        \
+    static rtl_inline VALUE RTL_CONCAT(iname, svv)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE RTL_CONCAT(iname, svi)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE RTL_CONCAT(iname, svs)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE RTL_CONCAT(iname, ssv)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE RTL_CONCAT(iname, ssi)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+
+RTL_FUNCS2(vm_opt_plus, vm_opt_plus)
+RTL_FUNCS2(vm_opt_minus, vm_opt_minus)
+RTL_FUNCS2(vm_opt_mult, vm_opt_mult)
+RTL_FUNCS2(vm_opt_div, vm_opt_div)
+RTL_FUNCS2(vm_opt_mod, vm_opt_mod)
+RTL_FUNCS2(vm_opt_or, vm_opt_or)
+RTL_FUNCS2(vm_opt_and, vm_opt_and)
+RTL_FUNCS2(vm_opt_lt, vm_opt_lt)
+RTL_FUNCS2(vm_opt_gt, vm_opt_gt)
+RTL_FUNCS2(vm_opt_le, vm_opt_le)
+RTL_FUNCS2(vm_opt_ge, vm_opt_ge)
+RTL_FUNCS2(vm_opt_aref, vm_opt_aref)
+
+#define RTL_FUNCS(iname) RTL_FUNCS2(iname, iname) \
     static rtl_inline VALUE RTL_CONCAT(iname, vvv)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
     static rtl_inline VALUE RTL_CONCAT(iname, vvi)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
     static rtl_inline VALUE RTL_CONCAT(iname, vvs)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
     static rtl_inline VALUE RTL_CONCAT(iname, vsv)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
     static rtl_inline VALUE RTL_CONCAT(iname, vsi)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vss)(VALUE v1, VALUE v2) { return iname(v1, v2); }
+    static rtl_inline VALUE RTL_CONCAT(iname, vss)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+    static rtl_inline VALUE RTL_CONCAT(iname, sss)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+
 
 static rtl_inline void RTL_CONCAT(push, vv)(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {
     INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;
@@ -118,14 +134,6 @@ static rtl_inline void RTL_CONCAT(push, vss)(rb_control_frame_t *reg_cfp, VALUE 
     static rtl_inline VALUE RTL_CONCAT(iname, vis)(VALUE v0, VALUE v1, VALUE v2) { return iname(v0, v1, v2); }\
     static rtl_inline VALUE RTL_CONCAT(iname, vss)(VALUE v0, VALUE v1, VALUE v2) { return iname(v0, v1, v2); }
 
-#define RTL_BR_FUNCS(iname, func_name)                              \
-    static rtl_inline VALUE RTL_CONCAT(iname, ss)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vv)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vi)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vs)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, sv)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, si)(VALUE v1, VALUE v2) { return func_name(v1, v2); }
-
 static rtl_inline VALUE vm_opt_iplus(VALUE v1, VALUE v2) { return rb_fix_plus_fix(v1, v2); }
 static rtl_inline VALUE vm_opt_iminus(VALUE v1, VALUE v2) { return rb_fix_minus_fix(v1, v2); }
 static rtl_inline VALUE vm_opt_imult(VALUE v1, VALUE v2) { return rb_fix_mul_fix(v1, v2); }
@@ -190,6 +198,8 @@ static rtl_inline VALUE vm_opt_iaset(VALUE arr, VALUE ind, VALUE set) {
     return set;
 }
 RTL_FUNCS3(vm_opt_iaset)
+
+RTL_FUNCS3(vm_opt_aset)
 
 #define RTL_BR_FUNCS(iname, func_name)                              \
     static rtl_inline VALUE RTL_CONCAT(iname, ss)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\

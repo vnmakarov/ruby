@@ -1606,6 +1606,7 @@ movi
     vm_env_write(GET_EP(), -(int)res, imm);
 }
 
+/* --- Specialized RTL insns: --- */
 DEFINE_INSN
 opt_iplussvv opt_iminussvv opt_imultsvv
 (lindex_t op1, lindex_t op2)
@@ -2261,6 +2262,375 @@ opt_fbeqsi opt_fbneqsi opt_fbltsi opt_fbgtsi opt_fblesi opt_fbgesi
     RUBY_VM_CHECK_INTS(ec);
     JUMP(RTEST(val) ? tdst : fdst);
 }
+/* --- end of specialized RTL insns --- */
+
+/* --- general RTL insns: --- */
+DEFINE_INSN
+opt_plussvv opt_minussvv opt_multsvv opt_divsvv opt_modsvv opt_orsvv opt_andsvv
+opt_ltsvv opt_gtsvv opt_lesvv opt_gesvv opt_arefsvv
+(lindex_t op1, lindex_t op2, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    if (val == Qundef) {
+        pushvv(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_plussvi opt_minussvi opt_multsvi opt_divsvi opt_modsvi opt_orsvi opt_andsvi
+opt_ltsvi opt_gtsvi opt_lesvi opt_gesvi opt_arefsvi
+(lindex_t op1, VALUE imm, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    if (val == Qundef) {
+        pushvi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_plussvs opt_minussvs opt_multsvs opt_divsvs opt_modsvs opt_orsvs opt_andsvs
+opt_ltsvs opt_gtsvs opt_lesvs opt_gesvs opt_arefsvs
+(lindex_t op1, CALL_DATA cd)
+(VALUE v2)
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    if (val == Qundef) {
+        pushvs(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_plusssv opt_minusssv opt_multssv opt_divssv opt_modssv opt_orssv opt_andssv
+opt_ltssv opt_gtssv opt_lessv opt_gessv opt_arefssv
+(lindex_t op2, CALL_DATA cd)
+(VALUE v1)
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    if (val == Qundef) {
+        pushsv(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_plusssi opt_minusssi opt_multssi opt_divssi opt_modssi opt_orssi opt_andssi
+opt_ltssi opt_gtssi opt_lessi opt_gessi opt_arefssi
+(VALUE imm, CALL_DATA cd)
+(VALUE v1)
+(VALUE val)
+{
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    if (val == Qundef) {
+        pushsi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_eqsvv
+(lindex_t op1, lindex_t op2, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    val = opt_equality(GET_ISEQ(), v1, v2, cd);
+    if (val == Qundef) {
+        pushvv(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_eqsvi
+(lindex_t op1, VALUE imm, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    val = opt_equality(GET_ISEQ(), v1, imm, cd);
+    if (val == Qundef) {
+        pushvi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_eqsvs
+(lindex_t op1, CALL_DATA cd)
+(VALUE v2)
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    val = opt_equality(GET_ISEQ(), v1, v2, cd);
+    if (val == Qundef) {
+        pushvs(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_eqssv
+(lindex_t op2, CALL_DATA cd)
+(VALUE v1)
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    val = opt_equality(GET_ISEQ(), v1, v2, cd);
+    if (val == Qundef) {
+        pushsv(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_eqssi
+(VALUE imm, CALL_DATA cd)
+(VALUE v1)
+(VALUE val)
+{
+    val = opt_equality(GET_ISEQ(), v1, imm, cd);
+    if (val == Qundef) {
+        pushsi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_neqsvv
+(lindex_t op1, lindex_t op2, CALL_DATA cd_eq, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, v2);
+    if (val == Qundef) {
+        pushvv(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_neqsvi
+(lindex_t op1, VALUE imm, CALL_DATA cd_eq, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, imm);
+    if (val == Qundef) {
+        pushvi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_neqsvs
+(lindex_t op1, CALL_DATA cd_eq, CALL_DATA cd)
+(VALUE v2)
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, v2);
+    if (val == Qundef) {
+        pushvs(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_neqssv
+(lindex_t op2, CALL_DATA cd_eq, CALL_DATA cd)
+(VALUE v1)
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, v2);
+    if (val == Qundef) {
+        pushsv(reg_cfp, v1, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_neqssi
+(VALUE imm, CALL_DATA cd_eq, CALL_DATA cd)
+(VALUE v1)
+(VALUE val)
+{
+    val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, imm);
+    if (val == Qundef) {
+        pushsi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetsvv
+(lindex_t ind_idx, lindex_t set_idx, CALL_DATA cd)
+(VALUE arr)
+()
+{
+    VALUE ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushsvv(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetsiv
+(VALUE ind, lindex_t set_idx, CALL_DATA cd)
+(VALUE arr)
+()
+{
+    VALUE set = *(GET_EP() - set_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushsiv(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetsvs
+(lindex_t ind_idx, CALL_DATA cd)
+(VALUE arr, VALUE set)
+()
+{
+    VALUE ind = *(GET_EP() - ind_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushsvs(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetssv
+(lindex_t set_idx, CALL_DATA cd)
+(VALUE arr, VALUE ind)
+()
+{
+    VALUE set = *(GET_EP() - set_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushssv(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetsis
+(VALUE ind, CALL_DATA cd)
+(VALUE arr, VALUE set)
+()
+{
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushsis(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetvvv
+(lindex_t arr_idx, lindex_t ind_idx, lindex_t set_idx, CALL_DATA cd)
+()
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushvvv(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetviv
+(lindex_t arr_idx, VALUE ind, lindex_t set_idx, CALL_DATA cd)
+()
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushviv(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetvvs
+(lindex_t arr_idx, lindex_t ind_idx, CALL_DATA cd)
+(VALUE set)
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushvvs(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetvsv
+(lindex_t arr_idx, lindex_t set_idx, CALL_DATA cd)
+(VALUE ind)
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushvsv(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetvis
+(lindex_t arr_idx, VALUE ind, CALL_DATA cd)
+(VALUE set)
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushvis(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_asetvss
+(lindex_t arr_idx, CALL_DATA cd)
+(VALUE ind, VALUE set)
+()
+{
+    VALUE arr = *(GET_EP() - arr_idx);
+    VALUE val = vm_opt_aset(arr, ind, set);
+    if (val == Qundef) {
+        pushvss(reg_cfp, arr, ind, set);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+/* --- end of general RTL insns --- */
 
 DEFINE_INSN
 gen_rtl_bbv
