@@ -177,7 +177,7 @@ static VARR(int) *stack;
 
 #define CONCAT(a, b) a ## b
 static enum ruby_vminsn_type
-get_rtl_insn2_id(enum ruby_vminsn_type id, int local2_p, int local3_p, VALUE val3, int fix_p) {
+get_rtl_insn2_id(enum ruby_vminsn_type id, int local2_p, int local3_p, VALUE val3, int attr) {
 #define RTL_INSN_ID_CASE(insn_name, fname)				\
     case insn_name:							\
         if (local2_p && local3_p) return CONCAT(fname, svv);		\
@@ -189,7 +189,7 @@ get_rtl_insn2_id(enum ruby_vminsn_type id, int local2_p, int local3_p, VALUE val
         if (val3 != Qnil) return CONCAT(fname, ssi);			\
         return BIN(nop);
 
-    if (fix_p) {
+    if (attr == ATTR_FIXNUM) {
         switch (id) {
         RTL_INSN_ID_CASE(BIN(opt_plus), BIN(opt_iplus))
         RTL_INSN_ID_CASE(BIN(opt_minus), BIN(opt_iminus))
@@ -207,31 +207,47 @@ get_rtl_insn2_id(enum ruby_vminsn_type id, int local2_p, int local3_p, VALUE val
         RTL_INSN_ID_CASE(BIN(opt_aref), BIN(opt_iaref))
         default: return BIN(nop);
         }
-    }
-    switch (id) {
-    RTL_INSN_ID_CASE(BIN(opt_plus), BIN(opt_fplus))
-    RTL_INSN_ID_CASE(BIN(opt_minus), BIN(opt_fminus))
-    RTL_INSN_ID_CASE(BIN(opt_mult), BIN(opt_fmult))
-    RTL_INSN_ID_CASE(BIN(opt_div), BIN(opt_fdiv))
-    RTL_INSN_ID_CASE(BIN(opt_mod), BIN(opt_fmod))
-    RTL_INSN_ID_CASE(BIN(opt_eq), BIN(opt_feq))
-    RTL_INSN_ID_CASE(BIN(opt_neq), BIN(opt_fneq))
-    RTL_INSN_ID_CASE(BIN(opt_lt), BIN(opt_flt))
-    RTL_INSN_ID_CASE(BIN(opt_gt), BIN(opt_fgt))
-    RTL_INSN_ID_CASE(BIN(opt_le), BIN(opt_fle))
-    RTL_INSN_ID_CASE(BIN(opt_ge), BIN(opt_fge))
-    default: return BIN(nop);
+    } else if (attr == ATTR_FLONUM) {
+        switch (id) {
+        RTL_INSN_ID_CASE(BIN(opt_plus), BIN(opt_fplus))
+        RTL_INSN_ID_CASE(BIN(opt_minus), BIN(opt_fminus))
+        RTL_INSN_ID_CASE(BIN(opt_mult), BIN(opt_fmult))
+        RTL_INSN_ID_CASE(BIN(opt_div), BIN(opt_fdiv))
+        RTL_INSN_ID_CASE(BIN(opt_mod), BIN(opt_fmod))
+        RTL_INSN_ID_CASE(BIN(opt_eq), BIN(opt_feq))
+        RTL_INSN_ID_CASE(BIN(opt_neq), BIN(opt_fneq))
+        RTL_INSN_ID_CASE(BIN(opt_lt), BIN(opt_flt))
+        RTL_INSN_ID_CASE(BIN(opt_gt), BIN(opt_fgt))
+        RTL_INSN_ID_CASE(BIN(opt_le), BIN(opt_fle))
+        RTL_INSN_ID_CASE(BIN(opt_ge), BIN(opt_fge))
+        default: return BIN(nop);
+        }
+    } else {
+        switch (id) {
+        RTL_INSN_ID_CASE(BIN(opt_plus), BIN(opt_plus))
+        RTL_INSN_ID_CASE(BIN(opt_minus), BIN(opt_minus))
+        RTL_INSN_ID_CASE(BIN(opt_mult), BIN(opt_mult))
+        RTL_INSN_ID_CASE(BIN(opt_div), BIN(opt_div))
+        RTL_INSN_ID_CASE(BIN(opt_mod), BIN(opt_mod))
+        RTL_INSN_ID_CASE(BIN(opt_eq), BIN(opt_eq))
+        RTL_INSN_ID_CASE(BIN(opt_neq), BIN(opt_neq))
+        RTL_INSN_ID_CASE(BIN(opt_lt), BIN(opt_lt))
+        RTL_INSN_ID_CASE(BIN(opt_gt), BIN(opt_gt))
+        RTL_INSN_ID_CASE(BIN(opt_le), BIN(opt_le))
+        RTL_INSN_ID_CASE(BIN(opt_ge), BIN(opt_ge))
+        default: return BIN(nop);
+        }
     }
 }
 
 static enum ruby_vminsn_type
-get_rtl_insn3_id(enum ruby_vminsn_type id, int local_p, int local2_p, int local3_p, VALUE val2, int fix_p) {
+get_rtl_insn3_id(enum ruby_vminsn_type id, int local_p, int local2_p, int local3_p, VALUE val2, int op_attr) {
 #define RTL_INSN3_ID_CASE(insn_name, fname)				\
     case insn_name:							\
     if (local_p) {							\
       if (local2_p && local3_p) return CONCAT(fname, vvv);              \
       if (local3_p) {							\
-        if (val2 != Qnil) return CONCAT(fname, vsv);                    \
+        if (val2 == Qnil) return CONCAT(fname, vsv);                    \
         return CONCAT(fname, viv);					\
       }                                                                 \
       if (local2_p) return CONCAT(fname, vvs);                          \
@@ -239,7 +255,7 @@ get_rtl_insn3_id(enum ruby_vminsn_type id, int local_p, int local2_p, int local3
     } else {								\
       if (local2_p && local3_p) return CONCAT(fname, svv);              \
       if (local3_p) {							\
-        if (val2 != Qnil) return CONCAT(fname, ssv);                    \
+        if (val2 == Qnil) return CONCAT(fname, ssv);                    \
         return CONCAT(fname, siv);					\
       }                                                                 \
       if (local2_p) return CONCAT(fname, svs);                          \
@@ -247,13 +263,14 @@ get_rtl_insn3_id(enum ruby_vminsn_type id, int local_p, int local2_p, int local3
     }									\
     return BIN(nop);
 
-    if (fix_p) {
+    if (op_attr == ATTR_FIXNUM) {
         switch (id) {
         RTL_INSN3_ID_CASE(BIN(opt_aset), BIN(opt_iaset))
         default: return BIN(nop);
         }
     }
     switch (id) {
+    RTL_INSN3_ID_CASE(BIN(opt_aset), BIN(opt_aset))
     default: return BIN(nop);
     }
 }
@@ -845,8 +862,8 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             op2_insn_pos = VARR_GET(int, stack, stack_size - 2);
             get_op(op3_insn_pos, &local3_p, &local3, &val3);
             get_op(op2_insn_pos, &local2_p, &local2, NULL);
-            if (op2_attr != op3_attr || op2_attr == ATTR_UNKNOWN) goto rest_cases;
-            new_insn_id = get_rtl_insn2_id(insn_id, local2_p, local3_p, val3, op2_attr == ATTR_FIXNUM);
+            new_insn_id = get_rtl_insn2_id(insn_id, local2_p, local3_p, val3,
+                                           op2_attr != op3_attr ? ATTR_UNKNOWN : op2_attr);
             if (new_insn_id == BIN(nop)) goto rest_cases;
             nops = (local2_p ? 1 : 0) + (local3_p || val3 != Qnil ? 1 : 0);
             RTL_GEN_ASSERT(nops >= 1);
@@ -857,6 +874,16 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             } else {
                 RTL_GEN_ASSERT(local3_p || val3 != Qnil);
                 new_operands[0] = local3_p ? local3 : val3;
+            }
+            if (nops + 2 == insn_len(new_insn_id)) { /* cd */
+                new_operands[nops] = operands[0];
+                nops++;
+            } else if (nops + 3 == insn_len(new_insn_id)) { /* cd, 2nd cd */
+                new_operands[nops] = operands[0];
+                new_operands[nops + 1] = operands[1];
+                nops += 2;
+            } else {
+                RTL_GEN_ASSERT(nops + 1 == insn_len(new_insn_id));
             }
             last_rtl_ind = add_insn_arr(curr_orig_insn_pos, new_insn_id, nops, new_operands);
             if (local2_p)
@@ -874,8 +901,8 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             op2_insn_pos = VARR_GET(int, stack, stack_size - 2);
             get_op(op3_insn_pos, &local3_p, &local3, &val3);
             get_op(op2_insn_pos, &local2_p, &local2, NULL);
-            if (op3_attr != ATTR_FIXNUM) goto rest_cases;
-            new_insn_id = get_rtl_insn2_id(insn_id, local2_p, local3_p, val3, TRUE);
+            new_insn_id = get_rtl_insn2_id(insn_id, local2_p, local3_p, val3,
+                                           op3_attr != ATTR_FIXNUM ? ATTR_UNKNOWN : ATTR_FIXNUM);
             if (new_insn_id == BIN(nop)) goto rest_cases;
             nops = (local2_p ? 1 : 0) + (local3_p || val3 != Qnil ? 1 : 0);
             RTL_GEN_ASSERT(nops >= 1);
@@ -886,6 +913,12 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             } else {
                 RTL_GEN_ASSERT(local3_p || val3 != Qnil);
                 new_operands[0] = local3_p ? local3 : val3;
+            }
+            if (nops + 2 == insn_len (new_insn_id)) { /* cd */
+                new_operands[nops] = operands[0];
+                nops++;
+            } else {
+                RTL_GEN_ASSERT(nops + 1 == insn_len(new_insn_id));
             }
             last_rtl_ind = add_insn_arr(curr_orig_insn_pos, new_insn_id, nops, new_operands);
             if (local2_p)
@@ -902,14 +935,13 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             next_insn_id = rb_vm_insn_addr2insn((void *)body->iseq_encoded[curr_orig_insn_pos + len]);
             if (next_insn_id != BIN(pop)) goto rest_cases;
             op2_attr = get_attr(get_temp_num(iseq, stack_size - 2));
-            if (op2_attr != ATTR_FIXNUM) goto rest_cases;
             op_insn_pos = VARR_GET(int, stack, stack_size - 3);
             op2_insn_pos = VARR_GET(int, stack, stack_size - 2);
             op3_insn_pos = VARR_GET(int, stack, stack_size - 1);
             get_op(op_insn_pos, &local_p, &local, NULL);
             get_op(op2_insn_pos, &local2_p, &local2, &val2);
             get_op(op3_insn_pos, &local3_p, &local3, NULL);
-            new_insn_id = get_rtl_insn3_id(insn_id, local_p, local2_p, local3_p, val2, TRUE);
+            new_insn_id = get_rtl_insn3_id(insn_id, local_p, local2_p, local3_p, val2, op2_attr);
             if (new_insn_id == BIN(nop)) goto rest_cases;
             nops = (local_p ? 1 : 0) + (local2_p || val2 != Qnil ? 1 : 0) + (local3_p ? 1 : 0);
             RTL_GEN_ASSERT(nops >= 1);
@@ -920,7 +952,7 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                     if (local3_p)
                         new_operands[2] = local3;
                 } else if (local3_p) {
-                    new_operands[0] = local3;
+                    new_operands[1] = local3;
                 }
             } else {
                 if (local2_p || val2 != Qnil) {
@@ -930,6 +962,12 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 } else if (local3_p) {
                     new_operands[0] = local3;
                 }
+            }
+            if (nops + 2 == insn_len (new_insn_id)) { /* cd */
+                new_operands[nops] = operands[0];
+                nops++;
+            } else {
+                RTL_GEN_ASSERT(nops + 1 == insn_len(new_insn_id));
             }
             last_rtl_ind = add_insn_arr(curr_orig_insn_pos, new_insn_id, nops, new_operands);
             if (local_p)
