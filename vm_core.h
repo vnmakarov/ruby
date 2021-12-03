@@ -349,26 +349,26 @@ typedef rb_darray(struct yjit_block_version *) rb_yjit_block_array_t;
 typedef rb_darray(rb_yjit_block_array_t) rb_yjit_block_array_array_t;
 
 enum rb_attr_val {
+    ATTR_END_MARKER = 0,
     ATTR_UNKNOWN,
     ATTR_FIXNUM,
     ATTR_FLONUM,
 };
 
 struct rb_iseq_bbv {
+    rb_iseq_t *iseq;
     /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch or leave */
     int iseq_start, iseq_bound;
     /* next bbv in the list with the same (iseq, start).  The list
        head is always bbv with unknown attrs (default bbv) */
     struct rb_iseq_bbv *next_bbv;
     int bbv_start; /* start pos in bbv_code */
-    int n_attrs; /* length of the next array */
-    /* map local var/stack slot -> attr, the last elem has always not
-     * unknown value, assume unknown attr for vars/temps beyond
-     * array: */
+    /* Map local var/stack slot -> attr.  The last elem is always an
+       end marker.  Unknown values (besides the end marker) can not be
+       the last elements, assume unknown attr for vars/temps beyond
+       the end marker: */
     char attrs[1];
 };
-
-struct rb_iseq_bbv *get_bbv(rb_iseq_t *iseq, int start, int n_attrs, char *attrs);
 
 struct rb_iseq_constant_body {
     enum iseq_type {

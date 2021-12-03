@@ -2745,6 +2745,59 @@ opt_asetvss
 
 /* --- end of general RTL insns --- */
 
+/* Specialized call of method without block created from make_rtl_send_without block:
+   it should be iseq, not-tail call, no splat args, all leading args  */
+DEFINE_INSN
+rtl_iseq_send_without_block
+(CALL_DATA cd, lindex_t bbv)
+(...)
+(VALUE val)
+// attr bool handles_sp = true;
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+{
+    struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
+    rb_iseq_t *iseq = bbv_ref->iseq;
+    struct rb_iseq_constant_body *body = iseq->body;
+    const struct rb_callcache *cc = cd->cc;
+    const struct rb_callable_method_entry_struct *cme;
+    int argc = vm_ci_argc(cd->ci), param_size = body->param.size;
+    VALUE *argv = reg_cfp->sp - argc;
+    VALUE recv = TOPN(argc);
+
+    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto original;
+    cme = vm_cc_cme(cc);
+    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto original;
+    VM_ASSERT(callable_method_entry_p(cme) && argc == param_size);
+    reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
+    vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
+                  VM_BLOCK_HANDLER_NONE, (VALUE)cme, body->bbv_code + bbv_ref->bbv_start,
+                  argv + param_size, body->local_table_size - param_size, body->stack_max);
+    RESTORE_REGS();
+    NEXT_INSN();
+  original:
+    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    END_INSN(rtl_iseq_send_without_block);
+}
+
+/* Non-specialized call of method without block created from make_rtl_send_without block */
+DEFINE_INSN
+rtl_opt_send_without_block
+(CALL_DATA cd, lindex_t dummy)
+(...)
+(VALUE val)
+// attr bool handles_sp = true;
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+{
+    val = vm_sendish(ec, GET_CFP(), cd, VM_BLOCK_HANDLER_NONE, mexp_search_method);
+
+    if (val == Qundef) {
+        RESTORE_REGS();
+        NEXT_INSN();
+    }
+}
+
 DEFINE_INSN
 gen_rtl_bbv
 (lindex_t bbv, OFFSET origin)
@@ -2784,4 +2837,23 @@ make_rtl_bbv
 
     SET_PC(GET_CFP()->iseq->body->bbv_code + start);
     END_INSN(make_rtl_bbv); /* to skip pc increase */
+}
+
+DEFINE_INSN
+make_rtl_send_without_block
+(CALL_DATA cd, lindex_t attrs)
+(...)
+(VALUE val)
+// attr bool handles_sp = true;
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+{
+    rb_control_frame_t *caller_cfp = GET_CFP();
+    val = vm_sendish(ec, caller_cfp, cd, VM_BLOCK_HANDLER_NONE, mexp_search_method);
+    rb_rtl_change_send_without_block(ec, caller_cfp, cd, (void*)attrs);
+
+    if (val == Qundef) {
+        RESTORE_REGS();
+        NEXT_INSN();
+    }
 }
