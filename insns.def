@@ -1896,7 +1896,6 @@ opt_iorsvv opt_iandsvv opt_ieqsvv opt_ineqsvv
 opt_iltsvv opt_igtsvv opt_ilesvv opt_igesvv
 opt_fplussvv opt_fminussvv opt_fmultsvv opt_fdivsvv opt_fmodsvv opt_feqsvv opt_fneqsvv
 opt_fltsvv opt_fgtsvv opt_flesvv opt_fgesvv
-opt_iarefsvv
 (lindex_t op1, lindex_t op2)
 ()
 (VALUE val)
@@ -1910,7 +1909,6 @@ opt_iorsvi opt_iandsvi opt_ieqsvi opt_ineqsvi
 opt_iltsvi opt_igtsvi opt_ilesvi opt_igesvi
 opt_fplussvi opt_fminussvi opt_fmultsvi opt_fdivsvi opt_fmodsvi opt_feqsvi opt_fneqsvi
 opt_fltsvi opt_fgtsvi opt_flesvi opt_fgesvi
-opt_iarefsvi
 (lindex_t op1, VALUE imm)
 ()
 (VALUE val)
@@ -1924,7 +1922,6 @@ opt_iorsvs opt_iandsvs opt_ieqsvs opt_ineqsvs
 opt_iltsvs opt_igtsvs opt_ilesvs opt_igesvs
 opt_fplussvs opt_fminussvs opt_fmultsvs opt_fdivsvs opt_fmodsvs opt_feqsvs opt_fneqsvs
 opt_fltsvs opt_fgtsvs opt_flesvs opt_fgesvs
-opt_iarefsvs
 (lindex_t op1)
 (VALUE v2)
 (VALUE val)
@@ -1938,7 +1935,6 @@ opt_iorssv opt_iandssv opt_ieqssv opt_ineqssv
 opt_iltssv opt_igtssv opt_ilessv opt_igessv
 opt_fplusssv opt_fminusssv opt_fmultssv opt_fdivssv opt_fmodssv opt_feqssv opt_fneqssv
 opt_fltssv opt_fgtssv opt_flessv opt_fgessv
-opt_iarefssv
 (lindex_t op2)
 (VALUE v1)
 (VALUE val)
@@ -1952,7 +1948,6 @@ opt_iorssi opt_iandssi opt_ieqssi opt_ineqssi
 opt_iltssi opt_igtssi opt_ilessi opt_igessi
 opt_fplusssi opt_fminusssi opt_fmultssi opt_fdivssi opt_fmodssi opt_feqssi opt_fneqssi
 opt_fltssi opt_fgtssi opt_flessi opt_fgessi
-opt_iarefssi
 (VALUE imm)
 (VALUE v1)
 (VALUE val)
@@ -1965,7 +1960,6 @@ opt_iorsss opt_iandsss opt_ieqsss opt_ineqsss
 opt_iltsss opt_igtsss opt_ilesss opt_igesss
 opt_fplussss opt_fminussss opt_fmultsss opt_fdivsss opt_fmodsss opt_feqsss opt_fneqsss
 opt_fltsss opt_fgtsss opt_flesss opt_fgesss
-opt_iarefsss
 ()
 (VALUE v1, VALUE v2)
 (VALUE val)
@@ -1978,7 +1972,6 @@ opt_iorvvv opt_iandvvv opt_ieqvvv opt_ineqvvv
 opt_iltvvv opt_igtvvv opt_ilevvv opt_igevvv
 opt_fplusvvv opt_fminusvvv opt_fmultvvv opt_fdivvvv opt_fmodvvv opt_feqvvv opt_fneqvvv
 opt_fltvvv opt_fgtvvv opt_flevvv opt_fgevvv
-opt_iarefvvv
 (lindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
@@ -1993,7 +1986,6 @@ opt_iorvvi opt_iandvvi opt_ieqvvi opt_ineqvvi
 opt_iltvvi opt_igtvvi opt_ilevvi opt_igevvi
 opt_fplusvvi opt_fminusvvi opt_fmultvvi opt_fdivvvi opt_fmodvvi opt_feqvvi opt_fneqvvi
 opt_fltvvi opt_fgtvvi opt_flevvi opt_fgevvi
-opt_iarefvvi
 (lindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
@@ -2007,7 +1999,6 @@ opt_iorvvs opt_iandvvs opt_ieqvvs opt_ineqvvs
 opt_iltvvs opt_igtvvs opt_ilevvs opt_igevvs
 opt_fplusvvs opt_fminusvvs opt_fmultvvs opt_fdivvvs opt_fmodvvs opt_feqvvs opt_fneqvvs
 opt_fltvvs opt_fgtvvs opt_flevvs opt_fgevvs
-opt_iarefvvs
 (lindex_t res, lindex_t op1)
 (VALUE v2)
 ()
@@ -2021,7 +2012,6 @@ opt_iorvsv opt_iandvsv opt_ieqvsv opt_ineqvsv
 opt_iltvsv opt_igtvsv opt_ilevsv opt_igevsv
 opt_fplusvsv opt_fminusvsv opt_fmultvsv opt_fdivvsv opt_fmodvsv opt_feqvsv opt_fneqvsv
 opt_fltvsv opt_fgtvsv opt_flevsv opt_fgevsv
-opt_iarefvsv
 (lindex_t res, lindex_t op2)
 (VALUE v1)
 ()
@@ -2035,7 +2025,6 @@ opt_iorvsi opt_iandvsi opt_ieqvsi opt_ineqvsi
 opt_iltvsi opt_igtvsi opt_ilevsi opt_igevsi
 opt_fplusvsi opt_fminusvsi opt_fmultvsi opt_fdivvsi opt_fmodvsi opt_feqvsi opt_fneqvsi
 opt_fltvsi opt_fgtvsi opt_flevsi opt_fgevsi
-opt_iarefvsi
 (lindex_t res, VALUE imm)
 (VALUE v1)
 ()
@@ -2049,12 +2038,136 @@ opt_iorvss opt_iandvss opt_ieqvss opt_ineqvss
 opt_iltvss opt_igtvss opt_ilevss opt_igevss
 opt_fplusvss opt_fminusvss opt_fmultvss opt_fdivvss opt_fmodvss opt_feqvss opt_fneqvss
 opt_fltvss opt_fgtvss opt_flevss opt_fgevss
-opt_iarefvss
 (lindex_t res)
 (VALUE v1, VALUE v2)
 ()
 {
     VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iarefsvv
+(lindex_t op1, lindex_t op2)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
+}
+
+DEFINE_INSN
+opt_iarefsvi
+(lindex_t op1, VALUE imm)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
+}
+
+DEFINE_INSN
+opt_iarefsvs
+(lindex_t op1)
+(VALUE v2)
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
+}
+
+DEFINE_INSN
+opt_iarefssv
+(lindex_t op2)
+(VALUE v1)
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
+}
+
+DEFINE_INSN
+opt_iarefssi
+(VALUE imm)
+(VALUE v1)
+(VALUE val)
+{
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
+}
+
+DEFINE_INSN
+opt_iarefsss
+()
+(VALUE v1, VALUE v2)
+(VALUE val)
+{
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
+}
+
+DEFINE_INSN
+opt_iarefvvv
+(lindex_t res, lindex_t op1, lindex_t op2)
+()
+()
+{
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    VALUE val;
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iarefvvi
+(lindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    VALUE v1 = *(GET_EP() - op1), val;
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iarefvvs
+(lindex_t res, lindex_t op1)
+(VALUE v2)
+()
+{
+    VALUE v1 = *(GET_EP() - op1), val;
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iarefvsv
+(lindex_t res, lindex_t op2)
+(VALUE v1)
+()
+{
+    VALUE v2 = *(GET_EP() - op2), val;
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iarefvsi
+(lindex_t res, VALUE imm)
+(VALUE v1)
+()
+{
+    VALUE val;
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
+    vm_env_write(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iarefvss
+(lindex_t res)
+(VALUE v1, VALUE v2)
+()
+{
+    VALUE val;
+    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
     vm_env_write(GET_EP(), -(int)res, val);
 }
 

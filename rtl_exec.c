@@ -223,6 +223,13 @@ RTL_BR_FUNCS(vm_opt_fbgt, vm_opt_fgt)
 RTL_BR_FUNCS(vm_opt_fble, vm_opt_fle)
 RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
 
+#define RTL_EXEC_INSN2(iname, push_fname, res, v1, v2)		\
+    if ((res = RTL_FUNC_NAME(iname)(v1, v2)) == Qundef) {       \
+        ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
+        push_fname(GET_CFP(), v1, v2);				\
+        END_INSN(iname);					\
+    }
+
 #define RTL_EXEC_INSN3(iname, push_fname, v1, v2, v3)		\
     if (RTL_FUNC_NAME(iname)(v1, v2, v3) == Qundef) {   	\
         ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
