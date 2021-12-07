@@ -7,6 +7,7 @@
 **********************************************************************/
 
 #include "rtl.h"
+#include "internal/hash.h"
 #include "internal/compile.h"
 #include "vm_callinfo.h"
 
@@ -174,6 +175,10 @@ static inline T VARR_OP(T, pop)(VARR(T) *varr_) {			       \
 DEF_VARR(int);
 /* The emulated VM stack: positions of insn producing stack slot values  */
 static VARR(int) *stack;
+
+DEF_VARR(char);
+/* Always the same size as stack  */
+static VARR(char) *operands_changed_p;
 
 #define CONCAT(a, b) a ## b
 static enum ruby_vminsn_type
@@ -442,9 +447,10 @@ non_rtl_bb_end_p(enum ruby_vminsn_type insn_id) {
     case BIN(branchnil):
     case BIN(opt_getinlinecache):
     case BIN(leave):
+    case BIN(throw):
         return TRUE;
     case BIN(opt_case_dispatch):
-        abort();
+        return TRUE;
     default:
         return FALSE;
     }
@@ -467,7 +473,7 @@ rb_rtl_create_default_bbvs(rb_iseq_t *iseq) {
         for (i = 0; i < (int)body->iseq_size; i += insn_len(insn_id)) {
             insn_id = (enum ruby_vminsn_type)encoded[i];
             if (insn_id == BIN(make_rtl_bbv)) {
-                bbv = create_bbv (iseq, i, -1, 0, NULL);
+                bbv = create_bbv(iseq, i, -1, 0, NULL);
                 VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
             }
         }
@@ -476,13 +482,13 @@ rb_rtl_create_default_bbvs(rb_iseq_t *iseq) {
         for (i = 0; i < (int)body->iseq_size; i += insn_len(insn_id)) {
             insn_id = (enum ruby_vminsn_type)encoded[i];
             if (insn_id == BIN(make_rtl_bbv) && i != 0) {
-                bbv = create_bbv (iseq, curr_bb_start, i, 0, NULL);
+                bbv = create_bbv(iseq, curr_bb_start, i, 0, NULL);
                 VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
                 curr_bb_start = i;
             }
         }
         if (curr_bb_start != (int)body->iseq_size) {
-            bbv = create_bbv (iseq, curr_bb_start, (int)body->iseq_size, 0, NULL);
+            bbv = create_bbv(iseq, curr_bb_start, (int)body->iseq_size, 0, NULL);
             VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
         }
     }
@@ -550,7 +556,6 @@ add_insn_arr(int orig_pos, enum ruby_vminsn_type insn_id, int nops, VALUE *opera
     return start;
 }
 
-DEF_VARR(char);
 static VARR(char) *labeled_p;
 
 static void
@@ -752,7 +757,7 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound) {
         if (longer_paths_p) {
             if (follow_jumps_p && insn_id == BIN(jump))
                 i = i + (long) code[i + 1];
-            else if (non_rtl_bb_end_p(insn_id))
+            else if (bound < 0 && non_rtl_bb_end_p(insn_id))
                 break;
         }
         i += len;
@@ -825,19 +830,120 @@ get_bbv_code_space(rb_iseq_t *iseq, int len) {
     return bbv_start;
 }
 
+static const struct st_hash_type cdhash_type = {
+    rb_iseq_cdhash_cmp,
+    rb_iseq_cdhash_hash,
+};
+
+struct cdhash_set_el {
+    rb_iseq_t *iseq;
+    int origin_case_start, case_start;
+    VALUE map;
+};
+
+static int
+set_case_hash_el(VALUE key, VALUE val, VALUE ptr)
+{
+    struct cdhash_set_el *data = (struct cdhash_set_el *)ptr;
+    rb_iseq_t *iseq = data->iseq;
+    int dest, disp, len = insn_len(BIN(opt_case_dispatch));
+    rb_iseq_bbv_t dest_bbv;
+
+    RTL_GEN_ASSERT(iseq->body->iseq_encoded[data->origin_case_start]
+                   == (VALUE)dispatch_table[BIN(opt_case_dispatch)]);
+    dest = data->origin_case_start + len + FIX2LONG(val);
+    dest_bbv = get_bbv(iseq, dest, (int)VARR_LENGTH(char, attrs), VARR_ADDR(char, attrs));
+    disp = add_insn(dest, BIN(gen_rtl_bbv_key), 3, (VALUE)dest_bbv, (VALUE)0, (VALUE) key);
+    VARR_SET(VALUE, bbv_encoded, disp + 2, (VALUE)(data->case_start - disp - insn_len(BIN(gen_rtl_bbv_key))));
+    rb_hash_aset(data->map, key, INT2FIX(disp - (data->case_start + len)));
+    return ST_CONTINUE;
+}
+
+static int
+contains_input_lvar_p(int insn_pos, int lvar) {
+    if (insn_pos < 0) return FALSE;
+
+    enum ruby_vminsn_type insn_id = (enum ruby_vminsn_type) VARR_GET(VALUE, bbv_encoded, insn_pos);
+    VALUE *operands = VARR_ADDR(VALUE, bbv_encoded) + insn_pos + 1;
+    RTL_GEN_ASSERT(lvar >= 0);
+
+#define RTL_INSN_LVAR_CASE(insn_name)                                   			\
+    case CONCAT(insn_name, svv):								\
+    case CONCAT(insn_name, vvv): return operands[0] == (VALUE)lvar || operands[1] == (VALUE)lvar;\
+    case CONCAT(insn_name, svi):								\
+    case CONCAT(insn_name, vvi):								\
+    case CONCAT(insn_name, svs):								\
+    case CONCAT(insn_name, vvs): return operands[0] == (VALUE)lvar;				\
+    case CONCAT(insn_name, ssv):								\
+    case CONCAT(insn_name, vsv): return operands[1] == (VALUE)lvar;
+
+#define RTL_INSN_LVAR_CASE0(insn_name)                            				\
+    case CONCAT(insn_name, svv): return operands[0] == (VALUE)lvar || operands[1] == (VALUE)lvar;\
+    case CONCAT(insn_name, svi):								\
+    case CONCAT(insn_name, svs): return operands[0] == (VALUE)lvar;				\
+    case CONCAT(insn_name, ssv): return operands[1] == (VALUE)lvar;
+
+    switch (insn_id) {
+    RTL_INSN_LVAR_CASE(BIN(opt_iplus))
+    RTL_INSN_LVAR_CASE(BIN(opt_iminus))
+    RTL_INSN_LVAR_CASE(BIN(opt_imult))
+    RTL_INSN_LVAR_CASE(BIN(opt_idiv))
+    RTL_INSN_LVAR_CASE(BIN(opt_imod))
+    RTL_INSN_LVAR_CASE(BIN(opt_ior))
+    RTL_INSN_LVAR_CASE(BIN(opt_iand))
+    RTL_INSN_LVAR_CASE(BIN(opt_ieq))
+    RTL_INSN_LVAR_CASE(BIN(opt_ineq))
+    RTL_INSN_LVAR_CASE(BIN(opt_ilt))
+    RTL_INSN_LVAR_CASE(BIN(opt_igt))
+    RTL_INSN_LVAR_CASE(BIN(opt_ile))
+    RTL_INSN_LVAR_CASE(BIN(opt_ige))
+    RTL_INSN_LVAR_CASE(BIN(opt_fplus))
+    RTL_INSN_LVAR_CASE(BIN(opt_fminus))
+    RTL_INSN_LVAR_CASE(BIN(opt_fmult))
+    RTL_INSN_LVAR_CASE(BIN(opt_fdiv))
+    RTL_INSN_LVAR_CASE(BIN(opt_fmod))
+    RTL_INSN_LVAR_CASE(BIN(opt_feq))
+    RTL_INSN_LVAR_CASE(BIN(opt_fneq))
+    RTL_INSN_LVAR_CASE(BIN(opt_flt))
+    RTL_INSN_LVAR_CASE(BIN(opt_fgt))
+    RTL_INSN_LVAR_CASE(BIN(opt_fle))
+    RTL_INSN_LVAR_CASE(BIN(opt_fge))
+    RTL_INSN_LVAR_CASE0(BIN(opt_plus))
+    RTL_INSN_LVAR_CASE0(BIN(opt_minus))
+    RTL_INSN_LVAR_CASE0(BIN(opt_mult))
+    RTL_INSN_LVAR_CASE0(BIN(opt_div))
+    RTL_INSN_LVAR_CASE0(BIN(opt_mod))
+    RTL_INSN_LVAR_CASE0(BIN(opt_or))
+    RTL_INSN_LVAR_CASE0(BIN(opt_and))
+    RTL_INSN_LVAR_CASE0(BIN(opt_eq))
+    RTL_INSN_LVAR_CASE0(BIN(opt_neq))
+    RTL_INSN_LVAR_CASE0(BIN(opt_lt))
+    RTL_INSN_LVAR_CASE0(BIN(opt_gt))
+    RTL_INSN_LVAR_CASE0(BIN(opt_le))
+    RTL_INSN_LVAR_CASE0(BIN(opt_ge))
+    case BIN (getlocal):
+        if (operands[1] != 0) return FALSE; /*op1==level*/
+        /* fallthrough */
+    case BIN(getlocal_WC_0):
+        return (VALUE)lvar == operands[0];
+    default: return FALSE;
+    }
+}
+
 static void
 gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
     enum ruby_vminsn_type insn_id = BIN(nop), next_insn_id;
     enum ruby_vminsn_type new_insn_id, op_insn_id;
-    int i, n, curr_orig_insn_pos, len, nops, last_rtl_ind, inc, retn, br_p, dest2_p, stack_size;
+    int i, n, curr_orig_insn_pos, len, nops, inc, retn, br_p, dest2_p, stack_size;
     int op_insn_nops, op_insn_pos, op3_insn_pos, op2_insn_pos, local_p, local2_p, local3_p;
+    int bool_p, last_original_rtl_ind, last_rtl_ind;
     int debug_p = rb_rtl_debug_p();
-    int disp = 0, disp2 = 0; /* for removing uninitialized warning */
-    OFFSET dest = 0, dest2 = 0; /* for removing uninitialized warning */
+    int disp = 0, disp2 = 0, else_disp = 0; /* for removing uninitialized warning */
+    OFFSET dest = 0, dest2 = 0, else_dest = 0; /* for removing uninitialized warning */
     VALUE val, val2, val3, local, local2, local3, *operands, new_operands[10];
     int offset, offset2, dest_bbv_start = -1, dest_bbv_start2 = -1; /* to remove false warning */
     struct rb_iseq_constant_body *body = iseq->body;
-    rb_iseq_bbv_t dest_bbv;
+    rb_iseq_bbv_t dest_bbv, else_dest_bbv;
     enum rb_attr_val attr, op2_attr, op3_attr;
 
     if (debug_p) {
@@ -853,15 +959,19 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
     VARR_TRUNC(char, labeled_p, 0);
     copy_attrs(bbv->attrs);
     VARR_TRUNC(int, stack, 0);
+    VARR_TRUNC(char, operands_changed_p, 0);
     VARR_TRUNC(int, pos_map, 0);
-    while (init_stack_size > (int)VARR_LENGTH(int, stack))
+    while (init_stack_size > (int)VARR_LENGTH(int, stack)) {
         VARR_PUSH(int, stack, -1); /* stack temp definitions are out of block */
+        VARR_PUSH(char, operands_changed_p, FALSE);
+    }
     RTL_GEN_ASSERT(bbv->iseq_bound < 0 || bbv->iseq_start < bbv->iseq_bound);
     for (curr_orig_insn_pos = bbv->iseq_start;;) {
         last_rtl_ind = (int)VARR_LENGTH(VALUE, bbv_encoded);
 	insn_id = rb_vm_insn_addr2insn((void *)body->iseq_encoded[curr_orig_insn_pos]);
         len = insn_len(insn_id);
         operands = &body->iseq_encoded[curr_orig_insn_pos + 1];
+        bool_p = FALSE; /* bool result */
         switch (insn_id) {
         case BIN(setn):
             stack_size = VARR_LENGTH(int, stack);
@@ -886,6 +996,7 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             }
             for (i = 0; i < n; i++) {
                 VARR_PUSH(int, stack, -1); /* flag of unknown insn */
+                VARR_PUSH(char, operands_changed_p, FALSE);
                 setup_attr(get_temp_num(iseq, stack_size + i), ATTR_UNKNOWN);
             }
             add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
@@ -898,6 +1009,14 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 update_labeled(last_rtl_ind);
             }
             break;
+        case BIN(opt_eq):
+        case BIN(opt_neq):
+        case BIN(opt_lt):
+        case BIN(opt_gt):
+        case BIN(opt_le):
+        case BIN(opt_ge):
+            bool_p = TRUE;
+            /* fall through */
         case BIN(opt_plus):
         case BIN(opt_minus):
         case BIN(opt_mult):
@@ -905,12 +1024,6 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
         case BIN(opt_mod):
         case BIN(opt_or):
         case BIN(opt_and):
-        case BIN(opt_eq):
-        case BIN(opt_neq):
-        case BIN(opt_lt):
-        case BIN(opt_gt):
-        case BIN(opt_le):
-        case BIN(opt_ge):
             stack_size = VARR_LENGTH(int, stack);
             RTL_GEN_ASSERT(stack_size >= 2);
             op3_attr = get_attr(get_temp_num(iseq, stack_size - 1));
@@ -947,8 +1060,9 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 nullify(op2_insn_pos);
             if (local3_p || val3 != Qnil)
                 nullify(op3_insn_pos);
-            VARR_TRUNC (int, stack, stack_size - 2);
-            attr = op2_attr;
+            VARR_TRUNC(int, stack, stack_size - 2);
+            VARR_TRUNC(char, operands_changed_p, stack_size - 2);
+            attr = op2_attr != op3_attr || bool_p ? ATTR_UNKNOWN : op2_attr;
             goto push;
         case BIN(opt_aref):
             stack_size = VARR_LENGTH(int, stack);
@@ -982,7 +1096,8 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 nullify(op2_insn_pos);
             if (local3_p || val3 != Qnil)
                 nullify(op3_insn_pos);
-            VARR_TRUNC (int, stack, stack_size - 2);
+            VARR_TRUNC(int, stack, stack_size - 2);
+            VARR_TRUNC(char, operands_changed_p, stack_size - 2);
             attr = ATTR_UNKNOWN;
             goto push;
         case BIN(opt_aset):
@@ -1034,7 +1149,8 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             if (local3_p)
                 nullify(op3_insn_pos);
             len += insn_len(BIN(pop));
-            VARR_TRUNC (int, stack, stack_size - 3); /* including pop */
+            VARR_TRUNC(int, stack, stack_size - 3); /* including pop */
+            VARR_TRUNC(char, operands_changed_p, stack_size - 3);
             break;
         case BIN(jump): // ??? use leaf attr for dest calculations
             br_p = TRUE;
@@ -1048,7 +1164,7 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 add_insn(curr_orig_insn_pos, BIN(branch2), 4, (VALUE)0, (VALUE)0, (VALUE)0, (VALUE)0);
             } else {
                 op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
-                new_insn_id = get_branch_rtl_insn_id (op_insn_id);
+                new_insn_id = get_branch_rtl_insn_id(op_insn_id);
                 if (new_insn_id == BIN(nop)) {
                     add_insn(curr_orig_insn_pos, BIN(branch2), 2, (VALUE)0, (VALUE)0);
                 } else {
@@ -1095,8 +1211,9 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             attr = get_attr(get_temp_num(iseq, stack_size - 1));
             setup_attr(get_lvar_num(iseq, operands[0]), attr); /* attr of temp */
             if ((op_insn_pos = VARR_LAST(int, stack)) < 0) goto rest_cases;
+            if (VARR_GET(char, operands_changed_p, i)) goto rest_cases;
             op_insn_id = (enum ruby_vminsn_type) VARR_GET(VALUE, bbv_encoded, op_insn_pos);
-            new_insn_id = get_var_res_rtl_insn_id (op_insn_id);
+            new_insn_id = get_var_res_rtl_insn_id(op_insn_id);
             if (new_insn_id == BIN(nop)) {
                 switch (op_insn_id) {
                 case BIN(putobject):
@@ -1110,14 +1227,14 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 move_imm:
                     add_insn(curr_orig_insn_pos, BIN(movi), 2, operands[0], val);
                     nullify(op_insn_pos);
-                    goto stack_update;
+                    goto change_setlocal;
                 case BIN (getlocal):
-                    if (operands[1] != 0) goto rest_cases;
+                    if (VARR_GET(VALUE, bbv_encoded, op_insn_pos + 2) != 0) goto rest_cases; /*op1==level*/
                     /* fallthrough */
                 case BIN(getlocal_WC_0):
                     add_insn(curr_orig_insn_pos, BIN(mov), 2, operands[0], VARR_GET(VALUE, bbv_encoded, op_insn_pos + 1));
                     nullify(op_insn_pos);
-                    goto stack_update;
+                    goto change_setlocal;
                 default: goto rest_cases;
                 }
             }
@@ -1129,6 +1246,11 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 new_operands[2] = VARR_GET(VALUE, bbv_encoded, op_insn_pos + 2); /* ops[1] */
             add_insn_arr(VARR_GET(int, pos_map, op_insn_pos), new_insn_id, nops, new_operands);
             nullify(op_insn_pos);
+        change_setlocal:
+            for (i = 0; i < stack_size - 1; i++) {
+                if (contains_input_lvar_p(VARR_GET(int, stack, i), operands[0]))
+                    VARR_SET(char, operands_changed_p, i, TRUE);
+            }
             goto stack_update;
         case BIN(opt_send_without_block): {
             CALL_DATA cd = (CALL_DATA)operands[0];
@@ -1160,6 +1282,7 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
         push:
             setup_attr(get_temp_num(iseq, VARR_LENGTH(int, stack)), attr); /* attr of temp */
             VARR_PUSH(int, stack, last_rtl_ind); /* insn producing temp */
+            VARR_PUSH(char, operands_changed_p, FALSE);
             break;
         default:
         rest_cases:
@@ -1175,10 +1298,13 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 for (i = 0; i < inc; i++) {
                     setup_attr(get_temp_num(iseq, VARR_LENGTH(int, stack)), ATTR_UNKNOWN);
                     VARR_PUSH(int, stack, -1);
+                    VARR_PUSH(char, operands_changed_p, FALSE);
                 }
             } else {
+                int new_size = (int)VARR_LENGTH(int, stack) + inc;
                 RTL_GEN_ASSERT(-inc <= (int)VARR_LENGTH(int, stack));
-                VARR_TRUNC(int, stack, (int)VARR_LENGTH(int, stack) + inc);
+                VARR_TRUNC(int, stack, new_size);
+                VARR_TRUNC(char, operands_changed_p, new_size);
                 truncate_attrs(get_temp_num(iseq, VARR_LENGTH(int, stack)));
             }
             retn = insn_stack_retn(insn_id, operands);
@@ -1197,14 +1323,14 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
                 break;
         }
     }
-    last_rtl_ind = remove_nops();
-    if (insn_id != BIN(leave)) {
-        if (!br_p) {
-            RTL_GEN_ASSERT(!longer_paths_p || !follow_jumps_p);
-            last_rtl_ind = add_insn(curr_orig_insn_pos, BIN(jump2), 1, (VALUE)0);
-            dest = bbv->iseq_bound;
-        }
+    last_original_rtl_ind = last_rtl_ind = remove_nops();
+    if (insn_id != BIN(leave) && insn_id != BIN(throw)) {
         compact_attrs();
+        if (!br_p) {
+            RTL_GEN_ASSERT(!longer_paths_p || !follow_jumps_p || insn_id == BIN(opt_case_dispatch));
+            last_rtl_ind = add_insn(curr_orig_insn_pos, BIN(jump2), 1, (VALUE)0);
+            dest = insn_id == BIN(opt_case_dispatch) ? curr_orig_insn_pos : bbv->iseq_bound;
+        }
         dest_bbv = get_bbv(iseq, dest, (int)VARR_LENGTH(char, attrs), VARR_ADDR(char, attrs));
         len = insn_len(BIN(gen_rtl_bbv));
         if ((dest_bbv_start = dest_bbv->bbv_start) < 0) { // ??? attr leaf
@@ -1228,11 +1354,30 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
             }
         }
     }
+    if (insn_id == BIN(opt_case_dispatch)) { /* add gen_rtl_bbv for cdhash and else_offset */
+        struct cdhash_set_el data;
+
+        else_dest = curr_orig_insn_pos + (OFFSET)operands[1]; /* end of opt_case_dispatch + else dest */
+        else_dest_bbv = get_bbv(iseq, else_dest, (int)VARR_LENGTH(char, attrs), VARR_ADDR(char, attrs));
+        else_disp = add_insn(curr_orig_insn_pos, BIN(gen_rtl_bbv2), 2, (VALUE)else_dest_bbv, (VALUE)0);
+        len = insn_len(BIN(gen_rtl_bbv2));
+        VARR_SET(VALUE, bbv_encoded, else_disp + 2, (VALUE)(last_original_rtl_ind - (else_disp + len)));
+        VARR_SET(VALUE, bbv_encoded, last_original_rtl_ind + 2, (VALUE)(else_disp - last_original_rtl_ind - len));
+        /* set up new hash and add insns gen_rtl_bb_key */
+        data.iseq = iseq;
+        data.map = rb_hash_new();
+        RHASH_TBL_RAW(data.map)->type = &cdhash_type;
+        data.case_start = last_original_rtl_ind;
+        data.origin_case_start = curr_orig_insn_pos - insn_len(BIN(opt_case_dispatch));
+        rb_hash_foreach(operands[0], set_case_hash_el, (VALUE)&data);
+        RB_OBJ_WRITTEN(iseq, Qundef, data.map);
+        VARR_SET(VALUE, bbv_encoded, last_original_rtl_ind + 1, data.map);
+    }
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
     bbv->bbv_start = get_bbv_code_space(iseq, len);
     memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
     memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
-    if (insn_id != BIN(leave)) {
+    if (insn_id != BIN(leave) && insn_id != BIN(throw)) {
         insn_id = body->bbv_code[bbv->bbv_start + last_rtl_ind];
         offset = last_rtl_ind + insn_len(insn_id); /* offset of the branch end from zero */
         if (dest_bbv_start < 0) /* offset relative to the 1st gen_rtl_code */
@@ -1281,8 +1426,26 @@ rb_rtl_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int branch_offs
     RTL_GEN_ASSERT(gen_bbv_insn_pos >= 0 && gen_bbv_insn_pos <= body->bbv_code_bound);
     if (bbv->bbv_start < 0) /* can be generated by another gen_rtl_bbv insn */
         gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__);
+    /* redirect hash from rtl_gen_bbv[2] to the generated bbv start */
     body->bbv_code[gen_bbv_insn_pos + branch_offset + (first_p ? 1 : 2)]
         = bbv->bbv_start - (gen_bbv_insn_pos + branch_offset + branch_len);
+    return bbv->bbv_start;
+}
+
+int
+rb_rtl_gen_bbv_key(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int case_offset, VALUE key) {
+    struct rb_iseq_constant_body *body = cfp->iseq->body;
+    int gen_bbv_insn_pos = cfp->pc - body->bbv_code; /* position of gen_rtl_code end */
+    enum ruby_vminsn_type branch_id = rb_vm_insn_decode(body->bbv_code[gen_bbv_insn_pos + case_offset]);
+    int branch_len = insn_len(branch_id);
+    CDHASH hash = body->bbv_code[gen_bbv_insn_pos + case_offset + 1];
+    
+    RTL_GEN_ASSERT(branch_id == BIN(opt_case_dispatch)
+                   && gen_bbv_insn_pos >= 0 && gen_bbv_insn_pos <= body->bbv_code_bound);
+    if (bbv->bbv_start < 0) /* can be generated by another gen_rtl_bbv insn */
+        gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__);
+    /* redirect hash from rtl_gen_bbv_key to the generated bbv start */
+    rb_hash_aset(hash, key, INT2FIX(bbv->bbv_start - (gen_bbv_insn_pos + case_offset + branch_len)));
     return bbv->bbv_start;
 }
 
@@ -1353,6 +1516,7 @@ rb_rtl_gen_init(void) {
 	return FALSE;
     dispatch_table = rb_vm_get_insns_address_table();
     VARR_CREATE(int, stack, 0);
+    VARR_CREATE(char, operands_changed_p, 0);
     VARR_CREATE(char, attrs, 0);
     VARR_CREATE(char, labeled_p, 0);
     VARR_CREATE(int, pos_map, 0);
@@ -1365,6 +1529,7 @@ rb_rtl_gen_init(void) {
 void
 rb_rtl_gen_finish(void) {
     VARR_DESTROY(int, stack);
+    VARR_DESTROY(char, operands_changed_p);
     VARR_DESTROY(char, attrs);
     VARR_DESTROY(char, labeled_p);
     VARR_DESTROY(int, pos_map);

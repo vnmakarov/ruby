@@ -2823,7 +2823,21 @@ gen_rtl_bbv2
 {
     VALUE start = rb_rtl_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, FALSE);
     SET_PC(GET_CFP()->iseq->body->bbv_code + start);
-    END_INSN(gen_rtl_bbv); /* to skip pc increase */
+    END_INSN(gen_rtl_bbv2); /* to skip pc increase */
+}
+
+DEFINE_INSN
+gen_rtl_bbv_key
+(lindex_t bbv, OFFSET origin, VALUE key)
+()
+()
+/* Same discussion as leave. */
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+/* It occurs only in bbv_encoded and can change rtl insn addresses */
+{
+    VALUE start = rb_rtl_gen_bbv_key(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, key);
+    SET_PC(GET_CFP()->iseq->body->bbv_code + start);
+    END_INSN(gen_rtl_bbv_key); /* to skip pc increase */
 }
 
 DEFINE_INSN

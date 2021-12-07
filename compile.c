@@ -2324,13 +2324,12 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                     case BIN(branchif):
                     case BIN(branchunless):
                     case BIN(branchnil):
+                    case BIN(opt_case_dispatch):
                     case BIN(opt_getinlinecache): /* insert make_rtl_bbv */
                         if (next != NULL && !IS_LABEL(next)) {
                             code_index += add_make_rtl_bbv(iseq, list);
                             insn_num++;
                         }
-                        break;
-                    case BIN(opt_case_dispatch): /* ??? TODO now it would be switching to original code */
                         break;
                     default:
                         break;
