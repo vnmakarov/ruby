@@ -187,13 +187,13 @@ RTL_FUNCS(vm_opt_fle)
 RTL_FUNCS(vm_opt_fge)
 
 static rtl_inline VALUE vm_opt_iaref(VALUE v1, VALUE v2) {
-    if (RBASIC_CLASS(v1) != rb_cArray) return Qundef;
+    if (SPECIAL_CONST_P(v1) || RBASIC_CLASS(v1) != rb_cArray) return Qundef;
     return rb_ary_entry_internal(v1, FIX2LONG(v2));
 }
 RTL_FUNCS(vm_opt_iaref)
 
 static rtl_inline VALUE vm_opt_iaset(VALUE arr, VALUE ind, VALUE set) {
-    if (RBASIC_CLASS(arr) != rb_cArray) return Qundef;
+    if (SPECIAL_CONST_P(arr) || RBASIC_CLASS(arr) != rb_cArray) return Qundef;
     rb_ary_store(arr, FIX2LONG(ind), set);
     return set;
 }
