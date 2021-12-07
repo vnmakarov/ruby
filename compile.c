@@ -11177,7 +11177,7 @@ ibf_dump_code(struct ibf_dump *dump, const rb_iseq_t *iseq)
         int op_index;
 
         /* opcode */
-        if (insn >= 0x200) { rb_raise(rb_eRuntimeError, "invalid instruction"); }
+        if (insn >= 0x500) { rb_raise(rb_eRuntimeError, "invalid instruction"); }
         ibf_dump_write_small_value(dump, insn);
 
         /* operands */
