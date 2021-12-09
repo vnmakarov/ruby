@@ -1608,569 +1608,188 @@ movi
 
 /* --- Specialized RTL insns: --- */
 DEFINE_INSN
-opt_iplussvv opt_iminussvv opt_imultsvv
-(lindex_t op1, lindex_t op2)
-()
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
-}
-
-DEFINE_INSN
-opt_iplussvi opt_iminussvi opt_imultsvi
-(lindex_t op1, VALUE imm)
-()
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
-}
-
-DEFINE_INSN
-opt_iplussvs opt_iminussvs opt_imultsvs
-(lindex_t op1)
-(VALUE v2)
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
-}
-
-DEFINE_INSN
-opt_iplusssv opt_iminusssv opt_imultssv
-(lindex_t op2)
-(VALUE v1)
-(VALUE val)
-{
-    VALUE v2 = *(GET_EP() - op2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
-}
-
-DEFINE_INSN
-opt_iplusssi opt_iminusssi opt_imultssi
-(VALUE imm)
-(VALUE v1)
-(VALUE val)
-{
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
-}
-
-DEFINE_INSN
-opt_iplussss opt_iminussss opt_imultsss
-()
-(VALUE v1, VALUE v2)
-(VALUE val)
-{
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
-}
-
-DEFINE_INSN
-opt_iplusvvv opt_iminusvvv opt_imultvvv
-(lindex_t res, lindex_t op1, lindex_t op2)
-()
-()
-{
-    VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iplusvvi opt_iminusvvi opt_imultvvi
-(lindex_t res, lindex_t op1, VALUE imm)
-()
-()
-{
-    VALUE v1 = *(GET_EP() - op1), val;
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iplusvvs opt_iminusvvs opt_imultvvs
-(lindex_t res, lindex_t op1)
-(VALUE v2)
-()
-{
-    VALUE v1 = *(GET_EP() - op1), val;
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iplusvsv opt_iminusvsv opt_imultvsv
-(lindex_t res, lindex_t op2)
-(VALUE v1)
-()
-{
-    VALUE v2 = *(GET_EP() - op2), val;
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iplusvsi opt_iminusvsi opt_imultvsi
-(lindex_t res, VALUE imm)
-(VALUE v1)
-()
-{
-    VALUE val;
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iplusvss opt_iminusvss opt_imultvss
-(lindex_t res)
-(VALUE v1, VALUE v2)
-()
-{
-    VALUE val;
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_idivsvv opt_imodsvv
-(lindex_t op1, lindex_t op2)
-()
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
-}
-
-DEFINE_INSN
-opt_idivsvi opt_imodsvi
-(lindex_t op1, VALUE imm)
-()
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1);
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
-}
-
-DEFINE_INSN
-opt_idivsvs opt_imodsvs
-(lindex_t op1)
-(VALUE v2)
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1);
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
-}
-
-DEFINE_INSN
-opt_idivssv opt_imodssv
-(lindex_t op2)
-(VALUE v1)
-(VALUE val)
-{
-    VALUE v2 = *(GET_EP() - op2);
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
-}
-
-DEFINE_INSN
-opt_idivssi opt_imodssi
-(VALUE imm)
-(VALUE v1)
-(VALUE val)
-{
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
-}
-
-DEFINE_INSN
-opt_idivsss opt_imodsss
-()
-(VALUE v1, VALUE v2)
-(VALUE val)
-{
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushss, v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
-}
-
-DEFINE_INSN
-opt_idivvvv opt_imodvvv
-(lindex_t res, lindex_t op1, lindex_t op2)
-()
-()
-{
-    VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_idivvvi opt_imodvvi
-(lindex_t res, lindex_t op1, VALUE imm)
-()
-()
-{
-    VALUE v1 = *(GET_EP() - op1), val;
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_idivvvs opt_imodvvs
-(lindex_t res, lindex_t op1)
-(VALUE v2)
-()
-{
-    VALUE v1 = *(GET_EP() - op1), val;
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_idivvsv opt_imodvsv
-(lindex_t res, lindex_t op2)
-(VALUE v1)
-()
-{
-    VALUE v2 = *(GET_EP() - op2), val;
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_idivvsi opt_imodvsi
-(lindex_t res, VALUE imm)
-(VALUE v1)
-()
-{
-    VALUE val;
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_idivvss opt_imodvss
-(lindex_t res)
-(VALUE v1, VALUE v2)
-()
-{
-    VALUE val;
-    CHECK_ZERO(NAME_OF_CURRENT_INSN, pushss, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_FIXNUM(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
+opt_iplussvv opt_iminussvv opt_imultsvv opt_idivsvv opt_imodsvv
 opt_iorsvv opt_iandsvv opt_ieqsvv opt_ineqsvv
 opt_iltsvv opt_igtsvv opt_ilesvv opt_igesvv
-opt_fplussvv opt_fminussvv opt_fmultsvv opt_fdivsvv opt_fmodsvv opt_feqsvv opt_fneqsvv
-opt_fltsvv opt_fgtsvv opt_flesvv opt_fgesvv
-(lindex_t op1, lindex_t op2)
-()
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-}
-
-DEFINE_INSN
-opt_iorsvi opt_iandsvi opt_ieqsvi opt_ineqsvi
-opt_iltsvi opt_igtsvi opt_ilesvi opt_igesvi
-opt_fplussvi opt_fminussvi opt_fmultsvi opt_fdivsvi opt_fmodsvi opt_feqsvi opt_fneqsvi
-opt_fltsvi opt_fgtsvi opt_flesvi opt_fgesvi
-(lindex_t op1, VALUE imm)
-()
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-}
-
-DEFINE_INSN
-opt_iorsvs opt_iandsvs opt_ieqsvs opt_ineqsvs
-opt_iltsvs opt_igtsvs opt_ilesvs opt_igesvs
-opt_fplussvs opt_fminussvs opt_fmultsvs opt_fdivsvs opt_fmodsvs opt_feqsvs opt_fneqsvs
-opt_fltsvs opt_fgtsvs opt_flesvs opt_fgesvs
-(lindex_t op1)
-(VALUE v2)
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() - op1);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-}
-
-DEFINE_INSN
-opt_iorssv opt_iandssv opt_ieqssv opt_ineqssv
-opt_iltssv opt_igtssv opt_ilessv opt_igessv
-opt_fplusssv opt_fminusssv opt_fmultssv opt_fdivssv opt_fmodssv opt_feqssv opt_fneqssv
-opt_fltssv opt_fgtssv opt_flessv opt_fgessv
-(lindex_t op2)
-(VALUE v1)
-(VALUE val)
-{
-    VALUE v2 = *(GET_EP() - op2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-}
-
-DEFINE_INSN
-opt_iorssi opt_iandssi opt_ieqssi opt_ineqssi
-opt_iltssi opt_igtssi opt_ilessi opt_igessi
-opt_fplusssi opt_fminusssi opt_fmultssi opt_fdivssi opt_fmodssi opt_feqssi opt_fneqssi
-opt_fltssi opt_fgtssi opt_flessi opt_fgessi
-(VALUE imm)
-(VALUE v1)
-(VALUE val)
-{
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-}
-
-DEFINE_INSN
-opt_iorsss opt_iandsss opt_ieqsss opt_ineqsss
-opt_iltsss opt_igtsss opt_ilesss opt_igesss
-opt_fplussss opt_fminussss opt_fmultsss opt_fdivsss opt_fmodsss opt_feqsss opt_fneqsss
-opt_fltsss opt_fgtsss opt_flesss opt_fgesss
-()
-(VALUE v1, VALUE v2)
-(VALUE val)
-{
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-}
-
-DEFINE_INSN
-opt_iorvvv opt_iandvvv opt_ieqvvv opt_ineqvvv
-opt_iltvvv opt_igtvvv opt_ilevvv opt_igevvv
-opt_fplusvvv opt_fminusvvv opt_fmultvvv opt_fdivvvv opt_fmodvvv opt_feqvvv opt_fneqvvv
-opt_fltvvv opt_fgtvvv opt_flevvv opt_fgevvv
-(lindex_t res, lindex_t op1, lindex_t op2)
-()
-()
-{
-    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iorvvi opt_iandvvi opt_ieqvvi opt_ineqvvi
-opt_iltvvi opt_igtvvi opt_ilevvi opt_igevvi
-opt_fplusvvi opt_fminusvvi opt_fmultvvi opt_fdivvvi opt_fmodvvi opt_feqvvi opt_fneqvvi
-opt_fltvvi opt_fgtvvi opt_flevvi opt_fgevvi
-(lindex_t res, lindex_t op1, VALUE imm)
-()
-()
-{
-    VALUE v1 = *(GET_EP() - op1), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iorvvs opt_iandvvs opt_ieqvvs opt_ineqvvs
-opt_iltvvs opt_igtvvs opt_ilevvs opt_igevvs
-opt_fplusvvs opt_fminusvvs opt_fmultvvs opt_fdivvvs opt_fmodvvs opt_feqvvs opt_fneqvvs
-opt_fltvvs opt_fgtvvs opt_flevvs opt_fgevvs
-(lindex_t res, lindex_t op1)
-(VALUE v2)
-()
-{
-    VALUE v1 = *(GET_EP() - op1), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iorvsv opt_iandvsv opt_ieqvsv opt_ineqvsv
-opt_iltvsv opt_igtvsv opt_ilevsv opt_igevsv
-opt_fplusvsv opt_fminusvsv opt_fmultvsv opt_fdivvsv opt_fmodvsv opt_feqvsv opt_fneqvsv
-opt_fltvsv opt_fgtvsv opt_flevsv opt_fgevsv
-(lindex_t res, lindex_t op2)
-(VALUE v1)
-()
-{
-    VALUE v2 = *(GET_EP() - op2), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iorvsi opt_iandvsi opt_ieqvsi opt_ineqvsi
-opt_iltvsi opt_igtvsi opt_ilevsi opt_igevsi
-opt_fplusvsi opt_fminusvsi opt_fmultvsi opt_fdivvsi opt_fmodvsi opt_feqvsi opt_fneqvsi
-opt_fltvsi opt_fgtvsi opt_flevsi opt_fgevsi
-(lindex_t res, VALUE imm)
-(VALUE v1)
-()
-{
-    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
-opt_iorvss opt_iandvss opt_ieqvss opt_ineqvss
-opt_iltvss opt_igtvss opt_ilevss opt_igevss
-opt_fplusvss opt_fminusvss opt_fmultvss opt_fdivvss opt_fmodvss opt_feqvss opt_fneqvss
-opt_fltvss opt_fgtvss opt_flevss opt_fgevss
-(lindex_t res)
-(VALUE v1, VALUE v2)
-()
-{
-    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    vm_env_write(GET_EP(), -(int)res, val);
-}
-
-DEFINE_INSN
 opt_iarefsvv
 (lindex_t op1, lindex_t op2)
 ()
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
 }
 
 DEFINE_INSN
+opt_iplussvi opt_iminussvi opt_imultsvi opt_idivsvi opt_imodsvi
+opt_iorsvi opt_iandsvi opt_ieqsvi opt_ineqsvi
+opt_iltsvi opt_igtsvi opt_ilesvi opt_igesvi
 opt_iarefsvi
 (lindex_t op1, VALUE imm)
 ()
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1);
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
 }
 
 DEFINE_INSN
+opt_iplussvs opt_iminussvs opt_imultsvs opt_idivsvs opt_imodsvs
+opt_iorsvs opt_iandsvs opt_ieqsvs opt_ineqsvs
+opt_iltsvs opt_igtsvs opt_ilesvs opt_igesvs
 opt_iarefsvs
 (lindex_t op1)
 (VALUE v2)
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1);
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
 }
 
 DEFINE_INSN
+opt_iplusssv opt_iminusssv opt_imultssv opt_idivssv opt_imodssv
+opt_iorssv opt_iandssv opt_ieqssv opt_ineqssv
+opt_iltssv opt_igtssv opt_ilessv opt_igessv
 opt_iarefssv
 (lindex_t op2)
 (VALUE v1)
 (VALUE val)
 {
     VALUE v2 = *(GET_EP() - op2);
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
 }
 
 DEFINE_INSN
+opt_iplusssi opt_iminusssi opt_imultssi opt_idivssi opt_imodssi
+opt_iorssi opt_iandssi opt_ieqssi opt_ineqssi
+opt_iltssi opt_igtssi opt_ilessi opt_igessi
 opt_iarefssi
 (VALUE imm)
 (VALUE v1)
 (VALUE val)
 {
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
 }
 
 DEFINE_INSN
+opt_iplussss opt_iminussss opt_imultsss opt_idivsss opt_imodsss
+opt_iorsss opt_iandsss opt_ieqsss opt_ineqsss
+opt_iltsss opt_igtsss opt_ilesss opt_igesss
 opt_iarefsss
 ()
 (VALUE v1, VALUE v2)
 (VALUE val)
 {
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushss, v1, v2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
 }
 
 DEFINE_INSN
+opt_iplusvvv opt_iminusvvv opt_imultvvv opt_idivvvv opt_imodvvv
+opt_iorvvv opt_iandvvv opt_ieqvvv opt_ineqvvv
+opt_iltvvv opt_igtvvv opt_ilevvv opt_igevvv
 opt_iarefvvv
 (lindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
 {
-    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    VALUE val;
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
+    VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
+opt_iplusvvi opt_iminusvvi opt_imultvvi opt_idivvvi opt_imodvvi
+opt_iorvvi opt_iandvvi opt_ieqvvi opt_ineqvvi
+opt_iltvvi opt_igtvvi opt_ilevvi opt_igevvi
 opt_iarefvvi
 (lindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
 {
     VALUE v1 = *(GET_EP() - op1), val;
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
+opt_iplusvvs opt_iminusvvs opt_imultvvs opt_idivvvs opt_imodvvs
+opt_iorvvs opt_iandvvs opt_ieqvvs opt_ineqvvs
+opt_iltvvs opt_igtvvs opt_ilevvs opt_igevvs
 opt_iarefvvs
 (lindex_t res, lindex_t op1)
 (VALUE v2)
 ()
 {
     VALUE v1 = *(GET_EP() - op1), val;
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
+opt_iplusvsv opt_iminusvsv opt_imultvsv opt_idivvsv opt_imodvsv
+opt_iorvsv opt_iandvsv opt_ieqvsv opt_ineqvsv
+opt_iltvsv opt_igtvsv opt_ilevsv opt_igevsv
 opt_iarefvsv
 (lindex_t res, lindex_t op2)
 (VALUE v1)
 ()
 {
     VALUE v2 = *(GET_EP() - op2), val;
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
+opt_iplusvsi opt_iminusvsi opt_imultvsi opt_idivvsi opt_imodvsi
+opt_iorvsi opt_iandvsi opt_ieqvsi opt_ineqvsi
+opt_iltvsi opt_igtvsi opt_ilevsi opt_igevsi
 opt_iarefvsi
 (lindex_t res, VALUE imm)
 (VALUE v1)
 ()
 {
     VALUE val;
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
+opt_iplusvss opt_iminusvss opt_imultvss opt_idivvss opt_imodvss
+opt_iorvss opt_iandvss opt_ieqvss opt_ineqvss
+opt_iltvss opt_igtvss opt_ilevss opt_igevss
 opt_iarefvss
 (lindex_t res)
 (VALUE v1, VALUE v2)
 ()
 {
     VALUE val;
-    RTL_EXEC_INSN2(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushss, v1, v2);
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
     vm_env_write(GET_EP(), -(int)res, val);
 }
-
 DEFINE_INSN
 opt_iasetsvv
 (lindex_t ind_idx, lindex_t set_idx)
@@ -2291,7 +1910,6 @@ opt_iasetvss
 
 DEFINE_INSN
 opt_ibeqss opt_ibneqss opt_ibltss opt_ibgtss opt_ibless opt_ibgess
-opt_fbeqss opt_fbneqss opt_fbltss opt_fbgtss opt_fbless opt_fbgess
 (OFFSET tdst, OFFSET fdst)
 (VALUE v1, VALUE v2)
 ()
@@ -2305,7 +1923,6 @@ opt_fbeqss opt_fbneqss opt_fbltss opt_fbgtss opt_fbless opt_fbgess
 
 DEFINE_INSN
 opt_ibeqvv opt_ibneqvv opt_ibltvv opt_ibgtvv opt_iblevv opt_ibgevv
-opt_fbeqvv opt_fbneqvv opt_fbltvv opt_fbgtvv opt_fblevv opt_fbgevv
 (OFFSET tdst, OFFSET fdst, lindex_t op1, lindex_t op2)
 ()
 ()
@@ -2320,7 +1937,6 @@ opt_fbeqvv opt_fbneqvv opt_fbltvv opt_fbgtvv opt_fblevv opt_fbgevv
 
 DEFINE_INSN
 opt_ibeqvi opt_ibneqvi opt_ibltvi opt_ibgtvi opt_iblevi opt_ibgevi
-opt_fbeqvi opt_fbneqvi opt_fbltvi opt_fbgtvi opt_fblevi opt_fbgevi
 (OFFSET tdst, OFFSET fdst, lindex_t op1, VALUE imm)
 ()
 ()
@@ -2335,7 +1951,6 @@ opt_fbeqvi opt_fbneqvi opt_fbltvi opt_fbgtvi opt_fblevi opt_fbgevi
 
 DEFINE_INSN
 opt_ibeqvs opt_ibneqvs opt_ibltvs opt_ibgtvs opt_iblevs opt_ibgevs
-opt_fbeqvs opt_fbneqvs opt_fbltvs opt_fbgtvs opt_fblevs opt_fbgevs
 (OFFSET tdst, OFFSET fdst, lindex_t op1)
 (VALUE v2)
 ()
@@ -2350,7 +1965,6 @@ opt_fbeqvs opt_fbneqvs opt_fbltvs opt_fbgtvs opt_fblevs opt_fbgevs
 
 DEFINE_INSN
 opt_ibeqsv opt_ibneqsv opt_ibltsv opt_ibgtsv opt_iblesv opt_ibgesv
-opt_fbeqsv opt_fbneqsv opt_fbltsv opt_fbgtsv opt_fblesv opt_fbgesv
 (OFFSET tdst, OFFSET fdst, lindex_t op2)
 (VALUE v1)
 ()
@@ -2364,7 +1978,6 @@ opt_fbeqsv opt_fbneqsv opt_fbltsv opt_fbgtsv opt_fblesv opt_fbgesv
 
 DEFINE_INSN
 opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
-opt_fbeqsi opt_fbneqsi opt_fbltsi opt_fbgtsi opt_fblesi opt_fbgesi
 (OFFSET tdst, OFFSET fdst, VALUE imm)
 (VALUE v1)
 ()
@@ -2745,6 +2358,61 @@ opt_asetvss
 
 /* --- end of general RTL insns --- */
 
+/* Get value of instance variable id of self. */
+DEFINE_INSN
+rtl_getivar
+(ID id, IVC ic)
+()
+(VALUE val)
+// attr bool leaf = false; /* has IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() */
+{
+    VALUE self = GET_SELF();
+    uint32_t index;
+    struct rb_iv_index_tbl_entry *entry = ic->entry;
+
+    if (entry == NULL || entry->class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_getivar_exit;
+    VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
+    index = entry->index;
+    if (LIKELY(index < ROBJECT_NUMIV(self))) {
+        val = ROBJECT_IVPTR(self)[index];
+        goto rtl_getivar_end;
+    }
+  rtl_getivar_exit:
+    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    END_INSN(rtl_getivar);
+  rtl_getivar_end:
+}
+
+/* Set value of instance variable id of self to val. */
+DEFINE_INSN
+rtl_setivar
+(ID id, IVC ic)
+(VALUE val)
+()
+// attr bool leaf = false; /* has rb_check_frozen_internal() */
+{
+    VALUE self = GET_SELF();
+    uint32_t index;
+    struct rb_iv_index_tbl_entry *entry = ic->entry;
+
+    if (entry == NULL || entry->class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_setivar_exit;
+    VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
+    if (LIKELY(!RB_OBJ_FROZEN_RAW(self))) { /* to exlude more of rb_check_frozen_internal */
+        VM_ASSERT(!rb_ractor_shareable_p(self));
+        index = entry->index;
+        if (UNLIKELY(index >= ROBJECT_NUMIV(self))) {
+            rb_init_iv_list(self);
+        }
+        VALUE *ptr = ROBJECT_IVPTR(self);
+        RB_OBJ_WRITE(self, &ptr[index], val);
+        goto rtl_setivar_end;
+    }
+  rtl_setivar_exit:
+    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    END_INSN(rtl_setivar);
+  rtl_setivar_end:
+}
+
 /* Specialized call of method without block created from make_rtl_send_without block:
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
@@ -2765,9 +2433,9 @@ rtl_iseq_send_without_block
     VALUE *argv = reg_cfp->sp - argc;
     VALUE recv = TOPN(argc);
 
-    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto original;
+    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_iseq_send_without_block_exit;
     cme = vm_cc_cme(cc);
-    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto original;
+    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto rtl_iseq_send_without_block_exit;
     VM_ASSERT(callable_method_entry_p(cme) && argc == param_size);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
     vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
@@ -2775,9 +2443,75 @@ rtl_iseq_send_without_block
                   argv + param_size, body->local_table_size - param_size, body->stack_max);
     RESTORE_REGS();
     NEXT_INSN();
-  original:
+  rtl_iseq_send_without_block_exit:
     ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
     END_INSN(rtl_iseq_send_without_block);
+}
+
+/* Specialized call of method without block created from make_rtl_send_without block:
+   it should be iseq, not-tail call, no splat args, all leading args  */
+DEFINE_INSN
+rtl_opt_send_ivget
+(CALL_DATA cd, lindex_t index)
+(...)
+(VALUE val)
+// attr bool handles_sp = true;
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+{
+    const struct rb_callcache *cc = cd->cc;
+    const struct rb_callable_method_entry_struct *cme;
+    VALUE recv = TOPN(0);
+
+    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_opt_send_ivget_exit;
+    cme = vm_cc_cme(cc);
+    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto rtl_opt_send_ivget_exit;
+    VM_ASSERT(callable_method_entry_p(cme) && vm_ci_argc(cd->ci) == 0 && RB_TYPE_P(recv, T_OBJECT));
+    if (LIKELY(index < ROBJECT_NUMIV(recv))) {
+        reg_cfp->sp--; /* poping recv */
+        val = ROBJECT_IVPTR(recv)[index];
+        goto rtl_opt_send_ivget_end;
+    }
+  rtl_opt_send_ivget_exit:
+    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    END_INSN(rtl_opt_ivget);
+  rtl_opt_send_ivget_end:
+}
+
+/* Specialized call of method without block created from make_rtl_send_without block:
+   it should be iseq, not-tail call, no splat args, all leading args  */
+DEFINE_INSN
+rtl_opt_send_ivset
+(CALL_DATA cd, lindex_t index)
+(...)
+(VALUE val)
+// attr bool handles_sp = true;
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+{
+    const struct rb_callcache *cc = cd->cc;
+    const struct rb_callable_method_entry_struct *cme;
+    VALUE recv = TOPN(1);
+
+    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_opt_send_ivset_exit;
+    cme = vm_cc_cme(cc);
+    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto rtl_opt_send_ivset_exit;
+    VM_ASSERT(callable_method_entry_p(cme) && vm_ci_argc(cd->ci) == 1 && RB_TYPE_P(recv, T_OBJECT));
+    val = TOPN(0);
+    if (LIKELY(!RB_OBJ_FROZEN_RAW(recv))) { /* to exlude more of rb_check_frozen_internal */
+        VM_ASSERT(!rb_ractor_shareable_p(recv));
+        reg_cfp->sp -= 2; /* poping arg and recv */
+        if (UNLIKELY(index >= ROBJECT_NUMIV(recv))) {
+            rb_init_iv_list(recv);
+        }
+        VALUE *ptr = ROBJECT_IVPTR(recv);
+        RB_OBJ_WRITE(recv, &ptr[index], val);
+        goto rtl_opt_send_ivset_end;
+    }
+  rtl_opt_send_ivset_exit:
+    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    END_INSN(rtl_opt_send_ivset);
+  rtl_opt_send_ivset_end:
 }
 
 /* Non-specialized call of method without block created from make_rtl_send_without block */
@@ -2851,6 +2585,31 @@ make_rtl_bbv
 
     SET_PC(GET_CFP()->iseq->body->bbv_code + start);
     END_INSN(make_rtl_bbv); /* to skip pc increase */
+}
+
+DEFINE_INSN
+make_rtl_getivar
+(ID id, IVC ic)
+()
+(VALUE val)
+// attr bool leaf = false; /* has IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() */
+{
+    VALUE self = GET_SELF();
+    val = vm_getinstancevariable(GET_ISEQ(), self, id, ic);
+    rb_rtl_change_getivar(self, GET_CFP(), ic);
+}
+
+/* Set value of instance variable id of self to val. */
+DEFINE_INSN
+make_rtl_setivar
+(ID id, IVC ic)
+(VALUE val)
+()
+// attr bool leaf = false; /* has rb_check_frozen_internal() */
+{
+    VALUE self = GET_SELF();
+    vm_setinstancevariable(GET_ISEQ(), self, id, val, ic);
+    if (ic->entry != NULL) rb_rtl_change_setivar(self, GET_CFP(), ic);
 }
 
 DEFINE_INSN

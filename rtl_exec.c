@@ -26,8 +26,10 @@
 
 #if defined(__GNUC__)
 #define rtl_inline inline __attribute__ ((__always_inline__))
+#define rtl_noinline __attribute__ ((__noinline__))
 #else
 #define rtl_inline inline
+#define rtl_noinline
 #endif
 
 /* Macros used to translate insn name into the corresponding function
@@ -162,6 +164,7 @@ RTL_FUNCS(vm_opt_igt)
 RTL_FUNCS(vm_opt_ile)
 RTL_FUNCS(vm_opt_ige)
 
+#ifdef FLONUM_INSNS
 static rtl_inline VALUE vm_opt_fplus(VALUE v1, VALUE v2) { return DBL2NUM(RFLOAT_VALUE(v1) + RFLOAT_VALUE(v2)); }
 static rtl_inline VALUE vm_opt_fminus(VALUE v1, VALUE v2) { return DBL2NUM(RFLOAT_VALUE(v1) - RFLOAT_VALUE(v2)); }
 static rtl_inline VALUE vm_opt_fmult(VALUE v1, VALUE v2) { return DBL2NUM(RFLOAT_VALUE(v1) * RFLOAT_VALUE(v2)); }
@@ -185,6 +188,7 @@ RTL_FUNCS(vm_opt_flt)
 RTL_FUNCS(vm_opt_fgt)
 RTL_FUNCS(vm_opt_fle)
 RTL_FUNCS(vm_opt_fge)
+#endif
 
 static rtl_inline VALUE vm_opt_iaref(VALUE v1, VALUE v2) {
     if (SPECIAL_CONST_P(v1) || RBASIC_CLASS(v1) != rb_cArray) return Qundef;
@@ -216,12 +220,14 @@ RTL_BR_FUNCS(vm_opt_ibgt, vm_opt_igt)
 RTL_BR_FUNCS(vm_opt_ible, vm_opt_ile)
 RTL_BR_FUNCS(vm_opt_ibge, vm_opt_ige)
 
+#ifdef FLONUM_INSNS
 RTL_BR_FUNCS(vm_opt_fbeq, vm_opt_feq)
 RTL_BR_FUNCS(vm_opt_fbneq, vm_opt_fneq)
 RTL_BR_FUNCS(vm_opt_fblt, vm_opt_flt)
 RTL_BR_FUNCS(vm_opt_fbgt, vm_opt_fgt)
 RTL_BR_FUNCS(vm_opt_fble, vm_opt_fle)
 RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
+#endif
 
 #define RTL_EXEC_INSN2(iname, push_fname, res, v1, v2)		\
     if ((res = RTL_FUNC_NAME(iname)(v1, v2)) == Qundef) {       \
@@ -237,21 +243,118 @@ RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
         END_INSN(iname);					\
     }
 
-#define CHECK_FIXNUM(iname, push_fname, res, v1, v2)    	\
-    if (!FIXNUM_P(res)) {      					\
+#define CHECK_RES_FUNC_NAME(insn_name) RTL_CONCAT(result_check_, insn_name)
+
+#define RTL_RES_CHECK_FUNCS2(iname, fname)			                                        		\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, svv))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, svi))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, svs))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, ssv))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, sss))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, ssi))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, vvv))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, vvi))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, vvs))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, vsv))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, vss))(VALUE res) { return fname(res); }\
+    static rtl_inline VALUE CHECK_RES_FUNC_NAME(RTL_CONCAT(iname, vsi))(VALUE res) { return fname(res); }
+
+static rtl_inline int check_res_fixnum(VALUE res) { return !FIXNUM_P(res); }
+static rtl_inline int check_res_flonum(VALUE res) { return !FLONUM_P(res); }
+static rtl_inline int check_res_undef(VALUE res) { return res == Qundef; }
+static rtl_inline int check_res_nothing(VALUE res) { return FALSE; }
+
+RTL_RES_CHECK_FUNCS2(opt_iplus, check_res_fixnum)
+RTL_RES_CHECK_FUNCS2(opt_iminus, check_res_fixnum)
+RTL_RES_CHECK_FUNCS2(opt_imult, check_res_fixnum)
+RTL_RES_CHECK_FUNCS2(opt_idiv, check_res_fixnum)
+RTL_RES_CHECK_FUNCS2(opt_imod, check_res_fixnum)
+RTL_RES_CHECK_FUNCS2(opt_ior, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_iand, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_ieq, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_ineq, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_ilt, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_igt, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_ile, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_ige, check_res_nothing)
+#ifdef FLONUM_INSNS
+RTL_RES_CHECK_FUNCS2(opt_fplus, check_res_flonum)
+RTL_RES_CHECK_FUNCS2(opt_fminus, check_res_flonum)
+RTL_RES_CHECK_FUNCS2(opt_fmult, check_res_flonum)
+RTL_RES_CHECK_FUNCS2(opt_fdiv, check_res_flonum)
+RTL_RES_CHECK_FUNCS2(opt_fmod, check_res_flonum)
+RTL_RES_CHECK_FUNCS2(opt_feq, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_fneq, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_flt, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_fgt, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_fle, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_fge, check_res_nothing)
+#endif
+RTL_RES_CHECK_FUNCS2(opt_iaref, check_res_undef)
+
+#define CHECK_RESULT(iname, push_fname, res, v1, v2)    	\
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(iname)(res))) {            \
         ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
         push_fname(GET_CFP(), v1, v2);				\
-        END_INSN(iname);                                \
+        END_INSN(iname);                                	\
     }
 
-#define CHECK_ZERO(iname, push_fname, v1, v2)   		\
-    if (v2 == LONG2FIX(0)) {					\
+
+#define CHECK_FUNC_NAME(insn_name) RTL_CONCAT(input_check_, insn_name)
+
+#define RTL_CHECK_FUNCS2(iname, fname)			                                        		\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, svv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, svi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, svs))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, ssv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, sss))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, ssi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, vvv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, vvi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, vvs))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, vsv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, vss))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+    static rtl_inline VALUE CHECK_FUNC_NAME(RTL_CONCAT(iname, vsi))(VALUE v1, VALUE v2) { return fname(v1, v2); }
+
+static rtl_inline int check_zero(VALUE v1, VALUE v2) { return v2 == LONG2FIX(0); }
+static rtl_inline int check_nothing(VALUE v1, VALUE v2) { return FALSE; }
+
+RTL_CHECK_FUNCS2(opt_iplus, check_nothing)
+RTL_CHECK_FUNCS2(opt_iminus, check_nothing)
+RTL_CHECK_FUNCS2(opt_imult, check_nothing)
+RTL_CHECK_FUNCS2(opt_idiv, check_zero)
+RTL_CHECK_FUNCS2(opt_imod, check_zero)
+RTL_CHECK_FUNCS2(opt_ior, check_nothing)
+RTL_CHECK_FUNCS2(opt_iand, check_nothing)
+RTL_CHECK_FUNCS2(opt_ieq, check_nothing)
+RTL_CHECK_FUNCS2(opt_ineq, check_nothing)
+RTL_CHECK_FUNCS2(opt_ilt, check_nothing)
+RTL_CHECK_FUNCS2(opt_igt, check_nothing)
+RTL_CHECK_FUNCS2(opt_ile, check_nothing)
+RTL_CHECK_FUNCS2(opt_ige, check_nothing)
+#ifdef FLONUM_INSNS
+RTL_CHECK_FUNCS2(opt_fplus, check_nothing)
+RTL_CHECK_FUNCS2(opt_fminus, check_nothing)
+RTL_CHECK_FUNCS2(opt_fmult, check_nothing)
+RTL_CHECK_FUNCS2(opt_fdiv, check_nothing)
+RTL_CHECK_FUNCS2(opt_fmod, check_nothing)
+RTL_CHECK_FUNCS2(opt_feq, check_nothing)
+RTL_CHECK_FUNCS2(opt_fneq, check_nothing)
+RTL_CHECK_FUNCS2(opt_flt, check_nothing)
+RTL_CHECK_FUNCS2(opt_fgt, check_nothing)
+RTL_CHECK_FUNCS2(opt_fle, check_nothing)
+RTL_CHECK_FUNCS2(opt_fge, check_nothing)
+#endif
+RTL_CHECK_FUNCS2(opt_iaref, check_nothing)
+
+#define CHECK_INPUTS(iname, push_fname, v1, v2)                  \
+    if (UNLIKELY(CHECK_FUNC_NAME(iname)(v1, v2))) {              \
         ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
         push_fname(GET_CFP(), v1, v2);				\
         END_INSN(iname); 					\
     }
 
-static rtl_inline const VALUE *
+static rtl_noinline const VALUE *
 rb_rtl_get_stack_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
     const struct rb_iseq_constant_body *body = cfp->iseq->body;
     VM_ASSERT(cfp->pc == pc && body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_size);
