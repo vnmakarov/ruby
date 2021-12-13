@@ -229,20 +229,6 @@ RTL_BR_FUNCS(vm_opt_fble, vm_opt_fle)
 RTL_BR_FUNCS(vm_opt_fbge, vm_opt_fge)
 #endif
 
-#define RTL_EXEC_INSN2(iname, push_fname, res, v1, v2)		\
-    if ((res = RTL_FUNC_NAME(iname)(v1, v2)) == Qundef) {       \
-        ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
-        push_fname(GET_CFP(), v1, v2);				\
-        END_INSN(iname);					\
-    }
-
-#define RTL_EXEC_INSN3(iname, push_fname, v1, v2, v3)		\
-    if (RTL_FUNC_NAME(iname)(v1, v2, v3) == Qundef) {   	\
-        ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
-        push_fname(GET_CFP(), v1, v2, v3);			\
-        END_INSN(iname);					\
-    }
-
 #define CHECK_RES_FUNC_NAME(insn_name) RTL_CONCAT(result_check_, insn_name)
 
 #define RTL_RES_CHECK_FUNCS2(iname, fname)			                                        		\
@@ -294,8 +280,7 @@ RTL_RES_CHECK_FUNCS2(opt_iaref, check_res_undef)
 
 #define CHECK_RESULT(iname, push_fname, res, v1, v2)    	\
     if (UNLIKELY(CHECK_RES_FUNC_NAME(iname)(res))) {            \
-        ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
-        push_fname(GET_CFP(), v1, v2);				\
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));	\
         END_INSN(iname);                                	\
     }
 
@@ -349,16 +334,17 @@ RTL_CHECK_FUNCS2(opt_iaref, check_nothing)
 
 #define CHECK_INPUTS(iname, push_fname, v1, v2)                  \
     if (UNLIKELY(CHECK_FUNC_NAME(iname)(v1, v2))) {              \
-        ABS_JUMP(rb_rtl_get_stack_pc(GET_CFP(), reg_pc));	\
-        push_fname(GET_CFP(), v1, v2);				\
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));	\
         END_INSN(iname); 					\
     }
 
 static rtl_noinline const VALUE *
-rb_rtl_get_stack_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
+rb_rtl_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
     const struct rb_iseq_constant_body *body = cfp->iseq->body;
-    VM_ASSERT(cfp->pc == pc && body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_size);
+    RTL_EXEC_ASSERT(body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_free);
     int pos = pc - body->bbv_code;
-    int stack_pos = body->bbv_pos_map[pos];
-    return body->iseq_encoded + stack_pos;
+    RTL_EXEC_ASSERT(pos < body->bbv_code_free);
+    int safe_pos = -body->bbv_pos_map[pos] - 1;
+    RTL_EXEC_ASSERT(safe_pos >= 0 && safe_pos < body->bbv_code_free);
+    return body->bbv_code + safe_pos;
 }

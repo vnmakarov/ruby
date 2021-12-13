@@ -357,12 +357,14 @@ enum rb_attr_val {
 
 struct rb_iseq_bbv {
     rb_iseq_t *iseq;
-    /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch or leave */
+    /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch/leave/throw */
     int iseq_start, iseq_bound;
+    /* The list head is always unspecialized bbv.  For head itself it is NULL */
+    struct rb_iseq_bbv *head_bbv;
     /* next bbv in the list with the same (iseq, start).  The list
-       head is always bbv with unknown attrs (default bbv) */
+       head is always bbv with unknown attrs (default bbv) and non-spec code */
     struct rb_iseq_bbv *next_bbv;
-    int bbv_start; /* start pos in bbv_code */
+    int bbv_start, bbv_bound; /* start / bound pos in bbv_code */
     /* Map local var/stack slot -> attr.  The last elem is always an
        end marker.  Unknown values (besides the end marker) can not be
        the last elements, assume unknown attr for vars/temps beyond
@@ -388,10 +390,13 @@ struct rb_iseq_constant_body {
 
     /* The following are use for RTL BBV interpretation: */
     int n_bbvs;
-    struct rb_iseq_bbv **bbvs; /* array of pointers to default BB versions sorted by start */
+    struct rb_iseq_bbv **bbvs; /* array of pointers to head(non-spec) BB versions sorted by start */
     int bbv_code_bound, bbv_code_free;
     VALUE *bbv_code; /* container for RTL BBV insns, can be reallocated */
-    int *bbv_pos_map; /* array of bbv_code_bound: bbv pos(index) to original pos */
+    /* array of bbv_code_bound:
+       if negative: spec bbv pos(index) to non-spec bbv pos
+       otherwise: non spec bbv pos(index) to original pos */
+    int *bbv_pos_map;
 
     /**
      * parameter information
@@ -870,9 +875,20 @@ typedef struct rb_control_frame_struct {
 static inline const VALUE *
 rb_iseq_pc (const rb_control_frame_t *cfp) {
     const VALUE *pc = cfp->pc;
+    int pos;
     const struct rb_iseq_constant_body *body = cfp->iseq->body;
-    if (body->bbv_code > pc || pc >= body->bbv_code + body->bbv_code_bound) return pc;
-    return body->iseq_encoded + body->bbv_pos_map[pc - body->bbv_code];
+
+    if (body->bbv_code > pc || pc >= body->bbv_code + body->bbv_code_free) return pc;
+    pos = pc - body->bbv_code;
+    VM_ASSERT(pos < body->bbv_code_free);
+    pos = body->bbv_pos_map[pos];
+    if (pos < 0) {
+        pos = -(pos + 1);
+        VM_ASSERT(pos < body->bbv_code_free);
+        pos = body->bbv_pos_map[pos];
+    }
+    VM_ASSERT(pos >= 0 && pos < body->iseq_size);
+    return body->iseq_encoded + pos;
 }
 
 extern const rb_data_type_t ruby_threadptr_data_type;

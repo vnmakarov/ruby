@@ -1790,123 +1790,6 @@ opt_iarefvss
     CHECK_RESULT(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
     vm_env_write(GET_EP(), -(int)res, val);
 }
-DEFINE_INSN
-opt_iasetsvv
-(lindex_t ind_idx, lindex_t set_idx)
-(VALUE arr)
-()
-{
-    VALUE ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushsvv, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetsiv
-(VALUE ind, lindex_t set_idx)
-(VALUE arr)
-()
-{
-    VALUE set = *(GET_EP() - set_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushsiv, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetsvs
-(lindex_t ind_idx)
-(VALUE arr, VALUE set)
-()
-{
-    VALUE ind = *(GET_EP() - ind_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushsvs, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetssv
-(lindex_t set_idx)
-(VALUE arr, VALUE ind)
-()
-{
-    VALUE set = *(GET_EP() - set_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushssv, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetsis
-(VALUE ind)
-(VALUE arr, VALUE set)
-()
-{
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushsis, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetsss
-()
-(VALUE arr, VALUE ind, VALUE set)
-()
-{
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushsss, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetvvv
-(lindex_t arr_idx, lindex_t ind_idx, lindex_t set_idx)
-()
-()
-{
-    VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushvvv, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetviv
-(lindex_t arr_idx, VALUE ind, lindex_t set_idx)
-()
-()
-{
-    VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushviv, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetvvs
-(lindex_t arr_idx, lindex_t ind_idx)
-(VALUE set)
-()
-{
-    VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushvvs, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetvsv
-(lindex_t arr_idx, lindex_t set_idx)
-(VALUE ind)
-()
-{
-    VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushvsv, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetvis
-(lindex_t arr_idx, VALUE ind)
-(VALUE set)
-()
-{
-    VALUE arr = *(GET_EP() - arr_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushvis, arr, ind, set);
-}
-
-DEFINE_INSN
-opt_iasetvss
-(lindex_t arr_idx)
-(VALUE ind, VALUE set)
-()
-{
-    VALUE arr = *(GET_EP() - arr_idx);
-    RTL_EXEC_INSN3(NAME_OF_CURRENT_INSN, pushvss, arr, ind, set);
-}
 
 DEFINE_INSN
 opt_ibeqss opt_ibneqss opt_ibltss opt_ibgtss opt_ibless opt_ibgess
@@ -2378,9 +2261,10 @@ rtl_getivar
         goto rtl_getivar_end;
     }
   rtl_getivar_exit:
-    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
     END_INSN(rtl_getivar);
   rtl_getivar_end:
+    ;
 }
 
 /* Set value of instance variable id of self to val. */
@@ -2408,9 +2292,10 @@ rtl_setivar
         goto rtl_setivar_end;
     }
   rtl_setivar_exit:
-    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
     END_INSN(rtl_setivar);
   rtl_setivar_end:
+    ;
 }
 
 /* Specialized call of method without block created from make_rtl_send_without block:
@@ -2444,7 +2329,7 @@ rtl_iseq_send_without_block
     RESTORE_REGS();
     NEXT_INSN();
   rtl_iseq_send_without_block_exit:
-    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
     END_INSN(rtl_iseq_send_without_block);
 }
 
@@ -2452,51 +2337,44 @@ rtl_iseq_send_without_block
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
 rtl_opt_send_ivget
-(CALL_DATA cd, lindex_t index)
+(VALUE klass, lindex_t index)
 (...)
 (VALUE val)
 // attr bool handles_sp = true;
-// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
-// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+// attr rb_snum_t sp_inc = 0;
+// attr rb_snum_t comptime_sp_inc = 0;
 {
-    const struct rb_callcache *cc = cd->cc;
-    const struct rb_callable_method_entry_struct *cme;
     VALUE recv = TOPN(0);
 
-    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_opt_send_ivget_exit;
-    cme = vm_cc_cme(cc);
-    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto rtl_opt_send_ivget_exit;
-    VM_ASSERT(callable_method_entry_p(cme) && vm_ci_argc(cd->ci) == 0 && RB_TYPE_P(recv, T_OBJECT));
+    if (klass != CLASS_OF(recv)) goto rtl_opt_send_ivget_exit;
+    VM_ASSERT(RB_TYPE_P(recv, T_OBJECT));
     if (LIKELY(index < ROBJECT_NUMIV(recv))) {
         reg_cfp->sp--; /* poping recv */
         val = ROBJECT_IVPTR(recv)[index];
         goto rtl_opt_send_ivget_end;
     }
   rtl_opt_send_ivget_exit:
-    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
     END_INSN(rtl_opt_ivget);
   rtl_opt_send_ivget_end:
+    ;
 }
 
 /* Specialized call of method without block created from make_rtl_send_without block:
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
 rtl_opt_send_ivset
-(CALL_DATA cd, lindex_t index)
+(VALUE klass, lindex_t index)
 (...)
 (VALUE val)
 // attr bool handles_sp = true;
-// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
-// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+// attr rb_snum_t sp_inc = -1;
+// attr rb_snum_t comptime_sp_inc = -1;
 {
-    const struct rb_callcache *cc = cd->cc;
-    const struct rb_callable_method_entry_struct *cme;
     VALUE recv = TOPN(1);
 
-    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_opt_send_ivset_exit;
-    cme = vm_cc_cme(cc);
-    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto rtl_opt_send_ivset_exit;
-    VM_ASSERT(callable_method_entry_p(cme) && vm_ci_argc(cd->ci) == 1 && RB_TYPE_P(recv, T_OBJECT));
+    if (klass != CLASS_OF(recv)) goto rtl_opt_send_ivset_exit;
+    VM_ASSERT(RB_TYPE_P(recv, T_OBJECT));
     val = TOPN(0);
     if (LIKELY(!RB_OBJ_FROZEN_RAW(recv))) { /* to exlude more of rb_check_frozen_internal */
         VM_ASSERT(!rb_ractor_shareable_p(recv));
@@ -2509,9 +2387,10 @@ rtl_opt_send_ivset
         goto rtl_opt_send_ivset_end;
     }
   rtl_opt_send_ivset_exit:
-    ABS_JUMP(rb_rtl_get_stack_pc(reg_cfp, reg_pc - 3));
+    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
     END_INSN(rtl_opt_send_ivset);
   rtl_opt_send_ivset_end:
+    ;
 }
 
 /* Non-specialized call of method without block created from make_rtl_send_without block */
