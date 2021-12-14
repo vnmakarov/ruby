@@ -149,11 +149,24 @@ static rtl_inline VALUE vm_opt_igt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
 static rtl_inline VALUE vm_opt_ile(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2); }
 static rtl_inline VALUE vm_opt_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 > (SIGNED_VALUE)v2); }
 
+#if !__has_builtin(__builtin_add_overflow)
+#define vm_opt_iplus(res, v1, v2, ov_label)                      \
+    {                                                            \
+        long r = FIX2LONG(v1) + FIX2LONG(v2);                    \
+        if (RB_FIXABLE(r)) {                                     \
+            *res = RB_LONG2FIX(r);                               \
+        } else {                                                 \
+            *res = rb_int2big(r);                                \
+            goto RTL_CONCAT(exit_opt_, ov_label);                \
+        }                                                        \
+    }
+#else
 #define vm_opt_iplus(res, v1, v2, ov_label)                      \
     if (__builtin_add_overflow((long)v1, (long)v2-1, res)) {     \
         *res = rb_int2big(rb_overflowed_fix_to_int(*res));       \
         goto RTL_CONCAT(exit_opt_, ov_label);                    \
     }
+#endif
 
 #define vm_opt_iplussss(res, v1, v2) vm_opt_iplus(res, v1, v2, iplussss)
 #define vm_opt_iplusssv(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusssv)
@@ -168,11 +181,24 @@ static rtl_inline VALUE vm_opt_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
 #define vm_opt_iplusvsi(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusvsi)
 #define vm_opt_iplusvvi(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusvvi)
 
+#if !__has_builtin(__builtin_sub_overflow)
+#define vm_opt_iminus(res, v1, v2, ov_label)                     \
+    {                                                            \
+        long r = FIX2LONG(v1) - FIX2LONG(v2);                    \
+        if (RB_FIXABLE(r)) {                                     \
+            *res = RB_LONG2FIX(r);                               \
+        } else {                                                 \
+            *res = rb_int2big(r);                                \
+            goto RTL_CONCAT(exit_opt_, ov_label);                \
+        }                                                        \
+    }
+#else
 #define vm_opt_iminus(res, v1, v2, ov_label)                    \
     if (__builtin_sub_overflow((long)v1, (long)v2-1, res)) {    \
         *res = rb_int2big(rb_overflowed_fix_to_int(*res));      \
         goto RTL_CONCAT(exit_opt_, ov_label);                   \
     }
+#endif
 
 #define vm_opt_iminussss(res, v1, v2) vm_opt_iminus(res, v1, v2, iminussss)
 #define vm_opt_iminusssv(res, v1, v2) vm_opt_iminus(res, v1, v2, iminusssv)
