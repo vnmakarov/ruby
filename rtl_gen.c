@@ -718,6 +718,7 @@ print_attrs(const char *attrs) {
     int i;
 
     if (attrs != NULL) {
+        fprintf (stderr, " attrs =");
         for (i = 0; attrs[i] != ATTR_END_MARKER; i++)
             if (attrs[i] != ATTR_UNKNOWN)
                 fprintf (stderr, " %d:%s", i, attrs[i] == ATTR_FIXNUM ? "fix" : "flo");
@@ -777,7 +778,7 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound) {
 	insn_id = rb_vm_insn_decode((VALUE)code[i]);
         if (insn_id == BIN(gen_rtl_bbv) || insn_id == BIN(gen_rtl_bbv2)) {
             rb_iseq_bbv_t bbv = (rb_iseq_bbv_t)code[i + 1];
-            fprintf(stderr, "  # %04d: %s(BBV 0x%llx), attrs=",
+            fprintf(stderr, "  # %04d: %s(BBV 0x%llx)",
                     i, insn_name(insn_id), (unsigned long long) bbv);
             print_attrs(bbv->attrs);
         }
@@ -1398,7 +1399,7 @@ gen_rtl_spec_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
     int branch2_offset_add, attr, op1_attr, op2_attr, imm_p, unknown_p, neq_p;
     int debug_p = rb_rtl_debug_p(), compacted_attrs_p = FALSE;
     VALUE val, *operands, new_operands[10];
-    int offset; /* to remove false warning */
+    int offset;
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t head_bbv = bbv->head_bbv, dest_bbv;
 
@@ -1687,15 +1688,28 @@ gen_rtl_spec_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
     }
     remove_nops();
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
-    bbv->bbv_start = get_bbv_code_space(iseq, len);
-    bbv->bbv_bound = bbv->bbv_start + len;
-    memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
-    memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
-    bbv_encode(&body->bbv_code[bbv->bbv_start], len);
-    if (debug_p) {
-        fprintf(stderr, "Specialized RTL BBV:\n");
-        print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound);
-        print_pos_map();
+    bbv_encode(VARR_ADDR(VALUE, bbv_encoded), len);
+    if (!compacted_attrs_p)
+        compact_attrs();
+    if ((bbv->attrs == NULL || bbv->attrs[0] == ATTR_END_MARKER)
+        && VARR_LENGTH(char, attrs) == 1 && VARR_GET(char, attrs, 0) == ATTR_END_MARKER
+        && memcmp(VARR_ADDR(VALUE, bbv_encoded), &body->bbv_code[head_bbv->bbv_start],
+                  (curr_rtl_insn_pos - head_bbv->bbv_start) * sizeof(VALUE)) == 0) {
+        bbv->bbv_start = head_bbv->bbv_start;
+        bbv->bbv_bound = head_bbv->bbv_bound;
+        if (debug_p)
+            fprintf(stderr, "Specialized RTL BBV is the same as non-specialized one -- reuse its code\n");
+    } else {
+        bbv->bbv_start = get_bbv_code_space(iseq, len);
+        bbv->bbv_bound = bbv->bbv_start + len;
+        memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
+        memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map),
+               VARR_LENGTH(int, pos_map) * sizeof(int));
+        if (debug_p) {
+            fprintf(stderr, "Specialized RTL BBV:\n");
+            print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound);
+            print_pos_map();
+        }
     }
 }
 
@@ -1812,7 +1826,7 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
             && (iseq = (rb_iseq_t *)def_iseq_ptr(cme->def)) != NULL && rb_simple_iseq_p(iseq)) {
             if (debug_p) {
                 fprintf(stderr,
-                        "Changing make_rtl_send_without_block to rtl_iseq_send_without_block: argc=%d, attrs=",
+                        "Changing make_rtl_send_without_block to rtl_iseq_send_without_block: argc=%d",
                         argc);
                 print_attrs(attrs);
             }
@@ -1853,7 +1867,7 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
     }
     if (debug_p) {
         fprintf(stderr,
-                "Changing make_rtl_send_without_block to rtl_opt_send_without_block: argc=%d, attrs=",
+                "Changing make_rtl_send_without_block to rtl_opt_send_without_block: argc=%d",
                 argc);
         print_attrs(attrs);
     }
