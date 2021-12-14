@@ -35,36 +35,37 @@
 /* Macros used to translate insn name into the corresponding function
    name.  */
 #define RTL_CONCAT(a, b) a ## b
+#define RTL_SUBST_CONCAT(a, b) RTL_CONCAT(a, b)
 #define RTL_FUNC_NAME(insn_name) RTL_CONCAT(vm_, insn_name)
 
-#define RTL_FUNCS2(iname, fname)			                                        \
-    static rtl_inline VALUE RTL_CONCAT(iname, svv)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, svi)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, svs)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, ssv)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, ssi)(VALUE v1, VALUE v2) { return fname(v1, v2); }\
+#define RTL_FUNCS0(iname)                                               \
+    static rtl_inline void RTL_CONCAT(iname, svv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, svi)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, svs)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, ssv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, ssi)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
 
-RTL_FUNCS2(vm_opt_plus, vm_opt_plus)
-RTL_FUNCS2(vm_opt_minus, vm_opt_minus)
-RTL_FUNCS2(vm_opt_mult, vm_opt_mult)
-RTL_FUNCS2(vm_opt_div, vm_opt_div)
-RTL_FUNCS2(vm_opt_mod, vm_opt_mod)
-RTL_FUNCS2(vm_opt_or, vm_opt_or)
-RTL_FUNCS2(vm_opt_and, vm_opt_and)
-RTL_FUNCS2(vm_opt_lt, vm_opt_lt)
-RTL_FUNCS2(vm_opt_gt, vm_opt_gt)
-RTL_FUNCS2(vm_opt_le, vm_opt_le)
-RTL_FUNCS2(vm_opt_ge, vm_opt_ge)
-RTL_FUNCS2(vm_opt_aref, vm_opt_aref)
+RTL_FUNCS0(vm_opt_plus)
+RTL_FUNCS0(vm_opt_minus)
+RTL_FUNCS0(vm_opt_mult)
+RTL_FUNCS0(vm_opt_div)
+RTL_FUNCS0(vm_opt_mod)
+RTL_FUNCS0(vm_opt_or)
+RTL_FUNCS0(vm_opt_and)
+RTL_FUNCS0(vm_opt_lt)
+RTL_FUNCS0(vm_opt_gt)
+RTL_FUNCS0(vm_opt_le)
+RTL_FUNCS0(vm_opt_ge)
+RTL_FUNCS0(vm_opt_aref)
 
-#define RTL_FUNCS(iname) RTL_FUNCS2(iname, iname) \
-    static rtl_inline VALUE RTL_CONCAT(iname, vvv)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vvi)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vvs)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vsv)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vsi)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vss)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, sss)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+#define RTL_FUNCS(iname) RTL_FUNCS0(iname) \
+    static rtl_inline void RTL_CONCAT(iname, vvv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, vvi)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, vvs)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, vsv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, vsi)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, vss)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, sss)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
 
 
 static rtl_inline void RTL_CONCAT(push, vv)(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {
@@ -136,8 +137,6 @@ static rtl_inline void RTL_CONCAT(push, vss)(rb_control_frame_t *reg_cfp, VALUE 
     static rtl_inline VALUE RTL_CONCAT(iname, vis)(VALUE v0, VALUE v1, VALUE v2) { return iname(v0, v1, v2); }\
     static rtl_inline VALUE RTL_CONCAT(iname, vss)(VALUE v0, VALUE v1, VALUE v2) { return iname(v0, v1, v2); }
 
-static rtl_inline VALUE vm_opt_iplus(VALUE v1, VALUE v2) { return rb_fix_plus_fix(v1, v2); }
-static rtl_inline VALUE vm_opt_iminus(VALUE v1, VALUE v2) { return rb_fix_minus_fix(v1, v2); }
 static rtl_inline VALUE vm_opt_imult(VALUE v1, VALUE v2) { return rb_fix_mul_fix(v1, v2); }
 static rtl_inline VALUE vm_opt_idiv(VALUE v1, VALUE v2) { return rb_fix_div_fix(v1, v2); }
 static rtl_inline VALUE vm_opt_imod(VALUE v1, VALUE v2) { return rb_fix_mod_fix(v1, v2); }
@@ -150,8 +149,44 @@ static rtl_inline VALUE vm_opt_igt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
 static rtl_inline VALUE vm_opt_ile(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2); }
 static rtl_inline VALUE vm_opt_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 > (SIGNED_VALUE)v2); }
 
-RTL_FUNCS(vm_opt_iplus)
-RTL_FUNCS(vm_opt_iminus)
+#define vm_opt_iplus(res, v1, v2, ov_label)                      \
+    if (__builtin_add_overflow((long)v1, (long)v2-1, res)) {     \
+        *res = rb_int2big(rb_overflowed_fix_to_int(*res));       \
+        goto RTL_CONCAT(exit_opt_, ov_label);                    \
+    }
+
+#define vm_opt_iplussss(res, v1, v2) vm_opt_iplus(res, v1, v2, iplussss)
+#define vm_opt_iplusssv(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusssv)
+#define vm_opt_iplussvs(res, v1, v2) vm_opt_iplus(res, v1, v2, iplussvs)
+#define vm_opt_iplussvv(res, v1, v2) vm_opt_iplus(res, v1, v2, iplussvv)
+#define vm_opt_iplusssi(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusssi)
+#define vm_opt_iplussvi(res, v1, v2) vm_opt_iplus(res, v1, v2, iplussvi)
+#define vm_opt_iplusvss(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusvss)
+#define vm_opt_iplusvsv(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusvsv)
+#define vm_opt_iplusvvs(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusvvs)
+#define vm_opt_iplusvvv(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusvvv)
+#define vm_opt_iplusvsi(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusvsi)
+#define vm_opt_iplusvvi(res, v1, v2) vm_opt_iplus(res, v1, v2, iplusvvi)
+
+#define vm_opt_iminus(res, v1, v2, ov_label)                    \
+    if (__builtin_sub_overflow((long)v1, (long)v2-1, res)) {    \
+        *res = rb_int2big(rb_overflowed_fix_to_int(*res));      \
+        goto RTL_CONCAT(exit_opt_, ov_label);                   \
+    }
+
+#define vm_opt_iminussss(res, v1, v2) vm_opt_iminus(res, v1, v2, iminussss)
+#define vm_opt_iminusssv(res, v1, v2) vm_opt_iminus(res, v1, v2, iminusssv)
+#define vm_opt_iminussvs(res, v1, v2) vm_opt_iminus(res, v1, v2, iminussvs)
+#define vm_opt_iminussvv(res, v1, v2) vm_opt_iminus(res, v1, v2, iminussvv)
+#define vm_opt_iminusssi(res, v1, v2) vm_opt_iminus(res, v1, v2, iminusssi)
+#define vm_opt_iminussvi(res, v1, v2) vm_opt_iminus(res, v1, v2, iminussvi)
+#define vm_opt_iminusvss(res, v1, v2) vm_opt_iminus(res, v1, v2, iminusvss)
+#define vm_opt_iminusvsv(res, v1, v2) vm_opt_iminus(res, v1, v2, iminusvsv)
+#define vm_opt_iminusvvs(res, v1, v2) vm_opt_iminus(res, v1, v2, iminusvvs)
+#define vm_opt_iminusvvv(res, v1, v2) vm_opt_iminus(res, v1, v2, iminusvvv)
+#define vm_opt_iminusvsi(res, v1, v2) vm_opt_iminus(res, v1, v2, iminusvsi)
+#define vm_opt_iminusvvi(res, v1, v2) vm_opt_iminus(res, v1, v2, iplusvvi)
+
 RTL_FUNCS(vm_opt_imult)
 RTL_FUNCS(vm_opt_idiv)
 RTL_FUNCS(vm_opt_imod)
@@ -206,12 +241,12 @@ RTL_FUNCS3(vm_opt_iaset)
 RTL_FUNCS3(vm_opt_aset)
 
 #define RTL_BR_FUNCS(iname, func_name)                              \
-    static rtl_inline VALUE RTL_CONCAT(iname, ss)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vv)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vi)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, vs)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, sv)(VALUE v1, VALUE v2) { return func_name(v1, v2); }\
-    static rtl_inline VALUE RTL_CONCAT(iname, si)(VALUE v1, VALUE v2) { return func_name(v1, v2); }
+    static rtl_inline void RTL_CONCAT(iname, ss)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, vv)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, vi)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, vs)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, sv)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
+    static rtl_inline void RTL_CONCAT(iname, si)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }
 
 RTL_BR_FUNCS(vm_opt_ibeq, vm_opt_ieq)
 RTL_BR_FUNCS(vm_opt_ibneq, vm_opt_ineq)
@@ -250,8 +285,8 @@ static rtl_inline int check_res_flonum(VALUE res) { return !FLONUM_P(res); }
 static rtl_inline int check_res_undef(VALUE res) { return res == Qundef; }
 static rtl_inline int check_res_nothing(VALUE res) { return FALSE; }
 
-RTL_RES_CHECK_FUNCS2(opt_iplus, check_res_fixnum)
-RTL_RES_CHECK_FUNCS2(opt_iminus, check_res_fixnum)
+RTL_RES_CHECK_FUNCS2(opt_iplus, check_res_nothing)
+RTL_RES_CHECK_FUNCS2(opt_iminus, check_res_nothing)
 RTL_RES_CHECK_FUNCS2(opt_imult, check_res_fixnum)
 RTL_RES_CHECK_FUNCS2(opt_idiv, check_res_fixnum)
 RTL_RES_CHECK_FUNCS2(opt_imod, check_res_fixnum)
@@ -277,13 +312,6 @@ RTL_RES_CHECK_FUNCS2(opt_fle, check_res_nothing)
 RTL_RES_CHECK_FUNCS2(opt_fge, check_res_nothing)
 #endif
 RTL_RES_CHECK_FUNCS2(opt_iaref, check_res_undef)
-
-#define CHECK_RESULT(iname, push_fname, res, v1, v2)    	\
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(iname)(res))) {            \
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));	\
-        END_INSN(iname);                                	\
-    }
-
 
 #define CHECK_FUNC_NAME(insn_name) RTL_CONCAT(input_check_, insn_name)
 

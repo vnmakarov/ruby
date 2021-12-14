@@ -1618,8 +1618,13 @@ opt_iarefsvv
 {
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
 }
 
 DEFINE_INSN
@@ -1633,8 +1638,13 @@ opt_iarefsvi
 {
     VALUE v1 = *(GET_EP() - op1);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
 }
 
 DEFINE_INSN
@@ -1648,8 +1658,13 @@ opt_iarefsvs
 {
     VALUE v1 = *(GET_EP() - op1);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
 }
 
 DEFINE_INSN
@@ -1663,8 +1678,13 @@ opt_iarefssv
 {
     VALUE v2 = *(GET_EP() - op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
 }
 
 DEFINE_INSN
@@ -1677,8 +1697,13 @@ opt_iarefssi
 (VALUE val)
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
 }
 
 DEFINE_INSN
@@ -1691,8 +1716,13 @@ opt_iarefsss
 (VALUE val)
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushss, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
 }
 
 DEFINE_INSN
@@ -1706,8 +1736,13 @@ opt_iarefvvv
 {
     VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvv, val, v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
@@ -1722,8 +1757,13 @@ opt_iarefvvi
 {
     VALUE v1 = *(GET_EP() - op1), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvi, val, v1, imm);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
@@ -1738,8 +1778,13 @@ opt_iarefvvs
 {
     VALUE v1 = *(GET_EP() - op1), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushvs, val, v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
@@ -1754,8 +1799,13 @@ opt_iarefvsv
 {
     VALUE v2 = *(GET_EP() - op2), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushsv, val, v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
@@ -1770,8 +1820,13 @@ opt_iarefvsi
 {
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushsi, val, v1, imm);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
@@ -1786,8 +1841,13 @@ opt_iarefvss
 {
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushss, v1, v2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
-    CHECK_RESULT(NAME_OF_CURRENT_INSN, pushss, val, v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
     vm_env_write(GET_EP(), -(int)res, val);
 }
 
@@ -1799,7 +1859,8 @@ opt_ibeqss opt_ibneqss opt_ibltss opt_ibgtss opt_ibless opt_ibgess
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    VALUE val;
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
     JUMP(RTEST(val) ? tdst : fdst);
 }
@@ -1813,7 +1874,7 @@ opt_ibeqvv opt_ibneqvv opt_ibltvv opt_ibgtvv opt_iblevv opt_ibgevv
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
     JUMP(RTEST(val) ? tdst : fdst);
 }
@@ -1827,7 +1888,7 @@ opt_ibeqvi opt_ibneqvi opt_ibltvi opt_ibgtvi opt_iblevi opt_ibgevi
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val, v1 = *(GET_EP() - op1);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     RUBY_VM_CHECK_INTS(ec);
     JUMP(RTEST(val) ? tdst : fdst);
 }
@@ -1841,7 +1902,7 @@ opt_ibeqvs opt_ibneqvs opt_ibltvs opt_ibgtvs opt_iblevs opt_ibgevs
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val, v1 = *(GET_EP() - op1);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
     JUMP(RTEST(val) ? tdst : fdst);
 }
@@ -1854,7 +1915,8 @@ opt_ibeqsv opt_ibneqsv opt_ibltsv opt_ibgtsv opt_iblesv opt_ibgesv
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE v2 = *(GET_EP() - op2), val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN) (v1, v2);
+    VALUE v2 = *(GET_EP() - op2), val;
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
     JUMP(RTEST(val) ? tdst : fdst);
 }
@@ -1867,7 +1929,8 @@ opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN) (v1, imm);
+    VALUE val;
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     RUBY_VM_CHECK_INTS(ec);
     JUMP(RTEST(val) ? tdst : fdst);
 }
@@ -1882,7 +1945,7 @@ opt_ltsvv opt_gtsvv opt_lesvv opt_gesvv opt_arefsvv
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
         pushvv(reg_cfp, v1, v2);
         CALL_SIMPLE_METHOD();
@@ -1897,7 +1960,7 @@ opt_ltsvi opt_gtsvi opt_lesvi opt_gesvi opt_arefsvi
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (val == Qundef) {
         pushvi(reg_cfp, v1, imm);
         CALL_SIMPLE_METHOD();
@@ -1912,7 +1975,7 @@ opt_ltsvs opt_gtsvs opt_lesvs opt_gesvs opt_arefsvs
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
         pushvs(reg_cfp, v1, v2);
         CALL_SIMPLE_METHOD();
@@ -1927,7 +1990,7 @@ opt_ltssv opt_gtssv opt_lessv opt_gessv opt_arefssv
 (VALUE val)
 {
     VALUE v2 = *(GET_EP() - op2);
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
         pushsv(reg_cfp, v1, v2);
         CALL_SIMPLE_METHOD();
@@ -1941,7 +2004,7 @@ opt_ltssi opt_gtssi opt_lessi opt_gessi opt_arefssi
 (VALUE v1)
 (VALUE val)
 {
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (val == Qundef) {
         pushsi(reg_cfp, v1, imm);
         CALL_SIMPLE_METHOD();
