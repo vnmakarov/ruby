@@ -355,6 +355,13 @@ enum rb_attr_val {
     ATTR_FLONUM,
 };
 
+struct rb_iseq_bbv;
+struct rb_iseq_bbv_edge {
+    int gen_bbv_disp; /* offset of the corresponding gen_rtl_bbv[1,key] insn in input BBV code */
+    struct rb_iseq_bbv *in, *out;
+    struct rb_iseq_bbv_edge *next_in_edge, *next_out_edge; /* list with the same out and in */
+};
+
 struct rb_iseq_bbv {
     rb_iseq_t *iseq;
     /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch/leave/throw */
@@ -364,7 +371,9 @@ struct rb_iseq_bbv {
     /* next bbv in the list with the same (iseq, start).  The list
        head is always bbv with unknown attrs (default bbv) and non-spec code */
     struct rb_iseq_bbv *next_bbv;
+    struct rb_iseq_bbv_edge *in_edges, *out_edges;
     int bbv_start, bbv_bound; /* start / bound pos in bbv_code */
+    int start_stack_size; /* stack size at bb start */
     /* Map local var/stack slot -> attr.  The last elem is always an
        end marker.  Unknown values (besides the end marker) can not be
        the last elements, assume unknown attr for vars/temps beyond

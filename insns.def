@@ -1934,7 +1934,22 @@ opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
     RUBY_VM_CHECK_INTS(ec);
     JUMP(RTEST(val) ? tdst : fdst);
 }
+
 /* --- end of specialized RTL insns --- */
+
+DEFINE_INSN
+check_fixtype
+()
+()
+()
+{
+    VALUE val = TOPN(0);
+    if (!FIXNUM_P(val)) {
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
 
 /* --- general RTL insns: --- */
 DEFINE_INSN
@@ -2304,6 +2319,16 @@ opt_asetvss
 
 /* --- end of general RTL insns --- */
 
+DEFINE_INSN
+inspect_type
+()
+(..., VALUE val)
+(VALUE val)
+// attr rb_snum_t sp_inc = 0;
+{
+    rb_rtl_inspect_type(GET_CFP(), val);
+}
+
 /* Get value of instance variable id of self. */
 DEFINE_INSN
 rtl_getivar
@@ -2497,8 +2522,8 @@ gen_rtl_bbv2
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 /* It occurs only in bbv_encoded and can change rtl insn addresses */
 {
-    VALUE start = rb_rtl_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, FALSE);
-    SET_PC(GET_CFP()->iseq->body->bbv_code + start);
+    int cont_pos = rb_rtl_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, FALSE);
+    SET_PC(GET_CFP()->iseq->body->bbv_code + cont_pos);
     END_INSN(gen_rtl_bbv2); /* to skip pc increase */
 }
 
@@ -2514,6 +2539,23 @@ gen_rtl_bbv_key
     VALUE start = rb_rtl_gen_bbv_key(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, key);
     SET_PC(GET_CFP()->iseq->body->bbv_code + start);
     END_INSN(gen_rtl_bbv_key); /* to skip pc increase */
+}
+
+DEFINE_INSN
+nop2
+(VALUE dummy)
+()
+()
+{
+}
+
+DEFINE_INSN
+specialize_bbv
+(lindex_t bbv)
+()
+()
+{
+    rb_rtl_specialize_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv);
 }
 
 DEFINE_INSN
