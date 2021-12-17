@@ -1939,11 +1939,24 @@ opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
 
 DEFINE_INSN
 check_fixtype
-()
+(lindex_t n)
 ()
 ()
 {
-    VALUE val = TOPN(0);
+    VALUE val = *(GET_EP() - n);
+    if (!FIXNUM_P(val)) {
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+check_stack_fixtype
+(lindex_t n)
+()
+()
+{
+    VALUE val = TOPN(n);
     if (!FIXNUM_P(val)) {
         ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
@@ -2321,12 +2334,23 @@ opt_asetvss
 
 DEFINE_INSN
 inspect_type
+(lindex_t n)
 ()
-(..., VALUE val)
-(VALUE val)
+()
 // attr rb_snum_t sp_inc = 0;
 {
-    rb_rtl_inspect_type(GET_CFP(), val);
+    VALUE val = *(GET_EP() - n);
+    rb_rtl_inspect_type(GET_CFP(), val, FALSE);
+}
+
+DEFINE_INSN
+inspect_stack_type
+(lindex_t n)
+()
+()
+// attr rb_snum_t sp_inc = 0;
+{
+    rb_rtl_inspect_type(GET_CFP(), TOPN(n), TRUE);
 }
 
 /* Get value of instance variable id of self. */
@@ -2555,7 +2579,9 @@ specialize_bbv
 ()
 ()
 {
-    rb_rtl_specialize_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv);
+    VALUE cont_pos = rb_rtl_specialize_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv);
+    SET_PC(GET_CFP()->iseq->body->bbv_code + cont_pos);
+    END_INSN(specialize_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN

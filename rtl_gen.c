@@ -664,6 +664,13 @@ get_lvar_num(rb_iseq_t *iseq, int idx) {
     return res;
 }
 
+static int
+get_lvar_index(rb_iseq_t *iseq, int num) {
+    /* 1st arg having zero number: */
+    RTL_GEN_ASSERT(0 <= num && num < (int)iseq->body->local_table_size);
+    return (int)iseq->body->local_table_size - (num - VM_ENV_DATA_SIZE) - 1;
+}
+
 static VARR(char) *attrs;
 
 static void
@@ -1508,10 +1515,13 @@ redirect_sources(rb_iseq_t *iseq, rb_iseq_bbv_t dst_bbv, rb_iseq_bbv_t new_dst_b
     }
 }
 
-/* Make type-specialized RTL from general RTL or make speculative type-specialized RTL
-   based on profile (if profile_p). */
-static void
-gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
+/* Make type-specialized RTL from general RTL or make speculative
+   type-specialized RTL based on profile (inspect_types_num).  Add
+   inspect_type insn for 1st inspect_types_num variables (args) with
+   unknown attributes. */
+static int
+gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
+    int profile_p, n_attrs;
     enum ruby_vminsn_type insn_id = BIN(nop), new_insn_id, prev_new_insn_id, branch_id;
     int init_stack_size = bbv->start_stack_size;
     int i, n, curr_rtl_insn_pos, len, nops, inc, retn, stack_size;
@@ -1520,10 +1530,11 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     int debug_p = rb_rtl_debug_p(), compacted_attrs_p = FALSE;
     int disp, nops_num;
     VALUE val, *operands, new_operands[10];
-    int offset;
+    int offset, specialize_bbv_pos = -1;
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t head_bbv = bbv->head_bbv, orig_bbv, dst_bbv, old_dst_bbv;
 
+    profile_p = inspect_types_num < 0;
     RTL_GEN_ASSERT(profile_p || bbv->bbv_start < 0);
     if (head_bbv == NULL)
         head_bbv = bbv;
@@ -1553,6 +1564,13 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     stack_size = init_stack_size;
     new_insn_pos = -1;
     branch2_offset_add = 0;
+    n_attrs = strlen(bbv->attrs);
+    for (i = 0; i < inspect_types_num; i++) {
+        RTL_GEN_ASSERT(!profile_p);
+        if (i < n_attrs && bbv->attrs[i] == ATTR_FIXNUM) continue;
+        new_operands[0] = get_lvar_index(iseq, 0);
+        add_spec_insn_arr(orig_bbv->bbv_start, BIN(inspect_type), 1, new_operands);
+    }
     if (profile_p)
         /* For case one BB loop: We create new bbv here to set up the right dest bbv in gen_rtl_bbv */
         bbv = add_new_bbv(iseq, head_bbv, bbv->iseq_start, bbv->iseq_bound,
@@ -1577,12 +1595,22 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             break; /* remove it */
         case BIN(inspect_type):
             RTL_GEN_ASSERT(profile_p);
-            /* it was not changed -- remove it */
-            break;
+            setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_UNKNOWN);
+            break;/* it was not changed -- remove it */
+        case BIN(inspect_stack_type):
+            RTL_GEN_ASSERT(profile_p);
+            setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_UNKNOWN);
+            break;/* it was not changed -- remove it */
         case BIN(check_fixtype):
             RTL_GEN_ASSERT(profile_p);
-            setup_attr(get_temp_num(iseq, stack_size - 1), ATTR_FIXNUM);
-            goto stack_update;
+            setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_FIXNUM);
+            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            break;
+        case BIN(check_stack_fixtype):
+            RTL_GEN_ASSERT(profile_p);
+            setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_FIXNUM);
+            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            break;
         case BIN(swap):
             RTL_GEN_ASSERT(stack_size >= 2);
             setup_attr(get_temp_num(iseq, stack_size - 1), ATTR_UNKNOWN);
@@ -1855,6 +1883,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             }
             goto rest_cases;
         case BIN(specialize_bbv):
+            specialize_bbv_pos = new_insn_pos;
             break; /* skip */
         default:
         rest_cases:
@@ -1885,7 +1914,8 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 && (curr_rtl_insn_pos + len < head_bbv->bbv_bound)) {
                 enum ruby_vminsn_type next_insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[curr_rtl_insn_pos + len]);
                 if (next_insn_id != BIN(pop)) {
-                    add_spec_insn_arr(orig_pos + len, BIN(inspect_type), 0, NULL);
+                    new_operands[0] = 0;
+                    add_spec_insn_arr(orig_pos + len, BIN(inspect_stack_type), 1, new_operands);
                 }
             }
         }
@@ -1913,22 +1943,29 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound);
         print_pos_map();
     }
+    return specialize_bbv_pos < 0 ? -1 : bbv->bbv_start + specialize_bbv_pos - nops_num;
 }
 
 void
-rb_rtl_inspect_type(rb_control_frame_t *cfp, VALUE val) {
+rb_rtl_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
     if (FIXNUM_P(val)) {
         VALUE *insn_pc = (VALUE *)cfp->pc;
         int debug_p = rb_rtl_debug_p();
 
-        if (debug_p)
-            fprintf(stderr, "Changing inspect_type to %4ld check_fixtype\n", insn_pc - cfp->iseq->body->bbv_code);
-        *insn_pc = (VALUE)dispatch_table[BIN(check_fixtype)];
+        if (debug_p) {
+            if (stack_p)
+                fprintf(stderr, "Changing inspect_stack_type to %4ld check_stack_fixtype\n",
+                        insn_pc - cfp->iseq->body->bbv_code);
+            else
+                fprintf(stderr, "Changing inspect_type to %4ld check_fixtype\n",
+                        insn_pc - cfp->iseq->body->bbv_code);
+        }
+        *insn_pc = (VALUE)dispatch_table[stack_p ? BIN(check_stack_fixtype) : BIN(check_fixtype)];
     }
 }
 
 static void
-gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
+gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size, int inspect_types_num) {
     RTL_GEN_ASSERT(bbv->bbv_start < 0 && bbv->start_stack_size < 0 && init_stack_size >= 0);
     bbv->start_stack_size = init_stack_size;
     if (bbv->head_bbv == NULL) { /* head bbv */
@@ -1941,7 +1978,7 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
         /* we generate specialized RTL code from non-speculative RTL code */
         gen_rtl_from_stack_insns(iseq, bbv->head_bbv);
     }
-    gen_specialized_rtl(iseq, bbv, FALSE); /* type specialization of BBV */
+    gen_specialized_rtl(iseq, bbv, inspect_types_num); /* type specialization of BBV */
 }
 
 int
@@ -1950,7 +1987,7 @@ rb_rtl_make_bbv(rb_control_frame_t *cfp) {
     rb_iseq_bbv_t bbv = get_bbv((rb_iseq_t *)cfp->iseq, pc - cfp->iseq->body->iseq_encoded, 0, NULL);
 
     if (bbv->bbv_start < 0) /* can be generated by a gen_rtl_bbv */
-        gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__);
+        gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__, 0);
     /* change make_rtl_bbv to jump2rtl */
     RTL_GEN_ASSERT(insn_len(BIN(jump2rtl)) == 2 && insn_len(BIN(make_rtl_bbv)) == 2);
     pc[0] = (VALUE)dispatch_table[BIN(jump2rtl)];
@@ -1969,7 +2006,7 @@ rb_rtl_gen_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int branch_offset, in
                    && insn_len(BIN(gen_rtl_bbv)) == insn_len(BIN(gen_rtl_bbv2)));
     gen_bbv_insn_pos -= gen_rtl_bbv_len;
     if (bbv->bbv_start < 0) /* can be generated by another gen_rtl_bbv insn */
-        gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__);
+        gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__, 0);
     /* redirect hash from rtl_gen_bbv[2] to the generated bbv start */
     body->bbv_code[gen_bbv_insn_pos + gen_rtl_bbv_len + branch_offset + (first_p ? 1 : 2)]
         = bbv->bbv_start - (gen_bbv_insn_pos + gen_rtl_bbv_len + branch_offset + branch_len);
@@ -1988,28 +2025,30 @@ rb_rtl_gen_bbv_key(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int case_offset, 
                    && gen_bbv_insn_pos >= 0 && gen_bbv_insn_pos <= body->bbv_code_bound);
     gen_bbv_insn_pos -= gen_rtl_bbv_len;
     if (bbv->bbv_start < 0) /* can be generated by another gen_rtl_bbv insn */
-        gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__);
+        gen_rtl_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__, 0);
     /* redirect hash from rtl_gen_bbv_key to the generated bbv start */
     rb_hash_aset(hash, key, INT2FIX(bbv->bbv_start
                                     - (gen_bbv_insn_pos + gen_rtl_bbv_len + case_offset + branch_len)));
     return bbv->bbv_start;
 }
 
-void
+int
 rb_rtl_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
     /* specialize curr bbv by profile: */
     VARR_TRUNC(rb_iseq_bbv_t, bbvs, 0);
-    gen_specialized_rtl(bbv->iseq, bbv, TRUE);
+    int bbv_cont_pos = gen_specialized_rtl(bbv->iseq, bbv, -1);
+    RTL_GEN_ASSERT(bbv_cont_pos >= 0);
     /* Here we can reuse globals.  Remember bbvs is updated only for
        profile_p and gen_rtl_bbv_code never means profile_p. */
     while (VARR_LENGTH(rb_iseq_bbv_t, bbvs) != 0) {
         bbv = VARR_POP(rb_iseq_bbv_t, bbvs);
         if (bbv->bbv_start < 0) /* bbv can occur more one time in bbvs */
-            gen_rtl_bbv_code(bbv->iseq, bbv, 0);
+            gen_rtl_bbv_code(bbv->iseq, bbv, 0, 0);
     }
     /* Change to nop2 */
     ((VALUE *)cfp->pc)[0] = (VALUE)dispatch_table[BIN(nop2)]; /* we use nop2 as we keep nop */
     ((VALUE *)cfp->pc)[1] = INT2FIX(0);
+    return bbv_cont_pos;
 }
 
 void
@@ -2072,7 +2111,7 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
             }
             bbv = get_bbv(iseq, 0, attrs == NULL ? 0 : strlen(attrs) + 1, attrs);
             if (bbv->bbv_start < 0)
-                gen_rtl_bbv_code(iseq, bbv, 0);
+                gen_rtl_bbv_code(iseq, bbv, 0, argc);
             RTL_GEN_ASSERT(bbv->iseq == iseq);
             ec->cfp->pc = &iseq->body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
             /* Change make_rtl_send_without_block(cd, attrs) to rtl_iseq_send_without_block(cd, bbv) */
