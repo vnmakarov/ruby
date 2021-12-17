@@ -1013,7 +1013,7 @@ contains_input_lvar_p(int insn_pos, int lvar) {
         case CONCAT(name, svs):                 \
         case CONCAT(name, ssv)
 
-#define RTL_INSN2_CASES(name)                    \
+#define RTL_INSN2_CASES(name)                   \
     RTL_INSN2_IMM_CASES(name):                  \
     RTL_INSN2_NON_IMM_CASES(name)
 
@@ -1443,8 +1443,6 @@ add_spec_insn_arr(int rtl_pos, enum ruby_vminsn_type insn_id, int nops, VALUE *o
     return add_insn_arr(-(rtl_pos + 1), insn_id, nops, operands);
 }
 
-static void
-redirect_sources(rb_iseq_t *iseq, rb_iseq_bbv_t dst_bbv, rb_iseq_bbv_t new_dst_bbv) {
 #define BRANCH_CASES(name)      \
     case CONCAT(name, ss):	\
     case CONCAT(name, sv):	\
@@ -1453,6 +1451,8 @@ redirect_sources(rb_iseq_t *iseq, rb_iseq_bbv_t dst_bbv, rb_iseq_bbv_t new_dst_b
     case CONCAT(name, vv):	\
     case CONCAT(name, vi)
 
+static void
+redirect_sources(rb_iseq_t *iseq, rb_iseq_bbv_t dst_bbv, rb_iseq_bbv_t new_dst_bbv) {
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t bbv;
     struct rb_iseq_bbv_edge *e;
@@ -1514,6 +1514,23 @@ redirect_sources(rb_iseq_t *iseq, rb_iseq_bbv_t dst_bbv, rb_iseq_bbv_t new_dst_b
         }
     }
 }
+
+#define RTL_INSN2_SPEC_STACK_CASES(name)         \
+    case CONCAT(name, svv):                      \
+    case CONCAT(name, svs):                      \
+    case CONCAT(name, ssv):                      \
+    case CONCAT(name, sss):                      \
+    case CONCAT(name, svi):                      \
+    case CONCAT(name, ssi)                       \
+
+#define RTL_INSN2_SPEC_LVAR_CASES(name)          \
+    case CONCAT(name, vvv):                      \
+    case CONCAT(name, vvs):                      \
+    case CONCAT(name, vsv):                      \
+    case CONCAT(name, vss):                      \
+    case CONCAT(name, vvi):                      \
+    case CONCAT(name, vsi)
+
 
 /* Make type-specialized RTL from general RTL or make speculative
    type-specialized RTL based on profile (inspect_types_num).  Add
@@ -1612,15 +1629,16 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
             break;
         case BIN(swap):
+            attr = get_attr(get_temp_num(iseq, stack_size - 1));
             RTL_GEN_ASSERT(stack_size >= 2);
-            setup_attr(get_temp_num(iseq, stack_size - 1), ATTR_UNKNOWN);
-            setup_attr(get_temp_num(iseq, stack_size - 2), ATTR_UNKNOWN);
+            setup_attr(get_temp_num(iseq, stack_size - 1), get_attr(get_temp_num(iseq, stack_size - 2)));
+            setup_attr(get_temp_num(iseq, stack_size - 2), attr);
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
             break;
         case BIN(setn):
             n = (int)operands[0];
             RTL_GEN_ASSERT(stack_size > n);
-            setup_attr(get_temp_num(iseq, stack_size - n - 1), ATTR_UNKNOWN);
+            setup_attr(get_temp_num(iseq, stack_size - n - 1), get_attr(get_temp_num(iseq, stack_size - 1)));
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
             break;
         case BIN(dup):
@@ -1631,9 +1649,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         dup:
             RTL_GEN_ASSERT(stack_size >= n);
             for (i = 0; i < n; i++)
-                setup_attr(get_temp_num(iseq, stack_size - 1 - i), ATTR_UNKNOWN);
-            for (i = 0; i < n; i++)
-                setup_attr(get_temp_num(iseq, stack_size + i), ATTR_UNKNOWN);
+                setup_attr(get_temp_num(iseq, stack_size + i), get_attr(get_temp_num(iseq, stack_size - 1 - i)));
             stack_size += n;
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
             break;
@@ -1707,7 +1723,42 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             attr = op1_attr != op2_attr || unknown_p ? ATTR_UNKNOWN : op1_attr;
             add_spec_insn_arr(orig_pos, new_insn_id, nops, operands);
             goto push;
+        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_iplus)):
+        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_iminus)):
+        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_imult)):
+        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_idiv)):
+        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_imod)):
+        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_ior)):
+        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_iand)):
+            inc = insn_stack_increase(insn_id, operands);
+            stack_size += inc - 1;
+            attr = ATTR_FIXNUM; /* attr of temp */
+            goto add_and_push;
+        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_iplus)):
+        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_iminus)):
+        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_imult)):
+        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_idiv)):
+        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_imod)):
+        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_ior)):
+        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_iand)):
+            setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_FIXNUM); /* attr of lvar */
+            goto rest_cases;
         case BIN(jump2):
+        case BIN(opt_getinlinecache2):
+        BRANCH_CASES(BIN(opt_ibeq)):
+        BRANCH_CASES(BIN(opt_ibneq)):
+        BRANCH_CASES(BIN(opt_iblt)):
+        BRANCH_CASES(BIN(opt_ibgt)):
+        BRANCH_CASES(BIN(opt_ible)):
+        BRANCH_CASES(BIN(opt_ibge)):
+#ifdef FLONUM_INSNS
+        BRANCH_CASES(BIN(opt_fbeq)):
+        BRANCH_CASES(BIN(opt_fbneq)):
+        BRANCH_CASES(BIN(opt_fblt)):
+        BRANCH_CASES(BIN(opt_fbgt)):
+        BRANCH_CASES(BIN(opt_fble)):
+        BRANCH_CASES(BIN(opt_fbge)):
+#endif
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
@@ -1890,7 +1941,10 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
         stack_update:
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)
-                || insn_id == BIN(rtl_iseq_send_without_block) || insn_id == BIN(rtl_opt_send_without_block)) {
+#ifndef ISEQCALLDATA
+                || insn_id == BIN(rtl_iseq_send_without_block)
+#endif
+                || insn_id == BIN(rtl_opt_send_without_block)) {
                 inc = sp_inc_of_sendish(((CALL_DATA)operands[0])->ci);
             } else {
                 inc = insn_stack_increase(insn_id, operands);
@@ -2097,6 +2151,7 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     rb_iseq_bbv_t bbv;
     rb_iseq_t *iseq;
+
     int debug_p = rb_rtl_debug_p();
 
     if (cme != NULL) {
@@ -2114,8 +2169,23 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
                 gen_rtl_bbv_code(iseq, bbv, 0, argc);
             RTL_GEN_ASSERT(bbv->iseq == iseq);
             ec->cfp->pc = &iseq->body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
+#ifdef ISEQCALLDATA
+            struct rb_rtl_iseq_call_data *rtl_cd;
+            rtl_cd = ALLOC_N(struct rb_rtl_iseq_call_data, 1);
+            rtl_cd->klass = cc->klass;
+            rtl_cd->cme = cme;
+            rtl_cd->iseq = iseq;
+            rtl_cd->pc = (VALUE *)ec->cfp->pc;
+            rtl_cd->param_size = iseq->body->param.size;
+            rtl_cd->argc = argc;
+            rtl_cd->local_table_size = iseq->body->local_table_size;
+            rtl_cd->stack_max = iseq->body->stack_max;
+#endif
             /* Change make_rtl_send_without_block(cd, attrs) to rtl_iseq_send_without_block(cd, bbv) */
             *call_pc = (VALUE)dispatch_table[BIN(rtl_iseq_send_without_block)];
+#ifdef ISEQCALLDATA
+            call_pc[1] = (VALUE)rtl_cd;
+#endif
             call_pc[2] = (VALUE)bbv;
             return;
         } else if (cme->def->type == VM_METHOD_TYPE_IVAR
