@@ -447,7 +447,7 @@ add_new_bbv(rb_iseq_t *iseq, rb_iseq_bbv_t head, int start, int bound, int n_att
     return bbv;
 }
 
-#define MAX_BBV_NUM 4
+#define MAX_BBV_NUM 10
 
 static rb_iseq_bbv_t
 get_bbv(rb_iseq_t *iseq, int start, int n_attrs, char *attrs) {
