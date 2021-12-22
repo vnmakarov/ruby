@@ -32,8 +32,11 @@ void rb_rtl_init(struct rb_rtl_options *options);
 /* rtl_gen.c: */
 int rb_rtl_gen_init(void);
 void rb_rtl_gen_finish(void);
+void rb_rtl_stub_gen(rb_iseq_t *iseq);
 void rb_rtl_create_default_bbvs(rb_iseq_t *iseq);
-int rb_rtl_make_bbv(rb_control_frame_t *cfp);
+VALUE *rb_rtl_make_bbv(rb_control_frame_t *cfp, int iseq_bbv_start);
+VALUE *rb_rtl_make_optpc_bbv(rb_control_frame_t *cfp, int opt);
+VALUE *rb_rtl_make_catch_bbv(rb_control_frame_t *cfp, int entry_ind);
 void rb_rtl_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p);
 int rb_rtl_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int branch_offset, int first_p);
 int rb_rtl_gen_bbv_key(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int case_offset, VALUE key);

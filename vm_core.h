@@ -362,13 +362,21 @@ struct rb_iseq_bbv_edge {
     struct rb_iseq_bbv_edge *next_in_edge, *next_out_edge; /* list with the same out and in */
 };
 
+enum rb_bbv_type {
+    RB_BBV_REGULAR,
+    RB_BBV_OPT,    /* bbv created for an optable entry */
+    RB_BBV_CATCH   /* bbv created for cont of catch table entry */
+};
+
 struct rb_iseq_bbv {
     rb_iseq_t *iseq;
     /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch/leave/throw */
     int iseq_start, iseq_bound;
+    enum rb_bbv_type type;
+    int index; /* used for RB_BBV_OPT and RB_BBV_CATCH, always 0 for RB_BBV_REGULAR */
     /* The list head is always unspecialized bbv.  For head itself it is NULL */
     struct rb_iseq_bbv *head_bbv;
-    /* next bbv in the list with the same (iseq, start).  The list
+    /* next bbv in the list with the same (iseq, type, index, start).  The list
        head is always bbv with unknown attrs (default bbv) and non-spec code */
     struct rb_iseq_bbv *next_bbv;
     struct rb_iseq_bbv_edge *in_edges, *out_edges;
@@ -396,6 +404,9 @@ struct rb_iseq_constant_body {
 
     unsigned int iseq_size;
     VALUE *iseq_encoded; /* encoded iseq (insn addr and operands) */
+    VALUE *iseq_code; /* can be iseq_encoded or bbv_code */
+    VALUE *iseq_start_pc; /* can be iseq_encoded or curr start point in bbv_code */
+    VALUE *curr_param_opt_table; /* displacement relative iseq_code */
 
     /* The following are use for RTL BBV interpretation: */
     int n_bbvs;
@@ -882,10 +893,9 @@ typedef struct rb_control_frame_struct {
 } rb_control_frame_t;
 
 static inline const VALUE *
-rb_iseq_pc (const rb_control_frame_t *cfp) {
-    const VALUE *pc = cfp->pc;
+rb_iseq_encoded_pc(const rb_iseq_t *iseq, const VALUE *pc) {
     int pos;
-    const struct rb_iseq_constant_body *body = cfp->iseq->body;
+    const struct rb_iseq_constant_body *body = iseq->body;
 
     if (body->bbv_code > pc || pc >= body->bbv_code + body->bbv_code_free) return pc;
     pos = pc - body->bbv_code;
@@ -898,6 +908,11 @@ rb_iseq_pc (const rb_control_frame_t *cfp) {
     }
     VM_ASSERT(pos >= 0 && pos < body->iseq_size);
     return body->iseq_encoded + pos;
+}
+
+static inline const VALUE *
+rb_cfp_iseq_encoded_pc(const rb_control_frame_t *cfp) {
+    return rb_iseq_encoded_pc(cfp->iseq, cfp->pc);
 }
 
 extern const rb_data_type_t ruby_threadptr_data_type;

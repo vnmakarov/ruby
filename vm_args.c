@@ -651,7 +651,7 @@ setup_parameters_complex(rb_execution_context_t * const ec, const rb_iseq_t * co
 
     if (iseq->body->param.flags.has_opt) {
 	int opt = args_setup_opt_parameters(args, iseq->body->param.opt_num, locals + iseq->body->param.lead_num);
-	opt_pc = (int)iseq->body->param.opt_table[opt];
+	opt_pc = (int)iseq->body->curr_param_opt_table[opt];
     }
 
     if (iseq->body->param.flags.has_rest) {
@@ -718,7 +718,7 @@ raise_argument_error(rb_execution_context_t *ec, const rb_iseq_t *iseq, const VA
     if (iseq) {
 	vm_push_frame(ec, iseq, VM_FRAME_MAGIC_DUMMY | VM_ENV_FLAG_LOCAL, Qnil /* self */,
 		      VM_BLOCK_HANDLER_NONE /* specval*/, Qfalse /* me or cref */,
-		      iseq->body->iseq_encoded,
+		      iseq->body->iseq_start_pc,
 		      ec->cfp->sp, 0, 0 /* stack_max */);
 	at = rb_ec_backtrace_object(ec);
 	rb_backtrace_use_iseq_first_lineno_for_last_location(at);

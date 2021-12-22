@@ -33,7 +33,7 @@ typedef rb_iseq_t *ISEQ;
 #else
 
 #define debugs
-#define DEBUG_ENTER_INSN(insn)
+#define DEBUG_ENTER_INSN(insn) /*fprintf(stderr, "%04ld %s\n", reg_pc - reg_cfp->iseq->body->bbv_code, insn);*/
 #define DEBUG_END_INSN()
 #endif
 
@@ -76,10 +76,11 @@ error !
 #define INSN_ENTRY_SIG(insn) \
   if (0) { \
       ruby_debug_printf("exec: %s@(%"PRIdPTRDIFF", %"PRIdPTRDIFF")@%s:%u\n", #insn, \
-                        (reg_pc - reg_cfp->iseq->body->iseq_encoded), \
-                        (reg_cfp->pc - reg_cfp->iseq->body->iseq_encoded), \
+                        (reg_pc - reg_cfp->iseq->body->iseq_code), \
+                        (reg_cfp->pc - reg_cfp->iseq->body->iseq_code), \
                         RSTRING_PTR(rb_iseq_path(reg_cfp->iseq)), \
-                        rb_iseq_line_no(reg_cfp->iseq, reg_pc - reg_cfp->iseq->body->iseq_encoded)); \
+                        rb_iseq_line_no(reg_cfp->iseq, rb_cfp_iseq_encoded_pc(reg_cfp) \
+                                        - reg_cfp->iseq->body->iseq_encoded)); \
   } \
   if (USE_INSNS_COUNTER) vm_insns_counter_count_insn(BIN(insn));
 

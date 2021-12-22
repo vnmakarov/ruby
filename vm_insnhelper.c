@@ -1459,7 +1459,7 @@ vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_c
 	    while (escape_cfp < eocfp) {
 		if (escape_cfp->ep == ep) {
 		    const rb_iseq_t *const iseq = escape_cfp->iseq;
-		    const VALUE epc = rb_iseq_pc(escape_cfp) - iseq->body->iseq_encoded;
+		    const VALUE epc = rb_cfp_iseq_encoded_pc(escape_cfp) - iseq->body->iseq_encoded;
 		    const struct iseq_catch_table *const ct = iseq->body->catch_table;
 		    unsigned int i;
 
@@ -2388,7 +2388,7 @@ vm_call_iseq_setup_normal_opt_start(rb_execution_context_t *ec, rb_control_frame
     const int lead_num = iseq->body->param.lead_num;
     const int opt = calling->argc - lead_num;
     const int opt_num = iseq->body->param.opt_num;
-    const int opt_pc = (int)iseq->body->param.opt_table[opt];
+    const int opt_pc = (int)iseq->body->curr_param_opt_table[opt];
     const int param = iseq->body->param.size;
     const int local = iseq->body->local_table_size;
     const int delta = opt_num - opt;
@@ -2415,7 +2415,7 @@ vm_call_iseq_setup_tailcall_opt_start(rb_execution_context_t *ec, rb_control_fra
     const rb_iseq_t *iseq = def_iseq_ptr(vm_cc_cme(cc)->def);
     const int lead_num = iseq->body->param.lead_num;
     const int opt = calling->argc - lead_num;
-    const int opt_pc = (int)iseq->body->param.opt_table[opt];
+    const int opt_pc = (int)iseq->body->curr_param_opt_table[opt];
 
     RB_DEBUG_COUNTER_INC(ccf_iseq_opt);
 
@@ -2545,7 +2545,7 @@ vm_callee_setup_arg(rb_execution_context_t *ec, struct rb_calling_info *calling,
             for (int i=argc; i<lead_num + opt_num; i++) {
                 argv[i] = Qnil;
             }
-            return (int)iseq->body->param.opt_table[opt];
+            return (int)iseq->body->curr_param_opt_table[opt];
         }
         else if (rb_iseq_only_kwparam_p(iseq) && !IS_ARGS_SPLAT(ci)) {
             const int lead_num = iseq->body->param.lead_num;
@@ -2628,7 +2628,7 @@ vm_call_iseq_setup_normal(rb_execution_context_t *ec, rb_control_frame_t *cfp, s
 
     vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, calling->recv,
                   calling->block_handler, (VALUE)me,
-                  iseq->body->iseq_encoded + opt_pc, sp,
+                  iseq->body->iseq_start_pc + opt_pc, sp,
                   local_size - param_size,
                   iseq->body->stack_max);
     return Qundef;
@@ -2674,7 +2674,7 @@ vm_call_iseq_setup_tailcall(rb_execution_context_t *ec, rb_control_frame_t *cfp,
 
     vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL | finish_flag,
 		  calling->recv, calling->block_handler, (VALUE)me,
-		  iseq->body->iseq_encoded + opt_pc, sp,
+		  iseq->body->iseq_start_pc + opt_pc, sp,
 		  iseq->body->local_table_size - iseq->body->param.size,
 		  iseq->body->stack_max);
 
@@ -3996,7 +3996,7 @@ vm_invoke_iseq_block(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp,
 		  VM_FRAME_MAGIC_BLOCK | (is_lambda ? VM_FRAME_FLAG_LAMBDA : 0),
 		  captured->self,
 		  VM_GUARDED_PREV_EP(captured->ep), 0,
-		  iseq->body->iseq_encoded + opt_pc,
+		  iseq->body->iseq_start_pc + opt_pc,
 		  rsp + arg_size,
 		  iseq->body->local_table_size - arg_size, iseq->body->stack_max);
 
@@ -5469,7 +5469,7 @@ rb_vm_opt_cfunc_p(CALL_CACHE cc, int insn)
 static void
 vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
 {
-    const VALUE *pc = rb_iseq_pc(reg_cfp);
+    const VALUE *pc = rb_cfp_iseq_encoded_pc(reg_cfp);
     rb_event_flag_t enabled_flags = ruby_vm_event_flags & ISEQ_TRACE_EVENTS;
 
     if (enabled_flags == 0 && ruby_vm_event_local_num == 0) {
@@ -5512,7 +5512,7 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
                                   (int)rb_iseq_line_no(iseq, pos),
                                   RSTRING_PTR(rb_iseq_label(iseq)));
             }
-            VM_ASSERT(rb_iseq_pc(reg_cfp) == pc);
+            VM_ASSERT(rb_iseq_encoded_pc(reg_cfp) == pc);
             VM_ASSERT(pc_events != 0);
             VM_ASSERT(enabled_flags & pc_events);
 

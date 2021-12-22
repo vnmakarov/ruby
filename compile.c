@@ -1497,9 +1497,6 @@ iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     if (!iseq_set_optargs_table(iseq)) return COMPILE_NG;
 
     debugs("[compile step 5 (iseq_translate_threaded_code)] \n");
-    if (rb_rtl_enabled_p()) {
-        rb_rtl_create_default_bbvs(iseq);
-    }
 
     if (!rb_iseq_translate_threaded_code(iseq)) {
         return COMPILE_NG;
@@ -1526,6 +1523,12 @@ iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 	printf("%s\n", StringValueCStr(str));
     }
     verify_call_cache(iseq);
+
+    if (rb_rtl_enabled_p()) {
+        debugs("[compile step 8 (rb_rtl_stub_gen)] \n");
+        rb_rtl_stub_gen(iseq);
+    }
+
     debugs("[compile step: finish]\n");
 
     return COMPILE_OK;
@@ -1886,6 +1889,7 @@ iseq_set_arguments(rb_iseq_t *iseq, LINK_ANCHOR *const optargs, const NODE *cons
 	    body->param.flags.has_opt = TRUE;
 	    body->param.opt_num = i;
 	    body->param.opt_table = opt_table;
+            body->curr_param_opt_table = (VALUE *)body->param.opt_table;
 	    arg_size += i;
 	}
 
@@ -2254,18 +2258,6 @@ add_adjust_info(struct iseq_insn_info_entry *insns_info, unsigned int *positions
     return FALSE;
 }
 
-static int
-add_make_rtl_bbv(rb_iseq_t *iseq, LINK_ELEMENT *after) {
-    NODE dummy_line_node = generate_dummy_line_node(0, -1);
-    /* make enough space for jump2 */
-    INSN *nobj = new_insn_body(iseq, &dummy_line_node, BIN(make_rtl_bbv),
-                               2, (VALUE)LONG2FIX(0), (VALUE)LONG2FIX(0));
-    int len = insn_data_length(nobj);
-    VM_ASSERT(len == 3 && insn_len(BIN(jump2)) == 3);
-    ELEM_INSERT_NEXT(after, (LINK_ELEMENT *)nobj);
-    return len;
-}
-
 /**
   ruby insn object list -> raw instruction sequence
  */
@@ -2283,13 +2275,11 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 
     int insn_num, code_index, insns_info_index, sp = 0;
     int stack_max = fix_sp_depth(iseq, anchor);
-    int rtl_p = rb_rtl_enabled_p();
 
     if (stack_max < 0) return COMPILE_NG;
 
     /* fix label position */
     insn_num = code_index = 0;
-    if (rtl_p) add_make_rtl_bbv(iseq, &anchor->anchor);
     for (list = FIRST_ELEMENT(anchor); list; list = next) {
         next = list->next;
 	switch (list->type) {
@@ -2318,23 +2308,6 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                 code_index += insn_data_length(iobj);
 		events = 0;
                 data = 0;
-                if (rtl_p) {
-                    switch (iobj->insn_id) {
-                    case BIN(jump):
-                    case BIN(branchif):
-                    case BIN(branchunless):
-                    case BIN(branchnil):
-                    case BIN(opt_case_dispatch):
-                    case BIN(opt_getinlinecache): /* insert make_rtl_bbv */
-                        if (next != NULL && !IS_LABEL(next)) {
-                            code_index += add_make_rtl_bbv(iseq, list);
-                            insn_num++;
-                        }
-                        break;
-                    default:
-                        break;
-                    }
-                }
                 break;
 	    }
 	  case ISEQ_ELEMENT_LABEL:
@@ -2347,10 +2320,6 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                            lobj->label_no, lobj->sp, sp);
                 }
 		sp = lobj->sp;
-                if (rtl_p && next != NULL && !IS_LABEL(next)) {
-                    code_index += add_make_rtl_bbv(iseq, list);
-                    insn_num++;
-                }
 		break;
 	    }
 	  case ISEQ_ELEMENT_TRACE:
@@ -2556,7 +2525,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 	list = list->next;
     }
 
-    body->iseq_encoded = (void *)generated_iseq;
+    body->iseq_encoded = body->iseq_code = body->iseq_start_pc = (void *)generated_iseq;
     body->iseq_size = code_index;
     body->stack_max = stack_max;
 
@@ -2613,7 +2582,7 @@ iseq_set_exception_table(rb_iseq_t *iseq)
 	    /* stack depth */
 	    if (ptr[4]) {
 		LABEL *lobj = (LABEL *)(ptr[4] & ~1);
-		entry->cont = label_get_position(lobj);
+		entry->curr_cont = entry->cont = label_get_position(lobj);
 		entry->sp = label_get_sp(lobj);
 
 		/* TODO: Dirty Hack!  Fix me */
@@ -2624,7 +2593,7 @@ iseq_set_exception_table(rb_iseq_t *iseq)
 		}
 	    }
 	    else {
-		entry->cont = 0;
+		entry->curr_cont = entry->cont = 0;
 	    }
 	}
 	iseq->body->catch_table = table;
@@ -10559,7 +10528,8 @@ rb_iseq_build_from_ary(rb_iseq_t *iseq, VALUE misc, VALUE locals, VALUE params,
 
 	    iseq->body->param.opt_num = len - 1;
 	    iseq->body->param.opt_table = opt_table;
-	}
+            iseq->body->curr_param_opt_table = (VALUE *)iseq->body->param.opt_table;
+        }
     }
     else if (!NIL_P(arg_opt_labels)) {
 	rb_raise(rb_eTypeError, ":opt param is not an array: %+"PRIsVALUE,
@@ -11338,7 +11308,7 @@ ibf_load_code(const struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t bytecod
             rb_raise(rb_eRuntimeError, "operand size mismatch");
         }
     }
-    load_body->iseq_encoded = code;
+    load_body->iseq_encoded = load_body->iseq_code = load_body->iseq_start_pc = code;
     load_body->iseq_size = code_index;
 
     assert(code_index == iseq_size);
@@ -11570,6 +11540,7 @@ ibf_load_catch_table(const struct ibf_load *load, ibf_offset_t catch_table_offse
             table->entries[i].start = (unsigned int)ibf_load_small_value(load, &reading_pos);
             table->entries[i].end = (unsigned int)ibf_load_small_value(load, &reading_pos);
             table->entries[i].cont = (unsigned int)ibf_load_small_value(load, &reading_pos);
+            table->entries[i].curr_cont = table->entries[i].cont;
             table->entries[i].sp = (unsigned int)ibf_load_small_value(load, &reading_pos);
 
             table->entries[i].iseq = ibf_load_iseq(load, (const rb_iseq_t *)(VALUE)iseq_index);
@@ -11978,6 +11949,7 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
                                       ibf_load_ci_entries(load, ci_entries_offset, ci_size, &load_body->call_data);
     load_body->outer_variables      = ibf_load_outer_variables(load, outer_variables_offset);
     load_body->param.opt_table      = ibf_load_param_opt_table(load, param_opt_table_offset, param_opt_num);
+    load_body->curr_param_opt_table = (VALUE *)load_body->param.opt_table;
     load_body->param.keyword        = ibf_load_param_keyword(load, param_keyword_offset);
     load_body->param.flags.has_kw   = (param_flags >> 4) & 1;
     load_body->insns_info.body      = ibf_load_insns_info_body(load, insns_info_body_offset, insns_info_size);
@@ -12033,6 +12005,9 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
     load->current_buffer = saved_buffer;
 #endif
     verify_call_cache(iseq);
+
+    if (rb_rtl_enabled_p())
+        rb_rtl_stub_gen(iseq);
 }
 
 struct ibf_dump_iseq_list_arg

@@ -258,7 +258,8 @@ struct iseq_catch_table_entry {
 
     unsigned int start;
     unsigned int end;
-    unsigned int cont;
+    unsigned int cont; /* pos in iseq_encoded */
+    unsigned int curr_cont; /* cont or pos in bbv code for rtl */
     unsigned int sp;
 };
 

@@ -53,7 +53,7 @@ calc_pos(const rb_iseq_t *iseq, const VALUE *pc, int *lineno, int *node_id)
         return 1;
     }
     else {
-        ptrdiff_t n = pc - iseq->body->iseq_encoded;
+        ptrdiff_t n = rb_iseq_encoded_pc(iseq, pc) - iseq->body->iseq_encoded;
         VM_ASSERT(n <= iseq->body->iseq_size);
         VM_ASSERT(n >= 0);
         ASSUME(n >= 0);
@@ -100,7 +100,7 @@ rb_vm_get_sourceline(const rb_control_frame_t *cfp)
 {
     if (VM_FRAME_RUBYFRAME_P(cfp) && cfp->iseq) {
 	const rb_iseq_t *iseq = cfp->iseq;
-	int line = calc_lineno(iseq, rb_iseq_pc(cfp));
+	int line = calc_lineno(iseq, cfp->pc);
 	if (line != 0) {
 	    return line;
 	}
@@ -620,7 +620,7 @@ rb_ec_partial_backtrace_object(const rb_execution_context_t *ec, long start_fram
                 }
                 else if (!skip_internal || !is_internal_location(cfp)) {
                     const rb_iseq_t *iseq = cfp->iseq;
-                    const VALUE *pc = rb_iseq_pc(cfp);
+                    const VALUE *pc = rb_cfp_iseq_encoded_pc(cfp);
                     loc = &bt->backtrace[bt->backtrace_size++];
                     loc->type = LOCATION_TYPE_ISEQ;
                     loc->iseq = iseq;
@@ -648,7 +648,7 @@ rb_ec_partial_backtrace_object(const rb_execution_context_t *ec, long start_fram
     if (cfunc_counter > 0) {
         for (; cfp != end_cfp; cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp)) {
             if (cfp->iseq && cfp->pc && (!skip_internal || !is_internal_location(cfp))) {
-                bt_update_cfunc_loc(cfunc_counter, loc, cfp->iseq, rb_iseq_pc(cfp));
+                bt_update_cfunc_loc(cfunc_counter, loc, cfp->iseq, rb_cfp_iseq_encoded_pc(cfp));
                 break;
             }
         }
@@ -874,7 +874,7 @@ static void
 oldbt_iter_iseq(void *ptr, const rb_control_frame_t *cfp)
 {
     const rb_iseq_t *iseq = cfp->iseq;
-    const VALUE *pc = rb_iseq_pc(cfp);
+    const VALUE *pc = cfp->pc;
     struct oldbt_arg *arg = (struct oldbt_arg *)ptr;
     VALUE file = arg->filename = rb_iseq_path(iseq);
     VALUE name = iseq->body->location.label;
@@ -1474,7 +1474,7 @@ rb_profile_frames(int start, int limit, VALUE *buff, int *lines)
 		buff[i] = (VALUE)cfp->iseq;
 	    }
 
-	    if (lines) lines[i] = calc_lineno(cfp->iseq, rb_iseq_pc(cfp));
+	    if (lines) lines[i] = calc_lineno(cfp->iseq, cfp->pc);
 
 	    i++;
 	}

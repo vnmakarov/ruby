@@ -720,7 +720,7 @@ defineclass
     vm_push_frame(ec, class_iseq, VM_FRAME_MAGIC_CLASS | VM_ENV_FLAG_LOCAL, klass,
 		  GET_BLOCK_HANDLER(),
 		  (VALUE)vm_cref_push(ec, klass, NULL, FALSE),
-		  class_iseq->body->iseq_encoded, GET_SP(),
+		  class_iseq->body->iseq_start_pc, GET_SP(),
 		  class_iseq->body->local_table_size,
 		  class_iseq->body->stack_max);
     RESTORE_REGS();
@@ -2411,7 +2411,10 @@ rtl_setivar
 }
 
 /* Specialized call of method without block created from make_rtl_send_without block:
-   it should be iseq, not-tail call, no splat args, all leading args  */
+   it should be iseq, not-tail call, no splat args, all leading args
+   For struct rb_rtl_iseq_call_data:
+   attr rb_snum_t sp_inc = -((struct rb_rtl_iseq_call_data *)cd)->argc;
+   attr rb_snum_t comptime_sp_inc = -((struct rb_rtl_iseq_call_data *)cd)->argc; */
 DEFINE_INSN
 rtl_iseq_send_without_block
 (CALL_DATA cd, lindex_t bbv)
@@ -2421,6 +2424,22 @@ rtl_iseq_send_without_block
 // attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
 // attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
 {
+#ifdef ISEQCALLDATA
+    const struct rb_callable_method_entry_struct *cme;
+    struct rb_rtl_iseq_call_data *rtl_cd = (struct rb_rtl_iseq_call_data *)cd;
+    int argc = rtl_cd->argc, param_size = rtl_cd->param_size;
+    VALUE *argv = reg_cfp->sp - argc;
+    VALUE recv = TOPN(argc);
+
+    if (rtl_cd->klass != CLASS_OF(recv)) goto rtl_iseq_send_without_block_exit;
+    cme = rtl_cd->cme;
+    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto rtl_iseq_send_without_block_exit;
+    VM_ASSERT(callable_method_entry_p(cme) && argc == param_size);
+    reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
+    vm_push_frame(ec, rtl_cd->iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
+                  VM_BLOCK_HANDLER_NONE, (VALUE)cme, rtl_cd->pc,
+                  argv + param_size, rtl_cd->local_table_size - param_size, rtl_cd->stack_max);
+#else
     struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
     rb_iseq_t *iseq = bbv_ref->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
@@ -2438,6 +2457,7 @@ rtl_iseq_send_without_block
     vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
                   VM_BLOCK_HANDLER_NONE, (VALUE)cme, body->bbv_code + bbv_ref->bbv_start,
                   argv + param_size, body->local_table_size - param_size, body->stack_max);
+#endif
     RESTORE_REGS();
     NEXT_INSN();
   rtl_iseq_send_without_block_exit:
@@ -2586,15 +2606,41 @@ specialize_bbv
 
 DEFINE_INSN
 make_rtl_bbv
-(lindex_t dummy)
+(lindex_t bbv_start)
 ()
 ()
 /* It occurs only in iseq_encoded */
 {
-    int start = rb_rtl_make_bbv(GET_CFP());
+    VALUE *start_pc = rb_rtl_make_bbv(GET_CFP(), bbv_start);
 
-    SET_PC(GET_CFP()->iseq->body->bbv_code + start);
+    SET_PC(start_pc);
     END_INSN(make_rtl_bbv); /* to skip pc increase */
+}
+
+DEFINE_INSN
+make_rtl_optpc_bbv
+(lindex_t opt)
+()
+()
+/* It occurs only in iseq_encoded */
+{
+    VALUE *start_pc = rb_rtl_make_optpc_bbv(GET_CFP(), (int)opt);
+
+    SET_PC(start_pc);
+    END_INSN(make_rtl_optpc_bbv); /* to skip pc increase */
+}
+
+DEFINE_INSN
+make_rtl_catch_bbv
+(lindex_t entry_ind)
+()
+()
+/* It occurs only in iseq_encoded */
+{
+    VALUE *start_pc = rb_rtl_make_catch_bbv(GET_CFP(), (int)entry_ind);
+
+    SET_PC(start_pc);
+    END_INSN(make_rtl_catch_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN

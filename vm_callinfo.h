@@ -289,6 +289,14 @@ struct rb_callcache {
     } aux_;
 };
 
+struct rb_rtl_iseq_call_data {
+    VALUE klass;
+    const struct rb_callable_method_entry_struct *cme;
+    rb_iseq_t *iseq;
+    VALUE *pc;
+    int param_size, argc, local_table_size, stack_max;
+};
+
 #define VM_CALLCACHE_UNMARKABLE IMEMO_FL_USER0
 
 static inline const struct rb_callcache *
