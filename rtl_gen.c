@@ -1751,7 +1751,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num, r
         for (i = 0; i < body->param.lead_num; i++) {
             RTL_GEN_ASSERT(!profile_p);
             if (i < n_attrs && bbv->attrs[i] == ATTR_FIXNUM) continue;
-            new_operands[0] = get_lvar_index(iseq, 0);
+            new_operands[0] = get_lvar_index(iseq, i);
             add_spec_insn_arr(orig_bbv->bbv_start, BIN(inspect_type), 1, new_operands);
         }
     }
