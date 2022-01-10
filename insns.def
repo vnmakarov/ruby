@@ -2437,10 +2437,7 @@ rtl_setivar
 }
 
 /* Specialized call of method without block created from make_rtl_send_without block:
-   it should be iseq, not-tail call, no splat args, all leading args
-   For struct rb_rtl_iseq_call_data:
-   attr rb_snum_t sp_inc = -((struct rb_rtl_iseq_call_data *)cd)->argc;
-   attr rb_snum_t comptime_sp_inc = -((struct rb_rtl_iseq_call_data *)cd)->argc; */
+   it should be iseq, not-tail call, no splat args, all leading args */
 DEFINE_INSN
 rtl_iseq_send_without_block
 (CALL_DATA cd, lindex_t bbv)
@@ -2450,22 +2447,6 @@ rtl_iseq_send_without_block
 // attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
 // attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
 {
-#ifdef ISEQCALLDATA
-    const struct rb_callable_method_entry_struct *cme;
-    struct rb_rtl_iseq_call_data *rtl_cd = (struct rb_rtl_iseq_call_data *)cd;
-    int argc = rtl_cd->argc, param_size = rtl_cd->param_size;
-    VALUE *argv = reg_cfp->sp - argc;
-    VALUE recv = TOPN(argc);
-
-    if (rtl_cd->klass != CLASS_OF(recv)) goto rtl_iseq_send_without_block_exit;
-    cme = rtl_cd->cme;
-    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto rtl_iseq_send_without_block_exit;
-    VM_ASSERT(callable_method_entry_p(cme) && argc == param_size);
-    reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
-    vm_push_frame(ec, rtl_cd->iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
-                  VM_BLOCK_HANDLER_NONE, (VALUE)cme, rtl_cd->pc,
-                  argv + param_size, rtl_cd->local_table_size - param_size, rtl_cd->stack_max);
-#else
     struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
     rb_iseq_t *iseq = bbv_ref->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
@@ -2483,7 +2464,6 @@ rtl_iseq_send_without_block
     vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
                   VM_BLOCK_HANDLER_NONE, (VALUE)cme, body->bbv_code + bbv_ref->bbv_start,
                   argv + param_size, body->local_table_size - param_size, body->stack_max);
-#endif
     RESTORE_REGS();
     NEXT_INSN();
   rtl_iseq_send_without_block_exit:

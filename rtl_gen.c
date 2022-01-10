@@ -1910,8 +1910,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             goto rest_cases;
         case BIN(rtl_iseq_send_without_block): {
             /* attrs can be changed so the target bbv can */
-            CALL_DATA cd = (CALL_DATA)operands[0];
-            int argc = vm_ci_argc(cd->ci);
+            int argc = vm_ci_argc(((CALL_DATA)operands[0])->ci);
 
             RTL_GEN_ASSERT(profile_p);
             VARR_TRUNC(char, arg_attrs, 0);
@@ -2029,9 +2028,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
         stack_update:
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)
-#ifndef ISEQCALLDATA
                 || insn_id == BIN(rtl_iseq_send_without_block)
-#endif
                 || insn_id == BIN(rtl_opt_send_without_block)) {
                 inc = sp_inc_of_sendish(((CALL_DATA)operands[0])->ci);
             } else {
@@ -2312,23 +2309,8 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
                 gen_rtl_bbv_code(iseq, bbv, 0, argc);
             RTL_GEN_ASSERT(bbv->iseq == iseq);
             ec->cfp->pc = &iseq->body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
-#ifdef ISEQCALLDATA
-            struct rb_rtl_iseq_call_data *rtl_cd;
-            rtl_cd = ALLOC_N(struct rb_rtl_iseq_call_data, 1);
-            rtl_cd->klass = cc->klass;
-            rtl_cd->cme = cme;
-            rtl_cd->iseq = iseq;
-            rtl_cd->pc = (VALUE *)ec->cfp->pc;
-            rtl_cd->param_size = iseq->body->param.size;
-            rtl_cd->argc = argc;
-            rtl_cd->local_table_size = iseq->body->local_table_size;
-            rtl_cd->stack_max = iseq->body->stack_max;
-#endif
             /* Change make_rtl_send_without_block(cd, attrs) to rtl_iseq_send_without_block(cd, bbv) */
             *call_pc = (VALUE)dispatch_table[BIN(rtl_iseq_send_without_block)];
-#ifdef ISEQCALLDATA
-            call_pc[1] = (VALUE)rtl_cd;
-#endif
             call_pc[2] = (VALUE)bbv;
             return;
         } else if (cme->def->type == VM_METHOD_TYPE_IVAR
