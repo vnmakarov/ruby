@@ -1673,14 +1673,17 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         }
         switch (insn_id) {
         case BIN(nop2):
+            new_insn_pos = prev_new_insn_pos;
             break; /* remove it */
         case BIN(inspect_type):
             RTL_GEN_ASSERT(profile_p);
             setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_UNKNOWN);
+            new_insn_pos = prev_new_insn_pos;
             break;/* it was not changed -- remove it */
         case BIN(inspect_stack_type):
             RTL_GEN_ASSERT(profile_p);
             setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_UNKNOWN);
+            new_insn_pos = prev_new_insn_pos;
             break;/* it was not changed -- remove it */
         case BIN(check_fixtype):
             RTL_GEN_ASSERT(profile_p);
@@ -1893,6 +1896,10 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             add_spec_insn_arr(orig_pos, BIN(make_rtl_send_without_block), 2, new_operands);
             goto stack_update;
         }
+        case BIN(rtl_igetivar):
+            RTL_GEN_ASSERT(profile_p);
+            attr = ATTR_FIXNUM;
+            goto add_and_push;
         case BIN(rtl_getivar):
         case BIN(rtl_setivar):
         case BIN(rtl_opt_send_ivget):
@@ -2014,7 +2021,9 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             goto rest_cases;
         case BIN(specialize_bbv):
             specialize_bbv_pos = new_insn_pos;
-            break; /* skip */
+            // ???? new_insn_pos = prev_new_insn_pos; -- keeping it stack inconsistency
+            // crash because icmpsxx;branch combining without popping val made by the icmp
+            break; /* remove */
         default:
         rest_cases:
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
@@ -2229,15 +2238,15 @@ rb_rtl_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
 }
 
 void
-rb_rtl_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
+rb_rtl_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic, VALUE val) {
     VALUE *insn_pc = (VALUE *)cfp->pc - insn_len(BIN(make_rtl_getivar));
-    int debug_p = rb_rtl_debug_p();
+    int debug_p = rb_rtl_debug_p(), fixnum_p = FIXNUM_P(val);
 
     if (RB_TYPE_P(self, T_OBJECT)) {
         if (debug_p)
-            fprintf(stderr, "--> Changing make_rtl_getivar to %4ld rtl_getivar\n",
-                    insn_pc - cfp->iseq->body->bbv_code);
-        *insn_pc = (VALUE)dispatch_table[BIN(rtl_getivar)];
+            fprintf(stderr, "--> Changing make_rtl_getivar to %4ld %s\n",
+                    insn_pc - cfp->iseq->body->bbv_code, fixnum_p ? "rtl_igetivar" : "rtl_getivar");
+        *insn_pc = (VALUE)dispatch_table[fixnum_p ? BIN(rtl_igetivar) : BIN(rtl_getivar)];
         return;
     }
     if (debug_p)

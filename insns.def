@@ -2379,6 +2379,32 @@ rtl_getivar
     ;
 }
 
+/* Get value of instance variable id of self. */
+DEFINE_INSN
+rtl_igetivar
+(ID id, IVC ic)
+()
+(VALUE val)
+// attr bool leaf = false; /* has IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() */
+{
+    VALUE self = GET_SELF();
+    uint32_t index;
+    struct rb_iv_index_tbl_entry *entry = ic->entry;
+
+    if (entry == NULL || entry->class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_igetivar_exit;
+    VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
+    index = entry->index;
+    if (LIKELY(index < ROBJECT_NUMIV(self))) {
+        val = ROBJECT_IVPTR(self)[index];
+        if (FIXNUM_P(val)) goto rtl_igetivar_end;
+    }
+  rtl_igetivar_exit:
+    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(rtl_getivar);
+  rtl_igetivar_end:
+    ;
+}
+
 /* Set value of instance variable id of self to val. */
 DEFINE_INSN
 rtl_setivar
@@ -2652,7 +2678,7 @@ make_rtl_getivar
 {
     VALUE self = GET_SELF();
     val = vm_getinstancevariable(GET_ISEQ(), self, id, ic);
-    rb_rtl_change_getivar(self, GET_CFP(), ic);
+    rb_rtl_change_getivar(self, GET_CFP(), ic, val);
 }
 
 /* Set value of instance variable id of self to val. */
