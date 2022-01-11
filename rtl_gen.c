@@ -1439,6 +1439,9 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             VARR_PUSH(int, stack, last_rtl_ind); /* insn producing temp */
             VARR_PUSH(char, operands_changed_p, FALSE);
             break;
+        case BIN(opt_case_dispatch):
+            br_p = TRUE;
+            /* fall through */
         default:
         rest_cases:
             if (insn_id != BIN(gen_rtl_bbv) && insn_id != BIN(gen_rtl_bbv2))
@@ -1469,16 +1472,18 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         curr_orig_insn_pos += len;
         if (bbv->iseq_bound >= 0 && curr_orig_insn_pos >= bbv->iseq_bound) break;
         if (longer_paths_p && follow_jumps_p) {
-            if (insn_id == BIN(jump))
+            if (insn_id == BIN(jump) && (long)operands[0] > 0)
                 curr_orig_insn_pos = dst; /* follow jump destination */
             else if (non_rtl_bb_end_p(insn_id))
                 break;
         }
     }
     last_original_rtl_ind = last_rtl_ind = remove_nops(&nops_num);
-    if (insn_id != BIN(leave) && insn_id != BIN(throw)) {
+    if (insn_id == BIN(throw)) { /* to get original position after throw */
+        last_rtl_ind = add_insn(curr_orig_insn_pos, BIN(nop), 0);
+    }
+    if (insn_id != BIN(leave) && insn_id != BIN(throw) && insn_id != BIN(opt_case_dispatch)) {
         if (!br_p) {
-            RTL_GEN_ASSERT(!longer_paths_p || !follow_jumps_p || insn_id == BIN(opt_case_dispatch));
             last_rtl_ind = add_insn(curr_orig_insn_pos, BIN(jump2), 1, (VALUE)0);
             dst = insn_id == BIN(opt_case_dispatch) ? curr_orig_insn_pos : bbv->iseq_bound;
         }
@@ -1976,7 +1981,6 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                 new_operands[0] = (VALUE)bbv;
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
             }
-            goto rest_cases;
             RTL_GEN_ASSERT(len == 3);
             new_operands[0] = rb_hash_new(); /* to duplicate */
             new_operands[1] = operands[1];
