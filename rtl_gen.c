@@ -2321,9 +2321,11 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
         } else if (cme->def->type == VM_METHOD_TYPE_IVAR
                    && (vm_ci_flag(ci) & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT)) == 0
                    && RB_TYPE_P(recv, T_OBJECT)) {
+            rb_check_arity(argc, 0, 0);
+            if (vm_cc_attr_index(cc) <= 0)
+                return; /* do nothing -- no attr index yet */
             if (debug_p)
                 fprintf(stderr, "--> Changing make_rtl_send_without_block to rtl_opt_send_ivget\n");
-            rb_check_arity(argc, 0, 0);
             RTL_GEN_ASSERT(vm_cc_attr_index(cc) > 0);
             *call_pc = (VALUE)dispatch_table[BIN(rtl_opt_send_ivget)];
             call_pc[1] = (VALUE)cc->klass;
@@ -2332,11 +2334,11 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
         } else if (cme->def->type == VM_METHOD_TYPE_ATTRSET
                    && (vm_ci_flag(ci) & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG)) == 0
                    && RB_TYPE_P(recv, T_OBJECT)) {
-            if (debug_p)
-                fprintf(stderr, "--> Changing make_rtl_send_without_block to rtl_opt_send_ivset\n");
             rb_check_arity(argc, 1, 1);
             if (vm_cc_attr_index(cc) <= 0)
                 return; /* do nothing -- no attr index yet */
+            if (debug_p)
+                fprintf(stderr, "--> Changing make_rtl_send_without_block to rtl_opt_send_ivset\n");
             RTL_GEN_ASSERT(vm_cc_attr_index(cc) > 0);
             *call_pc = (VALUE)dispatch_table[BIN(rtl_opt_send_ivset)];
             call_pc[1] = (VALUE)cc->klass;
