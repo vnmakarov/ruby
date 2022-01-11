@@ -161,10 +161,14 @@ static rtl_inline VALUE vm_opt_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
         }                                                        \
     }
 #else
-#define vm_opt_iplus(res, v1, v2, ov_label)                      \
-    if (__builtin_add_overflow((long)v1, (long)v2-1, res)) {     \
-        *res = rb_int2big(rb_overflowed_fix_to_int(*res));       \
-        goto RTL_CONCAT(exit_opt_, ov_label);                    \
+#define vm_opt_iplus(res, v1, v2, ov_label)                     \
+    {								\
+        long r;							\
+        if (__builtin_add_overflow((long)v1, (long)v2-1, &r)) { \
+            *res = rb_int2big(rb_overflowed_fix_to_int(r));     \
+            goto RTL_CONCAT(exit_opt_, ov_label);               \
+        }                                                       \
+        *res = r;						\
     }
 #endif
 
@@ -194,9 +198,13 @@ static rtl_inline VALUE vm_opt_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
     }
 #else
 #define vm_opt_iminus(res, v1, v2, ov_label)                    \
-    if (__builtin_sub_overflow((long)v1, (long)v2-1, res)) {    \
-        *res = rb_int2big(rb_overflowed_fix_to_int(*res));      \
-        goto RTL_CONCAT(exit_opt_, ov_label);                   \
+    {								\
+        long r;			                                \
+        if (__builtin_sub_overflow((long)v1, (long)v2-1, &r)) { \
+            *res = rb_int2big(rb_overflowed_fix_to_int(r));     \
+            goto RTL_CONCAT(exit_opt_, ov_label);               \
+        }                                                       \
+        *res = r;						\
     }
 #endif
 
