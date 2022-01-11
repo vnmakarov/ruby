@@ -795,8 +795,8 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound, const char *prefix)
         print_insn(iseq, insn_id, code, i, prefix);
         len = insn_len(insn_id);
         if (longer_paths_p) {
-            if (follow_jumps_p && insn_id == BIN(jump))
-                i = i + (long) code[i + 1];
+            if (follow_jumps_p && insn_id == BIN(jump) && (long)code[i + 1] > 0)
+                i = i + (long)code[i + 1];
             else if (bound < 0 && non_rtl_bb_end_p(insn_id))
                 break;
         }
@@ -1316,7 +1316,8 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         case BIN(jump): // ??? use leaf attr for dst calculations
             br_p = TRUE;
             dst = curr_orig_insn_pos + len + operands[0];
-            if (!longer_paths_p || !follow_jumps_p) add_insn(curr_orig_insn_pos, BIN(jump2), 1, (VALUE)0);
+            if (!longer_paths_p || !follow_jumps_p || (long)operands[0] <= 0)
+                add_insn(curr_orig_insn_pos, BIN(jump2), 1, (VALUE)0);
             goto stack_update;
         case BIN(branchif):
         case BIN(branchunless):
