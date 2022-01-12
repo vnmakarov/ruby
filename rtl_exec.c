@@ -99,7 +99,7 @@ static rtl_inline void RTL_CONCAT(push, ssv)(rb_control_frame_t *reg_cfp, VALUE 
     PUSH(v2);
 }
 static rtl_inline void RTL_CONCAT(push, sis)(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    PUSH(v2);
+    INC_SP(1); TOPN(1) = v2; TOPN(0) = v3;
 }
 static rtl_inline void RTL_CONCAT(push, sss)(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
 }
