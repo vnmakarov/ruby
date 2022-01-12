@@ -816,6 +816,7 @@ print_iseq_title(rb_iseq_t *iseq) {
 
 void
 rb_rtl_stub_gen(rb_iseq_t *iseq) {
+    RB_VM_LOCK_ENTER();
     int i, curr_bb_start, pos, len, make_bbv_area_start;
     enum ruby_vminsn_type insn_id;
     struct rb_iseq_constant_body *body = iseq->body;
@@ -928,6 +929,7 @@ rb_rtl_stub_gen(rb_iseq_t *iseq) {
         print_bb(iseq, body->bbv_code, make_bbv_area_start, make_bbv_area_start + len, "  ");
         print_pos_map(iseq, make_bbv_area_start, make_bbv_area_start + len, FALSE);
     }
+    RB_VM_LOCK_LEAVE();
 }
 
 static void
