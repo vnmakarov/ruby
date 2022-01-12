@@ -1545,18 +1545,6 @@ jump2
 }
 
 DEFINE_INSN
-jump2rtl
-(OFFSET dst)
-()
-()
-/* Same discussion as jump. */
-// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
-{
-    RUBY_VM_CHECK_INTS(ec);
-    SET_PC(GET_CFP()->iseq->body->bbv_code + dst);
-}
-
-DEFINE_INSN
 branchnil2
 (OFFSET nil_dst, OFFSET else_dst)
 (VALUE val)
