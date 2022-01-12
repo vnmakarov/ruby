@@ -1591,6 +1591,50 @@ remove_out_edges(rb_iseq_bbv_t src_bbv) {
     src_bbv->out_edges = NULL;
 }
 
+static void
+redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv) {
+    rb_iseq_bbv_t bbv;
+    struct rb_iseq_bbv_edge *in_e;
+    rb_iseq_t *iseq = dst_bbv->iseq;
+    const struct rb_iseq_constant_body *body = iseq->body;
+    int bbv_gen_pos, branch_pos;
+    OFFSET branch_offset, offset;
+    enum ruby_vminsn_type branch_id;
+    int debug_p = rb_rtl_debug_p();
+
+    RTL_GEN_ASSERT(dst_bbv->bbv_start >= 0);
+    for (in_e = dst_bbv->in_edges; in_e != NULL; in_e = in_e->next_in_edge) {
+        RTL_GEN_ASSERT(in_e->out == dst_bbv);
+        bbv = in_e->in;
+        bbv_gen_pos = bbv->bbv_start + in_e->gen_bbv_disp;
+        branch_offset = (OFFSET)body->bbv_code[bbv_gen_pos + 2];
+        if (body->bbv_code[bbv_gen_pos] == (VALUE)dispatch_table[BIN(gen_rtl_bbv)]) {
+            branch_pos = bbv_gen_pos + insn_len(BIN(gen_rtl_bbv)) + branch_offset;
+        } else if (body->bbv_code[bbv_gen_pos] == (VALUE)dispatch_table[BIN(gen_rtl_bbv2)]) {
+            branch_pos = bbv_gen_pos + insn_len(BIN(gen_rtl_bbv)) + branch_offset;
+        } else {
+            RTL_GEN_ASSERT(body->bbv_code[bbv_gen_pos] == (VALUE)dispatch_table[BIN(gen_rtl_bbv_key)]);
+            branch_pos = bbv_gen_pos + insn_len(BIN(gen_rtl_bbv_key)) + branch_offset;
+        }
+        branch_id = rb_vm_insn_decode(body->bbv_code[branch_pos]);
+        offset = dst_bbv->bbv_start - (branch_pos + insn_len(branch_id));
+        if (debug_p) {
+            fprintf(stderr, "--> Redirect dest in %04d %s to %d\n",
+                    (int)branch_pos, insn_name(branch_id), dst_bbv->bbv_start);
+        }
+        if (body->bbv_code[bbv_gen_pos] == (VALUE)dispatch_table[BIN(gen_rtl_bbv)]) {
+            body->bbv_code[branch_pos + 1] = offset;
+        } else if (body->bbv_code[bbv_gen_pos] == (VALUE)dispatch_table[BIN(gen_rtl_bbv2)]) {
+            body->bbv_code[branch_pos + 2] = offset;
+        } else {
+            RTL_GEN_ASSERT(branch_id == BIN(opt_case_dispatch));
+            rb_hash_aset(body->bbv_code[branch_pos + 1] /* hash */,
+                         body->bbv_code[bbv_gen_pos + 2], /* key */
+                         INT2FIX(offset));
+        }
+    }
+}
+
 #define RTL_INSN2_SPEC_STACK_CASES(name)         \
     case CONCAT(name, svv):                      \
     case CONCAT(name, svs):                      \
@@ -1609,9 +1653,11 @@ remove_out_edges(rb_iseq_bbv_t src_bbv) {
 
 
 /* Make type-specialized RTL from general RTL or make speculative
-   type-specialized RTL based on profile (inspect_types_num).  Add
-   inspect_type insn for 1st inspect_types_num variables (args) with
-   unknown attributes. */
+   type-specialized RTL based on profile (when inspect_types_num < 0)
+   caused by specialize_bbv execution.  Add inspect_type insn for 1st
+   inspect_types_num variables (args) with unknown attributes.  Return
+   pos in new bbv code to continue after profile specialization caused
+   by specialize_bbv execution, return -1 otherwise. */
 static int
 gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     int profile_p, n_attrs;
@@ -2064,6 +2110,10 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             }
         }
     }
+    if (profile_p && specialize_bbv_pos < 0)
+        /* We can not find specialize_bbv as we use bbv code
+           specialized in another ractor -- don't add a new code */
+        return -1;
     remove_nops(&nops_num); // ??? modify out_gen_bbv_disps ... */
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
     bbv->bbv_start = get_bbv_code_space(iseq, len);
@@ -2071,8 +2121,9 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     bbv_encode(VARR_ADDR(VALUE, bbv_encoded), len);
     if (!compacted_attrs_p)
         compact_attrs(attrs);
-    if (profile_p) { /* attrs can change -- remove targets */
+    if (profile_p) { /* attrs can change -- remove targets and change source bbv destinations: */
         remove_out_edges(bbv);
+        redirect_src_bbv_dests(bbv);
     }
     RTL_GEN_ASSERT(bbv->out_edges == NULL);
     RTL_GEN_ASSERT(VARR_LENGTH(rb_iseq_bbv_t, out_bbvs) == VARR_LENGTH(int, out_gen_bbv_disps));
@@ -2124,7 +2175,6 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size, int in
         gen_rtl_from_stack_insns(iseq, bbv->head_bbv);
     }
     gen_specialized_rtl(iseq, bbv, inspect_types_num); /* type specialization of BBV */
-
 }
 
 VALUE *
