@@ -2172,7 +2172,7 @@ opt_asetsvv
 (VALUE val)
 {
     VALUE ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushsvv(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2186,7 +2186,7 @@ opt_asetsiv
 (VALUE val)
 {
     VALUE set = *(GET_EP() - set_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushsiv(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2200,7 +2200,7 @@ opt_asetsvs
 (VALUE val)
 {
     VALUE ind = *(GET_EP() - ind_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushsvs(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2214,7 +2214,7 @@ opt_asetssv
 (VALUE val)
 {
     VALUE set = *(GET_EP() - set_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushssv(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2227,7 +2227,7 @@ opt_asetsis
 (VALUE arr, VALUE set)
 (VALUE val)
 {
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushsis(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2241,7 +2241,7 @@ opt_asetvvv
 (VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushvvv(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2255,7 +2255,7 @@ opt_asetviv
 (VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushviv(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2269,7 +2269,7 @@ opt_asetvvs
 (VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushvvs(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2283,7 +2283,7 @@ opt_asetvsv
 (VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushvsv(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2297,7 +2297,7 @@ opt_asetvis
 (VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushvis(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
@@ -2311,7 +2311,7 @@ opt_asetvss
 (VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx);
-    VALUE val = vm_opt_aset(arr, ind, set);
+    val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
         pushvss(reg_cfp, arr, ind, set);
         CALL_SIMPLE_METHOD();
