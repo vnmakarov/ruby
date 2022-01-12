@@ -2580,14 +2580,6 @@ gen_rtl_bbv_key
 }
 
 DEFINE_INSN
-nop2
-(VALUE dummy)
-()
-()
-{
-}
-
-DEFINE_INSN
 specialize_bbv
 (lindex_t bbv)
 ()

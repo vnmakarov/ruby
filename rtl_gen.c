@@ -1724,9 +1724,6 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                 orig_pos = -orig_pos - 1;
         }
         switch (insn_id) {
-        case BIN(nop2):
-            new_insn_pos = prev_new_insn_pos;
-            break; /* remove it */
         case BIN(inspect_type):
             RTL_GEN_ASSERT(profile_p);
             setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_UNKNOWN);
