@@ -37,9 +37,9 @@ VALUE *rb_rtl_make_bbv(rb_control_frame_t *cfp, int iseq_bbv_start);
 VALUE *rb_rtl_make_optpc_bbv(rb_control_frame_t *cfp, int opt);
 VALUE *rb_rtl_make_catch_bbv(rb_control_frame_t *cfp, int entry_ind);
 void rb_rtl_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p);
-int rb_rtl_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int branch_offset, int first_p);
-int rb_rtl_gen_bbv_key(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int case_offset, VALUE key);
-int rb_rtl_specialize_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv);
+VALUE *rb_rtl_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int branch_offset, int first_p);
+VALUE *rb_rtl_gen_bbv_key(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int case_offset, VALUE key);
+VALUE *rb_rtl_specialize_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv);
 void rb_rtl_change_getivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic, VALUE val);
 void rb_rtl_change_setivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic);
 void rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,

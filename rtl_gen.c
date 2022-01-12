@@ -2180,8 +2180,10 @@ rb_rtl_make_catch_bbv(rb_control_frame_t *cfp, int entry_ind) { /* called from m
     return start_pc;
 }
 
-int
+VALUE *
 rb_rtl_gen_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int branch_offset, int first_p) {
+    VALUE *start_pc;
+
     RB_VM_LOCK_ENTER();
     struct rb_iseq_constant_body *body = cfp->iseq->body;
     int gen_bbv_insn_pos = cfp->pc - body->bbv_code; /* position of gen_rtl_bbv end */
@@ -2196,12 +2198,15 @@ rb_rtl_gen_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int branch_offset, in
     /* redirect hash from rtl_gen_bbv[2] to the generated bbv start */
     body->bbv_code[gen_bbv_insn_pos + gen_rtl_bbv_len + branch_offset + (first_p ? 1 : 2)]
         = bbv->bbv_start - (gen_bbv_insn_pos + gen_rtl_bbv_len + branch_offset + branch_len);
+    start_pc = body->bbv_code + bbv->bbv_start;
     RB_VM_LOCK_LEAVE();
-    return bbv->bbv_start;
+    return start_pc;
 }
 
-int
+VALUE *
 rb_rtl_gen_bbv_key(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int case_offset, VALUE key) {
+    VALUE *start_pc;
+
     RB_VM_LOCK_ENTER();
     struct rb_iseq_constant_body *body = cfp->iseq->body;
     int gen_bbv_insn_pos = cfp->pc - body->bbv_code; /* position of gen_rtl_code end */
@@ -2218,50 +2223,54 @@ rb_rtl_gen_bbv_key(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int case_offset, 
     /* redirect hash from rtl_gen_bbv_key to the generated bbv start */
     rb_hash_aset(hash, key, INT2FIX(bbv->bbv_start
                                     - (gen_bbv_insn_pos + gen_rtl_bbv_len + case_offset + branch_len)));
+    start_pc = body->bbv_code + bbv->bbv_start;
     RB_VM_LOCK_LEAVE();
-    return bbv->bbv_start;
+    return start_pc;
 }
 
-int
+VALUE *
 rb_rtl_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
     rb_iseq_t *iseq = (rb_iseq_t *)cfp->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t called_bbv;
     int bbv_cont_pos;
+    VALUE *cont_pc;
 
     RB_VM_LOCK_ENTER();
     /* specialize curr bbv by profile: */
+    RTL_GEN_ASSERT(*cfp->pc == (VALUE)dispatch_table[BIN(specialize_bbv)]);
     VARR_TRUNC(rb_iseq_bbv_t, bbvs, 0);
     bbv_cont_pos = gen_specialized_rtl(bbv->iseq, bbv, -1);
-    RTL_GEN_ASSERT(bbv_cont_pos >= 0);
-    if (VARR_LENGTH(rb_iseq_bbv_t, bbvs) != 0) {
-        int debug_p = rb_rtl_debug_p();
-        if (debug_p)
-            fprintf(stderr, "<<< Start of further type specialization of called BBVs\n");
-        /* Here we can reuse globals.  Remember bbvs is updated only for
-           profile_p and gen_rtl_bbv_code never means profile_p. */
-        while (VARR_LENGTH(rb_iseq_bbv_t, bbvs) != 0) {
-            called_bbv = VARR_POP(rb_iseq_bbv_t, bbvs);
-            if (called_bbv->bbv_start < 0) /* bbv can occur more one time in bbvs */
-                gen_rtl_bbv_code(called_bbv->iseq, called_bbv, 0, 0);
-        }
-        if (debug_p)
-            fprintf(stderr, ">>> End of further type specialization of called BBVs\n");
-    }
-    /* Change to nop2 */
-    ((VALUE *)cfp->pc)[0] = (VALUE)dispatch_table[BIN(nop2)]; /* we use nop2 as we keep nop */
-    ((VALUE *)cfp->pc)[1] = INT2FIX(0);
-    if (bbv->type == RB_BBV_REGULAR) {
-        if (bbv->iseq_start == 0)
-            body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
-    } else if (bbv->type == RB_BBV_OPT) {
-        body->curr_param_opt_table[bbv->index] = bbv->bbv_start + body->bbv_code - body->iseq_start_pc;
+    if (bbv_cont_pos < 0) {
+        cont_pc = (VALUE*)cfp->pc + insn_len(BIN(specialize_bbv));
     } else {
-        RTL_GEN_ASSERT(bbv->type == RB_BBV_CATCH);
-        body->catch_table->entries[bbv->index].curr_cont = bbv->bbv_start;
+        if (VARR_LENGTH(rb_iseq_bbv_t, bbvs) != 0) {
+            int debug_p = rb_rtl_debug_p();
+            if (debug_p)
+                fprintf(stderr, "<<< Start of further type specialization of called BBVs\n");
+            /* Here we can reuse globals.  Remember bbvs is updated only for
+               profile_p and gen_rtl_bbv_code never means profile_p. */
+            while (VARR_LENGTH(rb_iseq_bbv_t, bbvs) != 0) {
+                called_bbv = VARR_POP(rb_iseq_bbv_t, bbvs);
+                if (called_bbv->bbv_start < 0) /* bbv can occur more one time in bbvs */
+                    gen_rtl_bbv_code(called_bbv->iseq, called_bbv, 0, 0);
+            }
+            if (debug_p)
+                fprintf(stderr, ">>> End of further type specialization of called BBVs\n");
+        }
+        if (bbv->type == RB_BBV_REGULAR) {
+            if (bbv->iseq_start == 0)
+                body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
+        } else if (bbv->type == RB_BBV_OPT) {
+            body->curr_param_opt_table[bbv->index] = bbv->bbv_start + body->bbv_code - body->iseq_start_pc;
+        } else {
+            RTL_GEN_ASSERT(bbv->type == RB_BBV_CATCH);
+            body->catch_table->entries[bbv->index].curr_cont = bbv->bbv_start;
+        }
+        cont_pc = body->bbv_code + bbv_cont_pos;
     }
     RB_VM_LOCK_LEAVE();
-    return bbv_cont_pos;
+    return cont_pc;
 }
 
 void
