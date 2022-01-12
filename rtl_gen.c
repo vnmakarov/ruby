@@ -1137,7 +1137,7 @@ contains_input_lvar_p(int insn_pos, int lvar) {
 static void
 gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     enum ruby_vminsn_type insn_id = BIN(nop);
-    enum ruby_vminsn_type new_insn_id, op_insn_id, next_insn_id;
+    enum ruby_vminsn_type new_insn_id, op_insn_id;
     int init_stack_size = bbv->start_stack_size;
     int i, n, curr_orig_insn_pos, len, nops, inc, retn, br_p, dst2_p, stack_size;
     int op_insn_pos, op3_insn_pos, op2_insn_pos, local_p, local2_p, local3_p;
@@ -1266,8 +1266,6 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             stack_size = VARR_LENGTH(int, stack);
             RTL_GEN_ASSERT(stack_size >= 3);
             if (bbv->iseq_bound >= 0 && curr_orig_insn_pos + len >= bbv->iseq_bound) goto rest_cases;
-            next_insn_id = rb_vm_insn_addr2insn((void *)body->iseq_encoded[curr_orig_insn_pos + len]);
-            if (next_insn_id != BIN(pop)) goto rest_cases;
             op_insn_pos = VARR_GET(int, stack, stack_size - 3);
             op2_insn_pos = VARR_GET(int, stack, stack_size - 2);
             op3_insn_pos = VARR_GET(int, stack, stack_size - 1);
@@ -1309,10 +1307,9 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 nullify(op2_insn_pos);
             if (local3_p)
                 nullify(op3_insn_pos);
-            len += insn_len(BIN(pop));
-            VARR_TRUNC(int, stack, stack_size - 3); /* including pop */
-            VARR_TRUNC(char, operands_changed_p, stack_size - 3);
-            break;
+            VARR_TRUNC(int, stack, stack_size - 2);
+            VARR_TRUNC(char, operands_changed_p, stack_size - 2);
+            goto push;
         case BIN(jump): // ??? use leaf attr for dst calculations
             br_p = TRUE;
             dst = curr_orig_insn_pos + len + operands[0];

@@ -2169,7 +2169,7 @@ DEFINE_INSN
 opt_asetsvv
 (lindex_t ind_idx, lindex_t set_idx, CALL_DATA cd)
 (VALUE arr)
-()
+(VALUE val)
 {
     VALUE ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2183,7 +2183,7 @@ DEFINE_INSN
 opt_asetsiv
 (VALUE ind, lindex_t set_idx, CALL_DATA cd)
 (VALUE arr)
-()
+(VALUE val)
 {
     VALUE set = *(GET_EP() - set_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2197,7 +2197,7 @@ DEFINE_INSN
 opt_asetsvs
 (lindex_t ind_idx, CALL_DATA cd)
 (VALUE arr, VALUE set)
-()
+(VALUE val)
 {
     VALUE ind = *(GET_EP() - ind_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2211,7 +2211,7 @@ DEFINE_INSN
 opt_asetssv
 (lindex_t set_idx, CALL_DATA cd)
 (VALUE arr, VALUE ind)
-()
+(VALUE val)
 {
     VALUE set = *(GET_EP() - set_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2225,7 +2225,7 @@ DEFINE_INSN
 opt_asetsis
 (VALUE ind, CALL_DATA cd)
 (VALUE arr, VALUE set)
-()
+(VALUE val)
 {
     VALUE val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
@@ -2238,7 +2238,7 @@ DEFINE_INSN
 opt_asetvvv
 (lindex_t arr_idx, lindex_t ind_idx, lindex_t set_idx, CALL_DATA cd)
 ()
-()
+(VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2252,7 +2252,7 @@ DEFINE_INSN
 opt_asetviv
 (lindex_t arr_idx, VALUE ind, lindex_t set_idx, CALL_DATA cd)
 ()
-()
+(VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2266,7 +2266,7 @@ DEFINE_INSN
 opt_asetvvs
 (lindex_t arr_idx, lindex_t ind_idx, CALL_DATA cd)
 (VALUE set)
-()
+(VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2280,7 +2280,7 @@ DEFINE_INSN
 opt_asetvsv
 (lindex_t arr_idx, lindex_t set_idx, CALL_DATA cd)
 (VALUE ind)
-()
+(VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2294,7 +2294,7 @@ DEFINE_INSN
 opt_asetvis
 (lindex_t arr_idx, VALUE ind, CALL_DATA cd)
 (VALUE set)
-()
+(VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
@@ -2308,7 +2308,7 @@ DEFINE_INSN
 opt_asetvss
 (lindex_t arr_idx, CALL_DATA cd)
 (VALUE ind, VALUE set)
-()
+(VALUE val)
 {
     VALUE arr = *(GET_EP() - arr_idx);
     VALUE val = vm_opt_aset(arr, ind, set);
