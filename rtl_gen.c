@@ -1735,16 +1735,21 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_UNKNOWN);
             new_insn_pos = prev_new_insn_pos;
             break;/* it was not changed -- remove it */
-        case BIN(check_fixtype):
+        case BIN(inspect_fixtype):
             RTL_GEN_ASSERT(profile_p);
             setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_FIXNUM);
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, BIN(check_fixtype), len - 1, operands);
             break;
-        case BIN(check_stack_fixtype):
+        case BIN(inspect_stack_fixtype):
             RTL_GEN_ASSERT(profile_p);
             setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_FIXNUM);
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, BIN(check_stack_fixtype), len - 1, operands);
             break;
+        case BIN(check_fixtype):
+        case BIN(check_stack_fixtype):
+            /* it can be here because repeated specialization by ractors
+               and yields from recursive calls of one functions */
+            goto rest_cases; 
         case BIN(swap):
             attr = get_attr(get_temp_num(iseq, stack_size - 1));
             RTL_GEN_ASSERT(stack_size >= 2);
@@ -2140,20 +2145,25 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
 
 void
 rb_rtl_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
-    if (FIXNUM_P(val)) {
+    if (FIXNUM_P(val) && *cfp->pc != (VALUE)dispatch_table[BIN(inspect_fixtype)]
+        && *cfp->pc != (VALUE)dispatch_table[BIN(inspect_stack_fixtype)]) {
         VALUE *insn_pc = (VALUE *)cfp->pc;
         int debug_p = rb_rtl_debug_p();
 
         RB_VM_LOCK_ENTER();
-        if (debug_p) {
-            if (stack_p)
-                fprintf(stderr, "--> Changing inspect_stack_type to %4ld check_stack_fixtype\n",
+        if (stack_p) {
+            RTL_GEN_ASSERT(*cfp->pc == (VALUE)dispatch_table[BIN(inspect_stack_type)]);
+            if (debug_p)
+                fprintf(stderr, "--> Changing inspect_stack_type to %4ld inspect_stack_fixtype\n",
                         insn_pc - cfp->iseq->body->bbv_code);
-            else
-                fprintf(stderr, "--> Changing inspect_type to %4ld check_fixtype\n",
+            *insn_pc = (VALUE)dispatch_table[BIN(inspect_stack_fixtype)];
+        } else {
+            RTL_GEN_ASSERT(*cfp->pc == (VALUE)dispatch_table[BIN(inspect_type)]);
+            if (debug_p)
+                fprintf(stderr, "--> Changing inspect_type to %4ld inspect_fixtype\n",
                         insn_pc - cfp->iseq->body->bbv_code);
+            *insn_pc = (VALUE)dispatch_table[BIN(inspect_fixtype)];
         }
-        *insn_pc = (VALUE)dispatch_table[stack_p ? BIN(check_stack_fixtype) : BIN(check_fixtype)];
         RB_VM_LOCK_LEAVE();
     }
 }
