@@ -1528,7 +1528,7 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     bbv->bbv_bound = bbv->bbv_start + len;
     memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
     memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
-    if (insn_id != BIN(leave) && insn_id != BIN(throw)) {
+    if (insn_id != BIN(leave) && insn_id != BIN(throw) && insn_id != BIN(opt_case_dispatch)) {
         insn_id = body->bbv_code[bbv->bbv_start + last_rtl_ind];
         offset = last_rtl_ind + insn_len(insn_id); /* offset of the branch end from zero */
         offset = disp - offset; /* offset relative to the 1st gen_rtl_code */
@@ -1629,7 +1629,7 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv) {
         } else {
             RTL_GEN_ASSERT(branch_id == BIN(opt_case_dispatch));
             rb_hash_aset(body->bbv_code[branch_pos + 1] /* hash */,
-                         body->bbv_code[bbv_gen_pos + 2], /* key */
+                         body->bbv_code[bbv_gen_pos + 3], /* key */
                          INT2FIX(offset));
         }
     }
