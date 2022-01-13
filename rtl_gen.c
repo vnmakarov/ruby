@@ -1155,7 +1155,7 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
 
     RTL_GEN_ASSERT(bbv->head_bbv == NULL && bbv->attrs[0] == ATTR_END_MARKER && init_stack_size >= 0);
     if (debug_p) {
-        fprintf(stderr, "\n## Generation of General RTL BBV 0x%llx:", (unsigned long long) bbv);
+        fprintf(stderr, "\n## Generation of General RTL BBV 0x%llx:", (unsigned long long)bbv);
         print_attrs(bbv->attrs);
         fprintf(stderr, "Original BB of ");
         print_iseq_title(iseq);
@@ -1367,8 +1367,8 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         case BIN(setlocal_WC_0):
             stack_size = (int)VARR_LENGTH(int, stack);
             RTL_GEN_ASSERT(stack_size > 0);
-            if ((op_insn_pos = VARR_LAST(int, stack)) < 0) goto rest_cases;
-            if (VARR_LAST(char, operands_changed_p)) goto rest_cases;
+            if ((op_insn_pos = VARR_LAST(int, stack)) < 0) goto change_setlocal0;
+            if (VARR_LAST(char, operands_changed_p)) goto change_setlocal0;
             op_insn_id = (enum ruby_vminsn_type) VARR_GET(VALUE, bbv_encoded, op_insn_pos);
             new_insn_id = get_var_res_rtl_insn_id(op_insn_id);
             if (new_insn_id == BIN(nop)) {
@@ -1416,6 +1416,7 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 default: break;
                 }
             }
+        change_setlocal0:
             add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
         change_setlocal:
             for (i = 0; i < stack_size - 1; i++) {
