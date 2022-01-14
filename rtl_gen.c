@@ -975,7 +975,6 @@ rb_rtl_stub_gen(rb_iseq_t *iseq) {
            VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
     body->iseq_code = body->iseq_start_pc = &body->bbv_code[make_bbv_area_start];
     bbv_encode(&body->bbv_code[make_bbv_area_start], len);
-    rtl_trace_update(iseq, make_bbv_area_start, make_bbv_area_start + len);
     if (rb_rtl_debug_p()) {
         fprintf(stderr, "## Make BBV area of ");
         print_iseq_title(iseq);
@@ -1198,7 +1197,7 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     int init_stack_size = bbv->start_stack_size;
     int i, n, last_pos, curr_orig_insn_pos, len, nops, inc, retn, br_p, dst2_p, stack_size;
     int op_insn_pos, op3_insn_pos, op2_insn_pos, local_p, local2_p, local3_p;
-    int last_original_rtl_ind, last_rtl_ind, nops_num;
+    int last_rtl_ind, nops_num;
     int debug_p = rb_rtl_debug_p();
     int disp = 0, disp2 = 0, else_disp = 0; /* for removing uninitialized warning */
     OFFSET dst = 0, dst2 = 0, else_dst = 0; /* for removing uninitialized warning */
@@ -1533,7 +1532,7 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 break;
         }
     }
-    last_original_rtl_ind = last_rtl_ind = remove_nops(&nops_num);
+    last_rtl_ind = remove_nops(&nops_num);
     last_pos = VARR_LAST(int, pos_map);
     if (insn_id != BIN(leave) && insn_id != BIN(throw) && insn_id != BIN(opt_case_dispatch)) {
         if (!br_p) {
@@ -1564,17 +1563,17 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         VARR_PUSH(rb_iseq_bbv_t, out_bbvs, else_dst_bbv);
         VARR_PUSH(int, out_gen_bbv_disps, else_disp);
         len = insn_len(BIN(gen_rtl_bbv2));
-        VARR_SET(VALUE, bbv_encoded, else_disp + 2, (VALUE)(last_original_rtl_ind - (else_disp + len)));
-        VARR_SET(VALUE, bbv_encoded, last_original_rtl_ind + 2, (VALUE)(else_disp - last_original_rtl_ind - len));
+        VARR_SET(VALUE, bbv_encoded, else_disp + 2, (VALUE)(last_rtl_ind - (else_disp + len)));
+        VARR_SET(VALUE, bbv_encoded, last_rtl_ind + 2, (VALUE)(else_disp - last_rtl_ind - len));
         /* set up new hash and add insns gen_rtl_bb_key */
         data.iseq = iseq;
         data.map = rb_hash_new();
         RHASH_TBL_RAW(data.map)->type = &cdhash_type;
-        data.case_start = last_original_rtl_ind;
+        data.case_start = last_rtl_ind;
         data.origin_case_start = curr_orig_insn_pos - insn_len(BIN(opt_case_dispatch));
         rb_hash_foreach(operands[0], set_case_hash_el, (VALUE)&data);
         RB_OBJ_WRITTEN(iseq, Qundef, data.map);
-        VARR_SET(VALUE, bbv_encoded, last_original_rtl_ind + 1, data.map);
+        VARR_SET(VALUE, bbv_encoded, last_rtl_ind + 1, data.map);
     }
     add_insn(last_pos, BIN(nop), 0); /* to get position right after the last insn */
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
