@@ -32,6 +32,7 @@ void rb_rtl_init(struct rb_rtl_options *options);
 /* rtl_gen.c: */
 int rb_rtl_gen_init(void);
 void rb_rtl_gen_finish(void);
+void rb_rtl_trace_update(const rb_iseq_t *iseq);
 void rb_rtl_stub_gen(rb_iseq_t *iseq);
 VALUE *rb_rtl_make_bbv(rb_control_frame_t *cfp, int iseq_bbv_start);
 VALUE *rb_rtl_make_optpc_bbv(rb_control_frame_t *cfp, int opt);
@@ -44,6 +45,7 @@ void rb_rtl_change_getivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic, V
 void rb_rtl_change_setivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic);
 void rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,
                                       CALL_DATA cd, char *attrs);
+const VALUE *rb_rtl_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp);
 
 void rb_rtl_iseq_free(struct rb_iseq_constant_body *body);
 

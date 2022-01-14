@@ -170,6 +170,13 @@ unsigned int *rb_iseq_insns_info_decode_positions(const struct rb_iseq_constant_
 
 int rb_vm_insn_addr2opcode(const void *addr);
 
+typedef struct rb_insn_data_struct {
+    int insn;
+    int insn_len;
+    void *notrace_encoded_insn;
+    void *trace_encoded_insn;
+} rb_insn_data_t;
+
 RUBY_SYMBOL_EXPORT_BEGIN
 
 /* compile.c */
@@ -205,6 +212,8 @@ VALUE rb_iseq_method_name(const rb_iseq_t *iseq);
 void rb_iseq_code_location(const rb_iseq_t *iseq, int *first_lineno, int *first_column, int *last_lineno, int *last_column);
 
 void rb_iseq_remove_coverage_all(void);
+
+rb_insn_data_t *rb_get_insn_data(VALUE *iseq_encoded_insn);
 
 /* proc.c */
 const rb_iseq_t *rb_method_iseq(VALUE body);

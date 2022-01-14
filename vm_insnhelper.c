@@ -5469,60 +5469,64 @@ rb_vm_opt_cfunc_p(CALL_CACHE cc, int insn)
 static void
 vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
 {
-    const VALUE *pc = rb_cfp_iseq_encoded_pc(reg_cfp);
     rb_event_flag_t enabled_flags = ruby_vm_event_flags & ISEQ_TRACE_EVENTS;
+    const rb_iseq_t *iseq = reg_cfp->iseq;
+    struct rb_iseq_constant_body *body = iseq->body;
+    const VALUE *pc = reg_cfp->pc;
 
     if (enabled_flags == 0 && ruby_vm_event_local_num == 0) {
         return;
+    } else if (!(body->iseq_encoded <= reg_cfp->pc && reg_cfp->pc <= body->iseq_encoded + body->iseq_size)) {
+        /* It is an RTL trace insn */
+        if ((pc = rb_rtl_trace_stack_insn_pc(ec, reg_cfp)) == NULL) return;
+    } else {
+        pc = reg_cfp->pc;
+    }
+    size_t pos = pc - iseq->body->iseq_encoded;
+    rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pos);
+    rb_hook_list_t *local_hooks = iseq->aux.exec.local_hooks;
+    rb_event_flag_t local_hook_events = local_hooks != NULL ? local_hooks->events : 0;
+    enabled_flags |= local_hook_events;
+
+    VM_ASSERT((local_hook_events & ~ISEQ_TRACE_EVENTS) == 0);
+
+    if ((pc_events & enabled_flags) == 0) {
+#if 0
+        /* disable trace */
+        /* TODO: incomplete */
+        rb_iseq_trace_set(iseq, vm_event_flags & ISEQ_TRACE_EVENTS);
+#else
+        /* do not disable trace because of performance problem
+         * (re-enable overhead)
+         */
+#endif
+        return;
+    }
+    else if (ec->trace_arg != NULL) {
+        /* already tracing */
+        return;
     }
     else {
-	const rb_iseq_t *iseq = reg_cfp->iseq;
-	size_t pos = pc - iseq->body->iseq_encoded;
-        rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pos);
-        rb_hook_list_t *local_hooks = iseq->aux.exec.local_hooks;
-        rb_event_flag_t local_hook_events = local_hooks != NULL ? local_hooks->events : 0;
-        enabled_flags |= local_hook_events;
+        rb_hook_list_t *global_hooks = rb_ec_ractor_hooks(ec);
 
-        VM_ASSERT((local_hook_events & ~ISEQ_TRACE_EVENTS) == 0);
-
-        if ((pc_events & enabled_flags) == 0) {
-#if 0
-	    /* disable trace */
-            /* TODO: incomplete */
-	    rb_iseq_trace_set(iseq, vm_event_flags & ISEQ_TRACE_EVENTS);
-#else
-	    /* do not disable trace because of performance problem
-	     * (re-enable overhead)
-	     */
-#endif
-	    return;
+        if (0) {
+            ruby_debug_printf("vm_trace>>%4d (%4x) - %s:%d %s\n",
+                              (int)pos,
+                              (int)pc_events,
+                              RSTRING_PTR(rb_iseq_path(iseq)),
+                              (int)rb_iseq_line_no(iseq, pos),
+                              RSTRING_PTR(rb_iseq_label(iseq)));
         }
-        else if (ec->trace_arg != NULL) {
-            /* already tracing */
-            return;
-        }
-        else {
-            rb_hook_list_t *global_hooks = rb_ec_ractor_hooks(ec);
+        VM_ASSERT(rb_iseq_encoded_pc(reg_cfp) == pc);
+        VM_ASSERT(pc_events != 0);
+        VM_ASSERT(enabled_flags & pc_events);
 
-            if (0) {
-                ruby_debug_printf("vm_trace>>%4d (%4x) - %s:%d %s\n",
-                                  (int)pos,
-                                  (int)pc_events,
-                                  RSTRING_PTR(rb_iseq_path(iseq)),
-                                  (int)rb_iseq_line_no(iseq, pos),
-                                  RSTRING_PTR(rb_iseq_label(iseq)));
-            }
-            VM_ASSERT(rb_iseq_encoded_pc(reg_cfp) == pc);
-            VM_ASSERT(pc_events != 0);
-            VM_ASSERT(enabled_flags & pc_events);
-
-            /* check traces */
-            VM_TRACE_HOOK(RUBY_EVENT_CLASS | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL,   Qundef);
-            VM_TRACE_HOOK(RUBY_EVENT_LINE,                                          Qundef);
-            VM_TRACE_HOOK(RUBY_EVENT_COVERAGE_LINE,                                 Qundef);
-            VM_TRACE_HOOK(RUBY_EVENT_COVERAGE_BRANCH,                               Qundef);
-            VM_TRACE_HOOK(RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN, TOPN(0));
-        }
+        /* check traces */
+        VM_TRACE_HOOK(RUBY_EVENT_CLASS | RUBY_EVENT_CALL | RUBY_EVENT_B_CALL,   Qundef);
+        VM_TRACE_HOOK(RUBY_EVENT_LINE,                                          Qundef);
+        VM_TRACE_HOOK(RUBY_EVENT_COVERAGE_LINE,                                 Qundef);
+        VM_TRACE_HOOK(RUBY_EVENT_COVERAGE_BRANCH,                               Qundef);
+        VM_TRACE_HOOK(RUBY_EVENT_END | RUBY_EVENT_RETURN | RUBY_EVENT_B_RETURN, TOPN(0));
     }
 }
 

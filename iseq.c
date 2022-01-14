@@ -3195,13 +3195,7 @@ rb_iseq_defined_string(enum defined_type type)
  * non-trace version of encoded insn, and trace version. */
 
 static st_table *encoded_insn_data;
-typedef struct insn_data_struct {
-    int insn;
-    int insn_len;
-    void *notrace_encoded_insn;
-    void *trace_encoded_insn;
-} insn_data_t;
-static insn_data_t insn_data[VM_INSTRUCTION_SIZE/2];
+static rb_insn_data_t insn_data[VM_INSTRUCTION_SIZE/2];
 
 void
 rb_vm_encoded_insn_data_table_init(void)
@@ -3243,7 +3237,7 @@ rb_vm_insn_addr2insn(const void *addr)
     st_data_t val;
 
     if (st_lookup(encoded_insn_data, key, &val)) {
-        insn_data_t *e = (insn_data_t *)val;
+        rb_insn_data_t *e = (rb_insn_data_t *)val;
         return (int)e->insn;
     }
 
@@ -3258,7 +3252,7 @@ rb_vm_insn_addr2opcode(const void *addr)
     st_data_t val;
 
     if (st_lookup(encoded_insn_data, key, &val)) {
-        insn_data_t *e = (insn_data_t *)val;
+        rb_insn_data_t *e = (rb_insn_data_t *)val;
         int opcode = e->insn;
         if (addr == e->trace_encoded_insn) {
             opcode += VM_INSTRUCTION_SIZE/2;
@@ -3281,18 +3275,28 @@ rb_vm_insn_decode(const VALUE encoded)
     return insn;
 }
 
-static inline int
-encoded_iseq_trace_instrument(VALUE *iseq_encoded_insn, rb_event_flag_t turnon, bool remain_current_trace)
-{
+rb_insn_data_t *
+rb_get_insn_data(VALUE *iseq_encoded_insn) {
     st_data_t key = (st_data_t)*iseq_encoded_insn;
     st_data_t val;
 
-    if (st_lookup(encoded_insn_data, key, &val)) {
-        insn_data_t *e = (insn_data_t *)val;
-        if (remain_current_trace && key == (st_data_t)e->trace_encoded_insn) {
+    if (st_lookup(encoded_insn_data, key, &val)) return (rb_insn_data_t *)val;
+    return NULL;
+}
+
+static inline int
+encoded_iseq_trace_instrument(const struct rb_iseq_constant_body *const body, int pos,
+                              rb_event_flag_t turnon, bool remain_current_trace)
+{
+    VALUE *iseq_encoded_insn = &body->iseq_encoded[pos];
+    rb_insn_data_t *e = rb_get_insn_data(iseq_encoded_insn);
+
+    if (e != NULL) {
+        if (remain_current_trace && *iseq_encoded_insn == (VALUE)e->trace_encoded_insn) {
             turnon = 1;
         }
         *iseq_encoded_insn = (VALUE) (turnon ? e->trace_encoded_insn : e->notrace_encoded_insn);
+        body->iseq_encoded_trace_p[pos] = turnon;
         return e->insn_len;
     }
 
@@ -3303,8 +3307,7 @@ void
 rb_iseq_trace_flag_cleared(const rb_iseq_t *iseq, size_t pos)
 {
     const struct rb_iseq_constant_body *const body = iseq->body;
-    VALUE *iseq_encoded = (VALUE *)body->iseq_encoded;
-    encoded_iseq_trace_instrument(&iseq_encoded[pos], 0, false);
+    encoded_iseq_trace_instrument(body, pos, 0, false);
 }
 
 static int
@@ -3313,7 +3316,6 @@ iseq_add_local_tracepoint(const rb_iseq_t *iseq, rb_event_flag_t turnon_events, 
     unsigned int pc;
     int n = 0;
     const struct rb_iseq_constant_body *const body = iseq->body;
-    VALUE *iseq_encoded = (VALUE *)body->iseq_encoded;
 
     VM_ASSERT(ISEQ_EXECUTABLE_P(iseq));
 
@@ -3333,10 +3335,12 @@ iseq_add_local_tracepoint(const rb_iseq_t *iseq, rb_event_flag_t turnon_events, 
         if (pc_events & target_events) {
             n++;
         }
-        pc += encoded_iseq_trace_instrument(&iseq_encoded[pc], pc_events & (target_events | iseq->aux.exec.global_trace_events), true);
+        pc += encoded_iseq_trace_instrument(body, pc,
+                                            pc_events & (target_events | iseq->aux.exec.global_trace_events), true);
     }
 
     if (n > 0) {
+        rb_rtl_trace_update(iseq);
         if (iseq->aux.exec.local_hooks == NULL) {
             ((rb_iseq_t *)iseq)->aux.exec.local_hooks = RB_ZALLOC(rb_hook_list_t);
         }
@@ -3383,7 +3387,6 @@ iseq_remove_local_tracepoint(const rb_iseq_t *iseq, VALUE tpval)
     if (iseq->aux.exec.local_hooks) {
         unsigned int pc;
         const struct rb_iseq_constant_body *const body = iseq->body;
-        VALUE *iseq_encoded = (VALUE *)body->iseq_encoded;
         rb_event_flag_t local_events = 0;
 
         rb_hook_list_remove_tracepoint(iseq->aux.exec.local_hooks, tpval);
@@ -3398,8 +3401,10 @@ iseq_remove_local_tracepoint(const rb_iseq_t *iseq, VALUE tpval)
 
         for (pc = 0; pc<body->iseq_size;) {
             rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pc);
-            pc += encoded_iseq_trace_instrument(&iseq_encoded[pc], pc_events & (local_events | iseq->aux.exec.global_trace_events), false);
+            pc += encoded_iseq_trace_instrument(body, pc,
+                                                pc_events & (local_events | iseq->aux.exec.global_trace_events), false);
         }
+        rb_rtl_trace_update(iseq);
     }
     return n;
 }
@@ -3442,7 +3447,6 @@ rb_iseq_trace_set(const rb_iseq_t *iseq, rb_event_flag_t turnon_events)
     else {
         unsigned int pc;
 	const struct rb_iseq_constant_body *const body = iseq->body;
-	VALUE *iseq_encoded = (VALUE *)body->iseq_encoded;
         rb_event_flag_t enabled_events;
         rb_event_flag_t local_events = iseq->aux.exec.local_hooks ? iseq->aux.exec.local_hooks->events : 0;
         ((rb_iseq_t *)iseq)->aux.exec.global_trace_events = turnon_events;
@@ -3450,8 +3454,9 @@ rb_iseq_trace_set(const rb_iseq_t *iseq, rb_event_flag_t turnon_events)
 
         for (pc=0; pc<body->iseq_size;) {
             rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pc);
-            pc += encoded_iseq_trace_instrument(&iseq_encoded[pc], pc_events & enabled_events, true);
+            pc += encoded_iseq_trace_instrument(body, pc, pc_events & enabled_events, true);
 	}
+        rb_rtl_trace_update(iseq);
     }
 }
 

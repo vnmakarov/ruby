@@ -404,6 +404,7 @@ struct rb_iseq_constant_body {
 
     unsigned int iseq_size;
     VALUE *iseq_encoded; /* encoded iseq (insn addr and operands) */
+    char *iseq_encoded_trace_p; /* trace insn flag for insn pos in iseq_encoded */
     VALUE *iseq_code; /* can be iseq_encoded or bbv_code */
     VALUE *iseq_start_pc; /* can be iseq_encoded or curr start point in bbv_code */
     VALUE *curr_param_opt_table; /* displacement relative iseq_code */
@@ -897,7 +898,7 @@ rb_iseq_encoded_pc(const rb_iseq_t *iseq, const VALUE *pc) {
     int pos;
     const struct rb_iseq_constant_body *body = iseq->body;
 
-    if (body->bbv_code > pc || pc >= body->bbv_code + body->bbv_code_free) return pc;
+    if (body->iseq_encoded <= pc && pc <= body->iseq_encoded + body->iseq_size) return pc;
     pos = pc - body->bbv_code;
     VM_ASSERT(pos < body->bbv_code_free);
     pos = body->bbv_pos_map[pos];

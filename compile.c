@@ -2349,6 +2349,7 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
 
     /* make instruction sequence */
     generated_iseq = ALLOC_N(VALUE, code_index);
+    body->iseq_encoded_trace_p = ZALLOC_N(char, code_index);
     insns_info = ALLOC_N(struct iseq_insn_info_entry, insn_num);
     positions = ALLOC_N(unsigned int, insn_num);
     body->is_entries = ZALLOC_N(union iseq_inline_storage_entry, body->is_size);
