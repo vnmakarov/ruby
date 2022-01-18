@@ -665,17 +665,29 @@ get_bbv_code_space(rb_iseq_t *iseq, int len) {
     return bbv_start;
 }
 
-struct rb_rtl_send_info *
+typedef struct rb_rtl_send_info *send_info_t;
+DEF_VARR(send_info_t);
+static VARR(send_info_t) *all_send_info;
+
+static struct rb_rtl_send_info *
 get_send_info(rb_iseq_bbv_t caller_bbv, char *attrs) {
     struct rb_rtl_send_info *si = ALLOC_N(struct rb_rtl_send_info, 1);
     si->caller_bbv = caller_bbv;
     si->attrs = attrs;
+    VARR_PUSH(send_info_t, all_send_info, si);
     return si;
 }
 
-void
-free_send_info(struct rb_rtl_send_info *si) {
-    ruby_xfree((void *)si);
+static void
+init_send_info(void) {
+    VARR_CREATE(send_info_t, all_send_info, 512);
+}
+
+static void
+finish_send_info(void) {
+    while (VARR_LENGTH(send_info_t, all_send_info) != 0)
+        ruby_xfree((void *)VARR_POP(send_info_t, all_send_info));
+    VARR_DESTROY(send_info_t, all_send_info);
 }
 
 DEF_VARR(VALUE);
@@ -2714,7 +2726,6 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
         change_insn(caller_cfp->iseq, call_pc, BIN(rtl_opt_send_without_block));
     }
     RB_VM_LOCK_LEAVE();
-//    free_send_info(si);
 }
 
 const VALUE *
@@ -2790,6 +2801,7 @@ rb_rtl_gen_init(void) {
     VARR_CREATE(rb_iseq_bbv_t, bbvs, 0);
     VARR_CREATE(rb_iseq_bbv_t, out_bbvs, 0);
     VARR_CREATE(int, out_gen_bbv_disps, 0);
+    init_send_info();
     init_call_elems();
     return TRUE;
 }
@@ -2808,5 +2820,6 @@ rb_rtl_gen_finish(void) {
     VARR_DESTROY(rb_iseq_bbv_t, bbvs);
     VARR_DESTROY(rb_iseq_bbv_t, out_bbvs);
     VARR_DESTROY(int, out_gen_bbv_disps);
+    finish_send_info();
     finish_call_elems();
 }
