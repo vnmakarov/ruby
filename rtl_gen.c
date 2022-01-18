@@ -2549,6 +2549,17 @@ rb_rtl_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_c
     return NULL;
 }
 
+const VALUE *
+rb_rtl_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
+    const struct rb_iseq_constant_body *body = cfp->iseq->body;
+    RTL_GEN_ASSERT(body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_free);
+    int pos = pc - body->bbv_code;
+    RTL_GEN_ASSERT(pos < body->bbv_code_free);
+    int safe_pos = -body->bbv_pos_map[pos] - 1;
+    RTL_GEN_ASSERT(safe_pos >= 0 && safe_pos < body->bbv_code_free);
+    return body->bbv_code + safe_pos;
+}
+
 void
 rb_rtl_iseq_free(struct rb_iseq_constant_body *body) {
     rb_iseq_bbv_t bbv, curr_bbv, next_bbv;

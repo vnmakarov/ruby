@@ -399,14 +399,3 @@ RTL_CHECK_FUNCS2(opt_iaref, check_nothing)
         ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));	\
         END_INSN(iname); 					\
     }
-
-static rtl_noinline const VALUE *
-rb_rtl_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
-    const struct rb_iseq_constant_body *body = cfp->iseq->body;
-    RTL_EXEC_ASSERT(body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_free);
-    int pos = pc - body->bbv_code;
-    RTL_EXEC_ASSERT(pos < body->bbv_code_free);
-    int safe_pos = -body->bbv_pos_map[pos] - 1;
-    RTL_EXEC_ASSERT(safe_pos >= 0 && safe_pos < body->bbv_code_free);
-    return body->bbv_code + safe_pos;
-}
