@@ -2455,6 +2455,8 @@ rtl_iseq_send_without_block
     RESTORE_REGS();
     NEXT_INSN();
   rtl_iseq_send_without_block_exit:
+    /* invalidate the current cc as we use cc from safe RTL: */
+    vm_cc_invalidate(cc);
     ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
     END_INSN(rtl_iseq_send_without_block);
 }
@@ -2656,7 +2658,7 @@ make_rtl_setivar
 
 DEFINE_INSN
 make_rtl_send_without_block
-(CALL_DATA cd, lindex_t attrs)
+(CALL_DATA cd, lindex_t send_info)
 (...)
 (VALUE val)
 // attr bool handles_sp = true;
@@ -2665,7 +2667,7 @@ make_rtl_send_without_block
 {
     rb_control_frame_t *caller_cfp = GET_CFP();
     val = vm_sendish(ec, caller_cfp, cd, VM_BLOCK_HANDLER_NONE, mexp_search_method);
-    rb_rtl_change_send_without_block(ec, caller_cfp, cd, (void*)attrs);
+    rb_rtl_change_send_without_block(ec, caller_cfp, cd, (void*)send_info);
 
     if (val == Qundef) {
         RESTORE_REGS();

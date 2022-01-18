@@ -368,27 +368,6 @@ enum rb_bbv_type {
     RB_BBV_CATCH   /* bbv created for cont of catch table entry */
 };
 
-struct rb_iseq_bbv {
-    rb_iseq_t *iseq;
-    /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch/leave/throw */
-    int iseq_start, iseq_bound;
-    enum rb_bbv_type type;
-    int index; /* used for RB_BBV_OPT and RB_BBV_CATCH, always 0 for RB_BBV_REGULAR */
-    /* The list head is always unspecialized bbv.  For head itself it is NULL */
-    struct rb_iseq_bbv *head_bbv;
-    /* next bbv in the list with the same (iseq, type, index, start).  The list
-       head is always bbv with unknown attrs (default bbv) and non-spec code */
-    struct rb_iseq_bbv *next_bbv;
-    struct rb_iseq_bbv_edge *in_edges, *out_edges;
-    int bbv_start, bbv_bound; /* start / bound pos in bbv_code */
-    int start_stack_size; /* stack size at bb start */
-    /* Map local var/stack slot -> attr.  The last elem is always an
-       end marker.  Unknown values (besides the end marker) can not be
-       the last elements, assume unknown attr for vars/temps beyond
-       the end marker: */
-    char attrs[1];
-};
-
 struct rb_iseq_constant_body {
     enum iseq_type {
 	ISEQ_TYPE_TOP,
@@ -835,6 +814,36 @@ typedef struct rb_vm_struct {
 #define PROC_REDEFINED_OP_FLAG   (1 << 12)
 
 #define BASIC_OP_UNREDEFINED_P(op, klass) (LIKELY((GET_VM()->redefined_flag[(op)]&(klass)) == 0))
+
+struct rb_rtl_call_elem {
+    const rb_callable_method_entry_t *cme;
+    struct rb_iseq_bbv *bbv;
+    struct rb_rtl_call_elem *next_cme_call_elem, *prev_cme_call_elem;
+    struct rb_rtl_call_elem *next_bbv_call_elem, *prev_bbv_call_elem;
+};
+
+struct rb_iseq_bbv {
+    rb_iseq_t *iseq;
+    /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch/leave/throw */
+    int iseq_start, iseq_bound;
+    enum rb_bbv_type type;
+    int index; /* used for RB_BBV_OPT and RB_BBV_CATCH, always 0 for RB_BBV_REGULAR */
+    /* The list head is always safe (unspecialized) bbv.  For head itself it is NULL */
+    struct rb_iseq_bbv *head_bbv;
+    /* next bbv in the list with the same (iseq, type, index, start).  The list
+       head is always bbv with unknown attrs (default bbv) and non-spec code */
+    struct rb_iseq_bbv *next_bbv;
+    struct rb_iseq_bbv_edge *in_edges, *out_edges;
+    struct rb_rtl_call_elem *call_elems;
+    int bbv_start, bbv_bound; /* start / bound pos in bbv_code */
+    int start_stack_size; /* stack size at bb start */
+    short used_bops[BOP_LAST_];
+    /* Map local var/stack slot -> attr.  The last elem is always an
+       end marker.  Unknown values (besides the end marker) can not be
+       the last elements, assume unknown attr for vars/temps beyond
+       the end marker: */
+    char attrs[1];
+};
 
 #ifndef VM_DEBUG_BP_CHECK
 #define VM_DEBUG_BP_CHECK 0

@@ -214,48 +214,55 @@ get_rtl_insn2_id(enum ruby_vminsn_type id, int local2_p, int local3_p, VALUE val
     }
 }
 
+static int
+check_bop_redefined_p(enum ruby_basic_operators bop, int klass_flag, short *bop_mask) {
+    if (!BASIC_OP_UNREDEFINED_P(bop, klass_flag)) return TRUE;
+    bop_mask[bop] |= klass_flag;
+    return FALSE;
+}
+
 static enum ruby_vminsn_type
-get_rtl_spec_insn2_id(enum ruby_vminsn_type id, int attr) {
-#define RTL_SPEC_INSN_ID_CASE(insn_name, fname)                      \
-    case insn_name: return CONCAT(fname, sss);                  \
-    case CONCAT(insn_name, svv): return CONCAT(fname, svv);	\
-    case CONCAT(insn_name, svi): return CONCAT(fname, svi);	\
-    case CONCAT(insn_name, svs): return CONCAT(fname, svs);	\
-    case CONCAT(insn_name, ssv): return CONCAT(fname, ssv);	\
-    case CONCAT(insn_name, ssi): return CONCAT(fname, ssi);
+get_rtl_spec_insn2_id(enum ruby_vminsn_type id, int attr, short *bop_mask) {
+#define RTL_SPEC_INSN_ID_CASE(bop, flag, insn_name, fname)                   \
+    case insn_name: return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, sss);        	\
+    case CONCAT(insn_name, svv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, svv);	\
+    case CONCAT(insn_name, svi): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, svi);	\
+    case CONCAT(insn_name, svs): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, svs);	\
+    case CONCAT(insn_name, ssv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, ssv);	\
+    case CONCAT(insn_name, ssi): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, ssi);
 
     if (attr == ATTR_FIXNUM) {
         switch (id) {
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_plus), BIN(opt_iplus))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_minus), BIN(opt_iminus))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_mult), BIN(opt_imult))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_div), BIN(opt_idiv))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_mod), BIN(opt_imod))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_or), BIN(opt_ior))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_and), BIN(opt_iand))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_eq), BIN(opt_ieq))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_neq), BIN(opt_ineq))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_lt), BIN(opt_ilt))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_gt), BIN(opt_igt))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_le), BIN(opt_ile))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_ge), BIN(opt_ige))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_aref), BIN(opt_iaref))
+        RTL_SPEC_INSN_ID_CASE(BOP_PLUS, INTEGER_REDEFINED_OP_FLAG, BIN(opt_plus), BIN(opt_iplus))
+        RTL_SPEC_INSN_ID_CASE(BOP_MINUS, INTEGER_REDEFINED_OP_FLAG, BIN(opt_minus), BIN(opt_iminus))
+        RTL_SPEC_INSN_ID_CASE(BOP_MULT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_mult), BIN(opt_imult))
+        RTL_SPEC_INSN_ID_CASE(BOP_DIV, INTEGER_REDEFINED_OP_FLAG, BIN(opt_div), BIN(opt_idiv))
+        RTL_SPEC_INSN_ID_CASE(BOP_MOD, INTEGER_REDEFINED_OP_FLAG, BIN(opt_mod), BIN(opt_imod))
+        RTL_SPEC_INSN_ID_CASE(BOP_OR, INTEGER_REDEFINED_OP_FLAG, BIN(opt_or), BIN(opt_ior))
+        RTL_SPEC_INSN_ID_CASE(BOP_AND, INTEGER_REDEFINED_OP_FLAG, BIN(opt_and), BIN(opt_iand))
+        RTL_SPEC_INSN_ID_CASE(BOP_EQ, INTEGER_REDEFINED_OP_FLAG, BIN(opt_eq), BIN(opt_ieq))
+        RTL_SPEC_INSN_ID_CASE(BOP_NEQ, INTEGER_REDEFINED_OP_FLAG, BIN(opt_neq), BIN(opt_ineq))
+        RTL_SPEC_INSN_ID_CASE(BOP_LT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_lt), BIN(opt_ilt))
+        RTL_SPEC_INSN_ID_CASE(BOP_GT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_gt), BIN(opt_igt))
+        RTL_SPEC_INSN_ID_CASE(BOP_LE, INTEGER_REDEFINED_OP_FLAG, BIN(opt_le), BIN(opt_ile))
+        RTL_SPEC_INSN_ID_CASE(BOP_GE, INTEGER_REDEFINED_OP_FLAG, BIN(opt_ge), BIN(opt_ige))
+        RTL_SPEC_INSN_ID_CASE(BOP_AREF, ARRAY_REDEFINED_OP_FLAG, BIN(opt_aref), BIN(opt_iaref))
         default: return BIN(nop);
         }
     } else if (attr == ATTR_FLONUM) {
         switch (id) {
 #ifdef FLONUM_INSNS
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_plus), BIN(opt_fplus))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_minus), BIN(opt_fminus))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_mult), BIN(opt_fmult))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_div), BIN(opt_fdiv))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_mod), BIN(opt_fmod))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_eq), BIN(opt_feq))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_neq), BIN(opt_fneq))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_lt), BIN(opt_flt))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_gt), BIN(opt_fgt))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_le), BIN(opt_fle))
-        RTL_SPEC_INSN_ID_CASE(BIN(opt_ge), BIN(opt_fge))
+        RTL_SPEC_INSN_ID_CASE(BOP_PLUS, FLOAT_REDEFINED_OP_FLAG, BIN(opt_plus), BIN(opt_fplus))
+        RTL_SPEC_INSN_ID_CASE(BOP_MINUS, FLOAT_REDEFINED_OP_FLAG, BIN(opt_minus), BIN(opt_fminus))
+        RTL_SPEC_INSN_ID_CASE(BOP_MULT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_mult), BIN(opt_fmult))
+        RTL_SPEC_INSN_ID_CASE(BOP_DIV, FLOAT_REDEFINED_OP_FLAG, BIN(opt_div), BIN(opt_fdiv))
+        RTL_SPEC_INSN_ID_CASE(BOP_MOD, FLOAT_REDEFINED_OP_FLAG, BIN(opt_mod), BIN(opt_fmod))
+        RTL_SPEC_INSN_ID_CASE(BOP_EQ, FLOAT_REDEFINED_OP_FLAG, BIN(opt_eq), BIN(opt_feq))
+        RTL_SPEC_INSN_ID_CASE(BOP_NEQ, FLOAT_REDEFINED_OP_FLAG, BIN(opt_neq), BIN(opt_fneq))
+        RTL_SPEC_INSN_ID_CASE(BOP_LT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_lt), BIN(opt_flt))
+        RTL_SPEC_INSN_ID_CASE(BOP_GT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_gt), BIN(opt_fgt))
+        RTL_SPEC_INSN_ID_CASE(BOP_LE, FLOAT_REDEFINED_OP_FLAG, BIN(opt_le), BIN(opt_fle))
+        RTL_SPEC_INSN_ID_CASE(BOP_GE, FLOAT_REDEFINED_OP_FLAG, BIN(opt_ge), BIN(opt_fge))
 #endif
         default: return BIN(nop);
         }
@@ -476,6 +483,9 @@ print_attrs(const char *attrs) {
 
 typedef struct rb_iseq_bbv *rb_iseq_bbv_t;
 
+DEF_VARR(rb_iseq_bbv_t);
+static VARR(rb_iseq_bbv_t) *all_bbvs;
+
 static int
 get_bbv_nums(rb_iseq_bbv_t head) {
     int n = 0;
@@ -551,11 +561,14 @@ create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bou
     bbv->bbv_start = -1; /* flag of the code is not generated */
     bbv->start_stack_size = -1;
     bbv->in_edges = bbv->out_edges = NULL;
+    bbv->call_elems = NULL;
     if (attrs == NULL) {
         bbv->attrs[0] = ATTR_END_MARKER;
     } else {
         memcpy(bbv->attrs, attrs, n_attrs);
     }
+    memset(bbv->used_bops, 0, sizeof (bbv->used_bops));
+    VARR_PUSH(rb_iseq_bbv_t, all_bbvs, bbv);
     return bbv;
 }
 
@@ -652,6 +665,19 @@ get_bbv_code_space(rb_iseq_t *iseq, int len) {
     return bbv_start;
 }
 
+struct rb_rtl_send_info *
+get_send_info(rb_iseq_bbv_t caller_bbv, char *attrs) {
+    struct rb_rtl_send_info *si = ALLOC_N(struct rb_rtl_send_info, 1);
+    si->caller_bbv = caller_bbv;
+    si->attrs = attrs;
+    return si;
+}
+
+void
+free_send_info(struct rb_rtl_send_info *si) {
+    ruby_xfree((void *)si);
+}
+
 DEF_VARR(VALUE);
 static VARR(VALUE) *bbv_encoded;
 
@@ -717,7 +743,6 @@ add_insn_arr(int orig_pos, enum ruby_vminsn_type insn_id, int nops, VALUE *opera
     return start;
 }
 
-DEF_VARR(rb_iseq_bbv_t);
 static VARR(rb_iseq_bbv_t) *bbvs;
 
 static VARR(char) *labeled_p;
@@ -1647,12 +1672,12 @@ remove_out_edges(rb_iseq_bbv_t src_bbv) {
 }
 
 static void
-redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv) {
+redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv, int gen_p) {
     rb_iseq_bbv_t bbv;
     struct rb_iseq_bbv_edge *in_e;
     rb_iseq_t *iseq = dst_bbv->iseq;
     const struct rb_iseq_constant_body *body = iseq->body;
-    int bbv_gen_pos, branch_pos;
+    int bbv_gen_pos, branch_pos, new_dest_pos;
     OFFSET branch_offset, offset;
     enum ruby_vminsn_type branch_id;
     int debug_p = rb_rtl_debug_p();
@@ -1661,7 +1686,7 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv) {
     for (in_e = dst_bbv->in_edges; in_e != NULL; in_e = in_e->next_in_edge) {
         RTL_GEN_ASSERT(in_e->out == dst_bbv);
         bbv = in_e->in;
-        bbv_gen_pos = bbv->bbv_start + in_e->gen_bbv_disp;
+        bbv_gen_pos = bbv->bbv_start + in_e->gen_bbv_disp; /* pos of gen_rtl_bbvxxx */
         branch_offset = (OFFSET)body->bbv_code[bbv_gen_pos + 2];
         if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(gen_rtl_bbv)) {
             branch_pos = bbv_gen_pos + insn_len(BIN(gen_rtl_bbv)) + branch_offset;
@@ -1672,10 +1697,11 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv) {
             branch_pos = bbv_gen_pos + insn_len(BIN(gen_rtl_bbv_key)) + branch_offset;
         }
         branch_id = rb_vm_insn_decode(body->bbv_code[branch_pos]);
-        offset = dst_bbv->bbv_start - (branch_pos + insn_len(branch_id));
+        new_dest_pos = (gen_p ? bbv_gen_pos : dst_bbv->bbv_start);
+        offset = new_dest_pos - (branch_pos + insn_len(branch_id));
         if (debug_p) {
             fprintf(stderr, "--> Redirect dest in %04d %s to %d\n",
-                    (int)branch_pos, insn_name(branch_id), dst_bbv->bbv_start);
+                    (int)branch_pos, insn_name(branch_id), new_dest_pos);
         }
         if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(gen_rtl_bbv)) {
             body->bbv_code[branch_pos + 1] = offset;
@@ -1893,7 +1919,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                     op2_attr = get_attr(get_lvar_num(iseq, operands[1]));
                 }
             }
-            new_insn_id = get_rtl_spec_insn2_id(insn_id, op1_attr != op2_attr ? ATTR_UNKNOWN : op1_attr);
+            new_insn_id = get_rtl_spec_insn2_id(insn_id, op1_attr != op2_attr ? ATTR_UNKNOWN : op1_attr, bbv->used_bops);
             if (new_insn_id == BIN(nop)) goto rest_cases;
             stack_size -= (2 - nops);
             attr = op1_attr != op2_attr || unknown_p ? ATTR_UNKNOWN : op1_attr;
@@ -2001,7 +2027,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             RTL_GEN_ASSERT(len == 2 && (flags & VM_CALL_ARGS_BLOCKARG) == 0);
             if (profile_p || (flags & (VM_CALL_TAILCALL | VM_CALL_ARGS_SPLAT)) != 0) goto rest_cases;
             new_operands[0] = operands[0];
-            new_operands[1] = (VALUE)get_call_attrs(iseq, argc, stack_size);
+            new_operands[1] = (VALUE)get_send_info(bbv, get_call_attrs(iseq, argc, stack_size));
             add_spec_insn_arr(orig_pos, BIN(make_rtl_send_without_block), 2, new_operands);
             goto stack_update;
         }
@@ -2180,7 +2206,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         compact_attrs(attrs);
     if (profile_p) { /* attrs can change -- remove targets and change source bbv destinations: */
         remove_out_edges(bbv);
-        redirect_src_bbv_dests(bbv);
+        redirect_src_bbv_dests(bbv, FALSE);
     }
     RTL_GEN_ASSERT(bbv->out_edges == NULL);
     RTL_GEN_ASSERT(VARR_LENGTH(rb_iseq_bbv_t, out_bbvs) == VARR_LENGTH(int, out_gen_bbv_disps));
@@ -2349,6 +2375,185 @@ rb_rtl_gen_bbv_key(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int case_offset, 
     return start_pc;
 }
 
+static st_table *call_elems_tab, *cme_call_elems_tab;
+
+static void remove_call_elem_from_cme_list(struct rb_rtl_call_elem *elem) {
+    if (elem->next_cme_call_elem != NULL)
+        elem->next_cme_call_elem->prev_cme_call_elem = elem->prev_cme_call_elem;
+    if (elem->prev_cme_call_elem != NULL) {
+        elem->prev_cme_call_elem->next_cme_call_elem = elem->next_cme_call_elem;
+    } else if (elem->next_cme_call_elem != NULL) { /* it is a head */
+        int exist_p = rb_st_insert(cme_call_elems_tab, (st_data_t)elem->cme, (st_data_t)elem->next_cme_call_elem);
+        RTL_GEN_ASSERT(exist_p);
+    } else { /* head of one element list */
+        st_data_t cme = (st_data_t)elem->cme;
+        int exist_p = rb_st_delete(cme_call_elems_tab, &cme, NULL);
+        RTL_GEN_ASSERT(exist_p);
+    }
+}
+
+static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv) {
+    struct rb_rtl_call_elem *call_elem, *next_call_elem;
+    for (call_elem = bbv->call_elems; call_elem != NULL; call_elem = next_call_elem) {
+        next_call_elem = call_elem->next_bbv_call_elem;
+        remove_call_elem_from_cme_list(call_elem);
+        ruby_xfree((void *)call_elem);
+    }
+    bbv->call_elems = NULL;
+}
+
+static struct rb_rtl_call_elem *
+find_cme_call_elem_list_head(rb_callable_method_entry_t *cme) {
+    st_data_t call_elem;
+    if (!rb_st_lookup(cme_call_elems_tab, (st_data_t)cme, &call_elem)) return NULL;
+    return (struct rb_rtl_call_elem *)call_elem;
+}
+
+static void
+add_call_elem(struct rb_iseq_bbv *bbv, const rb_callable_method_entry_t *cme) {
+    int found_p;
+    struct rb_rtl_call_elem call_elem_s, *call_elem, *found_elem;
+    st_data_t value;
+
+    call_elem_s.cme = cme;
+    call_elem_s.bbv = bbv;
+    if (rb_st_lookup(call_elems_tab, (st_data_t)&call_elem_s, NULL)) return;
+    call_elem = ALLOC_N(struct rb_rtl_call_elem, 1);
+    call_elem->bbv = bbv;
+    call_elem->cme = cme;
+    call_elem->prev_cme_call_elem = call_elem->prev_bbv_call_elem = NULL;
+    found_p = rb_st_lookup(cme_call_elems_tab, (st_data_t)cme, &value);
+    found_elem = found_p ? (struct rb_rtl_call_elem *)value : NULL;
+    call_elem->next_cme_call_elem = found_elem;
+    if (found_p)
+        found_elem->prev_bbv_call_elem = call_elem;
+    found_p = st_insert(cme_call_elems_tab, (st_data_t)cme, (st_data_t)call_elem);
+    call_elem->next_bbv_call_elem = bbv->call_elems;
+    if (bbv->call_elems != NULL)
+        bbv->call_elems->prev_bbv_call_elem = call_elem;
+    bbv->call_elems = call_elem;
+    rb_st_insert(call_elems_tab, (st_data_t)call_elem, (st_data_t)call_elem);
+}
+
+static int
+call_elem_cmp(st_data_t lhs, st_data_t rhs)
+{
+    const struct rb_rtl_call_elem *e1 = (struct rb_rtl_call_elem *)lhs;
+    const struct rb_rtl_call_elem *e2 = (struct rb_rtl_call_elem *)rhs;
+    return e1->cme == e2->cme && e1->bbv == e2->bbv;
+}
+
+static st_index_t
+call_elem_hash(st_data_t arg) {
+    const struct rb_rtl_call_elem *e = (struct rb_rtl_call_elem *)arg;
+    st_index_t h =  st_hash_start(42);
+    h = st_hash_uint(h, (st_index_t)e->cme);
+    h = st_hash_uint(h, (st_index_t)e->bbv);
+    return st_hash_end(h);
+}
+
+static const struct st_hash_type call_elem_hashtype = {
+    call_elem_cmp,
+    call_elem_hash,
+};
+
+static void
+init_call_elems(void) {
+    cme_call_elems_tab = rb_st_init_numtable();
+    call_elems_tab = rb_st_init_table(&call_elem_hashtype);
+}
+
+static void
+finish_call_elems(void) {
+    rb_st_free_table(cme_call_elems_tab);
+    rb_st_free_table(call_elems_tab);
+}
+
+static void
+set_iseq_start(rb_iseq_bbv_t bbv) {
+    rb_iseq_t *iseq = bbv->iseq;
+    struct rb_iseq_constant_body *body = iseq->body;
+
+    if (bbv->type == RB_BBV_REGULAR) {
+        if (bbv->iseq_start == 0)
+            body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
+    } else if (bbv->type == RB_BBV_OPT) {
+        RTL_GEN_ASSERT(body->iseq_start_pc != NULL);
+        body->curr_param_opt_table[bbv->index] = bbv->bbv_start + body->bbv_code - body->iseq_start_pc;
+    } else {
+        RTL_GEN_ASSERT(bbv->type == RB_BBV_CATCH);
+        body->catch_table->entries[bbv->index].curr_cont = bbv->bbv_start;
+    }
+}
+
+static void
+invalidate_bbv_code(rb_iseq_bbv_t bbv) {
+    rb_iseq_t *iseq = bbv->iseq;
+    struct rb_iseq_constant_body *body = iseq->body;
+    int enter_bbv_p;
+    const rb_execution_context_t *ec;
+    rb_control_frame_t *cfp;
+
+    if (rb_rtl_debug_p()) {
+        fprintf (stderr, "## Invalidating BBV 0x%llx of ", (unsigned long long)bbv);
+        print_iseq_title(bbv->iseq);
+        fprintf(stderr, "\n");
+        print_bb(bbv->iseq, bbv->iseq->body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
+    }
+    ec = GET_EC();
+    for (cfp = ec->cfp + 1; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
+        if (cfp->iseq != NULL && cfp->iseq->body->bbv_code != NULL
+            && cfp->iseq->body->bbv_code + bbv->bbv_start <= cfp->pc
+            && cfp->pc < cfp->iseq->body->bbv_code + bbv->bbv_bound) { /* switch given bbv pc to safe code one */
+            cfp->pc = rb_rtl_get_safe_pc(cfp, cfp->pc);
+        }
+    }
+    enter_bbv_p = bbv->type != RB_BBV_REGULAR || bbv->iseq_start == 0;
+    if (bbv->type == RB_BBV_REGULAR && enter_bbv_p)
+        body->iseq_start_pc = NULL; /* to check that we process BBV_OPT after BBV_REGULAR entrance */
+    remove_out_edges(bbv);
+    redirect_src_bbv_dests(bbv, TRUE); /* redirect branches in src bbvs to corresponding gen_rtl_bbvxxx */
+    bbv->bbv_start = bbv->start_stack_size = -1; /* mark bbv as needed for new code */
+    delete_bbv_call_elems(bbv);
+    if(!enter_bbv_p) {
+        memset(bbv->used_bops, 0, sizeof (bbv->used_bops));
+    } else {
+        /* We need to generate code for iseq enter BBV here as we need
+           already code in rtl_iseq_send_without_block.  We could do
+           this rtl_iseq_send_without_block but we assume the insn
+           execution is much more frequent than BOP invalidating. */
+        gen_rtl_bbv_code((rb_iseq_t *)iseq, bbv, 0, 0);
+        set_iseq_start(bbv);
+    }
+}
+
+void
+rb_rtl_bop_redefined(enum ruby_basic_operators bop, int klass_flag) { // ???
+    rb_iseq_bbv_t bbv;
+    int i;
+
+    for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
+        bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
+        if ((bbv->used_bops[bop] & klass_flag) != 0)
+            invalidate_bbv_code(bbv);
+    }
+}
+
+void
+rb_rtl_add_cme(rb_callable_method_entry_t *cme) {
+}
+
+void
+rb_rtl_cme_invalidate(rb_callable_method_entry_t *cme) {
+    struct rb_rtl_call_elem *call_elem, *next_call_elem;
+    if (cme_call_elems_tab == NULL)
+        return; /* we did not initialize it yet */
+    for (call_elem = find_cme_call_elem_list_head(cme); call_elem != NULL; call_elem = next_call_elem) {
+        next_call_elem = call_elem->next_cme_call_elem;
+        invalidate_bbv_code(call_elem->bbv);
+    }
+}
+
 VALUE *
 rb_rtl_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
     rb_iseq_t *iseq = (rb_iseq_t *)cfp->iseq;
@@ -2379,15 +2584,7 @@ rb_rtl_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
             if (debug_p)
                 fprintf(stderr, ">>> End of further type specialization of called BBVs\n");
         }
-        if (bbv->type == RB_BBV_REGULAR) {
-            if (bbv->iseq_start == 0)
-                body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
-        } else if (bbv->type == RB_BBV_OPT) {
-            body->curr_param_opt_table[bbv->index] = bbv->bbv_start + body->bbv_code - body->iseq_start_pc;
-        } else {
-            RTL_GEN_ASSERT(bbv->type == RB_BBV_CATCH);
-            body->catch_table->entries[bbv->index].curr_cont = bbv->bbv_start;
-        }
+        set_iseq_start(bbv);
         cont_pc = body->bbv_code + bbv_cont_pos;
     }
     RB_VM_LOCK_LEAVE();
@@ -2441,7 +2638,7 @@ extern bool rb_iseq_only_optparam_p(const rb_iseq_t *iseq);
 
 void
 rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,
-                                 CALL_DATA cd, char *attrs) {
+                                 CALL_DATA cd, struct rb_rtl_send_info *si) {
     VALUE *call_pc = (VALUE *)caller_cfp->pc - insn_len(BIN(make_rtl_send_without_block));
     VALUE recv;
     const struct rb_callinfo *ci = cd->ci;
@@ -2450,8 +2647,9 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     rb_iseq_bbv_t bbv;
     rb_iseq_t *iseq;
-    int debug_p = rb_rtl_debug_p();
+    int no_opt_p = FALSE, debug_p = rb_rtl_debug_p();
 
+    RB_VM_LOCK_ENTER();
     if (cme != NULL) {
         recv = *caller_cfp->sp;
         if (cme->def->type == VM_METHOD_TYPE_ISEQ
@@ -2462,27 +2660,25 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
             const int opt = argc - lead_num;
 
             RTL_GEN_ASSERT(0 <= opt && opt <= body->param.opt_num);
-            RB_VM_LOCK_ENTER();
             if (debug_p) {
                 fprintf(stderr,
                         "--> Changing make_rtl_send_without_block to rtl_iseq_send_without_block: argc=%d",
                         argc);
-                print_attrs(attrs);
+                print_attrs(si->attrs);
             }
             if (body->param.opt_table == NULL)
-                bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, 0, attrs == NULL ? 0 : strlen(attrs) + 1, attrs);
+                bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, 0, si->attrs == NULL ? 0 : strlen(si->attrs) + 1, si->attrs);
             else
                 bbv = get_bbv(iseq, RB_BBV_OPT, opt, body->param.opt_table[opt],
-                              attrs == NULL ? 0 : strlen(attrs) + 1, attrs);
+                              si->attrs == NULL ? 0 : strlen(si->attrs) + 1, si->attrs);
             if (bbv->bbv_start < 0)
                 gen_rtl_bbv_code(iseq, bbv, 0, argc);
             RTL_GEN_ASSERT(bbv->iseq == iseq);
             ec->cfp->pc = &iseq->body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
-            /* Change make_rtl_send_without_block(cd, attrs) to rtl_iseq_send_without_block(cd, bbv) */
+            /* Change make_rtl_send_without_block(cd,send_info) to rtl_iseq_send_without_block(cd, bbv) */
             change_insn(caller_cfp->iseq, call_pc, BIN(rtl_iseq_send_without_block));
             call_pc[2] = (VALUE)bbv;
-            RB_VM_LOCK_LEAVE();
-            return;
+            add_call_elem(si->caller_bbv, vm_cc_cme(cd->cc));
         } else if (cme->def->type == VM_METHOD_TYPE_IVAR
                    && (vm_ci_flag(ci) & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT)) == 0
                    && RB_TYPE_P(recv, T_OBJECT)) {
@@ -2490,39 +2686,37 @@ rb_rtl_change_send_without_block(const rb_execution_context_t *ec, rb_control_fr
             if (vm_cc_attr_index(cc) <= 0)
                 return; /* do nothing -- no attr index yet */
             RTL_GEN_ASSERT(vm_cc_attr_index(cc) > 0);
-            RB_VM_LOCK_ENTER();
             if (debug_p)
                 fprintf(stderr, "--> Changing make_rtl_send_without_block to rtl_opt_send_ivget\n");
             change_insn(caller_cfp->iseq, call_pc, BIN(rtl_opt_send_ivget));
             call_pc[1] = (VALUE)cc->klass;
             call_pc[2] = (VALUE)vm_cc_attr_index(cc) - 1;
-            RB_VM_LOCK_LEAVE();
-            return;
         } else if (cme->def->type == VM_METHOD_TYPE_ATTRSET
                    && (vm_ci_flag(ci) & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG)) == 0
                    && RB_TYPE_P(recv, T_OBJECT)) {
             rb_check_arity(argc, 1, 1);
             if (vm_cc_attr_index(cc) <= 0)
                 return; /* do nothing -- no attr index yet */
-            RB_VM_LOCK_ENTER();
             if (debug_p)
                 fprintf(stderr, "--> Changing make_rtl_send_without_block to rtl_opt_send_ivset\n");
             change_insn(caller_cfp->iseq, call_pc, BIN(rtl_opt_send_ivset));
             call_pc[1] = (VALUE)cc->klass;
             call_pc[2] = (VALUE)vm_cc_attr_index(cc) - 1;
-            RB_VM_LOCK_LEAVE();
-            return;
         }
+    } else {
+        no_opt_p = TRUE;
     }
-    RB_VM_LOCK_ENTER();
-    if (debug_p) {
-        fprintf(stderr,
-                "--> Changing make_rtl_send_without_block to rtl_opt_send_without_block: argc=%d",
-                argc);
-        print_attrs(attrs);
+    if (no_opt_p) {
+        if (debug_p) {
+            fprintf(stderr,
+                    "--> Changing make_rtl_send_without_block to rtl_opt_send_without_block: argc=%d",
+                    argc);
+            print_attrs(si->attrs);
+        }
+        change_insn(caller_cfp->iseq, call_pc, BIN(rtl_opt_send_without_block));
     }
-    change_insn(caller_cfp->iseq, call_pc, BIN(rtl_opt_send_without_block));
     RB_VM_LOCK_LEAVE();
+//    free_send_info(si);
 }
 
 const VALUE *
@@ -2594,9 +2788,11 @@ rb_rtl_gen_init(void) {
     VARR_CREATE(char, labeled_p, 0);
     VARR_CREATE(int, pos_map, 0);
     VARR_CREATE(VALUE, bbv_encoded, 0);
+    VARR_CREATE(rb_iseq_bbv_t, all_bbvs, 0);
     VARR_CREATE(rb_iseq_bbv_t, bbvs, 0);
     VARR_CREATE(rb_iseq_bbv_t, out_bbvs, 0);
     VARR_CREATE(int, out_gen_bbv_disps, 0);
+    init_call_elems();
     return TRUE;
 }
 
@@ -2610,7 +2806,9 @@ rb_rtl_gen_finish(void) {
     VARR_DESTROY(char, labeled_p);
     VARR_DESTROY(int, pos_map);
     VARR_DESTROY(VALUE, bbv_encoded);
+    VARR_DESTROY(rb_iseq_bbv_t, all_bbvs);
     VARR_DESTROY(rb_iseq_bbv_t, bbvs);
     VARR_DESTROY(rb_iseq_bbv_t, out_bbvs);
     VARR_DESTROY(int, out_gen_bbv_disps);
+    finish_call_elems();
 }
