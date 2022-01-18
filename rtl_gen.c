@@ -689,8 +689,10 @@ update_pos_map(int pos, int orig_pos, int len) {
 
     while ((int)VARR_LENGTH(int, pos_map) < pos + len)
         VARR_PUSH(int, pos_map, orig_pos < 0 ? 0 : -1);
-    for (i = 0; i < len; i++)
-        VARR_SET(int, pos_map, pos + i, orig_pos);
+    VARR_SET(int, pos_map, pos, orig_pos);
+    /* increase original position as line number is calculated from stack pc - 1. */
+    for (i = 1; i < len; i++)
+        VARR_SET(int, pos_map, pos + i, orig_pos + 1);
 }
 
 static void
