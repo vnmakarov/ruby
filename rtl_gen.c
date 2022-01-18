@@ -2540,10 +2540,6 @@ rb_rtl_bop_redefined(enum ruby_basic_operators bop, int klass_flag) { // ???
 }
 
 void
-rb_rtl_add_cme(rb_callable_method_entry_t *cme) {
-}
-
-void
 rb_rtl_cme_invalidate(rb_callable_method_entry_t *cme) {
     struct rb_rtl_call_elem *call_elem, *next_call_elem;
     if (cme_call_elems_tab == NULL)
