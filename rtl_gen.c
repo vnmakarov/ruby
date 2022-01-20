@@ -2271,7 +2271,8 @@ rb_rtl_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
 
 static void
 gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size, int inspect_types_num) {
-    RTL_GEN_ASSERT(bbv->bbv_start < 0 && bbv->start_stack_size < 0 && init_stack_size >= 0);
+    RTL_GEN_ASSERT(bbv->bbv_start < 0 && init_stack_size >= 0
+                   && (bbv->start_stack_size < 0 || bbv->start_stack_size == init_stack_size));
     bbv->start_stack_size = init_stack_size;
     if (bbv->head_bbv == NULL) { /* head bbv */
         gen_rtl_from_stack_insns(iseq, bbv);
