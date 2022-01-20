@@ -1529,7 +1529,7 @@ branch2
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     RUBY_VM_CHECK_INTS(ec);
-    JUMP(RTEST(val) ? tdst : fdst);
+    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -1850,7 +1850,7 @@ opt_ibeqss opt_ibneqss opt_ibltss opt_ibgtss opt_ibless opt_ibgess
     VALUE val;
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
-    JUMP(RTEST(val) ? tdst : fdst);
+    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -1864,7 +1864,7 @@ opt_ibeqvv opt_ibneqvv opt_ibltvv opt_ibgtvv opt_iblevv opt_ibgevv
     VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
-    JUMP(RTEST(val) ? tdst : fdst);
+    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -1878,7 +1878,7 @@ opt_ibeqvi opt_ibneqvi opt_ibltvi opt_ibgtvi opt_iblevi opt_ibgevi
     VALUE val, v1 = *(GET_EP() - op1);
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     RUBY_VM_CHECK_INTS(ec);
-    JUMP(RTEST(val) ? tdst : fdst);
+    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -1892,7 +1892,7 @@ opt_ibeqvs opt_ibneqvs opt_ibltvs opt_ibgtvs opt_iblevs opt_ibgevs
     VALUE val, v1 = *(GET_EP() - op1);
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
-    JUMP(RTEST(val) ? tdst : fdst);
+    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -1906,7 +1906,7 @@ opt_ibeqsv opt_ibneqsv opt_ibltsv opt_ibgtsv opt_iblesv opt_ibgesv
     VALUE v2 = *(GET_EP() - op2), val;
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
-    JUMP(RTEST(val) ? tdst : fdst);
+    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -1920,7 +1920,7 @@ opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
     VALUE val;
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     RUBY_VM_CHECK_INTS(ec);
-    JUMP(RTEST(val) ? tdst : fdst);
+    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 /* --- end of specialized RTL insns --- */
