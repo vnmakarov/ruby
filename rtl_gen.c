@@ -2278,8 +2278,8 @@ gen_rtl_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size, int in
         return;
     }
     if (bbv->head_bbv->bbv_start < 0) {
-        RTL_GEN_ASSERT(bbv->head_bbv->start_stack_size < 0);
-        bbv->head_bbv->start_stack_size = init_stack_size;
+        if (bbv->head_bbv->start_stack_size < 0)
+            bbv->head_bbv->start_stack_size = init_stack_size;
         /* we generate specialized RTL code from non-speculative RTL code */
         gen_rtl_from_stack_insns(iseq, bbv->head_bbv);
     }
@@ -2527,7 +2527,7 @@ invalidate_bbv_code(rb_iseq_bbv_t bbv) {
         body->iseq_start_pc = NULL; /* to check that we process BBV_OPT after BBV_REGULAR entrance */
     remove_out_edges(bbv);
     redirect_src_bbv_dests(bbv, TRUE); /* redirect branches in src bbvs to corresponding gen_rtl_bbvxxx */
-    bbv->bbv_start = bbv->start_stack_size = -1; /* mark bbv as needed for new code */
+    bbv->bbv_start = -1; /* mark bbv as needed for new code */
     delete_bbv_call_elems(bbv);
     if(!enter_bbv_p) {
         memset(bbv->used_bops, 0, sizeof (bbv->used_bops));
