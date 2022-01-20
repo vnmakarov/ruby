@@ -827,6 +827,7 @@ struct rb_iseq_bbv {
     /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch/leave/throw */
     int iseq_start, iseq_bound;
     enum rb_bbv_type type;
+    char env_p; /* flag of environment which needs WB */
     int index; /* used for RB_BBV_OPT and RB_BBV_CATCH, always 0 for RB_BBV_REGULAR */
     /* The list head is always safe (unspecialized) bbv.  For head itself it is NULL */
     struct rb_iseq_bbv *head_bbv;

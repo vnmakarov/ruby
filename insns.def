@@ -1594,6 +1594,19 @@ movi
     vm_env_write(GET_EP(), -(int)res, imm);
 }
 
+/* Set a local variable (pointed to by 'idx') as val in the current stack frame.
+ */
+DEFINE_INSN
+rtl_setlocal
+(lindex_t idx)
+(VALUE val)
+()
+{
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)idx, val);
+    RB_DEBUG_COUNTER_INC(lvar_set);
+    (void)RB_DEBUG_COUNTER_INC_IF(lvar_set_dynamic, FALSE);
+}
+
 /* --- Specialized RTL insns: --- */
 DEFINE_INSN
 opt_iplussvv opt_iminussvv opt_imultsvv opt_idivsvv opt_imodsvv
@@ -1731,7 +1744,7 @@ opt_iarefvvv
         END_INSN(NAME_OF_CURRENT_INSN);
         goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
-    vm_env_write(GET_EP(), -(int)res, val);
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
@@ -1752,7 +1765,7 @@ opt_iarefvvi
         END_INSN(NAME_OF_CURRENT_INSN);
         goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
-    vm_env_write(GET_EP(), -(int)res, val);
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
@@ -1773,7 +1786,7 @@ opt_iarefvvs
         END_INSN(NAME_OF_CURRENT_INSN);
         goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
-    vm_env_write(GET_EP(), -(int)res, val);
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
@@ -1794,7 +1807,7 @@ opt_iarefvsv
         END_INSN(NAME_OF_CURRENT_INSN);
         goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
-    vm_env_write(GET_EP(), -(int)res, val);
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
@@ -1815,7 +1828,7 @@ opt_iarefvsi
         END_INSN(NAME_OF_CURRENT_INSN);
         goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
-    vm_env_write(GET_EP(), -(int)res, val);
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
@@ -1836,7 +1849,7 @@ opt_iarefvss
         END_INSN(NAME_OF_CURRENT_INSN);
         goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
-    vm_env_write(GET_EP(), -(int)res, val);
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
 
 DEFINE_INSN
