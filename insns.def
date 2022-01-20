@@ -2536,6 +2536,11 @@ rtl_opt_send_without_block
     if (val == Qundef) {
         RESTORE_REGS();
         NEXT_INSN();
+    } else if (GET_PC() != GET_CFP()->pc) {
+        /* we need to restore pc here as vm_sendish can redefine a
+           method and we invalidate the current bbv and switched to
+           safe pc. */
+        SET_PC(GET_CFP()->pc);
     }
 }
 
@@ -2672,5 +2677,10 @@ make_rtl_send_without_block
     if (val == Qundef) {
         RESTORE_REGS();
         NEXT_INSN();
+    } else if (GET_PC() != caller_cfp->pc) {
+        /* we need to restore pc here as vm_sendish can redefine a
+           method and we invalidate the current bbv and switched to
+           safe pc. */
+        SET_PC(caller_cfp->pc);
     }
 }
