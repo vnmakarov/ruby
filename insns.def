@@ -2446,7 +2446,6 @@ rtl_iseq_send_without_block
 
     if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_iseq_send_without_block_exit;
     cme = vm_cc_cme(cc);
-    if (!cme || METHOD_ENTRY_INVALIDATED(cme)) goto rtl_iseq_send_without_block_exit;
     VM_ASSERT(callable_method_entry_p(cme) && argc == param_size);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
     vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
