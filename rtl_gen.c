@@ -2515,7 +2515,7 @@ invalidate_bbv_code(rb_iseq_bbv_t bbv) {
         print_bb(bbv->iseq, bbv->iseq->body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
     }
     ec = GET_EC();
-    for (cfp = ec->cfp + 1; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
+    for (cfp = ec->cfp; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
         if (cfp->iseq != NULL && cfp->iseq->body->bbv_code != NULL
             && cfp->iseq->body->bbv_code + bbv->bbv_start <= cfp->pc
             && cfp->pc < cfp->iseq->body->bbv_code + bbv->bbv_bound) { /* switch given bbv pc to safe code one */
