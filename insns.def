@@ -1649,6 +1649,26 @@ opt_iarefsvi
 }
 
 DEFINE_INSN
+opt_iplussiv opt_iminussiv opt_imultsiv opt_idivsiv opt_imodsiv
+opt_iorsiv opt_iandsiv opt_ieqsiv opt_ineqsiv
+opt_iltsiv opt_igtsiv opt_ilesiv opt_igesiv
+opt_iarefsiv
+(VALUE imm, lindex_t op2)
+()
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushiv, imm, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
+}
+
+DEFINE_INSN
 opt_iplussvs opt_iminussvs opt_imultsvs opt_idivsvs opt_imodsvs
 opt_iorsvs opt_iandsvs opt_ieqsvs opt_ineqsvs
 opt_iltsvs opt_igtsvs opt_ilesvs opt_igesvs
@@ -1699,6 +1719,25 @@ opt_iarefssi
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
+}
+
+DEFINE_INSN
+opt_iplussis opt_iminussis opt_imultsis opt_idivsis opt_imodsis
+opt_iorsis opt_iandsis opt_ieqsis opt_ineqsis
+opt_iltsis opt_igtsis opt_ilesis opt_igesis
+opt_iarefsis
+(VALUE imm)
+(VALUE v2)
+(VALUE val)
+{
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushis, imm, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
@@ -1769,6 +1808,27 @@ opt_iarefvvi
 }
 
 DEFINE_INSN
+opt_iplusviv opt_iminusviv opt_imultviv opt_idivviv opt_imodviv
+opt_iorviv opt_iandviv opt_ieqviv opt_ineqviv
+opt_iltviv opt_igtviv opt_ileviv opt_igeviv
+opt_iarefviv
+(lindex_t res, VALUE imm, lindex_t op2)
+()
+()
+{
+    VALUE v2 = *(GET_EP() - op2), val;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushiv, imm, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
 opt_iplusvvs opt_iminusvvs opt_imultvvs opt_idivvvs opt_imodvvs
 opt_iorvvs opt_iandvvs opt_ieqvvs opt_ineqvvs
 opt_iltvvs opt_igtvvs opt_ilevvs opt_igevvs
@@ -1822,6 +1882,27 @@ opt_iarefvsi
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
     RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_iplusvis opt_iminusvis opt_imultvis opt_idivvis opt_imodvis
+opt_iorvis opt_iandvis opt_ieqvis opt_ineqvis
+opt_iltvis opt_igtvis opt_ilevis opt_igevis
+opt_iarefvis
+(lindex_t res, VALUE imm)
+(VALUE v2)
+()
+{
+    VALUE val;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushis, imm, v2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
@@ -1997,6 +2078,21 @@ opt_ltsvi opt_gtsvi opt_lesvi opt_gesvi opt_arefsvi
 }
 
 DEFINE_INSN
+opt_plussiv opt_minussiv opt_multsiv opt_divsiv opt_modsiv opt_orsiv opt_andsiv
+opt_ltsiv opt_gtsiv opt_lesiv opt_gesiv opt_arefsiv
+(VALUE imm, VALUE op2, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (val == Qundef) {
+        pushiv(reg_cfp, imm, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
 opt_plussvs opt_minussvs opt_multsvs opt_divsvs opt_modsvs opt_orsvs opt_andsvs
 opt_ltsvs opt_gtsvs opt_lesvs opt_gesvs opt_arefsvs
 (lindex_t op1, CALL_DATA cd)
@@ -2041,6 +2137,20 @@ opt_ltssi opt_gtssi opt_lessi opt_gessi opt_arefssi
 }
 
 DEFINE_INSN
+opt_plussis opt_minussis opt_multsis opt_divsis opt_modsis opt_orsis opt_andsis
+opt_ltsis opt_gtsis opt_lesis opt_gesis opt_arefsis
+(VALUE imm, CALL_DATA cd)
+(VALUE v2)
+(VALUE val)
+{
+    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (val == Qundef) {
+        pushis(reg_cfp, imm, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
 opt_eqsvv
 (lindex_t op1, lindex_t op2, CALL_DATA cd)
 ()
@@ -2064,6 +2174,20 @@ opt_eqsvi
     val = opt_equality(GET_ISEQ(), v1, imm, cd);
     if (val == Qundef) {
         pushvi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_eqsiv
+(VALUE imm, lindex_t op2, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    val = opt_equality(GET_ISEQ(), imm, v2, cd);
+    if (val == Qundef) {
+        pushiv(reg_cfp, imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2110,6 +2234,19 @@ opt_eqssi
 }
 
 DEFINE_INSN
+opt_eqsis
+(VALUE imm, CALL_DATA cd)
+(VALUE v2)
+(VALUE val)
+{
+    val = opt_equality(GET_ISEQ(), imm, v2, cd);
+    if (val == Qundef) {
+        pushis(reg_cfp, imm, v2);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
 opt_neqsvv
 (lindex_t op1, lindex_t op2, CALL_DATA cd_eq, CALL_DATA cd)
 ()
@@ -2133,6 +2270,20 @@ opt_neqsvi
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, imm);
     if (val == Qundef) {
         pushvi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_neqsiv
+(VALUE imm, lindex_t op2, CALL_DATA cd_eq, CALL_DATA cd)
+()
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, imm, v2);
+    if (val == Qundef) {
+        pushiv(reg_cfp, imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2174,6 +2325,19 @@ opt_neqssi
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, imm);
     if (val == Qundef) {
         pushsi(reg_cfp, v1, imm);
+        CALL_SIMPLE_METHOD();
+    }
+}
+
+DEFINE_INSN
+opt_neqsis
+(VALUE imm, CALL_DATA cd_eq, CALL_DATA cd)
+(VALUE v2)
+(VALUE val)
+{
+    val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, imm, v2);
+    if (val == Qundef) {
+        pushis(reg_cfp, imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
