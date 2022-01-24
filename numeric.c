@@ -1165,6 +1165,12 @@ double_div_double(double x, double y)
     }
 }
 
+double
+ruby_float_div(double x, double y)
+{
+    return double_div_double(x, y);
+}
+
 MJIT_FUNC_EXPORTED VALUE
 rb_flo_div_flo(VALUE x, VALUE y)
 {

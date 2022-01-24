@@ -21,7 +21,11 @@ INSN_ENTRY(<%= insn.name %>)
 % end
 %
 % insn.opes.each_with_index do |ope, i|
-    <%= ope[:decl] %> = (<%= ope[:type] %>)GET_OPERAND(<%= i + 1 %>);
+%   if ope[:type] == "DBL"
+      <%= ope[:decl] %> = rtl_val2dbl(GET_OPERAND(<%= i + 1 %>));
+%   else
+      <%= ope[:decl] %> = (<%= ope[:type] %>)GET_OPERAND(<%= i + 1 %>);
+%end
 % end
 #   define INSN_ATTR(x) <%= insn.call_attribute(' ## x ## ') %>
     bool leaf = INSN_ATTR(leaf);

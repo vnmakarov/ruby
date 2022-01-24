@@ -109,6 +109,7 @@ RUBY_SYMBOL_EXPORT_END
 
 MJIT_SYMBOL_EXPORT_BEGIN
 VALUE rb_flo_div_flo(VALUE x, VALUE y);
+double ruby_float_div(double x, double y);
 double ruby_float_mod(double x, double y);
 VALUE rb_float_equal(VALUE x, VALUE y);
 int rb_float_cmp(VALUE x, VALUE y);

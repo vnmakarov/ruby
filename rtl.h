@@ -12,6 +12,14 @@
 #include "ruby_assert.h"
 #include "vm_core.h"
 
+#if defined(__GNUC__)
+#define rtl_inline inline __attribute__ ((__always_inline__))
+#define rtl_noinline __attribute__ ((__noinline__))
+#else
+#define rtl_inline inline
+#define rtl_noinline
+#endif
+
 /* RTL_STATS controls supporting runtime counters in generation and execution of RTL code.
    Switching this on slows down interpretation enormously. */
 #ifndef RTL_EXEC_STATS
@@ -56,5 +64,20 @@ const VALUE *rb_rtl_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_f
 const VALUE *rb_rtl_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);
 
 void rb_rtl_iseq_free(struct rb_iseq_constant_body *body);
+
+static rtl_inline VALUE rtl_dbl2val(double d) {
+    union {
+        double d;
+        VALUE v;
+    } u = {d};
+    return u.v;
+}
+static rtl_inline double rtl_val2dbl(VALUE v) {
+    union {
+        VALUE v;
+        double d;
+    } u = {v};
+    return u.d;
+}
 
 #endif /* #ifndef RTL_H */

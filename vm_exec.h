@@ -13,6 +13,7 @@
 
 typedef long OFFSET;
 typedef unsigned long lindex_t;
+typedef double DBL;
 typedef VALUE GENTRY;
 typedef rb_iseq_t *ISEQ;
 

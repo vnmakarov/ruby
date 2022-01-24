@@ -1650,8 +1650,6 @@ opt_iarefsvi
 
 DEFINE_INSN
 opt_iplussiv opt_iminussiv opt_imultsiv opt_idivsiv opt_imodsiv
-opt_iorsiv opt_iandsiv opt_ieqsiv opt_ineqsiv
-opt_iltsiv opt_igtsiv opt_ilesiv opt_igesiv
 opt_iarefsiv
 (VALUE imm, lindex_t op2)
 ()
@@ -1729,8 +1727,6 @@ opt_iarefssi
 
 DEFINE_INSN
 opt_iplussis opt_iminussis opt_imultsis opt_idivsis opt_imodsis
-opt_iorsis opt_iandsis opt_ieqsis opt_ineqsis
-opt_iltsis opt_igtsis opt_ilesis opt_igesis
 opt_iarefsis
 (VALUE imm)
 (VALUE v2)
@@ -1809,8 +1805,6 @@ opt_iarefvvi
 
 DEFINE_INSN
 opt_iplusviv opt_iminusviv opt_imultviv opt_idivviv opt_imodviv
-opt_iorviv opt_iandviv opt_ieqviv opt_ineqviv
-opt_iltviv opt_igtviv opt_ileviv opt_igeviv
 opt_iarefviv
 (lindex_t res, VALUE imm, lindex_t op2)
 ()
@@ -1893,8 +1887,6 @@ opt_iarefvsi
 
 DEFINE_INSN
 opt_iplusvis opt_iminusvis opt_imultvis opt_idivvis opt_imodvis
-opt_iorvis opt_iandvis opt_ieqvis opt_ineqvis
-opt_iltvis opt_igtvis opt_ilevis opt_igevis
 opt_iarefvis
 (lindex_t res, VALUE imm)
 (VALUE v2)
@@ -1931,6 +1923,36 @@ opt_iarefvss
         goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+opt_fplus opt_fminus opt_fmult opt_fdiv opt_fmod
+opt_feq opt_fneq opt_flt opt_fgt opt_fle opt_fge
+()
+(VALUE v1, VALUE v2)
+(VALUE val)
+{
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+}
+
+DEFINE_INSN
+opt_fplusf opt_fminusf opt_fmultf opt_fdivf opt_fmodf
+opt_feqf opt_fneqf opt_fltf opt_fgtf opt_flef opt_fgef
+(DBL imm)
+(VALUE v1)
+(VALUE val)
+{
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+}
+
+DEFINE_INSN
+opt_frminusf opt_frdivf opt_frmodf
+opt_frltf opt_frgtf opt_frlef opt_frgef
+(DBL imm)
+(VALUE v2)
+(VALUE val)
+{
+    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(imm, v2);
 }
 
 DEFINE_INSN

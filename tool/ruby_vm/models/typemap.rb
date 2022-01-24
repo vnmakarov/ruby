@@ -24,6 +24,7 @@ RubyVM::Typemap = {
   "lindex_t"       => %w[L TS_LINDEX],
   "rb_insn_func_t" => %w[F TS_FUNCPTR],
   "rb_num_t"       => %w[N TS_NUM],
+  "DBL"            => %w[D TS_DBL],
   "RB_BUILTIN"     => %w[R TS_BUILTIN],
 }
 
@@ -38,6 +39,8 @@ class << RubyVM::Typemap
       return val
     when 'rb_num_t', 'lindex_t' then
       return "NUM2LONG(#{val})"
+    when 'DBL' then
+      return "rtl_val2dbl(#{val})"
     when 'ID' then
       return "SYM2ID(#{val})"
     else
@@ -51,8 +54,10 @@ class << RubyVM::Typemap
       return val
     when 'ISEQ', 'rb_insn_func_t' then
       return "(VALUE)(#{val})"
-    when 'rb_num_t', 'lindex_t'
+    when 'rb_num_t', 'lindex_t' then
       "LONG2NUM(#{val})"
+    when 'DBL' then
+      "rtl_dbl2val(#{val})"
     when 'ID' then
       return "ID2SYM(#{val})"
     else

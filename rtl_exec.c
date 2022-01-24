@@ -236,31 +236,38 @@ RTL_FUNCS(vm_opt_igt)
 RTL_FUNCS(vm_opt_ile)
 RTL_FUNCS(vm_opt_ige)
 
-#ifdef FLONUM_INSNS
-static rtl_inline VALUE vm_opt_fplus(VALUE v1, VALUE v2) { return DBL2NUM(RFLOAT_VALUE(v1) + RFLOAT_VALUE(v2)); }
-static rtl_inline VALUE vm_opt_fminus(VALUE v1, VALUE v2) { return DBL2NUM(RFLOAT_VALUE(v1) - RFLOAT_VALUE(v2)); }
-static rtl_inline VALUE vm_opt_fmult(VALUE v1, VALUE v2) { return DBL2NUM(RFLOAT_VALUE(v1) * RFLOAT_VALUE(v2)); }
-static rtl_inline VALUE vm_opt_fdiv(VALUE v1, VALUE v2) { return rb_flo_div_flo(v1, v2); }
-static rtl_inline VALUE vm_opt_fmod(VALUE v1, VALUE v2) { return DBL2NUM(ruby_float_mod(RFLOAT_VALUE(v1), RFLOAT_VALUE(v2))); }
-static rtl_inline VALUE vm_opt_feq(VALUE v1, VALUE v2) { return RBOOL(v1 == v2); }
-static rtl_inline VALUE vm_opt_fneq(VALUE v1, VALUE v2) { return RBOOL(v1 != v2); }
-static rtl_inline VALUE vm_opt_flt(VALUE v1, VALUE v2) { return RBOOL(RFLOAT_VALUE(v1) < RFLOAT_VALUE(v2)); }
-static rtl_inline VALUE vm_opt_fgt(VALUE v1, VALUE v2) { return RBOOL(RFLOAT_VALUE(v1) > RFLOAT_VALUE(v2)); }
-static rtl_inline VALUE vm_opt_fle(VALUE v1, VALUE v2) { return RBOOL(RFLOAT_VALUE(v1) <= RFLOAT_VALUE(v2)); }
-static rtl_inline VALUE vm_opt_fge(VALUE v1, VALUE v2) { return RBOOL(RFLOAT_VALUE(v1) >= RFLOAT_VALUE(v2)); }
+static rtl_inline VALUE rtl_fplus(DBL v1, DBL v2) { return DBL2NUM(v1 + v2); }
+static rtl_inline VALUE rtl_fminus(DBL v1, DBL v2) { return DBL2NUM(v1 - v2); }
+static rtl_inline VALUE rtl_fmult(DBL v1, DBL v2) { return DBL2NUM(v1 * v2); }
+static rtl_inline VALUE rtl_fdiv(DBL v1, DBL v2) { return DBL2NUM(ruby_float_div(v1, v2)); }
+static rtl_inline VALUE rtl_fmod(DBL v1, DBL v2) { return DBL2NUM(ruby_float_mod(v1, v2)); }
+static rtl_inline VALUE rtl_feq(DBL v1, DBL v2) { return RBOOL(v1 == v2); }
+static rtl_inline VALUE rtl_fneq(DBL v1, DBL v2) { return RBOOL(v1 != v2); }
+static rtl_inline VALUE rtl_flt(DBL v1, DBL v2) { return RBOOL(v1 < v2); }
+static rtl_inline VALUE rtl_fgt(DBL v1, DBL v2) { return RBOOL(v1 > v2); }
+static rtl_inline VALUE rtl_fle(DBL v1, DBL v2) { return RBOOL(v1 <= v2); }
+static rtl_inline VALUE rtl_fge(DBL v1, DBL v2) { return RBOOL(v1 >= v2); }
 
-RTL_FUNCS(vm_opt_fplus)
-RTL_FUNCS(vm_opt_fminus)
-RTL_FUNCS(vm_opt_fmult)
-RTL_FUNCS(vm_opt_fdiv)
-RTL_FUNCS(vm_opt_fmod)
-RTL_FUNCS(vm_opt_feq)
-RTL_FUNCS(vm_opt_fneq)
-RTL_FUNCS(vm_opt_flt)
-RTL_FUNCS(vm_opt_fgt)
-RTL_FUNCS(vm_opt_fle)
-RTL_FUNCS(vm_opt_fge)
-#endif
+#define RTL_FLO_FUNCS2(iname1, iname2, fname)				\
+ static rtl_inline VALUE iname1(VALUE v1, VALUE v2) { return fname(RFLOAT_VALUE(v1), RFLOAT_VALUE(v2)); } \
+ static rtl_inline VALUE iname2(VALUE v1, DBL imm) { return fname(RFLOAT_VALUE(v1), imm); }
+
+#define RTL_FLO_FUNCS3(iname1, iname2, iname3, fname)				\
+ RTL_FLO_FUNCS2(iname1, iname2, fname)				\
+ static rtl_inline VALUE iname3(DBL imm, VALUE v2) { return fname(imm, RFLOAT_VALUE(v2)); }
+
+RTL_FLO_FUNCS2(vm_opt_fplus, vm_opt_fplusf, rtl_fplus)
+RTL_FLO_FUNCS3(vm_opt_fminus, vm_opt_fminusf, vm_opt_frminusf, rtl_fminus)
+RTL_FLO_FUNCS2(vm_opt_fmult, vm_opt_fmultf, rtl_fmult)
+RTL_FLO_FUNCS3(vm_opt_fdiv, vm_opt_fdivf, vm_opt_frdivf, rtl_fdiv)
+RTL_FLO_FUNCS3(vm_opt_fmod, vm_opt_fmodf, vm_opt_frmodf, rtl_fmod)
+
+RTL_FLO_FUNCS2(vm_opt_feq, vm_opt_feqf, rtl_feq)
+RTL_FLO_FUNCS2(vm_opt_fneq, vm_opt_fneqf, rtl_fneq)
+RTL_FLO_FUNCS3(vm_opt_flt, vm_opt_fltf, vm_opt_frltf, rtl_flt)
+RTL_FLO_FUNCS3(vm_opt_fgt, vm_opt_fgtf, vm_opt_frgtf, rtl_fgt)
+RTL_FLO_FUNCS3(vm_opt_fle, vm_opt_flef, vm_opt_frlef, rtl_fle)
+RTL_FLO_FUNCS3(vm_opt_fge, vm_opt_fgef, vm_opt_frgef, rtl_fge)
 
 static rtl_inline VALUE vm_opt_iaref(VALUE v1, VALUE v2) {
     if (SPECIAL_CONST_P(v1) || RBASIC_CLASS(v1) != rb_cArray) return Qundef;

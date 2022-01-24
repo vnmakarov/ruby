@@ -1991,7 +1991,11 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	ret = rb_sprintf("%"PRIuVALUE, op);
 	break;
 
-      case TS_LINDEX:{
+    case TS_DBL:{
+	ret = rb_sprintf("%-.10g", rtl_val2dbl(op));
+        break;
+    }
+    case TS_LINDEX:{
 	int level;
 	if (types[op_no+1] == TS_NUM && pnop) {
 	    ret = local_var_name(iseq, *pnop, op - VM_ENV_DATA_SIZE);
@@ -2854,7 +2858,10 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 	      case TS_NUM:
 		rb_ary_push(ary, INT2FIX(*seq));
 		break;
-	      case TS_VALUE:
+            case TS_DBL:
+		rb_ary_push(ary, DBL2NUM(rtl_val2dbl(*seq)));
+		break;
+            case TS_VALUE:
 		rb_ary_push(ary, obj_resurrect(*seq));
 		break;
 	      case TS_ISEQ:

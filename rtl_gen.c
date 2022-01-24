@@ -230,50 +230,73 @@ check_bop_redefined_p(enum ruby_basic_operators bop, int klass_flag, short *bop_
 }
 
 static enum ruby_vminsn_type
-get_rtl_spec_insn2_id(enum ruby_vminsn_type id, int attr, short *bop_mask) {
-#define RTL_SPEC_INSN_ID_CASE(bop, flag, insn_name, fname)                   \
+get_rtl_spec_insn2_id(enum ruby_vminsn_type id, int attr, short *bop_mask, int *exch_p) {
+#define RTL_SPEC_INSN_ID_CASE0(bop, flag, insn_name, fname)                   \
     case insn_name: return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, sss);        		\
     case CONCAT(insn_name, svv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, svv);	\
     case CONCAT(insn_name, svi): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, svi);	\
-    case CONCAT(insn_name, siv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, siv);	\
     case CONCAT(insn_name, svs): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, svs);	\
     case CONCAT(insn_name, ssv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, ssv);	\
-    case CONCAT(insn_name, ssi): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, ssi);	\
+    case CONCAT(insn_name, ssi): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, ssi);
+#define RTL_SPEC_INSN_ID_CASE1(bop, flag, insn_name, fname)               \
+    RTL_SPEC_INSN_ID_CASE0(bop, flag, insn_name, fname)                   \
+    case CONCAT(insn_name, siv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, siv);	\
     case CONCAT(insn_name, sis): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, sis);
+#define RTL_SPEC_INSN_ID_CASE2(bop, flag, insn_name, fname, exch_fname)               	\
+    RTL_SPEC_INSN_ID_CASE0(bop, flag, insn_name, fname)                			\
+    case CONCAT(insn_name, siv):					  		\
+        *exch_p = TRUE; return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(exch_fname, svi); \
+    case CONCAT(insn_name, sis):							   		   	\
+        *exch_p = TRUE; return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(exch_fname, ssi);
 
+    *exch_p = FALSE;
     if (attr == ATTR_FIXNUM) {
         switch (id) {
-        RTL_SPEC_INSN_ID_CASE(BOP_PLUS, INTEGER_REDEFINED_OP_FLAG, BIN(opt_plus), BIN(opt_iplus))
-        RTL_SPEC_INSN_ID_CASE(BOP_MINUS, INTEGER_REDEFINED_OP_FLAG, BIN(opt_minus), BIN(opt_iminus))
-        RTL_SPEC_INSN_ID_CASE(BOP_MULT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_mult), BIN(opt_imult))
-        RTL_SPEC_INSN_ID_CASE(BOP_DIV, INTEGER_REDEFINED_OP_FLAG, BIN(opt_div), BIN(opt_idiv))
-        RTL_SPEC_INSN_ID_CASE(BOP_MOD, INTEGER_REDEFINED_OP_FLAG, BIN(opt_mod), BIN(opt_imod))
-        RTL_SPEC_INSN_ID_CASE(BOP_OR, INTEGER_REDEFINED_OP_FLAG, BIN(opt_or), BIN(opt_ior))
-        RTL_SPEC_INSN_ID_CASE(BOP_AND, INTEGER_REDEFINED_OP_FLAG, BIN(opt_and), BIN(opt_iand))
-        RTL_SPEC_INSN_ID_CASE(BOP_EQ, INTEGER_REDEFINED_OP_FLAG, BIN(opt_eq), BIN(opt_ieq))
-        RTL_SPEC_INSN_ID_CASE(BOP_NEQ, INTEGER_REDEFINED_OP_FLAG, BIN(opt_neq), BIN(opt_ineq))
-        RTL_SPEC_INSN_ID_CASE(BOP_LT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_lt), BIN(opt_ilt))
-        RTL_SPEC_INSN_ID_CASE(BOP_GT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_gt), BIN(opt_igt))
-        RTL_SPEC_INSN_ID_CASE(BOP_LE, INTEGER_REDEFINED_OP_FLAG, BIN(opt_le), BIN(opt_ile))
-        RTL_SPEC_INSN_ID_CASE(BOP_GE, INTEGER_REDEFINED_OP_FLAG, BIN(opt_ge), BIN(opt_ige))
-        RTL_SPEC_INSN_ID_CASE(BOP_AREF, ARRAY_REDEFINED_OP_FLAG, BIN(opt_aref), BIN(opt_iaref))
+        RTL_SPEC_INSN_ID_CASE1(BOP_PLUS, INTEGER_REDEFINED_OP_FLAG, BIN(opt_plus), BIN(opt_iplus))
+        RTL_SPEC_INSN_ID_CASE1(BOP_MINUS, INTEGER_REDEFINED_OP_FLAG, BIN(opt_minus), BIN(opt_iminus))
+        RTL_SPEC_INSN_ID_CASE1(BOP_MULT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_mult), BIN(opt_imult))
+        RTL_SPEC_INSN_ID_CASE1(BOP_DIV, INTEGER_REDEFINED_OP_FLAG, BIN(opt_div), BIN(opt_idiv))
+        RTL_SPEC_INSN_ID_CASE1(BOP_MOD, INTEGER_REDEFINED_OP_FLAG, BIN(opt_mod), BIN(opt_imod))
+        RTL_SPEC_INSN_ID_CASE2(BOP_OR, INTEGER_REDEFINED_OP_FLAG, BIN(opt_or), BIN(opt_ior), BIN(opt_ior))
+        RTL_SPEC_INSN_ID_CASE2(BOP_AND, INTEGER_REDEFINED_OP_FLAG, BIN(opt_and), BIN(opt_iand), BIN(opt_iand))
+        RTL_SPEC_INSN_ID_CASE2(BOP_EQ, INTEGER_REDEFINED_OP_FLAG, BIN(opt_eq), BIN(opt_ieq), BIN(opt_ieq))
+        RTL_SPEC_INSN_ID_CASE2(BOP_NEQ, INTEGER_REDEFINED_OP_FLAG, BIN(opt_neq), BIN(opt_ineq), BIN(opt_ineq))
+        RTL_SPEC_INSN_ID_CASE2(BOP_LT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_lt), BIN(opt_ilt), BIN(opt_ige))
+        RTL_SPEC_INSN_ID_CASE2(BOP_GT, INTEGER_REDEFINED_OP_FLAG, BIN(opt_gt), BIN(opt_igt), BIN(opt_ile))
+        RTL_SPEC_INSN_ID_CASE2(BOP_LE, INTEGER_REDEFINED_OP_FLAG, BIN(opt_le), BIN(opt_ile), BIN(opt_igt))
+        RTL_SPEC_INSN_ID_CASE2(BOP_GE, INTEGER_REDEFINED_OP_FLAG, BIN(opt_ge), BIN(opt_ige), BIN(opt_ilt))
+        RTL_SPEC_INSN_ID_CASE1(BOP_AREF, ARRAY_REDEFINED_OP_FLAG, BIN(opt_aref), BIN(opt_iaref))
         default: return BIN(nop);
         }
     } else if (attr == ATTR_FLONUM) {
         switch (id) {
-#ifdef FLONUM_INSNS
-        RTL_SPEC_INSN_ID_CASE(BOP_PLUS, FLOAT_REDEFINED_OP_FLAG, BIN(opt_plus), BIN(opt_fplus))
-        RTL_SPEC_INSN_ID_CASE(BOP_MINUS, FLOAT_REDEFINED_OP_FLAG, BIN(opt_minus), BIN(opt_fminus))
-        RTL_SPEC_INSN_ID_CASE(BOP_MULT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_mult), BIN(opt_fmult))
-        RTL_SPEC_INSN_ID_CASE(BOP_DIV, FLOAT_REDEFINED_OP_FLAG, BIN(opt_div), BIN(opt_fdiv))
-        RTL_SPEC_INSN_ID_CASE(BOP_MOD, FLOAT_REDEFINED_OP_FLAG, BIN(opt_mod), BIN(opt_fmod))
-        RTL_SPEC_INSN_ID_CASE(BOP_EQ, FLOAT_REDEFINED_OP_FLAG, BIN(opt_eq), BIN(opt_feq))
-        RTL_SPEC_INSN_ID_CASE(BOP_NEQ, FLOAT_REDEFINED_OP_FLAG, BIN(opt_neq), BIN(opt_fneq))
-        RTL_SPEC_INSN_ID_CASE(BOP_LT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_lt), BIN(opt_flt))
-        RTL_SPEC_INSN_ID_CASE(BOP_GT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_gt), BIN(opt_fgt))
-        RTL_SPEC_INSN_ID_CASE(BOP_LE, FLOAT_REDEFINED_OP_FLAG, BIN(opt_le), BIN(opt_fle))
-        RTL_SPEC_INSN_ID_CASE(BOP_GE, FLOAT_REDEFINED_OP_FLAG, BIN(opt_ge), BIN(opt_fge))
-#endif
+#define RTL_FLO_INSN_ID_CASE0(bop, flag, insn_name, fname)                   						\
+    case insn_name:													\
+    case CONCAT(insn_name, svs):											\
+    case CONCAT(insn_name, ssv):											\
+    case CONCAT(insn_name, svv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : fname;			\
+    case CONCAT(insn_name, svi): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, f);	\
+    case CONCAT(insn_name, ssi): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, f);
+#define RTL_FLO_INSN_ID_CASE1(bop, flag, insn_name, fname)               						\
+    RTL_FLO_INSN_ID_CASE0(bop, flag, insn_name, fname)                   					        \
+    case CONCAT(insn_name, siv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, f);	\
+    case CONCAT(insn_name, sis): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(fname, f);
+#define RTL_FLO_INSN_ID_CASE2(bop, flag, insn_name, fname, rev_fname)               	\
+    RTL_FLO_INSN_ID_CASE0(bop, flag, insn_name, fname)                			\
+    case CONCAT(insn_name, siv): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(rev_fname, f); \
+    case CONCAT(insn_name, sis): return check_bop_redefined_p(bop, flag, bop_mask) ? BIN(nop) : CONCAT(rev_fname, f);
+
+        RTL_FLO_INSN_ID_CASE1(BOP_PLUS, FLOAT_REDEFINED_OP_FLAG, BIN(opt_plus), BIN(opt_fplus))
+        RTL_FLO_INSN_ID_CASE2(BOP_MINUS, FLOAT_REDEFINED_OP_FLAG, BIN(opt_minus), BIN(opt_fminus), BIN(opt_frminus))
+        RTL_FLO_INSN_ID_CASE1(BOP_MULT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_mult), BIN(opt_fmult))
+        RTL_FLO_INSN_ID_CASE2(BOP_DIV, FLOAT_REDEFINED_OP_FLAG, BIN(opt_div), BIN(opt_fdiv), BIN(opt_frdiv))
+        RTL_FLO_INSN_ID_CASE2(BOP_MOD, FLOAT_REDEFINED_OP_FLAG, BIN(opt_mod), BIN(opt_fmod), BIN(opt_frmod))
+        RTL_FLO_INSN_ID_CASE1(BOP_EQ, FLOAT_REDEFINED_OP_FLAG, BIN(opt_eq), BIN(opt_feq))
+        RTL_FLO_INSN_ID_CASE1(BOP_NEQ, FLOAT_REDEFINED_OP_FLAG, BIN(opt_neq), BIN(opt_fneq))
+        RTL_FLO_INSN_ID_CASE2(BOP_LT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_lt), BIN(opt_flt), BIN(opt_frlt))
+        RTL_FLO_INSN_ID_CASE2(BOP_GT, FLOAT_REDEFINED_OP_FLAG, BIN(opt_gt), BIN(opt_fgt), BIN(opt_frgt))
+        RTL_FLO_INSN_ID_CASE2(BOP_LE, FLOAT_REDEFINED_OP_FLAG, BIN(opt_le), BIN(opt_fle), BIN(opt_frle))
+        RTL_FLO_INSN_ID_CASE2(BOP_GE, FLOAT_REDEFINED_OP_FLAG, BIN(opt_ge), BIN(opt_fge), BIN(opt_frge))
         default: return BIN(nop);
         }
     }
@@ -312,14 +335,17 @@ get_rtl_insn3_id(enum ruby_vminsn_type id, int local_p, int local2_p, int local3
 
 static enum ruby_vminsn_type
 get_var_res_rtl_insn_id(enum ruby_vminsn_type id) {
-#define VAR_RES_RTL_INSN_ID_CASE(insn_name)			\
+#define VAR_RES_RTL_INSN_ID_CASE0(insn_name)			\
     case CONCAT(insn_name, sss): return CONCAT(insn_name, vss);	\
     case CONCAT(insn_name, svv): return CONCAT(insn_name, vvv);	\
     case CONCAT(insn_name, svi): return CONCAT(insn_name, vvi);	\
-    case CONCAT(insn_name, siv): return CONCAT(insn_name, viv);	\
     case CONCAT(insn_name, svs): return CONCAT(insn_name, vvs);	\
     case CONCAT(insn_name, ssv): return CONCAT(insn_name, vsv);	\
-    case CONCAT(insn_name, ssi): return CONCAT(insn_name, vsi);	\
+    case CONCAT(insn_name, ssi): return CONCAT(insn_name, vsi);
+
+#define VAR_RES_RTL_INSN_ID_CASE(insn_name)			\
+    VAR_RES_RTL_INSN_ID_CASE0(insn_name)			\
+    case CONCAT(insn_name, siv): return CONCAT(insn_name, viv);	\
     case CONCAT(insn_name, sis): return CONCAT(insn_name, vis);
 
     switch (id) {
@@ -328,27 +354,14 @@ get_var_res_rtl_insn_id(enum ruby_vminsn_type id) {
     VAR_RES_RTL_INSN_ID_CASE(BIN(opt_imult))
     VAR_RES_RTL_INSN_ID_CASE(BIN(opt_idiv))
     VAR_RES_RTL_INSN_ID_CASE(BIN(opt_imod))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_ior))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_iand))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_ieq))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_ineq))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_ilt))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_igt))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_ile))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_ige))
-#ifdef FLONUM_INSNS
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fplus))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fminus))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fmult))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fdiv))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fmod))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_feq))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fneq))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_flt))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fgt))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fle))
-    VAR_RES_RTL_INSN_ID_CASE(BIN(opt_fge))
-#endif
+    VAR_RES_RTL_INSN_ID_CASE0(BIN(opt_ior))
+    VAR_RES_RTL_INSN_ID_CASE0(BIN(opt_iand))
+    VAR_RES_RTL_INSN_ID_CASE0(BIN(opt_ieq))
+    VAR_RES_RTL_INSN_ID_CASE0(BIN(opt_ineq))
+    VAR_RES_RTL_INSN_ID_CASE0(BIN(opt_ilt))
+    VAR_RES_RTL_INSN_ID_CASE0(BIN(opt_igt))
+    VAR_RES_RTL_INSN_ID_CASE0(BIN(opt_ile))
+    VAR_RES_RTL_INSN_ID_CASE0(BIN(opt_ige))
     default: return BIN(nop);
     }
 }
@@ -370,14 +383,6 @@ get_branch_rtl_insn_id(enum ruby_vminsn_type cmp_id) {
     BRANCH_RTL_INSN_ID_CASE(BIN(opt_igt), BIN(opt_ibgt))
     BRANCH_RTL_INSN_ID_CASE(BIN(opt_ile), BIN(opt_ible))
     BRANCH_RTL_INSN_ID_CASE(BIN(opt_ige), BIN(opt_ibge))
-#ifdef FLONUM_INSNS
-    BRANCH_RTL_INSN_ID_CASE(BIN(opt_feq), BIN(opt_fbeq))
-    BRANCH_RTL_INSN_ID_CASE(BIN(opt_fneq), BIN(opt_fbneq))
-    BRANCH_RTL_INSN_ID_CASE(BIN(opt_flt), BIN(opt_fblt))
-    BRANCH_RTL_INSN_ID_CASE(BIN(opt_fgt), BIN(opt_fbgt))
-    BRANCH_RTL_INSN_ID_CASE(BIN(opt_fle), BIN(opt_fble))
-    BRANCH_RTL_INSN_ID_CASE(BIN(opt_fge), BIN(opt_fbge))
-#endif
     default: return BIN(nop);
     }
 }
@@ -1164,7 +1169,7 @@ contains_input_lvar_p(int insn_pos, int lvar) {
     VALUE *operands = VARR_ADDR(VALUE, bbv_encoded) + insn_pos + 1;
     RTL_GEN_ASSERT(lvar >= 0);
 
-#define RTL_INSN_LVAR_CASE(insn_name)                                   			\
+#define RTL_SPEC_INSN_LVAR_CASE0(insn_name)                                   			\
     case CONCAT(insn_name, svv):								\
     case CONCAT(insn_name, vvv): return operands[0] == (VALUE)lvar || operands[1] == (VALUE)lvar;\
     case CONCAT(insn_name, svi):								\
@@ -1172,11 +1177,14 @@ contains_input_lvar_p(int insn_pos, int lvar) {
     case CONCAT(insn_name, svs):								\
     case CONCAT(insn_name, vvs): return operands[0] == (VALUE)lvar;				\
     case CONCAT(insn_name, ssv):								\
+    case CONCAT(insn_name, vsv): return operands[1] == (VALUE)lvar;
+
+#define RTL_SPEC_INSN_LVAR_CASE(insn_name)                                   			\
+    RTL_SPEC_INSN_LVAR_CASE0(insn_name)								\
     case CONCAT(insn_name, siv):								\
-    case CONCAT(insn_name, vsv):								\
     case CONCAT(insn_name, viv): return operands[1] == (VALUE)lvar;
 
-#define RTL_INSN_LVAR_CASE0(insn_name)                            				\
+#define RTL_INSN_LVAR_CASE(insn_name)                            				\
     case CONCAT(insn_name, svv): return operands[0] == (VALUE)lvar || operands[1] == (VALUE)lvar;\
     case CONCAT(insn_name, svi):								\
     case CONCAT(insn_name, svs): return operands[0] == (VALUE)lvar;				\
@@ -1184,45 +1192,32 @@ contains_input_lvar_p(int insn_pos, int lvar) {
     case CONCAT(insn_name, siv): return operands[1] == (VALUE)lvar;
 
     switch (insn_id) {
-    RTL_INSN_LVAR_CASE(BIN(opt_iplus))
-    RTL_INSN_LVAR_CASE(BIN(opt_iminus))
-    RTL_INSN_LVAR_CASE(BIN(opt_imult))
-    RTL_INSN_LVAR_CASE(BIN(opt_idiv))
-    RTL_INSN_LVAR_CASE(BIN(opt_imod))
-    RTL_INSN_LVAR_CASE(BIN(opt_ior))
-    RTL_INSN_LVAR_CASE(BIN(opt_iand))
-    RTL_INSN_LVAR_CASE(BIN(opt_ieq))
-    RTL_INSN_LVAR_CASE(BIN(opt_ineq))
-    RTL_INSN_LVAR_CASE(BIN(opt_ilt))
-    RTL_INSN_LVAR_CASE(BIN(opt_igt))
-    RTL_INSN_LVAR_CASE(BIN(opt_ile))
-    RTL_INSN_LVAR_CASE(BIN(opt_ige))
-#ifdef FLONUM_INSNS
-    RTL_INSN_LVAR_CASE(BIN(opt_fplus))
-    RTL_INSN_LVAR_CASE(BIN(opt_fminus))
-    RTL_INSN_LVAR_CASE(BIN(opt_fmult))
-    RTL_INSN_LVAR_CASE(BIN(opt_fdiv))
-    RTL_INSN_LVAR_CASE(BIN(opt_fmod))
-    RTL_INSN_LVAR_CASE(BIN(opt_feq))
-    RTL_INSN_LVAR_CASE(BIN(opt_fneq))
-    RTL_INSN_LVAR_CASE(BIN(opt_flt))
-    RTL_INSN_LVAR_CASE(BIN(opt_fgt))
-    RTL_INSN_LVAR_CASE(BIN(opt_fle))
-    RTL_INSN_LVAR_CASE(BIN(opt_fge))
-#endif
-    RTL_INSN_LVAR_CASE0(BIN(opt_plus))
-    RTL_INSN_LVAR_CASE0(BIN(opt_minus))
-    RTL_INSN_LVAR_CASE0(BIN(opt_mult))
-    RTL_INSN_LVAR_CASE0(BIN(opt_div))
-    RTL_INSN_LVAR_CASE0(BIN(opt_mod))
-    RTL_INSN_LVAR_CASE0(BIN(opt_or))
-    RTL_INSN_LVAR_CASE0(BIN(opt_and))
-    RTL_INSN_LVAR_CASE0(BIN(opt_eq))
-    RTL_INSN_LVAR_CASE0(BIN(opt_neq))
-    RTL_INSN_LVAR_CASE0(BIN(opt_lt))
-    RTL_INSN_LVAR_CASE0(BIN(opt_gt))
-    RTL_INSN_LVAR_CASE0(BIN(opt_le))
-    RTL_INSN_LVAR_CASE0(BIN(opt_ge))
+    RTL_SPEC_INSN_LVAR_CASE(BIN(opt_iplus))
+    RTL_SPEC_INSN_LVAR_CASE(BIN(opt_iminus))
+    RTL_SPEC_INSN_LVAR_CASE(BIN(opt_imult))
+    RTL_SPEC_INSN_LVAR_CASE(BIN(opt_idiv))
+    RTL_SPEC_INSN_LVAR_CASE(BIN(opt_imod))
+    RTL_SPEC_INSN_LVAR_CASE0(BIN(opt_ior))
+    RTL_SPEC_INSN_LVAR_CASE0(BIN(opt_iand))
+    RTL_SPEC_INSN_LVAR_CASE0(BIN(opt_ieq))
+    RTL_SPEC_INSN_LVAR_CASE0(BIN(opt_ineq))
+    RTL_SPEC_INSN_LVAR_CASE0(BIN(opt_ilt))
+    RTL_SPEC_INSN_LVAR_CASE0(BIN(opt_igt))
+    RTL_SPEC_INSN_LVAR_CASE0(BIN(opt_ile))
+    RTL_SPEC_INSN_LVAR_CASE0(BIN(opt_ige))
+    RTL_INSN_LVAR_CASE(BIN(opt_plus))
+    RTL_INSN_LVAR_CASE(BIN(opt_minus))
+    RTL_INSN_LVAR_CASE(BIN(opt_mult))
+    RTL_INSN_LVAR_CASE(BIN(opt_div))
+    RTL_INSN_LVAR_CASE(BIN(opt_mod))
+    RTL_INSN_LVAR_CASE(BIN(opt_or))
+    RTL_INSN_LVAR_CASE(BIN(opt_and))
+    RTL_INSN_LVAR_CASE(BIN(opt_eq))
+    RTL_INSN_LVAR_CASE(BIN(opt_neq))
+    RTL_INSN_LVAR_CASE(BIN(opt_lt))
+    RTL_INSN_LVAR_CASE(BIN(opt_gt))
+    RTL_INSN_LVAR_CASE(BIN(opt_le))
+    RTL_INSN_LVAR_CASE(BIN(opt_ge))
     case BIN (getlocal):
         if (operands[1] != 0) return FALSE; /*op1==level*/
         /* fallthrough */
@@ -1758,25 +1753,31 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv, int gen_p) {
     }
 }
 
-#define RTL_INSN2_SPEC_STACK_CASES(name)         \
+#define RTL_INSN2_SPEC_STACK_CASES0(name)        \
     case CONCAT(name, svv):                      \
     case CONCAT(name, svs):                      \
     case CONCAT(name, ssv):                      \
     case CONCAT(name, sss):                      \
     case CONCAT(name, svi):                      \
+    case CONCAT(name, ssi)
+
+#define RTL_INSN2_SPEC_STACK_CASES(name)         \
+    RTL_INSN2_SPEC_STACK_CASES0(name):		 \
     case CONCAT(name, siv):                      \
-    case CONCAT(name, ssi):                      \
     case CONCAT(name, sis)
 
-#define RTL_INSN2_SPEC_LVAR_CASES(name)          \
+#define RTL_INSN2_SPEC_LVAR_CASES0(name)         \
     case CONCAT(name, vvv):                      \
     case CONCAT(name, vvs):                      \
     case CONCAT(name, vsv):                      \
     case CONCAT(name, vss):                      \
     case CONCAT(name, vvi):                      \
-    case CONCAT(name, viv):                      \
-    case CONCAT(name, vis):			 \
     case CONCAT(name, vsi)
+
+#define RTL_INSN2_SPEC_LVAR_CASES(name)          \
+    RTL_INSN2_SPEC_LVAR_CASES0(name):         	 \
+    case CONCAT(name, viv):                      \
+    case CONCAT(name, vis)
 
 
 /* Make type-specialized RTL from general RTL or make speculative
@@ -1792,7 +1793,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     int init_stack_size = bbv->start_stack_size;
     int i, n, curr_rtl_insn_pos, len, nops, inc, retn, stack_size;
     int orig_pos, new_insn_pos, prev_new_insn_pos, branch_pos, prev_new_insn_nops;
-    int branch2_offset_add, attr, op1_attr, op2_attr, imm_p, imm2_p, unknown_p, neq_p;
+    int branch2_offset_add, attr, op1_attr, op2_attr, imm_p, imm2_p, exch_p, unknown_p, neq_p;
     int debug_p = rb_rtl_debug_p(), compacted_attrs_p = FALSE;
     int disp, nops_num;
     VALUE val, *operands, new_operands[10];
@@ -1996,19 +1997,47 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                     op2_attr = get_attr(get_lvar_num(iseq, operands[1]));
                 }
             }
-            new_insn_id = get_rtl_spec_insn2_id(insn_id, op1_attr != op2_attr ? ATTR_UNKNOWN : op1_attr, bbv->used_bops);
+            new_insn_id = get_rtl_spec_insn2_id(insn_id, op1_attr != op2_attr ? ATTR_UNKNOWN : op1_attr,
+                                                bbv->used_bops, &exch_p);
             if (new_insn_id == BIN(nop)) goto rest_cases;
+            if (op1_attr == ATTR_FLONUM) { /* we have no variable variants of fp insn -- add getlocals */
+                if (nops == 1 && !imm_p && !imm2_p) {
+                    new_operands[0] = operands[0];
+                    add_spec_insn_arr(orig_pos, BIN(getlocal_WC_0), 1, new_operands);
+                } else if (nops == 2 && !imm_p && !imm2_p) {
+                    new_operands[0] = operands[0];
+                    add_spec_insn_arr(orig_pos, BIN(getlocal_WC_0), 1, new_operands);
+                    new_operands[0] = operands[1];
+                    add_spec_insn_arr(orig_pos, BIN(getlocal_WC_0), 1, new_operands);
+                } else if (nops == 2) {
+                    new_operands[0] = (imm_p ? operands[1] : operands[0]);
+                    add_spec_insn_arr(orig_pos, BIN(getlocal_WC_0), 1, new_operands);
+                }
+            }
             stack_size -= (2 - nops);
             attr = op1_attr != op2_attr || unknown_p ? ATTR_UNKNOWN : op1_attr;
-            add_spec_insn_arr(orig_pos, new_insn_id, nops, operands);
+            if (op1_attr == ATTR_FLONUM) {
+                if (imm_p || imm2_p) {
+                    new_operands[0] = rtl_dbl2val(RFLOAT_VALUE(imm_p || nops == 1 ? operands[0] : operands[1]));
+                    add_spec_insn_arr(orig_pos, new_insn_id, 1, new_operands);
+                } else {
+                    add_spec_insn_arr(orig_pos, new_insn_id, 0, new_operands);
+                }
+            } else if (nops == 2 && exch_p) {
+                new_operands[0] = operands[1];
+                new_operands[1] = operands[0];
+                add_spec_insn_arr(orig_pos, new_insn_id, 2, new_operands);
+            } else {
+                add_spec_insn_arr(orig_pos, new_insn_id, nops, operands);
+            }
             goto push;
         RTL_INSN2_SPEC_STACK_CASES(BIN(opt_iplus)):
         RTL_INSN2_SPEC_STACK_CASES(BIN(opt_iminus)):
         RTL_INSN2_SPEC_STACK_CASES(BIN(opt_imult)):
         RTL_INSN2_SPEC_STACK_CASES(BIN(opt_idiv)):
         RTL_INSN2_SPEC_STACK_CASES(BIN(opt_imod)):
-        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_ior)):
-        RTL_INSN2_SPEC_STACK_CASES(BIN(opt_iand)):
+        RTL_INSN2_SPEC_STACK_CASES0(BIN(opt_ior)):
+        RTL_INSN2_SPEC_STACK_CASES0(BIN(opt_iand)):
             inc = insn_stack_increase(insn_id, operands);
             stack_size += inc - 1;
             attr = ATTR_FIXNUM; /* attr of temp */
@@ -2018,8 +2047,8 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_imult)):
         RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_idiv)):
         RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_imod)):
-        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_ior)):
-        RTL_INSN2_SPEC_LVAR_CASES(BIN(opt_iand)):
+        RTL_INSN2_SPEC_LVAR_CASES0(BIN(opt_ior)):
+        RTL_INSN2_SPEC_LVAR_CASES0(BIN(opt_iand)):
             setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_FIXNUM); /* attr of lvar */
             goto rest_cases;
         case BIN(jump2):
@@ -2030,14 +2059,6 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         BRANCH_CASES(BIN(opt_ibgt)):
         BRANCH_CASES(BIN(opt_ible)):
         BRANCH_CASES(BIN(opt_ibge)):
-#ifdef FLONUM_INSNS
-        BRANCH_CASES(BIN(opt_fbeq)):
-        BRANCH_CASES(BIN(opt_fbneq)):
-        BRANCH_CASES(BIN(opt_fblt)):
-        BRANCH_CASES(BIN(opt_fbgt)):
-        BRANCH_CASES(BIN(opt_fble)):
-        BRANCH_CASES(BIN(opt_fbge)):
-#endif
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
