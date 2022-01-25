@@ -2742,6 +2742,53 @@ rtl_opt_send_without_block
     }
 }
 
+/* Specialized call of method with block created from make_rtl_send block:
+   it should be iseq, not-tail call, no splat args, all leading args */
+DEFINE_INSN
+rtl_cfunc_send
+(CALL_DATA cd, ISEQ blockiseq)
+(...)
+(VALUE val)
+// attr bool handles_sp = true;
+// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+{
+    const struct rb_callcache *cc = cd->cc;
+    const struct rb_callable_method_entry_struct *cme;
+    const rb_method_cfunc_t *cfunc;
+    int argc = vm_ci_argc(cd->ci);
+    VALUE *argv = reg_cfp->sp - argc;
+    VALUE recv = TOPN(argc);
+    VALUE bh;
+    struct rb_captured_block *captured;
+
+    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_cfunc_send_exit;
+    cme = vm_cc_cme(cc);
+    VM_ASSERT(callable_method_entry_p(cme) && blockiseq != NULL);
+    cfunc = vm_method_cfunc_entry(cme);
+    RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, cme->owner, cme->def->original_id);
+    EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, Qundef);
+    captured = VM_CFP_TO_CAPTURED_BLOCK(GET_CFP());
+    captured->code.iseq = blockiseq;
+    bh = VM_BH_FROM_ISEQ_BLOCK(captured);
+    vm_push_frame(ec, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
+                  bh, (VALUE)cme, 0, ec->cfp->sp, 0, 0);
+    reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
+    val = (*cfunc->invoker)(recv, argc, reg_cfp->sp + 1, cfunc->func); // can be improved by calling cfunc->func(arg ... )
+    CHECK_CFP_CONSISTENCY("rtl_cfunc_send");
+    rb_vm_pop_frame(ec);
+    EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_RETURN, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, val);
+    RUBY_DTRACE_CMETHOD_RETURN_HOOK(ec, cme->owner, cme->def->original_id);
+    goto rtl_cfunc_send_end;
+  rtl_cfunc_send_exit:
+    /* invalidate the current cc as we use cc from safe RTL: */
+    vm_cc_invalidate(cc);
+    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(rtl_iseq_send_without_block);
+  rtl_cfunc_send_end:
+    ;
+}
+
 DEFINE_INSN
 gen_rtl_bbv
 (lindex_t bbv, OFFSET origin)
@@ -2860,7 +2907,7 @@ make_rtl_setivar
 }
 
 DEFINE_INSN
-make_rtl_send_without_block
+make_rtl_send
 (CALL_DATA cd, lindex_t send_info)
 (...)
 (VALUE val)
@@ -2868,9 +2915,12 @@ make_rtl_send_without_block
 // attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
 // attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
 {
+    struct rb_rtl_send_info *si = (void*)send_info;
     rb_control_frame_t *caller_cfp = GET_CFP();
-    val = vm_sendish(ec, caller_cfp, cd, VM_BLOCK_HANDLER_NONE, mexp_search_method);
-    rb_rtl_change_send_without_block(ec, caller_cfp, cd, (void*)send_info);
+    VALUE bh = (si->block_iseq == NULL ? VM_BLOCK_HANDLER_NONE
+                : vm_caller_setup_arg_block(ec, GET_CFP(), cd->ci, si->block_iseq, false));
+    val = vm_sendish(ec, caller_cfp, cd, bh, mexp_search_method);
+    rb_rtl_change_send(ec, caller_cfp, cd, si);
 
     if (val == Qundef) {
         RESTORE_REGS();
