@@ -2790,6 +2790,84 @@ rtl_cfunc_send
 }
 
 DEFINE_INSN
+rtl_iter_start
+(lindex_t func)
+()
+(VALUE index, VALUE res)
+{
+    VALUE arg = TOPN(0);
+    int (*f)(VALUE, VALUE *) = (void *)func;
+
+    if (!f(arg, &index)) {
+        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    res = Qnil;
+}
+
+DEFINE_INSN
+rtl_iter_cont
+(OFFSET dst, lindex_t func)
+()
+()
+{
+    VALUE (*f)(VALUE, VALUE) = (void *)func;
+    TOPN(1) = f(TOPN(0), TOPN(1)); /* (res, index): index is fixnum */
+    /* RUBY_VM_CHECK_INTS(ec); the check is done in leave of block iseq */
+    JUMP(dst);
+}
+
+DEFINE_INSN
+rtl_int_iter
+(OFFSET exit, lindex_t bbv, lindex_t func)
+(...)
+(...)
+// attr bool handles_sp = true;
+// attr bool leaf = false; /* has rb_check_array_type() */
+// attr rb_snum_t sp_inc = -2;
+// attr rb_snum_t comptime_sp_inc = -2;
+{
+    VALUE arg, ary, recv = TOPN(2), index = TOPN(1);
+    long argc = 1;
+    int (*f)(VALUE, VALUE, VALUE *) = (void *)func;
+    if (!f(recv, index, &arg)) {
+        INC_SP(-2);
+        TOPN(0) = arg; /* result */
+        JUMP(exit);
+    } else {
+        struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
+        rb_iseq_t *iseq = bbv_ref->iseq;
+        struct rb_iseq_constant_body *body = iseq->body;
+        int param_size = body->param.size;
+
+        VM_ASSERT(rb_simple_iseq_p(iseq));
+        INC_SP(-1); /* remove res from iter_start or previous rtl_int_iter */
+        TOPN(-1) = GET_SELF();
+        if (!body->param.flags.ambiguous_param0 && argc == 1
+            && !NIL_P(ary = rb_check_array_type(arg))) {
+            long i, len = RARRAY_LEN(ary);
+
+            CHECK_VM_STACK_OVERFLOW(GET_CFP(), body->param.lead_num);
+            if (len > body->param.lead_num) len = body->param.lead_num;
+            for (i=0; i<len; i++)
+                TOPN(-i - 2) = RARRAY_AREF(ary, i);
+            for (; i<body->param.lead_num; i++)
+                TOPN(-i - 2) = Qnil;
+        } else {
+            VM_ASSERT(param_size == 1);
+            TOPN(-2) = arg;
+        }
+        vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD, GET_SELF(),
+                      (VALUE)GET_EP() | 1, (VALUE)bbv_ref->cme, body->bbv_code + bbv_ref->bbv_start,
+                      reg_cfp->sp + 1 + param_size, body->local_table_size - param_size, body->stack_max);
+        RESTORE_REGS();
+        NEXT_INSN();
+    }
+}
+
+/* --- rarely used rtl insns: --- */
+
+DEFINE_INSN
 gen_rtl_bbv
 (lindex_t bbv, OFFSET origin)
 ()
@@ -2920,7 +2998,9 @@ make_rtl_send
     VALUE bh = (si->block_iseq == NULL ? VM_BLOCK_HANDLER_NONE
                 : vm_caller_setup_arg_block(ec, GET_CFP(), cd->ci, si->block_iseq, false));
     val = vm_sendish(ec, caller_cfp, cd, bh, mexp_search_method);
-    rb_rtl_change_send(ec, caller_cfp, cd, si);
+    /* The insn can be already changed in a recursive call in sendish -- check it.  */
+    if (caller_cfp->pc[-3] == (VALUE)rtl_dispatch_table[BIN(make_rtl_send)])
+        rb_rtl_change_send(ec, caller_cfp, cd, si);
 
     if (val == Qundef) {
         RESTORE_REGS();

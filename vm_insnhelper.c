@@ -23,6 +23,7 @@
 #include "internal/random.h"
 #include "internal/variable.h"
 #include "variable.h"
+#include "rtl.h"
 
 /* finish iseq array */
 #include "insns.inc"
@@ -1459,7 +1460,8 @@ vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_c
 	    while (escape_cfp < eocfp) {
 		if (escape_cfp->ep == ep) {
 		    const rb_iseq_t *const iseq = escape_cfp->iseq;
-		    const VALUE epc = rb_cfp_iseq_encoded_pc(escape_cfp) - iseq->body->iseq_encoded;
+                    const VALUE *pc = escape_cfp->pc, *encoded_pc = rb_cfp_iseq_encoded_pc(escape_cfp);
+		    const VALUE epc = encoded_pc - iseq->body->iseq_encoded;
 		    const struct iseq_catch_table *const ct = iseq->body->catch_table;
 		    unsigned int i;
 
@@ -1471,7 +1473,8 @@ vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_c
 			if (entry->type == CATCH_TYPE_BREAK &&
 			    entry->iseq == base_iseq &&
 			    entry->start < epc && entry->end >= epc) {
-			    if (entry->cont == epc) { /* found! */
+			    if (entry->cont == epc
+                                || *pc == (VALUE)rtl_dispatch_table[BIN(rtl_iter_cont)]) { /* found! */
 				is_orphan = 0;
 			    }
 			    break;

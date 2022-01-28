@@ -40,6 +40,8 @@ struct rb_rtl_send_info {
     char *attrs;
 };
 
+extern const void * const *rtl_dispatch_table;
+
 int rb_rtl_enabled_p(void);
 int rb_rtl_debug_p(void);
 void rb_rtl_init(struct rb_rtl_options *options);
@@ -80,5 +82,13 @@ static rtl_inline double rtl_val2dbl(VALUE v) {
     } u = {v};
     return u.d;
 }
+
+extern VALUE (*rtl_fixnum_ntimes_func)(VALUE);
+extern VALUE (*rtl_range_each_func)(VALUE);
+
+int rtl_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *),
+                       int (**arg_func)(VALUE, VALUE, VALUE *),
+                       VALUE (**cont_func)(VALUE, VALUE),
+                       char *);
 
 #endif /* #ifndef RTL_H */

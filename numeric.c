@@ -41,6 +41,8 @@
 #include "ruby/util.h"
 #include "builtin.h"
 
+#include "rtl.h"
+
 /* use IEEE 64bit values if not defined */
 #ifndef FLT_RADIX
 #define FLT_RADIX 2
@@ -5716,6 +5718,7 @@ Init_Numeric(void)
     rb_define_method(rb_cInteger, "upto", int_upto, 1);
     rb_define_method(rb_cInteger, "downto", int_downto, 1);
     rb_define_method(rb_cInteger, "times", int_dotimes, 0);
+    rtl_fixnum_ntimes_func = int_dotimes;
     rb_define_method(rb_cInteger, "succ", int_succ, 0);
     rb_define_method(rb_cInteger, "next", int_succ, 0);
     rb_define_method(rb_cInteger, "pred", int_pred, 0);

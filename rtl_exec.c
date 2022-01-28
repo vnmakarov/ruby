@@ -417,3 +417,93 @@ RTL_CHECK_FUNCS2(opt_iaref, check_nothing)
         ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));	\
         END_INSN(iname); 					\
     }
+
+static int
+rtl_fixnum_times_start(VALUE recv, VALUE *index) {
+    if (!FIXNUM_P(recv)) return FALSE;
+    *index = LONG2FIX(0);
+    return TRUE;
+}
+
+static VALUE
+rtl_fixnum_times_cont(VALUE recv, VALUE index) {
+    return index + 2; /* index is fixnum */
+}
+
+static int
+rtl_fixnum_times_body(VALUE recv, VALUE index, VALUE *arg) {
+    *arg = index;
+    return index < recv;
+}
+
+#include "internal/range.h"
+
+static int
+rtl_range_each_start(VALUE recv, VALUE *index) {
+    if (!rb_obj_is_kind_of(recv, rb_cRange)) return FALSE;
+    *index = RANGE_BEG(recv);
+    if (!FIXNUM_P(*index) || !FIXNUM_P(RANGE_END(recv))) return FALSE;
+    return TRUE;
+}
+
+static VALUE
+rtl_range_each_cont(VALUE recv, VALUE index) {
+    return index + 2;
+}
+
+static int
+rtl_range_each_body(VALUE recv, VALUE index, VALUE *arg) {
+    *arg = index;
+    if (RTEST(RANGE_EXCL(recv)) ? index < RANGE_END(recv) : index <= RANGE_END(recv))
+        return TRUE;
+    *arg = recv;
+    return FALSE;
+}
+
+static int
+rtl_arr_each_start(VALUE recv, VALUE *index) {
+    if (!RB_TYPE_P(recv, T_ARRAY)) return FALSE;
+    *index = LONG2FIX(0);
+    return TRUE;
+}
+
+static VALUE
+rtl_arr_each_cont(VALUE recv, VALUE index) {
+    return index + 2;
+}
+
+static int
+rtl_arr_each_body(VALUE recv, VALUE index, VALUE *arg) {
+    long i = FIX2LONG(index);
+
+    if (i < RARRAY_LEN(recv)) {
+        *arg = RARRAY_AREF(recv, i);
+        return TRUE;
+    }
+    *arg = recv;
+    return FALSE;
+}
+
+int
+rtl_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *), int (**arg_func)(VALUE, VALUE, VALUE *),
+                   VALUE (**cont_func)(VALUE, VALUE), char *attr) {
+    if (cfunc == rtl_fixnum_ntimes_func) {
+	*start_func = rtl_fixnum_times_start;
+        *arg_func = rtl_fixnum_times_body;
+        *cont_func = rtl_fixnum_times_cont;
+        *attr = ATTR_FIXNUM;
+    } else if (cfunc == rtl_range_each_func) {
+	*start_func = rtl_range_each_start;
+        *arg_func = rtl_range_each_body;
+        *cont_func = rtl_range_each_cont;
+        *attr = ATTR_FIXNUM;
+    } else if (cfunc == rb_ary_each) {
+	*start_func = rtl_arr_each_start;
+        *arg_func = rtl_arr_each_body;
+        *cont_func = rtl_arr_each_cont;
+        *attr = ATTR_UNKNOWN;
+    } else {
+	return FALSE;
+    }
+    return TRUE;
+}
