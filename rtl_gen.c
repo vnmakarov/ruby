@@ -2422,17 +2422,20 @@ rb_rtl_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
 
         RB_VM_LOCK_ENTER();
         if (stack_p) {
-            RTL_GEN_ASSERT(rb_vm_insn_decode(*cfp->pc) == BIN(inspect_stack_type));
-            if (debug_p)
-                fprintf(stderr, "--> Changing inspect_stack_type to %4ld inspect_stack_fixtype\n",
-                        insn_pc - cfp->iseq->body->bbv_code);
-            change_insn(cfp->iseq, insn_pc, BIN(inspect_stack_fixtype));
+            if (rb_vm_insn_decode(*cfp->pc) == BIN(inspect_stack_type)) {
+                /* check that it was not already changed, e.g. in another Ractor */
+                if (debug_p)
+                    fprintf(stderr, "--> Changing inspect_stack_type to %4ld inspect_stack_fixtype\n",
+                            insn_pc - cfp->iseq->body->bbv_code);
+                change_insn(cfp->iseq, insn_pc, BIN(inspect_stack_fixtype));
+            }
         } else {
-            RTL_GEN_ASSERT(rb_vm_insn_decode(*cfp->pc) == BIN(inspect_type));
-            if (debug_p)
-                fprintf(stderr, "--> Changing inspect_type to %4ld inspect_fixtype\n",
-                        insn_pc - cfp->iseq->body->bbv_code);
-            change_insn(cfp->iseq, insn_pc, BIN(inspect_fixtype));
+            if (rb_vm_insn_decode(*cfp->pc) == BIN(inspect_type)) {
+                if (debug_p)
+                    fprintf(stderr, "--> Changing inspect_type to %4ld inspect_fixtype\n",
+                            insn_pc - cfp->iseq->body->bbv_code);
+                change_insn(cfp->iseq, insn_pc, BIN(inspect_fixtype));
+            }
         }
         RB_VM_LOCK_LEAVE();
     }

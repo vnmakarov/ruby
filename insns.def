@@ -2843,8 +2843,7 @@ rtl_int_iter
         VM_ASSERT(rb_simple_iseq_p(iseq));
         INC_SP(-1); /* remove res from iter_start or previous rtl_int_iter */
         TOPN(-1) = GET_SELF();
-        if (!body->param.flags.ambiguous_param0 && argc == 1
-            && !NIL_P(ary = rb_check_array_type(arg))) {
+        if (param_size > 1 && argc == 1 && !NIL_P(ary = rb_check_array_type(arg))) {
             long i, len = RARRAY_LEN(ary);
 
             CHECK_VM_STACK_OVERFLOW(GET_CFP(), body->param.lead_num);
