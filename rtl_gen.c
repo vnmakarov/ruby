@@ -961,7 +961,7 @@ rb_rtl_stub_gen(rb_iseq_t *iseq) {
                  n++, parent_iseq = (rb_iseq_t *)parent_iseq->body->parent_iseq)
                 last_iseq = parent_iseq;
             if (last_iseq->body->parent_var_changed_p == NULL)
-                last_iseq->body->parent_var_changed_p = ZALLOC_N(char, last_iseq->body->local_table_size);
+                last_iseq->body->parent_var_changed_p = ZALLOC_N(char, parent_iseq->body->local_table_size);
             RTL_GEN_ASSERT(encoded[i + 1] >= VM_ENV_DATA_SIZE);
             last_iseq->body->parent_var_changed_p[encoded[i + 1] - VM_ENV_DATA_SIZE] = TRUE;
             break;
