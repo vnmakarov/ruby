@@ -934,8 +934,9 @@ print_iseq_title(rb_iseq_t *iseq) {
 void
 rb_rtl_stub_gen(rb_iseq_t *iseq) {
     RB_VM_LOCK_ENTER();
-    int i, curr_bb_start, pos, len, make_bbv_area_start;
+    int i, n, lev, curr_bb_start, pos, len, make_bbv_area_start;
     enum ruby_vminsn_type insn_id;
+    rb_iseq_t *parent_iseq, *last_iseq;
     struct rb_iseq_constant_body *body = iseq->body;
     VALUE *encoded = (VALUE *)body->iseq_encoded;
     rb_iseq_bbv_t bbv;
@@ -947,6 +948,23 @@ rb_rtl_stub_gen(rb_iseq_t *iseq) {
         insn_id = rb_vm_insn_addr2insn((void *)encoded[i]);
         len = insn_len(insn_id);
         switch (insn_id) {
+        case BIN(setlocal_WC_1):
+            lev = 1;
+            goto setlocal;
+        case BIN(setlocal):
+            lev = encoded[i + 2];
+            if (lev == 0)
+                break;
+        setlocal:
+            for (last_iseq = NULL, parent_iseq = iseq, n = 0;
+                 n < lev;
+                 n++, parent_iseq = parent_iseq->body->parent_iseq)
+                last_iseq = parent_iseq;
+            if (last_iseq->body->parent_var_changed_p == NULL)
+                last_iseq->body->parent_var_changed_p = ZALLOC_N(char, last_iseq->body->local_table_size);
+            RTL_GEN_ASSERT(encoded[i + 1] >= VM_ENV_DATA_SIZE);
+            last_iseq->body->parent_var_changed_p[encoded[i + 1] - VM_ENV_DATA_SIZE] = TRUE;
+            break;
         case BIN(jump):
         case BIN(branchif):
         case BIN(branchunless):
@@ -1792,6 +1810,18 @@ VALUE (*rtl_range_each_func)(VALUE);
 
 extern bool rb_simple_iseq_p(const rb_iseq_t *iseq);
 
+static void
+update_attrs(rb_iseq_t *block_iseq) {
+    if (block_iseq == NULL || block_iseq->body->parent_var_changed_p == NULL)
+        return;
+    for (size_t i = 0; i < VARR_LENGTH(char, attrs); i++)
+        if (VARR_GET(char, attrs, i) != ATTR_UNKNOWN && block_iseq->body->parent_var_changed_p[i]) {
+            VARR_SET(char, attrs, i, ATTR_UNKNOWN);
+            if (rb_rtl_debug_p())
+                fprintf(stderr, "--> making unknown attr for local %lu as changed in nested block\n",
+                        (long unsigned)i);
+        }
+}
 /* Make type-specialized RTL from general RTL or make speculative
    type-specialized RTL based on profile (when inspect_types_num < 0)
    caused by specialize_bbv execution.  Add inspect_type insn for 1st
@@ -2157,12 +2187,17 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             unsigned int flags = vm_ci_flag(cd->ci);
 
             RTL_GEN_ASSERT(len == 3);
+            update_attrs((rb_iseq_t *)operands[1]);
             if (profile_p || IS_ARGS_SPLAT(cd->ci) || IS_ARGS_KW_OR_KW_SPLAT(cd->ci)
                 || (flags & VM_CALL_TAILCALL) != 0 || (flags & VM_CALL_ARGS_BLOCKARG) != 0) goto rest_cases;
             new_operands[0] = operands[0];
             new_operands[1] = (VALUE)get_send_info(bbv, (rb_iseq_t *)operands[1], get_call_attrs(iseq, argc, stack_size));
             add_spec_insn_arr(orig_pos, BIN(make_rtl_send), 2, new_operands);
             goto stack_update;
+        }
+        case BIN(invokesuper): {
+            update_attrs((rb_iseq_t *)operands[1]);
+            goto rest_cases;
         }
         case BIN(rtl_igetivar):
             RTL_GEN_ASSERT(profile_p);
@@ -2180,7 +2215,10 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             RTL_GEN_ASSERT(profile_p);
             goto rest_cases;
         case BIN(make_rtl_send): {
+            struct rb_rtl_send_info *si = (struct rb_rtl_send_info *)operands[1];
+
             RTL_GEN_ASSERT(profile_p);
+            update_attrs(si->block_iseq);
             /* make_rtl_send is not changed if we call cfunc and leave it by a throw
                (e.g. by break in a nested block) -- specialize it here: */
             if (change_to_cfunc_send(&body->bbv_code[curr_rtl_insn_pos], iseq)) goto again;
@@ -2198,6 +2236,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             int (*arg_func)(VALUE, VALUE, VALUE *);
             VALUE (*cont_func)(VALUE, VALUE);
 
+            update_attrs(block_iseq);
             cme = vm_cc_cme(cc);
             RTL_GEN_ASSERT(cme != NULL && cme->def->type == VM_METHOD_TYPE_CFUNC && profile_p);
             RTL_GEN_ASSERT(block_iseq != NULL);

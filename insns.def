@@ -2623,7 +2623,7 @@ rtl_setivar
     ;
 }
 
-/* Specialized call of method without block created from make_rtl_send_without block:
+/* Specialized call of method without block created from make_rtl_send:
    it should be iseq, not-tail call, no splat args, all leading args */
 DEFINE_INSN
 rtl_iseq_send_without_block
@@ -2659,7 +2659,7 @@ rtl_iseq_send_without_block
     END_INSN(rtl_iseq_send_without_block);
 }
 
-/* Specialized call of method without block created from make_rtl_send_without block:
+/* Specialized call of method without block created from make_rtl_send:
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
 rtl_opt_send_ivget
@@ -2686,7 +2686,7 @@ rtl_opt_send_ivget
     ;
 }
 
-/* Specialized call of method without block created from make_rtl_send_without block:
+/* Specialized call of method without block created from make_rtl_send:
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
 rtl_opt_send_ivset
@@ -2719,7 +2719,7 @@ rtl_opt_send_ivset
     ;
 }
 
-/* Non-specialized call of method without block created from make_rtl_send_without block */
+/* Non-specialized call of method without block created from make_rtl_send */
 DEFINE_INSN
 rtl_opt_send_without_block
 (CALL_DATA cd, lindex_t dummy)
