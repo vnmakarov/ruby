@@ -2654,7 +2654,7 @@ rtl_iseq_send_without_block
     NEXT_INSN();
   rtl_iseq_send_without_block_exit:
     /* invalidate the current cc as we use cc from safe RTL: */
-    vm_cc_invalidate(cc);
+    if (cc != &vm_empty_cc) vm_cc_invalidate(cc);
     ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
     END_INSN(rtl_iseq_send_without_block);
 }
