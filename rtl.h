@@ -83,8 +83,8 @@ static rtl_inline double rtl_val2dbl(VALUE v) {
     return u.d;
 }
 
-extern VALUE (*rtl_fixnum_ntimes_func)(VALUE);
-extern VALUE (*rtl_range_each_func)(VALUE);
+MJIT_FUNC_EXPORTED VALUE (*rtl_fixnum_ntimes_func)(VALUE);
+MJIT_FUNC_EXPORTED VALUE (*rtl_range_each_func)(VALUE);
 
 int rtl_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *),
                        int (**arg_func)(VALUE, VALUE, VALUE *),
