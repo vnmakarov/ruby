@@ -958,7 +958,7 @@ rb_rtl_stub_gen(rb_iseq_t *iseq) {
         setlocal:
             for (last_iseq = NULL, parent_iseq = iseq, n = 0;
                  n < lev;
-                 n++, parent_iseq = parent_iseq->body->parent_iseq)
+                 n++, parent_iseq = (rb_iseq_t *)parent_iseq->body->parent_iseq)
                 last_iseq = parent_iseq;
             if (last_iseq->body->parent_var_changed_p == NULL)
                 last_iseq->body->parent_var_changed_p = ZALLOC_N(char, last_iseq->body->local_table_size);
@@ -1822,6 +1822,7 @@ update_attrs(rb_iseq_t *block_iseq) {
                         (long unsigned)i);
         }
 }
+
 /* Make type-specialized RTL from general RTL or make speculative
    type-specialized RTL based on profile (when inspect_types_num < 0)
    caused by specialize_bbv execution.  Add inspect_type insn for 1st
@@ -1841,7 +1842,7 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     VALUE val, *operands, new_operands[10];
     int offset, specialize_bbv_pos = -1;
     struct rb_iseq_constant_body *body = iseq->body;
-    rb_iseq_bbv_t head_bbv = bbv->head_bbv, orig_bbv, dst_bbv, old_dst_bbv;
+    rb_iseq_bbv_t head_bbv = bbv->head_bbv, orig_bbv, dst_bbv, old_dst_bbv, body_bbv;
 
     profile_p = inspect_types_num < 0;
     RTL_GEN_ASSERT(profile_p || bbv->bbv_start < 0);
@@ -2257,11 +2258,17 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             /* if ntimes is redefined the caller block is already recorded by cfunc */
             new_operands[1] = (lindex_t)block_bbv;
             new_operands[2] = (lindex_t)arg_func;
-            add_spec_insn_arr(orig_pos, BIN(rtl_int_iter), 3, new_operands);
-            new_operands[0] = -(OFFSET)(insn_len(BIN(rtl_int_iter)) + insn_len(BIN(rtl_iter_cont))); /* to int_iter */
+            add_spec_insn_arr(orig_pos, BIN(rtl_iter_body), 3, new_operands);
+            new_operands[0] = -(OFFSET)(insn_len(BIN(rtl_iter_body)) + insn_len(BIN(rtl_iter_cont))); /* to int_iter */
             new_operands[1] = (lindex_t)cont_func;
             add_spec_insn_arr(orig_pos, BIN(rtl_iter_cont), 2, new_operands);
             goto stack_update;
+        }
+        case BIN(rtl_iter_body): {
+            RTL_GEN_ASSERT(profile_p);
+            body_bbv = (rb_iseq_bbv_t)operands[1];
+            update_attrs(body_bbv->iseq);
+            goto rest_cases;
         }
         case BIN(rtl_iseq_send_without_block): {
             /* attrs can be changed so the target bbv can */
