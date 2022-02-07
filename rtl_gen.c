@@ -567,6 +567,8 @@ compare_bbvs(const void *b1, const void *b2) {
     return compare_bbv_with_keys(bbv1, bbv2->type, bbv2->index, bbv2->iseq_start);
 }
 
+#define BBV_COUNT_TO_JIT 10
+
 static rb_iseq_bbv_t
 create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bound,
            int env_p, int n_attrs, char *attrs) {
@@ -574,6 +576,7 @@ create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bou
 
     check_final_attrs(n_attrs, attrs);
     bbv = (rb_iseq_bbv_t)ALLOC_N(char, sizeof (struct rb_iseq_bbv) + (attrs == NULL ? 0 : n_attrs - 1));
+    bbv->count = BBV_COUNT_TO_JIT;
     bbv->iseq = iseq;
     bbv->cme = NULL;
     bbv->iseq_start = start;
@@ -1313,6 +1316,8 @@ gen_rtl_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         VARR_PUSH(char, operands_changed_p, FALSE);
     }
     RTL_GEN_ASSERT(bbv->iseq_bound < 0 || bbv->iseq_start < bbv->iseq_bound);
+    if (0)
+        add_insn_arr(bbv->iseq_start, BIN(bbv_start), 1, (VALUE *)&bbv);
     for (curr_orig_insn_pos = bbv->iseq_start;;) {
         last_rtl_ind = (int)VARR_LENGTH(VALUE, bbv_encoded);
 	insn_id = rb_vm_insn_addr2insn((void *)body->iseq_encoded[curr_orig_insn_pos]);
@@ -2259,6 +2264,8 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             new_operands[1] = (lindex_t)block_bbv;
             new_operands[2] = (lindex_t)arg_func;
             add_spec_insn_arr(orig_pos, BIN(rtl_iter_body), 3, new_operands);
+            if (0)
+                add_spec_insn_arr(orig_pos, BIN(bbv_cont), 1, (VALUE *)&bbv);
             new_operands[0] = -(OFFSET)(insn_len(BIN(rtl_iter_body)) + insn_len(BIN(rtl_iter_cont))); /* to int_iter */
             new_operands[1] = (lindex_t)cont_func;
             add_spec_insn_arr(orig_pos, BIN(rtl_iter_cont), 2, new_operands);
@@ -2274,6 +2281,8 @@ gen_specialized_rtl(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             /* attrs can be changed so the target bbv can */
             int argc = vm_ci_argc(((CALL_DATA)operands[0])->ci);
 
+            if (0)
+                add_spec_insn_arr(orig_pos, BIN(bbv_cont), 1, (VALUE *)&bbv);
             RTL_GEN_ASSERT(profile_p);
             VARR_TRUNC(char, arg_attrs, 0);
             for (i = 0; i < argc; i++)
@@ -3022,6 +3031,15 @@ rb_rtl_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_c
     }
     RB_VM_LOCK_LEAVE();
     return NULL;
+}
+
+void
+rb_rtl_bbv_start_change(rb_control_frame_t *reg_cfp) {
+    if (rb_rtl_debug_p()) {
+        fprintf(stderr, "--> Changing %04d %s to %s\n", (int)(reg_cfp->pc - reg_cfp->iseq->body->bbv_code),
+                insn_name(BIN(bbv_start)), insn_name(BIN(bbv_nop)));
+    }
+    *(VALUE *)reg_cfp->pc = (VALUE)rtl_dispatch_table[BIN(bbv_nop)];
 }
 
 const VALUE *
