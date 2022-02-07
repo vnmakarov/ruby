@@ -1474,7 +1474,8 @@ vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_c
 			    entry->iseq == base_iseq &&
 			    entry->start < epc && entry->end >= epc) {
 			    if (entry->cont == epc
-                                || *pc == (VALUE)rtl_dispatch_table[BIN(rtl_iter_cont)]) { /* found! */
+                                || *pc == (VALUE)rtl_dispatch_table[BIN(rtl_iter_cont)]
+                                || *pc == (VALUE)rtl_dispatch_table[BIN(bbv_cont)]) { /* found! */
 				is_orphan = 0;
 			    }
 			    break;
