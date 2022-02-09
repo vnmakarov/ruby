@@ -4241,17 +4241,6 @@ rb_vm_defined(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, rb_num_t 
     return vm_defined(ec, reg_cfp, op_type, obj, v);
 }
 
-static const VALUE *
-vm_get_ep(const VALUE *const reg_ep, rb_num_t lv)
-{
-    rb_num_t i;
-    const VALUE *ep = reg_ep;
-    for (i = 0; i < lv; i++) {
-	ep = GET_PREV_EP(ep);
-    }
-    return ep;
-}
-
 static VALUE
 vm_get_special_object(const VALUE *const reg_ep,
 		      enum vm_special_object_type type)
@@ -4628,12 +4617,6 @@ vm_search_invokeblock(const struct rb_control_frame_struct *reg_cfp, struct rb_c
 # define mexp_search_method vm_search_method_wrap
 # define mexp_search_super vm_search_super_method
 # define mexp_search_invokeblock vm_search_invokeblock
-#else
-enum method_explorer_type {
-    mexp_search_method,
-    mexp_search_invokeblock,
-    mexp_search_super,
-};
 #endif
 
 static

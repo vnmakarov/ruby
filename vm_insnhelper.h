@@ -263,4 +263,65 @@ vm_call_iseq_optimizable_p(const struct rb_callinfo *ci, const struct rb_callcac
         METHOD_ENTRY_CACHEABLE(vm_cc_cme(cc));
 }
 
+#ifndef MJIT_HEADER
+enum method_explorer_type {
+    mexp_search_method,
+    mexp_search_invokeblock,
+    mexp_search_super,
+};
+#endif
+
+VALUE mirjit_plus(VALUE recv, VALUE obj);
+VALUE mirjit_minus(VALUE recv, VALUE obj);
+VALUE mirjit_mult(VALUE recv, VALUE obj);
+VALUE mirjit_div(VALUE recv, VALUE obj);
+VALUE mirjit_mod(VALUE recv, VALUE obj);
+VALUE mirjit_or(VALUE recv, VALUE obj);
+VALUE mirjit_and(VALUE recv, VALUE obj);
+VALUE mirjit_lt(VALUE recv, VALUE obj);
+VALUE mirjit_gt(VALUE recv, VALUE obj);
+VALUE mirjit_le(VALUE recv, VALUE obj);
+VALUE mirjit_ge(VALUE recv, VALUE obj);
+VALUE mirjit_aref(VALUE recv, VALUE obj);
+VALUE mirjit_aset(VALUE recv, VALUE obj, VALUE set);
+void mirjit_env_write_slowpath(const VALUE *ep, int index, VALUE v);
+void mirjit_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type,
+                       VALUE self, VALUE specval, VALUE cref_or_me, const VALUE *pc,
+                       VALUE *sp, int local_size, int stack_max);
+
+VALUE mirjit_sendish(struct rb_execution_context_struct *ec, struct rb_control_frame_struct *reg_cfp,
+                     struct rb_call_data *cd, VALUE block_handler, enum method_explorer_type method_explorer);
+
+static inline const VALUE *
+vm_get_ep(const VALUE *const reg_ep, rb_num_t lv)
+{
+    rb_num_t i;
+    const VALUE *ep = reg_ep;
+    for (i = 0; i < lv; i++) {
+	ep = GET_PREV_EP(ep);
+    }
+    return ep;
+}
+
+static inline void
+mirjit_env_write(const VALUE *ep, int index, VALUE v)
+{
+    VALUE flags = ep[VM_ENV_DATA_INDEX_FLAGS];
+    if (LIKELY((flags & VM_ENV_FLAG_WB_REQUIRED) == 0)) {
+	VM_STACK_ENV_WRITE(ep, index, v);
+    }
+    else {
+	mirjit_env_write_slowpath(ep, index, v);
+    }
+}
+
+static inline
+const rb_method_cfunc_t *
+mirjit_method_cfunc_entry(const rb_callable_method_entry_t *me)
+{
+    return UNALIGNED_MEMBER_PTR(me->def, body.cfunc);
+}
+
+void rb_check_cfp_consistency(rb_execution_context_t *ec, const rb_control_frame_t *reg_cfp, const char *func);
+
 #endif /* RUBY_INSNHELPER_H */
