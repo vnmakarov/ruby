@@ -75,7 +75,11 @@
 #include "node.h"
 #include "ruby/ruby.h"
 #include "ruby/st.h"
+#ifdef MIRJIT
+typedef unsigned int rb_atomic_t;
+#else
 #include "ruby_atomic.h"
+#endif
 #include "vm_opts.h"
 #include "darray.h"
 
@@ -1887,12 +1891,14 @@ MJIT_STATIC const rb_callable_method_entry_t *rb_vm_frame_method_entry(const rb_
 
 #define sysstack_error GET_VM()->special_exceptions[ruby_error_sysstack]
 
-#define CHECK_VM_STACK_OVERFLOW0(cfp, sp, margin) do {                       \
+void rb_stackoverflow(void);
+
+#define CHECK_VM_STACK_OVERFLOW0(cfp, sp, margin) do {                  \
     STATIC_ASSERT(sizeof_sp,  sizeof(*(sp))  == sizeof(VALUE));              \
     STATIC_ASSERT(sizeof_cfp, sizeof(*(cfp)) == sizeof(rb_control_frame_t)); \
     const struct rb_control_frame_struct *bound = (void *)&(sp)[(margin)];   \
     if (UNLIKELY((cfp) <= &bound[1])) {                                      \
-        vm_stackoverflow();                                                  \
+        rb_stackoverflow();                                                  \
     }                                                                        \
 } while (0)
 

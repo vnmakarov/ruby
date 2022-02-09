@@ -80,6 +80,12 @@ vm_stackoverflow(void)
     ec_stack_overflow(GET_EC(), TRUE);
 }
 
+void
+rb_stackoverflow(void)
+{
+    vm_stackoverflow();
+}
+
 NORETURN(MJIT_STATIC void rb_ec_stack_overflow(rb_execution_context_t *ec, int crit));
 MJIT_STATIC void
 rb_ec_stack_overflow(rb_execution_context_t *ec, int crit)
