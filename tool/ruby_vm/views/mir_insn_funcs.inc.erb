@@ -1,0 +1,33 @@
+/* -*- C -*- */
+
+%# Copyright (c) 2022 Vladimir Makarov.  All rights reserved.
+%#
+%# This file is based on vm_inc.erb code.
+%# This file is a part of  the programming language Ruby.  Permission is hereby
+%# granted, to either  redistribute and/or modify this file,  provided that the
+%# conditions mentioned  in the  file COPYING  are met.   Consult the  file for
+%# details.
+<%= render 'copyright' %>
+<%= render 'notice', locals: {
+    this_file: 'is VM insn functions',
+    edit: __FILE__,
+} -%>
+
+<%= render 'mir_jit_insns' %>
+% supported_insns = get_mir_jit_insns
+% RubyVM::BareInstructions.to_a.each do |insn|
+%   next unless supported_insns.include?(insn.name)
+<%= render 'mir_insn_func', locals: { insn: insn } -%>
+% end
+%
+% RubyVM::OperandsUnifications.to_a.each do |insn|
+<%= render 'mir_insn_func', locals: { insn: insn } -%>
+% end
+%
+% RubyVM::InstructionsUnifications.to_a.each do |insn|
+<%= render 'mir_insn_func', locals: { insn: insn } -%>
+% end
+%
+% RubyVM::TraceInstructions.to_a.each do |insn|
+<%= render 'mir_trace_insn_func', locals: { insn: insn } -%>
+% end
