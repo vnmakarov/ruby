@@ -9,7 +9,7 @@
 %;
 % body = render_c_expr(insn.expr).gsub(/^#/, '#   ')
 
-VALUE *mir_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *VM_REG_CFP, VALUE *VM_REG_PC
+VALUE *mirjit_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *VM_REG_CFP, VALUE *VM_REG_PC
 % insn.opes.each_with_index do |ope, i|
     , <%= ope[:decl] %>
 % end
