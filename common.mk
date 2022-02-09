@@ -1045,6 +1045,9 @@ $(srcs_vpath)mjit_compile.inc: $(tooldir)/ruby_vm/views/mjit_compile.inc.erb $(i
   $(tooldir)/ruby_vm/views/_mjit_compile_ivar.erb \
   $(tooldir)/ruby_vm/views/_mjit_compile_insn_body.erb $(tooldir)/ruby_vm/views/_mjit_compile_pc_and_sp.erb \
   $(tooldir)/ruby_vm/views/_mjit_compile_invokebuiltin.erb $(tooldir)/ruby_vm/views/_mjit_compile_getinlinecache.erb
+$(srcs_vpath)mirjit_insn_funcs.inc: $(tooldir)/ruby_vm/views/mirjit_insn_funcs.inc.erb $(inc_common_headers) \
+  $(tooldir)/ruby_vm/views/_mirjit_insn_func.erb $(tooldir)/ruby_vm/views/_mirjit_trace_insn_func.erb
+$(srcs_vpath)mirjit_insn_compile.inc: $(tooldir)/ruby_vm/views/mirjit_insn_compile.inc.erb $(inc_common_headers)
 
 BUILTIN_RB_SRCS = \
 		$(srcdir)/ast.rb \
