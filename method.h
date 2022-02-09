@@ -137,9 +137,12 @@ typedef struct rb_method_iseq_struct {
     const rb_callable_method_entry_t *mandatory_only_cme;
 } rb_method_iseq_t; /* check rb_add_method_iseq() when modify the fields */
 
+typedef VALUE (*rb_cfunc_invoker_t)(VALUE recv, int argc, const VALUE *argv, VALUE (*func)(ANYARGS));
+typedef VALUE (*rb_cfunc_func_t)(ANYARGS);
+
 typedef struct rb_method_cfunc_struct {
-    VALUE (*func)(ANYARGS);
-    VALUE (*invoker)(VALUE recv, int argc, const VALUE *argv, VALUE (*func)(ANYARGS));
+    rb_cfunc_func_t func;
+    rb_cfunc_invoker_t invoker;
     int argc;
 } rb_method_cfunc_t;
 
