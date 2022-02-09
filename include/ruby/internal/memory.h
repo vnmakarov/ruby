@@ -79,7 +79,8 @@ extern void *alloca();
 
 /** @endcond  */
 
-#if defined(__DOXYGEN__)
+#if defined(MIRJIT)
+#elif defined(__DOXYGEN__)
 /**
  * @private
  *

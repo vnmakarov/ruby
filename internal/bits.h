@@ -34,7 +34,7 @@
 # include <stdlib.h>            /* for _byteswap_uint64 */
 #endif
 
-#if defined(HAVE_X86INTRIN_H) && ! defined(MJIT_HEADER)
+#if defined(HAVE_X86INTRIN_H) && ! defined(MJIT_HEADER) && ! defined(MIRJIT)
 # /* Rule out MJIT_HEADER, which does not interface well with <immintrin.h> */
 # include <x86intrin.h>         /* for _lzcnt_u64 */
 #elif MSC_VERSION_SINCE(1310)
@@ -129,6 +129,8 @@
 # define MUL_OVERFLOW_INT_P(a, b)       MUL_OVERFLOW_SIGNED_INTEGER_P(a, b, INT_MIN, INT_MAX)
 #endif
 
+#ifndef MIRJIT
+
 #ifdef HAVE_UINT128_T
 # define bit_length(x) \
     (unsigned int) \
@@ -163,7 +165,7 @@ static inline unsigned nlz_long_long(unsigned long long x);
 static inline unsigned nlz_intptr(uintptr_t x);
 static inline unsigned nlz_int32(uint32_t x);
 static inline unsigned nlz_int64(uint64_t x);
-#ifdef HAVE_UINT128_T
+#if defined(HAVE_UINT128_T) && ! defined(MIRJIT)
 static inline unsigned nlz_int128(uint128_t x);
 #endif
 static inline unsigned rb_popcount32(uint32_t x);
@@ -300,7 +302,7 @@ nlz_int64(uint64_t x)
 #endif
 }
 
-#ifdef HAVE_UINT128_T
+#if defined(HAVE_UINT128_T) && ! defined(MIRJIT)
 static inline unsigned int
 nlz_int128(uint128_t x)
 {
@@ -352,7 +354,7 @@ nlz_long_long(unsigned long long x)
     if (sizeof(unsigned long long) * CHAR_BIT == 64) {
         return nlz_int64((uint64_t)x);
     }
-#ifdef HAVE_UINT128_T
+#if defined(HAVE_UINT128_T) && ! defined(MIRJIT)
     else if (sizeof(unsigned long long) * CHAR_BIT == 128) {
         return nlz_int128((uint128_t)x);
     }
@@ -513,6 +515,8 @@ ntz_intptr(uintptr_t x)
         UNREACHABLE_RETURN(~0);
     }
 }
+
+#endif /* #ifndef MIRJIT */
 
 static inline VALUE
 RUBY_BIT_ROTL(VALUE v, int n)

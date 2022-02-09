@@ -339,7 +339,7 @@ rb_ulong2num_inline(unsigned long v)
 #if RBIMPL_HAS_ATTR_CONSTEXPR_CXX14
 # /* C++ can write constexpr as enum values. */
 
-#elif ! defined(HAVE_BUILTIN___BUILTIN_CHOOSE_EXPR_CONSTANT_P)
+#elif ! defined(HAVE_BUILTIN___BUILTIN_CHOOSE_EXPR_CONSTANT_P) || defined(MIRJIT)
 # undef INT2FIX
 # define INT2FIX(i) (RBIMPL_CAST((VALUE)(i)) << 1 | RUBY_FIXNUM_FLAG)
 

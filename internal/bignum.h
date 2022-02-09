@@ -164,7 +164,7 @@ VALUE rb_int_parse_cstr(const char *str, ssize_t len, char **endp, size_t *ndigi
 RUBY_SYMBOL_EXPORT_END
 
 MJIT_SYMBOL_EXPORT_BEGIN
-#if defined(HAVE_INT128_T)
+#if defined(HAVE_INT128_T) && ! defined(MIRJIT)
 VALUE rb_int128t2big(int128_t n);
 #endif
 MJIT_SYMBOL_EXPORT_END

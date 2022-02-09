@@ -18,7 +18,7 @@
 #if HAVE_LONG_LONG && SIZEOF_LONG * 2 <= SIZEOF_LONG_LONG
 # define DLONG LONG_LONG
 # define DL2NUM(x) LL2NUM(x)
-#elif defined(HAVE_INT128_T)
+#elif defined(HAVE_INT128_T) && ! defined(MIRJIT)
 # define DLONG int128_t
 # define DL2NUM(x) (RB_FIXABLE(x) ? LONG2FIX(x) : rb_int128t2big(x))
 VALUE rb_int128t2big(int128_t n); /* in bignum.c */
