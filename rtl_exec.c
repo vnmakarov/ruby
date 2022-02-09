@@ -420,8 +420,8 @@ RTL_CHECK_FUNCS2(opt_fge, check_nothing)
 #endif
 RTL_CHECK_FUNCS2(opt_iaref, check_nothing)
 
-#define CHECK_INPUTS(iname, push_fname, v1, v2)                  \
-    if (UNLIKELY(CHECK_FUNC_NAME(iname)(v1, v2))) {              \
+#define CHECK_INPUTS(iname, push_fname, v1, v2)                 \
+    if (UNLIKELY(CHECK_FUNC_NAME(iname)(v1, v2))) {             \
         ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));	\
         END_INSN(iname); 					\
     }

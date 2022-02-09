@@ -14,9 +14,9 @@ VALUE *mir_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *VM_R
     , <%= ope[:decl] %>
 % end
 % body.split("\n").each do |ln|
-%   next unless /MIR_JIT_CONST/ =~ ln
+%   next unless /MIRJIT_CONST/ =~ ln
 %   call = ln.sub(/\s*([^;]+)\s*;\s*/, '\1');
-    , <%= call.gsub(/MIR_JIT_CONST/, 'MIR_JIT_PARAM') %>
+    , <%= call.gsub(/MIRJIT_CONST/, 'MIRJIT_PARAM') %>
 % end
 ) {
     /* ###  Declare that we have just entered into an instruction. ### */
@@ -43,8 +43,8 @@ VALUE *mir_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *VM_R
 
 #   define NAME_OF_CURRENT_INSN <%= insn.name %>
 % body.split("\n").each do |ln|
-%   next if /MIR_JIT_CONST/ =~ ln
-<%= ln.gsub(/CALL_SIMPLE_METHOD/, 'MIR_CALL_SIMPLE_METHOD') %>
+%   next if /MIRJIT_CONST/ =~ ln
+<%= ln.gsub(/CALL_SIMPLE_METHOD/, 'MIRJIT_CALL_SIMPLE_METHOD') %>
 % end
 #   undef NAME_OF_CURRENT_INSN
 

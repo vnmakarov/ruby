@@ -33,9 +33,9 @@ switch (insn_id) {
         fmt_output(buff, ", <%= ope.fetch(:type) %>");
 % end
 % body.split("\n").each do |ln|
-%   next unless /MIR_JIT_CONST/ =~ ln
+%   next unless /MIRJIT_CONST/ =~ ln
 %   call = ln.sub(/\s*([^;]+)\s*;\s*/, '\1');
-        fmt_output(buff, ", %s", <%= call.gsub(/\s*MIR_JIT_CONST/, 'MIR_JIT_CONST_PARAM_STR') %>);
+        fmt_output(buff, ", %s", <%= call.gsub(/\s*MIRJIT_CONST/, 'MIRJIT_CONST_PARAM_STR') %>);
 % end
         fmt_output(buff, ");\n");
     }
@@ -48,11 +48,11 @@ switch (insn_id) {
 %   end
 % end
 % body.split("\n").each do |ln|
-%   next unless /MIR_JIT_CONST/ =~ ln
+%   next unless /MIRJIT_CONST/ =~ ln
 %   call = ln.sub(/\s*([^;]+)\s*;\s*/, '\1');
     <%= call %>;
-    fmt_output(buff, ", " <%= call.gsub(/MIR_JIT_CONST/, 'MIR_JIT_CONST_FMT') %> "\n",
-               <%= call.gsub(/MIR_JIT_CONST/, 'MIR_JIT_CONST_VAL') %>);
+    fmt_output(buff, ", " <%= call.gsub(/MIRJIT_CONST/, 'MIRJIT_CONST_FMT') %> "\n",
+               <%= call.gsub(/MIRJIT_CONST/, 'MIRJIT_CONST_VAL') %>);
 % end
     fmt_output(buff, ");\n");
 % if call_p
