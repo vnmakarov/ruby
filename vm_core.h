@@ -1891,7 +1891,7 @@ MJIT_STATIC const rb_callable_method_entry_t *rb_vm_frame_method_entry(const rb_
 
 #define sysstack_error GET_VM()->special_exceptions[ruby_error_sysstack]
 
-void rb_stackoverflow(void);
+NORETURN(void rb_stackoverflow(void));
 
 #define CHECK_VM_STACK_OVERFLOW0(cfp, sp, margin) do {                  \
     STATIC_ASSERT(sizeof_sp,  sizeof(*(sp))  == sizeof(VALUE));              \
