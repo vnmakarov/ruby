@@ -20,7 +20,7 @@
 % #   pc: the 3rd argument
 %;
 
-<%= render 'mir_jit_insns' %>
+<%= render 'mirjit_insns' %>
 % supported_insns = get_mir_jit_insns
 switch (insn_id) {
 % (RubyVM::BareInstructions.to_a + RubyVM::OperandsUnifications.to_a).each do |insn|

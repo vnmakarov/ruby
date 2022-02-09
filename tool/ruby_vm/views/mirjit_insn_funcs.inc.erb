@@ -13,21 +13,21 @@
     edit: __FILE__,
 } -%>
 
-<%= render 'mir_jit_insns' %>
+<%= render 'mirjit_insns' %>
 % supported_insns = get_mir_jit_insns
 % RubyVM::BareInstructions.to_a.each do |insn|
 %   next unless supported_insns.include?(insn.name)
-<%= render 'mir_insn_func', locals: { insn: insn } -%>
+<%= render 'mirjit_insn_func', locals: { insn: insn } -%>
 % end
 %
 % RubyVM::OperandsUnifications.to_a.each do |insn|
-<%= render 'mir_insn_func', locals: { insn: insn } -%>
+<%= render 'mirjit_insn_func', locals: { insn: insn } -%>
 % end
 %
 % RubyVM::InstructionsUnifications.to_a.each do |insn|
-<%= render 'mir_insn_func', locals: { insn: insn } -%>
+<%= render 'mirjit_insn_func', locals: { insn: insn } -%>
 % end
 %
 % RubyVM::TraceInstructions.to_a.each do |insn|
-<%= render 'mir_trace_insn_func', locals: { insn: insn } -%>
+<%= render 'mirjit_trace_insn_func', locals: { insn: insn } -%>
 % end
