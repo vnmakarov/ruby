@@ -2981,7 +2981,11 @@ vm_cfp_consistent_p(rb_execution_context_t *ec, const rb_control_frame_t *reg_cf
 
 #define CHECK_CFP_CONSISTENCY(func) \
     (LIKELY(vm_cfp_consistent_p(ec, reg_cfp)) ? (void)0 : \
-     rb_bug(func ": cfp consistency error (%p, %p)", (void *)reg_cfp, (void *)(ec->cfp+1)))
+     rb_bug("%s: cfp consistency error (%p, %p)", func, (void *)reg_cfp, (void *)(ec->cfp+1)))
+
+void rb_check_cfp_consistency(rb_execution_context_t *ec, const rb_control_frame_t *reg_cfp, const char *func) {
+    CHECK_CFP_CONSISTENCY(func);
+}
 
 static inline
 const rb_method_cfunc_t *

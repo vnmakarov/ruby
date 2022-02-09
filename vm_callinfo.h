@@ -312,13 +312,18 @@ vm_cc_new(VALUE klass,
         .aux_  = aux,                         \
     }
 
-static inline bool
-vm_cc_class_check(const struct rb_callcache *cc, VALUE klass)
-{
+static inline VALUE
+vm_cc_class(const struct rb_callcache *cc) {
     VM_ASSERT(IMEMO_TYPE_P(cc, imemo_callcache));
     VM_ASSERT(cc->klass == 0 ||
               RB_TYPE_P(cc->klass, T_CLASS) || RB_TYPE_P(cc->klass, T_ICLASS));
-    return cc->klass == klass;
+    return cc->klass;
+}
+
+static inline bool
+vm_cc_class_check(const struct rb_callcache *cc, VALUE klass)
+{
+    return vm_cc_class(cc) == klass;
 }
 
 static inline const struct rb_callable_method_entry_struct *
