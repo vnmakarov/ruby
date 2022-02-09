@@ -44,7 +44,6 @@ VALUE *mir_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *VM_R
 #   define NAME_OF_CURRENT_INSN <%= insn.name %>
 % body.split("\n").each do |ln|
 %   next if /MIR_JIT_CONST/ =~ ln
-% ln.gsub!(/(NEXT|END)_INSN[^;]+;/, 'goto exit;')
 <%= ln.gsub(/CALL_SIMPLE_METHOD/, 'MIR_CALL_SIMPLE_METHOD') %>
 % end
 #   undef NAME_OF_CURRENT_INSN
