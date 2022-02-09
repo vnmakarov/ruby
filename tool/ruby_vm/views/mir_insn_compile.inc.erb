@@ -1,0 +1,67 @@
+/* -*- C -*- */
+
+% # Copyright (c) 2022 Vladimir Makarov.  All rights reserved.
+% #
+% # This file is a part of  the programming language Ruby.  Permission is hereby
+% # granted, to either  redistribute and/or modify this file,  provided that the
+% # conditions mentioned  in the  file COPYING  are met.   Consult the  file for
+% # details.
+<%= render 'copyright' %>
+%
+% # This is an ERB template that generates Ruby code that generates C code that
+% # generates JIT-ed C code for VM insns used MIR-based JIT.
+<%= render 'notice', locals: {
+    this_file: 'is a generator of C code for each VM insn consumed by MIR-based JIT compiler',
+    edit: __FILE__,
+} -%>
+% # Params of the JIT-ed func:
+% #   ec: the 1st argument of the generated C func
+% #   cfp: the 2nd argument
+% #   pc: the 3rd argument
+%;
+
+<%= render 'mir_jit_insns' %>
+% supported_insns = get_mir_jit_insns
+switch (insn_id) {
+% (RubyVM::BareInstructions.to_a + RubyVM::OperandsUnifications.to_a).each do |insn|
+%   next unless supported_insns.include?(insn.name)
+  case BIN(<%= insn.name %>): {
+% body = render_c_expr(insn.expr).gsub(/^#/, '#   ')
+    if (proto_gen_p) {
+        fmt_output(buff, "  VALUE *mir_%s(void *ec, void *cfp, VALUE *pc");
+% insn.opes.each_with_index do |ope, i|
+        fmt_output(buff, ", <%= ope.fetch(:type) %>");
+% end
+% body.split("\n").each do |ln|
+%   next unless /MIR_JIT_CONST/ =~ ln
+%   call = ln.sub(/\s*([^;]+)\s*;\s*/, '\1');
+        fmt_output(buff, ", %s", <%= call.gsub(/\s*MIR_JIT_CONST/, 'MIR_JIT_CONST_PARAM_STR') %>);
+% end
+        fmt_output(buff, ");\n");
+    }
+    fmt_output(buff, "  pc = mir_%s(ec, cfp, pc", insn_name(<%= insn.name %>));
+% call_p = false
+% insn.opes.each_with_index do |ope, i|
+    fmt_output(buff, ", 0x%"PRIxVALUE, operands[<%= i %>]);
+%   if ope.fetch(:type) == 'CALL_DATA'
+%     call_p = true
+%   end
+% end
+% body.split("\n").each do |ln|
+%   next unless /MIR_JIT_CONST/ =~ ln
+%   call = ln.sub(/\s*([^;]+)\s*;\s*/, '\1');
+    <%= call %>;
+    fmt_output(buff, ", " <%= call.gsub(/MIR_JIT_CONST/, 'MIR_JIT_CONST_FMT') %> "\n",
+               <%= call.gsub(/MIR_JIT_CONST/, 'MIR_JIT_CONST_VAL') %>);
+% end
+    fmt_output(buff, ");\n");
+% if call_p
+    fmt_output(buff, "  if (pc != 0x%"PRIxVALUE ") goto exit;\n", (VALUE)next_insn_pc);
+% end
+    break;
+  }
+% end
+  default:
+    fprintf(stderr, "MIR JIT internal error: %s\n", insn_name(insn));
+    exit (1);
+}
