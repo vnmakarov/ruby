@@ -3,7 +3,7 @@
   rtl_exec.c - Code for executing RTL (Register Transfer Language)
                insns in the VM interpreter
 
-  Copyright (C) 2021 Vladimir Makarov vmakarov@redhat.com
+  Copyright (C) 2022 Vladimir Makarov vmakarov@redhat.com
 
 **********************************************************************/
 
