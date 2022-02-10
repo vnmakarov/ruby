@@ -20,6 +20,8 @@
 #include "insns.inc"
 #include "insns_info.inc"
 
+#include "mirjit.h"
+
 /* To generate SIR insns we passes stack insns several times.  First
    we calculate possible stack values on the label.  It is a forward
    data flow problem (the final fixed point is only temporaries on the
@@ -1182,7 +1184,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         VARR_PUSH(char, operands_changed_p, FALSE);
     }
     SIR_GEN_ASSERT(bbv->iseq_bound < 0 || bbv->iseq_start < bbv->iseq_bound);
-    if (1)
+    if (rb_mirjit_enabled_p())
         add_insn_arr(bbv->iseq_start, BIN(bbv_start), 1, (VALUE *)&bbv);
     for (curr_orig_insn_pos = bbv->iseq_start;;) {
         last_sir_ind = (int)VARR_LENGTH(VALUE, bbv_encoded);
@@ -1714,6 +1716,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     int offset, specialize_bbv_pos = -1;
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t head_bbv = bbv->head_bbv, orig_bbv, dst_bbv, old_dst_bbv, body_bbv;
+    int mirjit_enabled_p = rb_mirjit_enabled_p();
 
     profile_p = inspect_types_num < 0;
     SIR_GEN_ASSERT(profile_p || bbv->bbv_start < 0);
@@ -2120,7 +2123,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             new_operands[0] = (lindex_t)start_func;
             add_spec_insn_arr(orig_pos, BIN(sir_iter_start), 1, new_operands);
             disp = 0;
-            if (1)
+            if (mirjit_enabled_p)
                 disp = insn_len(BIN(bbv_cont));
             new_operands[0] = (OFFSET)insn_len(BIN(sir_iter_cont)) + disp; /* to iter_finish */
             temp_attrs[1] = ATTR_END_MARKER;
@@ -2135,7 +2138,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             new_operands[2] = (lindex_t)arg_func;
             add_spec_insn_arr(orig_pos, BIN(sir_iter_body), 3, new_operands);
             disp = 0;
-            if (1) {
+            if (mirjit_enabled_p) {
                 add_spec_insn_arr(orig_pos, BIN(bbv_cont), 1, (VALUE *)&bbv);
                 disp = insn_len(BIN(bbv_cont));
             }
@@ -2155,7 +2158,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             /* attrs can be changed so the target bbv can */
             int argc = vm_ci_argc(((CALL_DATA)operands[0])->ci);
 
-            if (1)
+            if (mirjit_enabled_p)
                 add_spec_insn_arr(orig_pos, BIN(bbv_cont), 1, (VALUE *)&bbv);
             SIR_GEN_ASSERT(profile_p);
             VARR_TRUNC(char, arg_attrs, 0);
