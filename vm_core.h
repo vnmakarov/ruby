@@ -2182,6 +2182,9 @@ void rb_vm_trap_exit(rb_vm_t *vm);
 VALUE make_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv);
 VALUE gen_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place);
 
+#define MIRJIT_CONST(type, id, init_expr, fmt) type id = init_expr
+#define MIRJIT_CONST_PTR(type, id, init_expr) type id = init_expr
+
 RUBY_SYMBOL_EXPORT_BEGIN
 
 int rb_thread_check_trap_pending(void);

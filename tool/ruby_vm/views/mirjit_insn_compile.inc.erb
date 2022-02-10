@@ -28,7 +28,7 @@ switch (insn_id) {
   case BIN(<%= insn.name %>): {
 % body = render_c_expr(insn.expr).gsub(/^#/, '#   ')
     if (proto_gen_p) {
-        fmt_output(buff, "  VALUE *mirjit_%s(void *ec, void *cfp, VALUE *pc");
+        fmt_output(buff, "  VALUE *mirjit_<%= insn.name %>(void *ec, void *cfp, VALUE *pc");
 % insn.opes.each_with_index do |ope, i|
         fmt_output(buff, ", <%= ope.fetch(:type) %>");
 % end
@@ -39,7 +39,14 @@ switch (insn_id) {
 % end
         fmt_output(buff, ");\n");
     }
-    fmt_output(buff, "  pc = mirjit_%s(ec, cfp, pc", insn_name(<%= insn.name %>));
+% insn.opes.each_with_index do |ope, i|
+%   if ope[:type] == "DBL"
+    MAYBE_UNUSED(<%= ope[:decl] %>) = rtl_val2dbl(operands[<%= i + 1 %>]);
+%   else
+    MAYBE_UNUSED(<%= ope[:decl] %>) = (<%= ope[:type] %>)operands[<%= i + 1 %>];
+%   end
+% end
+    fmt_output(buff, "  pc = mirjit_<%= insn.name %>(ec, cfp, pc");
 % call_p = false
 % insn.opes.each_with_index do |ope, i|
     fmt_output(buff, ", 0x%"PRIxVALUE, operands[<%= i %>]);
@@ -62,6 +69,6 @@ switch (insn_id) {
   }
 % end
   default:
-    fprintf(stderr, "MIR JIT internal error: %s\n", insn_name(insn));
+    fprintf(stderr, "MIR JIT internal error: %s\n", insn_name(insn_id));
     exit (1);
 }

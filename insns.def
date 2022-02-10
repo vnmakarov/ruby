@@ -2549,11 +2549,11 @@ rtl_getivar
 // attr bool leaf = false; /* has IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() */
 {
     VALUE self = GET_SELF();
-    MIRJIT_CONST(struct rb_iv_index_tbl_entry *, void *, entry, ic->entry, PRIxPTR);
-    MIRJIT_CONST(unsigned long long, unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
+    MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
+    MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
     if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_getivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
-    MIRJIT_CONST(unsigned int, unsigned int, index, entry->index, "u");
+    MIRJIT_CONST(unsigned int, index, entry->index, "u");
     if (LIKELY(index < ROBJECT_NUMIV(self))) {
         val = ROBJECT_IVPTR(self)[index];
         goto rtl_getivar_end;
@@ -2574,12 +2574,12 @@ rtl_igetivar
 // attr bool leaf = false; /* has IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() */
 {
     VALUE self = GET_SELF();
-    MIRJIT_CONST(struct rb_iv_index_tbl_entry *, void *, entry, ic->entry, PRIxPTR);
-    MIRJIT_CONST(unsigned long long, unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
+    MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
+    MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
 
     if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_igetivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
-    MIRJIT_CONST(unsigned int, unsigned int, index, entry->index, "u");
+    MIRJIT_CONST(unsigned int, index, entry->index, "u");
     if (LIKELY(index < ROBJECT_NUMIV(self))) {
         val = ROBJECT_IVPTR(self)[index];
         if (FIXNUM_P(val)) goto rtl_igetivar_end;
@@ -2600,14 +2600,14 @@ rtl_setivar
 // attr bool leaf = false; /* has rb_check_frozen_internal() */
 {
     VALUE self = GET_SELF();
-    MIRJIT_CONST(struct rb_iv_index_tbl_entry *, void *, entry, ic->entry, PRIxPTR);
-    MIRJIT_CONST(unsigned long long, unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
+    MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
+    MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
 
     if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_setivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
     if (LIKELY(!RB_OBJ_FROZEN_RAW(self))) { /* to exlude more of rb_check_frozen_internal */
         VM_ASSERT(!rb_ractor_shareable_p(self));
-        MIRJIT_CONST(unsigned int, unsigned int, index, entry->index, "u");
+        MIRJIT_CONST(unsigned int, index, entry->index, "u");
         if (UNLIKELY(index >= ROBJECT_NUMIV(self))) {
             rb_init_iv_list(self);
         }
@@ -2633,22 +2633,22 @@ rtl_iseq_send_without_block
 // attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
 // attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
 {
-    MIRJIT_CONST(struct rb_iseq_bbv *, void *, bbv_ref, (struct rb_iseq_bbv *)bbv, PRIxPTR);
-    MIRJIT_CONST(rb_iseq_t *, void *, iseq, bbv_ref->iseq, PRIxPTR);
-    MIRJIT_CONST(struct rb_iseq_constant_body *, void *, body, iseq->body, PRIxPTR);
-    MIRJIT_CONST(const struct rb_callcache *, void *, cc, cd->cc, PRIxPTR);
-    MIRJIT_CONST(int, int, argc, vm_ci_argc(cd->ci), "d");
-    MIRJIT_CONST(int, int, param_size, body->param.size, "d");
+    MIRJIT_CONST_PTR(struct rb_iseq_bbv *, bbv_ref, (struct rb_iseq_bbv *)bbv);
+    MIRJIT_CONST_PTR(rb_iseq_t *, iseq, bbv_ref->iseq);
+    MIRJIT_CONST_PTR(struct rb_iseq_constant_body *, body, iseq->body);
+    MIRJIT_CONST_PTR(const struct rb_callcache *, cc, cd->cc);
+    MIRJIT_CONST(int, argc, vm_ci_argc(cd->ci), "d");
+    MIRJIT_CONST(int, param_size, body->param.size, "d");
     VALUE *argv = reg_cfp->sp - argc;
     VALUE recv = TOPN(argc);
 
     if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_iseq_send_without_block_exit;
-    MIRJIT_CONST(const struct rb_callable_method_entry_struct *, void *, cme, vm_cc_cme(cc), PRIxPTR);
+    MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
     VM_ASSERT(callable_method_entry_p(cme) && argc == param_size);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
-    MIRJIT_CONST(VALUE *, VALUE *, start_pc, body->bbv_code + bbv_ref->bbv_start, PRIxPTR);
-    MIRJIT_CONST(int, int, local_size, body->local_table_size - param_size, "d");
-    MIRJIT_CONST(int, int, stack_max, body->stack_max, "d");
+    MIRJIT_CONST_PTR(VALUE *, start_pc, body->bbv_code + bbv_ref->bbv_start);
+    MIRJIT_CONST(int, local_size, body->local_table_size - param_size, "d");
+    MIRJIT_CONST(int, stack_max, body->stack_max, "d");
     vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
                   VM_BLOCK_HANDLER_NONE, (VALUE)cme, start_pc,
                   argv + param_size, local_size, stack_max);
@@ -2755,18 +2755,18 @@ rtl_cfunc_send
 // attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
 // attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
 {
-    MIRJIT_CONST(const struct rb_callcache *, void *, cc, cd->cc, PRIxPTR);
-    MIRJIT_CONST(int, int, argc, vm_ci_argc(cd->ci), "d");
+    MIRJIT_CONST_PTR(const struct rb_callcache *, cc, cd->cc);
+    MIRJIT_CONST(int, argc, vm_ci_argc(cd->ci), "d");
     VALUE *argv = reg_cfp->sp - argc;
     VALUE recv = TOPN(argc);
     VALUE bh;
     struct rb_captured_block *captured;
-    MIRJIT_CONST(VALUE, VALUE, klass, vm_cc_class(cc), PRIxVALUE);
+    MIRJIT_CONST(VALUE, klass, vm_cc_class(cc), PRIxVALUE);
 
     if (klass != CLASS_OF(recv)) goto rtl_cfunc_send_exit;
-    MIRJIT_CONST(const struct rb_callable_method_entry_struct *, void *, cme, vm_cc_cme(cc), PRIxPTR);
+    MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
     VM_ASSERT(callable_method_entry_p(cme) && blockiseq != NULL);
-    MIRJIT_CONST(const rb_method_cfunc_t *, void *, cfunc, vm_method_cfunc_entry(cme), PRIxPTR);
+    MIRJIT_CONST_PTR(const rb_method_cfunc_t *, cfunc, vm_method_cfunc_entry(cme));
     RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, cme->owner, cme->def->original_id);
     EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, Qundef);
     captured = VM_CFP_TO_CAPTURED_BLOCK(GET_CFP());
@@ -2775,8 +2775,8 @@ rtl_cfunc_send
     vm_push_frame(ec, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
                   bh, (VALUE)cme, 0, ec->cfp->sp, 0, 0);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
-    MIRJIT_CONST(rb_cfunc_invoker_t, void *, invoker, cfunc->invoker, PRIxPTR);
-    MIRJIT_CONST(rb_cfunc_func_t, void *, func, cfunc->func, PRIxPTR);
+    MIRJIT_CONST_PTR(rb_cfunc_invoker_t, invoker, cfunc->invoker);
+    MIRJIT_CONST_PTR(rb_cfunc_func_t, func, cfunc->func);
     val = (*invoker)(recv, argc, reg_cfp->sp + 1, func); // can be improved by calling cfunc->func(arg ... )
     CHECK_CFP_CONSISTENCY("rtl_cfunc_send");
     rb_vm_pop_frame(ec);
@@ -2838,17 +2838,17 @@ rtl_iter_body
         TOPN(0) = arg; /* result */
         JUMP(exit);
     } else {
-        MIRJIT_CONST(struct rb_iseq_bbv *, void *, bbv_ref, (struct rb_iseq_bbv *)bbv, PRIxPTR);
-        MIRJIT_CONST(rb_iseq_t *, void *, iseq, bbv_ref->iseq, PRIxPTR);
-        MIRJIT_CONST(struct rb_iseq_constant_body *, void *, body, iseq->body, PRIxPTR);
-        MIRJIT_CONST(int, int, param_size, body->param.size, "d");
+        MIRJIT_CONST_PTR(struct rb_iseq_bbv *, bbv_ref, (struct rb_iseq_bbv *)bbv);
+        MIRJIT_CONST_PTR(rb_iseq_t *, iseq, bbv_ref->iseq);
+        MIRJIT_CONST_PTR(struct rb_iseq_constant_body *, body, iseq->body);
+        MIRJIT_CONST(int, param_size, body->param.size, "d");
 
         VM_ASSERT(rb_simple_iseq_p(iseq));
         INC_SP(-1); /* remove res from iter_start or previous rtl_iter_body */
         TOPN(-1) = GET_SELF();
         if (param_size > 1 && argc == 1 && !NIL_P(ary = rb_check_array_type(arg))) {
             long i, len = RARRAY_LEN(ary);
-            MIRJIT_CONST(int, int, lead_num, body->param.lead_num, "d");
+            MIRJIT_CONST(int, lead_num, body->param.lead_num, "d");
 
             CHECK_VM_STACK_OVERFLOW(GET_CFP(), lead_num);
             if (len > lead_num) len = lead_num;
@@ -2860,10 +2860,10 @@ rtl_iter_body
             VM_ASSERT(param_size == 1);
             TOPN(-2) = arg;
         }
-        MIRJIT_CONST(VALUE *, VALUE *, start_pc, body->bbv_code + bbv_ref->bbv_start, PRIxPTR);
-        MIRJIT_CONST(int, int, local_size, body->local_table_size - param_size, "d");
-        MIRJIT_CONST(int, int, stack_max, body->stack_max, "d");
-        MIRJIT_CONST(const struct rb_callable_method_entry_struct *, void *, cme, bbv_ref->cme, PRIxPTR);
+        MIRJIT_CONST_PTR(VALUE *, start_pc, body->bbv_code + bbv_ref->bbv_start);
+        MIRJIT_CONST(int, local_size, body->local_table_size - param_size, "d");
+        MIRJIT_CONST(int, stack_max, body->stack_max, "d");
+        MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, bbv_ref->cme);
         vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD, GET_SELF(),
                       (VALUE)GET_EP() | 1, (VALUE)cme, start_pc,
                       reg_cfp->sp + 1 + param_size, local_size, stack_max);

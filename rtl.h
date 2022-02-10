@@ -92,4 +92,140 @@ int rtl_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *),
                        VALUE (**cont_func)(VALUE, VALUE),
                        char *);
 
+/*---------- Variable length arrays (VARR) --------------------------*/
+/*------- This implementaion supports static type checking. -------- */
+
+extern rb_jmpbuf_t rtl_gen_jump_buf;
+
+/* Asserts for VARR:  */
+#ifdef ENABLE_CHECKING
+#define VARR_ASSERT_FAIL(OP,VARR) varr_assert_fail(OP,#VARR)
+
+static inline void varr_assert_fail(const char *op, const char *var) {
+    fprintf(stderr, "wrong %s for %s", op, var);
+    RTL_GEN_ASSERT(0);
+}
+
+#define VARR_ASSERT(EXPR,OP,T)					\
+  (void)((EXPR) ? 0 : (VARR_ASSERT_FAIL(OP,VARR(T)), 0))
+
+#else
+#define VARR_ASSERT(EXPR,OP,T) ((void)(EXPR))
+#endif
+
+static inline void
+varr_malloc_failure(void) {
+    RUBY_LONGJMP(rtl_gen_jump_buf, 1);
+}
+
+/* Name of type for VARR of elements of type T.  */
+#define VARR(T) VARR_##T
+/* Name of function implementing OP for VARR of elements of type
+   T.  */
+#define VARR_OP(T, OP) VARR_##T##_##OP
+
+/* Definition of type of VAR of elements of type T.  */
+#define VARR_T(T)							      \
+typedef struct VARR(T) {                                                      \
+    size_t els_num; /* number of elements currently in VARR */  	      \
+    size_t size;    /* curr size of container VARR in elements */             \
+    T *varr;          /* the elements container */			      \
+} VARR(T)
+
+/* Default initial size for variable array elements container.  */
+#define VARR_DEFAULT_SIZE 64
+
+/* Definition of VARR of elements of type T and all its functions:  */
+#define DEF_VARR(T)                                                            \
+VARR_T(T);								       \
+									       \
+static inline void VARR_OP(T, create)(VARR(T) **varr_, size_t size_) {         \
+    VARR(T) *va;						       	       \
+    if (size_ == 0)							       \
+        size_ = VARR_DEFAULT_SIZE;					       \
+    *varr_ = va = (VARR(T) *) xmalloc(sizeof(VARR(T)));			       \
+    if (va == NULL) varr_malloc_failure();				       \
+    va->els_num = 0; va->size = size_;					       \
+    va->varr = (T *) xmalloc(size_ * sizeof(T));			       \
+    if (va->varr == NULL) varr_malloc_failure();			       \
+}                                                                              \
+                                                                               \
+static inline void VARR_OP(T, destroy)(VARR(T) **varr_) {	               \
+    VARR(T) *va = *varr_;						       \
+    VARR_ASSERT(va && va->varr, "destroy", T);				       \
+    free(va->varr);							       \
+    free(va); 								       \
+    *varr_ = NULL;							       \
+}									       \
+                                                                               \
+static inline size_t VARR_OP(T, length)(const VARR(T) *varr_) {	               \
+    VARR_ASSERT(varr_, "length", T);					       \
+    return varr_->els_num;						       \
+}                                                                              \
+                                                                               \
+static inline T *VARR_OP(T, addr)(const VARR(T) *varr_) {	               \
+    VARR_ASSERT(varr_, "addr", T);					       \
+    return &varr_->varr[0];						       \
+}                                                                              \
+                                                                               \
+static inline T VARR_OP(T, last)(const VARR(T) *varr_) {                       \
+    VARR_ASSERT(varr_ && varr_->varr && varr_->els_num, "last", T);	       \
+    return varr_->varr[varr_->els_num - 1];				       \
+}                                                                              \
+                                                                               \
+static inline T VARR_OP(T, get)(const VARR(T) *varr_, size_t ix_) { 	       \
+    VARR_ASSERT(varr_ && varr_->varr && ix_ < varr_->els_num, "get", T);       \
+    return varr_->varr[ix_];						       \
+}                                                                              \
+                                                                               \
+static inline T VARR_OP(T, set)(const VARR(T) *varr_, size_t ix_, T obj_) {    \
+    T old_obj_;								       \
+    VARR_ASSERT(varr_ && varr_->varr && ix_ < varr_->els_num, "set", T);       \
+    old_obj_ = varr_->varr[ix_];					       \
+    varr_->varr[ix_] = obj_;						       \
+    return old_obj_;							       \
+}                                                                              \
+                                                                               \
+static inline void VARR_OP(T,trunc)(VARR(T) *varr_, size_t size_) {            \
+    VARR_ASSERT(varr_ && varr_->varr && varr_->els_num >= size_, "trunc", T);  \
+    varr_->els_num = size_;						       \
+}									       \
+                                                                               \
+static inline void VARR_OP(T,expand)(VARR(T) *varr_, size_t size_) {	       \
+    VARR_ASSERT(varr_  && varr_->varr, "expand", T);			       \
+    if (varr_->size < size_) {						       \
+	size_ += size_ / 2;						       \
+	varr_->varr = (T *) xrealloc(varr_->varr, sizeof(T) * size_);	       \
+        if (varr_->varr == NULL) varr_malloc_failure();			       \
+	varr_->size = size_;						       \
+    }                                                                          \
+}									       \
+									       \
+static inline void VARR_OP(T, push)(VARR(T) *varr_, T obj_) {	               \
+    T *slot_;								       \
+    VARR_OP(T, expand)(varr_, varr_->els_num + 1);			       \
+    slot_ = &varr_->varr[varr_->els_num++];				       \
+    *slot_ = obj_;							       \
+}                                                                              \
+                                                                               \
+static inline T VARR_OP(T, pop)(VARR(T) *varr_) {			       \
+    T obj_;								       \
+    VARR_ASSERT(varr_ && varr_->varr && varr_->els_num, "pop", T);	       \
+    obj_ = varr_->varr[--varr_->els_num];				       \
+    return obj_;							       \
+}
+
+/* Macros implementing operations for VARR V of elements of type T: */
+#define VARR_CREATE(T, V, L) (VARR_OP(T, create)(&(V), L))
+#define VARR_DESTROY(T, V) (VARR_OP(T, destroy)(&(V)))
+#define VARR_LENGTH(T, V) (VARR_OP(T, length)(V))
+#define VARR_ADDR(T, V) (VARR_OP(T, addr)(V))
+#define VARR_LAST(T, V) (VARR_OP(T, last)(V))
+#define VARR_GET(T, V, I) (VARR_OP(T, get)(V, I))
+#define VARR_SET(T, V, I, O) (VARR_OP(T, set)(V, I, O))
+#define VARR_TRUNC(T, V, S) (VARR_OP(T, trunc)(V, S))
+#define VARR_EXPAND(T, V, S) (VARR_OP(T, expand)(V, S))
+#define VARR_PUSH(T, V, O) (VARR_OP(T, push)(V, O))
+#define VARR_POP(T, V) (VARR_OP(T, pop)(V))
+
 #endif /* #ifndef RTL_H */

@@ -43,7 +43,7 @@ VALUE *mirjit_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *V
 
 #   define NAME_OF_CURRENT_INSN <%= insn.name %>
 % body.split("\n").each do |ln|
-%   next if /MIRJIT_CONST/ =~ ln
+%   ln.gsub!(/MIR_CONST(_PTR)?[^;]+;/, '')
 <%= ln.gsub(/CALL_SIMPLE_METHOD/, 'MIRJIT_CALL_SIMPLE_METHOD') %>
 % end
 #   undef NAME_OF_CURRENT_INSN

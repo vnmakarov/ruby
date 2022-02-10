@@ -17,8 +17,6 @@ typedef double DBL;
 typedef VALUE GENTRY;
 typedef rb_iseq_t *ISEQ;
 
-#define MIRJIT_CONST(type, param_type, id, init_expr, fmt) type id = init_expr
-
 #if VMDEBUG > 0
 #define debugs printf
 #define DEBUG_ENTER_INSN(insn) \
