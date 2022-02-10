@@ -117,3 +117,20 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
 }
 
 #include "mirjit_code_env.inc"
+
+static struct rb_mirjit_options mirjit_options;
+
+int
+rb_mirjit_enabled_p(void) { return mirjit_options.mirjit_enabled_p; }
+
+int
+rb_mirjit_debug_p(void) { return mirjit_options.debug_p; }
+
+void
+rb_mirjit_init(struct rb_mirjit_options *options) {
+    mirjit_options = *options;
+}
+
+void
+rb_mirjit_finish(void) {
+}

@@ -61,6 +61,7 @@
 #include "mjit.h"
 #include "yjit.h"
 #include "sir.h"
+#include "mirjit.h"
 #include "ruby/encoding.h"
 #include "ruby/thread.h"
 #include "ruby/util.h"
@@ -192,6 +193,7 @@ struct ruby_cmdline_options {
 #endif
     struct rb_yjit_options yjit;
     struct rb_sir_options sir;
+    struct rb_mirjit_options mirjit;
 
     int sflag, xflag;
     unsigned int warning: 1;
@@ -316,6 +318,7 @@ usage(const char *name, int help, int highlight, int columns)
         M("--jit-[option]","",                     "enable JIT with an option (experimental)"),
         M("--yjit",        "",                     "enable in-process JIT compiler (experimental)"),
         M("--sir",         "",                     "enable SIR BBV interpretation (experimental)"),
+        M("--mirjit",      "",                     "enable MIR JIT and SIR (experimental)"),
 	M("-h",		   "",			   "show this message, --help for more info"),
     };
     static const struct message help_msg[] = {
@@ -346,6 +349,7 @@ usage(const char *name, int help, int highlight, int columns)
         M("jit", "",            "JIT compiler (default: disabled)"),
         M("yjit", "",           "in-process JIT compiler (default: disabled)"),
         M("sir", "",            "SIR BBV generation and interpretation (default: disabled)"),
+        M("mirjit", "",         "MIRJIT and SIR generation (default: disabled)"),
     };
     static const struct message warn_categories[] = {
         M("deprecated", "",       "deprecated features"),
@@ -357,6 +361,12 @@ usage(const char *name, int help, int highlight, int columns)
 #endif
         M("--sir-max-versions",      "", "Maximum number of versions per SIR basic block (default: 4)"),
         M("--sir-debug",             "", "Print SIR basic block generation to stderr"),
+    };
+    static const struct message mirjit_options[] = {
+#if MIRJIT_EXEC_STATS
+        M("--mirjit-stats",             "", "Enable collecting MIRJIT generation statistics"),
+#endif
+        M("--mirjit-debug",             "", "Print MIRJIT debug info to stderr"),
     };
     static const struct message mjit_options[] = {
         M("--jit-warnings",      "", "Enable printing JIT warnings"),
@@ -405,6 +415,9 @@ usage(const char *name, int help, int highlight, int columns)
     printf("%s""SIR BBV interpretation options (experimental):%s\n", sb, se);
     for (i = 0; i < numberof(sir_options); ++i)
 	SHOW(sir_options[i]);
+    printf("%s""MIRJIT options (experimental):%s\n", sb, se);
+    for (i = 0; i < numberof(mirjit_options); ++i)
+	SHOW(mirjit_options[i]);
     printf("%s""MJIT options (experimental):%s\n", sb, se);
     for (i = 0; i < numberof(mjit_options); ++i)
 	SHOW(mjit_options[i]);
@@ -1085,6 +1098,11 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 #define sir_opt_match_arg(s, l, name) \
     opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (rb_raise(rb_eRuntimeError, "--sir-" name " needs an argument"), 0))
 
+#define mirjit_opt_match_noarg(s, l, name) \
+    opt_match(s, l, name) && (*(s) ? (rb_warn("argument to --mirjit-" name " is ignored"), 1) : 1)
+#define mirjit_opt_match_arg(s, l, name) \
+    opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (rb_raise(rb_eRuntimeError, "--mirjit-" name " needs an argument"), 0))
+
 static bool
 setup_yjit_options(const char *s, struct rb_yjit_options *yjit_opt)
 {
@@ -1183,6 +1201,32 @@ setup_sir_options(const char *s, struct rb_sir_options *sir_opt)
     else {
         rb_raise(rb_eRuntimeError,
                  "invalid SIR option `%s' (--help will show valid SIR options)", s);
+    }
+    return true;
+}
+
+static bool
+setup_mirjit_options(const char *s, struct rb_mirjit_options *mirjit_opt)
+{
+    const char prefix[] = "mirjit-";
+    if (strncmp(prefix, s, sizeof(prefix)-1) != 0) {
+        return FALSE;
+    }
+    s += sizeof(prefix) - 1;
+    const size_t l = strlen(s);
+    if (l == 0) {
+        return FALSE;
+    }
+
+    if (mirjit_opt_match_noarg(s, l, "debug")) {
+        mirjit_opt->debug_p = TRUE;
+    }
+    else if (mirjit_opt_match_noarg(s, l, "stats")) {
+        mirjit_opt->exec_stats_p = TRUE;
+    }
+    else {
+        rb_raise(rb_eRuntimeError,
+                 "invalid MIRJIT option `%s' (--help will show valid MIRJIT options)", s);
     }
     return true;
 }
@@ -1572,6 +1616,10 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
             else if (strcmp("sir", s) == 0 || setup_sir_options(s, &opt->sir)) {
                 opt->sir.sir_enabled_p = TRUE;
             }
+            else if (strcmp("mirjit", s) == 0 || setup_mirjit_options(s, &opt->mirjit)) {
+                opt->sir.sir_enabled_p = TRUE;
+                opt->mirjit.mirjit_enabled_p = TRUE;
+            }
 	    else if (strcmp("yydebug", s) == 0) {
 		if (envopt) goto noenvopt_long;
 		opt->dump |= DUMP_BIT(yydebug);
@@ -1953,6 +2001,7 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
         rb_yjit_init(&opt->yjit);
     }
     rb_sir_init(&opt->sir);
+    rb_mirjit_init(&opt->mirjit);
     if (opt->dump & (DUMP_BIT(version) | DUMP_BIT(version_v))) {
 #if USE_MJIT
         mjit_opts.on = opt->mjit.on; /* used by ruby_show_version(). mjit_init() still can't be called here. */
