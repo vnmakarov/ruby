@@ -21,7 +21,7 @@ static void __builtin_unreachable(void) {abort();}
 #include "vm_exec.h"
 #include "vm_insnhelper.h"
 #include "ractor_core.h"
-#include "rtl.h"
+#include "sir.h"
 #include "builtin.h"
 
 #if 0
@@ -48,7 +48,7 @@ static void __builtin_unreachable(void) {abort();}
 #define vm_method_cfunc_entry mirjit_method_cfunc_entry
 #define vm_sendish mirjit_sendish
 
-#include "rtl_exec.c"
+#include "sir_exec.c"
 
 #undef  RESTORE_REGS
 #define RESTORE_REGS() \

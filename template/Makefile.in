@@ -484,6 +484,15 @@ ruby-glommed.$(OBJEXT):
 	@$(ECHO) generating a glommed object with DTrace probes for static library
 	$(Q) $(LD) -r -o $@ $(OBJS)
 
+mirjit_code_env.bmir: mirjit_code_env.c
+	$(ECHO) generating $@
+	$(Q) gcc -fsyntax-only -DRUBY_EXPORT $(INCFLAGS) $<
+	$(Q) c2m -w -DRUBY_EXPORT -c $(INCFLAGS) $<
+
+mirjit_code_env.inc: mirjit_code_env.bmir
+	$(ECHO) generating $@
+	$(Q) b2ctab < $< > $@
+
 clean-local::
 	$(Q)$(RM) \
 	  ext/extinit.c ext/extinit.$(OBJEXT) ext/ripper/y.output \
