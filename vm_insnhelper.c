@@ -23,7 +23,7 @@
 #include "internal/random.h"
 #include "internal/variable.h"
 #include "variable.h"
-#include "rtl.h"
+#include "sir.h"
 
 /* finish iseq array */
 #include "insns.inc"

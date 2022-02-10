@@ -28,7 +28,7 @@
 #include "internal/sanitizers.h"
 #include "iseq.h"
 #include "mjit.h"
-#include "rtl.h"
+#include "sir.h"
 #include "yjit.h"
 #include "ruby/st.h"
 #include "ruby/vm.h"
@@ -372,7 +372,7 @@ extern VALUE rb_vm_invoke_bmethod(rb_execution_context_t *ec, rb_proc_t *proc, V
 static VALUE vm_invoke_proc(rb_execution_context_t *ec, rb_proc_t *proc, VALUE self, int argc, const VALUE *argv, int kw_splat, VALUE block_handler);
 
 #include "vm_insnhelper.c"
-#include "rtl_exec.c"
+#include "sir_exec.c"
 
 #ifndef MJIT_HEADER
 

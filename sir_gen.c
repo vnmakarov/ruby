@@ -6,7 +6,7 @@
 
 **********************************************************************/
 
-#include "rtl.h"
+#include "sir.h"
 #include "internal/hash.h"
 #include "internal/compile.h"
 #include "internal/variable.h"
