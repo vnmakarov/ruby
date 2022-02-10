@@ -489,6 +489,8 @@ mirjit_code_env.bmir: mirjit_code_env.c
 	$(Q) gcc -fsyntax-only -DRUBY_EXPORT $(INCFLAGS) $<
 	$(Q) c2m -w -DRUBY_EXPORT -c $(INCFLAGS) $<
 
+mirjit_code_env.bmir: mirjit_insn_funcs.inc
+
 mirjit_code_env.inc: mirjit_code_env.bmir
 	$(ECHO) generating $@
 	$(Q) b2ctab < $< > $@
