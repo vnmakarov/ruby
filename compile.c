@@ -34,7 +34,7 @@
 #include "internal/thread.h"
 #include "internal/variable.h"
 #include "iseq.h"
-#include "rtl.h"
+#include "sir.h"
 #include "ruby/re.h"
 #include "ruby/util.h"
 #include "vm_core.h"
@@ -1524,9 +1524,9 @@ iseq_setup(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
     }
     verify_call_cache(iseq);
 
-    if (rb_rtl_enabled_p()) {
-        debugs("[compile step 8 (rb_rtl_stub_gen)] \n");
-        rb_rtl_stub_gen(iseq);
+    if (rb_sir_enabled_p()) {
+        debugs("[compile step 8 (rb_sir_stub_gen)] \n");
+        rb_sir_stub_gen(iseq);
     }
 
     debugs("[compile step: finish]\n");
@@ -12007,8 +12007,8 @@ ibf_load_iseq_each(struct ibf_load *load, rb_iseq_t *iseq, ibf_offset_t offset)
 #endif
     verify_call_cache(iseq);
 
-    if (rb_rtl_enabled_p())
-        rb_rtl_stub_gen(iseq);
+    if (rb_sir_enabled_p())
+        rb_sir_stub_gen(iseq);
 }
 
 struct ibf_dump_iseq_list_arg

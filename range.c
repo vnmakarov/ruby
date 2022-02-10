@@ -28,7 +28,7 @@
 #include "internal/numeric.h"
 #include "internal/range.h"
 
-#include "rtl.h"
+#include "sir.h"
 
 VALUE rb_cRange;
 static ID id_beg, id_end, id_excl;
@@ -2283,7 +2283,7 @@ Init_Range(void)
     rb_define_method(rb_cRange, "eql?", range_eql, 1);
     rb_define_method(rb_cRange, "hash", range_hash, 0);
     rb_define_method(rb_cRange, "each", range_each, 0);
-    rtl_range_each_func = range_each;
+    sir_range_each_func = range_each;
     rb_define_method(rb_cRange, "step", range_step, -1);
     rb_define_method(rb_cRange, "%", range_percent_step, 1);
     rb_define_method(rb_cRange, "bsearch", range_bsearch, 0);

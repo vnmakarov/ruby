@@ -1597,7 +1597,7 @@ movi
 /* Set a local variable (pointed to by 'idx') as val in the current stack frame.
  */
 DEFINE_INSN
-rtl_setlocal
+sir_setlocal
 (lindex_t idx)
 (VALUE val)
 ()
@@ -1607,7 +1607,7 @@ rtl_setlocal
     (void)RB_DEBUG_COUNTER_INC_IF(lvar_set_dynamic, FALSE);
 }
 
-/* --- Specialized RTL insns: --- */
+/* --- Type specialized RTL insns: --- */
 DEFINE_INSN
 opt_iplussvv opt_iminussvv opt_imultsvv opt_idivsvv opt_imodsvv
 opt_iorsvv opt_iandsvv opt_ieqsvv opt_ineqsvv
@@ -1619,12 +1619,12 @@ opt_iarefsvv
 {
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
 
@@ -1639,12 +1639,12 @@ opt_iarefsvi
 {
     VALUE v1 = *(GET_EP() - op1);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
 
@@ -1657,12 +1657,12 @@ opt_iarefsiv
 {
     VALUE v2 = *(GET_EP() - op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushiv, imm, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
 
@@ -1677,12 +1677,12 @@ opt_iarefsvs
 {
     VALUE v1 = *(GET_EP() - op1);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
 
@@ -1697,12 +1697,12 @@ opt_iarefssv
 {
     VALUE v2 = *(GET_EP() - op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
 
@@ -1716,12 +1716,12 @@ opt_iarefssi
 (VALUE val)
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
 
@@ -1733,12 +1733,12 @@ opt_iarefsis
 (VALUE val)
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushis, imm, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
 
@@ -1752,12 +1752,12 @@ opt_iarefsss
 (VALUE val)
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushss, v1, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
 
@@ -1772,12 +1772,12 @@ opt_iarefvvv
 {
     VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
@@ -1793,12 +1793,12 @@ opt_iarefvvi
 {
     VALUE v1 = *(GET_EP() - op1), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
@@ -1812,12 +1812,12 @@ opt_iarefviv
 {
     VALUE v2 = *(GET_EP() - op2), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushiv, imm, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
@@ -1833,12 +1833,12 @@ opt_iarefvvs
 {
     VALUE v1 = *(GET_EP() - op1), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
@@ -1854,12 +1854,12 @@ opt_iarefvsv
 {
     VALUE v2 = *(GET_EP() - op2), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
@@ -1875,12 +1875,12 @@ opt_iarefvsi
 {
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
@@ -1894,12 +1894,12 @@ opt_iarefvis
 {
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushis, imm, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
@@ -1915,12 +1915,12 @@ opt_iarefvss
 {
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushss, v1, v2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
-        goto RTL_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
+        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
 }
@@ -1932,7 +1932,7 @@ opt_feq opt_fneq opt_flt opt_fgt opt_fle opt_fge
 (VALUE v1, VALUE v2)
 (VALUE val)
 {
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    val = SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
 }
 
 DEFINE_INSN
@@ -1942,7 +1942,7 @@ opt_feqf opt_fneqf opt_fltf opt_fgtf opt_flef opt_fgef
 (VALUE v1)
 (VALUE val)
 {
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    val = SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
 }
 
 DEFINE_INSN
@@ -1952,7 +1952,7 @@ opt_frltf opt_frgtf opt_frlef opt_frgef
 (VALUE v2)
 (VALUE val)
 {
-    val = RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(imm, v2);
+    val = SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(imm, v2);
 }
 
 DEFINE_INSN
@@ -1964,7 +1964,7 @@ opt_ibeqss opt_ibneqss opt_ibltss opt_ibgtss opt_ibless opt_ibgess
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val;
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
     RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
@@ -1978,7 +1978,7 @@ opt_ibeqvv opt_ibneqvv opt_ibltvv opt_ibgtvv opt_iblevv opt_ibgevv
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
     RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
@@ -1992,7 +1992,7 @@ opt_ibeqvi opt_ibneqvi opt_ibltvi opt_ibgtvi opt_iblevi opt_ibgevi
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val, v1 = *(GET_EP() - op1);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     RUBY_VM_CHECK_INTS(ec);
     RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
@@ -2006,7 +2006,7 @@ opt_ibeqvs opt_ibneqvs opt_ibltvs opt_ibgtvs opt_iblevs opt_ibgevs
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val, v1 = *(GET_EP() - op1);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
     RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
@@ -2020,7 +2020,7 @@ opt_ibeqsv opt_ibneqsv opt_ibltsv opt_ibgtsv opt_iblesv opt_ibgesv
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE v2 = *(GET_EP() - op2), val;
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     RUBY_VM_CHECK_INTS(ec);
     RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
@@ -2034,12 +2034,12 @@ opt_ibeqsi opt_ibneqsi opt_ibltsi opt_ibgtsi opt_iblesi opt_ibgesi
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
     VALUE val;
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     RUBY_VM_CHECK_INTS(ec);
     RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
-/* --- end of specialized RTL insns --- */
+/* --- end of specialized SIR insns --- */
 
 DEFINE_INSN
 check_fixtype
@@ -2049,7 +2049,7 @@ check_fixtype
 {
     VALUE val = *(GET_EP() - n);
     if (!FIXNUM_P(val)) {
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
     }
 }
@@ -2062,13 +2062,13 @@ check_stack_fixtype
 {
     VALUE val = TOPN(n);
     if (!FIXNUM_P(val)) {
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
     }
 }
 
 
-/* --- general RTL insns: --- */
+/* --- general SIR insns: --- */
 DEFINE_INSN
 opt_plussvv opt_minussvv opt_multsvv opt_divsvv opt_modsvv opt_orsvv opt_andsvv
 opt_ltsvv opt_gtsvv opt_lesvv opt_gesvv opt_arefsvv
@@ -2077,7 +2077,7 @@ opt_ltsvv opt_gtsvv opt_lesvv opt_gesvv opt_arefsvv
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
         pushvv(reg_cfp, v1, v2);
         CALL_SIMPLE_METHOD();
@@ -2092,7 +2092,7 @@ opt_ltsvi opt_gtsvi opt_lesvi opt_gesvi opt_arefsvi
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (val == Qundef) {
         pushvi(reg_cfp, v1, imm);
         CALL_SIMPLE_METHOD();
@@ -2107,7 +2107,7 @@ opt_ltsiv opt_gtsiv opt_lesiv opt_gesiv opt_arefsiv
 (VALUE val)
 {
     VALUE v2 = *(GET_EP() - op2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (val == Qundef) {
         pushiv(reg_cfp, imm, v2);
         CALL_SIMPLE_METHOD();
@@ -2122,7 +2122,7 @@ opt_ltsvs opt_gtsvs opt_lesvs opt_gesvs opt_arefsvs
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
         pushvs(reg_cfp, v1, v2);
         CALL_SIMPLE_METHOD();
@@ -2137,7 +2137,7 @@ opt_ltssv opt_gtssv opt_lessv opt_gessv opt_arefssv
 (VALUE val)
 {
     VALUE v2 = *(GET_EP() - op2);
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
         pushsv(reg_cfp, v1, v2);
         CALL_SIMPLE_METHOD();
@@ -2151,7 +2151,7 @@ opt_ltssi opt_gtssi opt_lessi opt_gessi opt_arefssi
 (VALUE v1)
 (VALUE val)
 {
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (val == Qundef) {
         pushsi(reg_cfp, v1, imm);
         CALL_SIMPLE_METHOD();
@@ -2165,7 +2165,7 @@ opt_ltsis opt_gtsis opt_lesis opt_gesis opt_arefsis
 (VALUE v2)
 (VALUE val)
 {
-    RTL_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (val == Qundef) {
         pushis(reg_cfp, imm, v2);
         CALL_SIMPLE_METHOD();
@@ -2517,7 +2517,7 @@ opt_asetvss
     }
 }
 
-/* --- end of general RTL insns --- */
+/* --- end of general SIR insns --- */
 
 DEFINE_INSN
 inspect_type inspect_fixtype
@@ -2527,7 +2527,7 @@ inspect_type inspect_fixtype
 // attr rb_snum_t sp_inc = 0;
 {
     VALUE val = *(GET_EP() - n);
-    rb_rtl_inspect_type(GET_CFP(), val, FALSE);
+    rb_sir_inspect_type(GET_CFP(), val, FALSE);
 }
 
 DEFINE_INSN
@@ -2537,12 +2537,12 @@ inspect_stack_type inspect_stack_fixtype
 ()
 // attr rb_snum_t sp_inc = 0;
 {
-    rb_rtl_inspect_type(GET_CFP(), TOPN(n), TRUE);
+    rb_sir_inspect_type(GET_CFP(), TOPN(n), TRUE);
 }
 
 /* Get value of instance variable id of self. */
 DEFINE_INSN
-rtl_getivar
+sir_getivar
 (ID id, IVC ic)
 ()
 (VALUE val)
@@ -2551,23 +2551,23 @@ rtl_getivar
     VALUE self = GET_SELF();
     MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
     MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
-    if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_getivar_exit;
+    if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto sir_getivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
     MIRJIT_CONST(unsigned int, index, entry->index, "u");
     if (LIKELY(index < ROBJECT_NUMIV(self))) {
         val = ROBJECT_IVPTR(self)[index];
-        goto rtl_getivar_end;
+        goto sir_getivar_end;
     }
-  rtl_getivar_exit:
-    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(rtl_getivar);
-  rtl_getivar_end:
+  sir_getivar_exit:
+    ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(sir_getivar);
+  sir_getivar_end:
     ;
 }
 
 /* Get value of instance variable id of self. */
 DEFINE_INSN
-rtl_igetivar
+sir_igetivar
 (ID id, IVC ic)
 ()
 (VALUE val)
@@ -2577,23 +2577,23 @@ rtl_igetivar
     MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
     MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
 
-    if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_igetivar_exit;
+    if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto sir_igetivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
     MIRJIT_CONST(unsigned int, index, entry->index, "u");
     if (LIKELY(index < ROBJECT_NUMIV(self))) {
         val = ROBJECT_IVPTR(self)[index];
-        if (FIXNUM_P(val)) goto rtl_igetivar_end;
+        if (FIXNUM_P(val)) goto sir_igetivar_end;
     }
-  rtl_igetivar_exit:
-    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(rtl_getivar);
-  rtl_igetivar_end:
+  sir_igetivar_exit:
+    ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(sir_getivar);
+  sir_igetivar_end:
     ;
 }
 
 /* Set value of instance variable id of self to val. */
 DEFINE_INSN
-rtl_setivar
+sir_setivar
 (ID id, IVC ic)
 (VALUE val)
 ()
@@ -2603,7 +2603,7 @@ rtl_setivar
     MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
     MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
 
-    if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto rtl_setivar_exit;
+    if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto sir_setivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
     if (LIKELY(!RB_OBJ_FROZEN_RAW(self))) { /* to exlude more of rb_check_frozen_internal */
         VM_ASSERT(!rb_ractor_shareable_p(self));
@@ -2613,19 +2613,19 @@ rtl_setivar
         }
         VALUE *ptr = ROBJECT_IVPTR(self);
         RB_OBJ_WRITE(self, &ptr[index], val);
-        goto rtl_setivar_end;
+        goto sir_setivar_end;
     }
-  rtl_setivar_exit:
-    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(rtl_setivar);
-  rtl_setivar_end:
+  sir_setivar_exit:
+    ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(sir_setivar);
+  sir_setivar_end:
     ;
 }
 
-/* Specialized call of method without block created from make_rtl_send:
+/* Specialized call of method without block created from make_sir_send:
    it should be iseq, not-tail call, no splat args, all leading args */
 DEFINE_INSN
-rtl_iseq_send_without_block
+sir_iseq_send_without_block
 (CALL_DATA cd, lindex_t bbv)
 (...)
 (VALUE val)
@@ -2642,7 +2642,7 @@ rtl_iseq_send_without_block
     VALUE *argv = reg_cfp->sp - argc;
     VALUE recv = TOPN(argc);
 
-    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto rtl_iseq_send_without_block_exit;
+    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto sir_iseq_send_without_block_exit;
     MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
     VM_ASSERT(callable_method_entry_p(cme) && argc == param_size);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
@@ -2654,17 +2654,17 @@ rtl_iseq_send_without_block
                   argv + param_size, local_size, stack_max);
     RESTORE_REGS();
     NEXT_INSN();
-  rtl_iseq_send_without_block_exit:
-    /* invalidate the current cc as we use cc from safe RTL: */
+  sir_iseq_send_without_block_exit:
+    /* invalidate the current cc as we use cc from safe SIR: */
     if (cc != vm_cc_empty()) vm_cc_invalidate(cc);
-    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(rtl_iseq_send_without_block);
+    ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(sir_iseq_send_without_block);
 }
 
-/* Specialized call of method without block created from make_rtl_send:
+/* Specialized call of method without block created from make_sir_send:
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
-rtl_opt_send_ivget
+sir_opt_send_ivget
 (VALUE klass, lindex_t index)
 (...)
 (VALUE val)
@@ -2674,24 +2674,24 @@ rtl_opt_send_ivget
 {
     VALUE recv = TOPN(0);
 
-    if (klass != CLASS_OF(recv)) goto rtl_opt_send_ivget_exit;
+    if (klass != CLASS_OF(recv)) goto sir_opt_send_ivget_exit;
     VM_ASSERT(RB_TYPE_P(recv, T_OBJECT));
     if (LIKELY(index < ROBJECT_NUMIV(recv))) {
         reg_cfp->sp--; /* poping recv */
         val = ROBJECT_IVPTR(recv)[index];
-        goto rtl_opt_send_ivget_end;
+        goto sir_opt_send_ivget_end;
     }
-  rtl_opt_send_ivget_exit:
-    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(rtl_opt_ivget);
-  rtl_opt_send_ivget_end:
+  sir_opt_send_ivget_exit:
+    ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(sir_opt_ivget);
+  sir_opt_send_ivget_end:
     ;
 }
 
-/* Specialized call of method without block created from make_rtl_send:
+/* Specialized call of method without block created from make_sir_send:
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
-rtl_opt_send_ivset
+sir_opt_send_ivset
 (VALUE klass, lindex_t index)
 (...)
 (VALUE val)
@@ -2701,7 +2701,7 @@ rtl_opt_send_ivset
 {
     VALUE recv = TOPN(1);
 
-    if (klass != CLASS_OF(recv)) goto rtl_opt_send_ivset_exit;
+    if (klass != CLASS_OF(recv)) goto sir_opt_send_ivset_exit;
     VM_ASSERT(RB_TYPE_P(recv, T_OBJECT));
     val = TOPN(0);
     if (LIKELY(!RB_OBJ_FROZEN_RAW(recv))) { /* to exlude more of rb_check_frozen_internal */
@@ -2712,18 +2712,18 @@ rtl_opt_send_ivset
         }
         VALUE *ptr = ROBJECT_IVPTR(recv);
         RB_OBJ_WRITE(recv, &ptr[index], val);
-        goto rtl_opt_send_ivset_end;
+        goto sir_opt_send_ivset_end;
     }
-  rtl_opt_send_ivset_exit:
-    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(rtl_opt_send_ivset);
-  rtl_opt_send_ivset_end:
+  sir_opt_send_ivset_exit:
+    ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(sir_opt_send_ivset);
+  sir_opt_send_ivset_end:
     ;
 }
 
-/* Non-specialized call of method without block created from make_rtl_send */
+/* Non-specialized call of method without block created from make_sir_send */
 DEFINE_INSN
-rtl_opt_send_without_block
+sir_opt_send_without_block
 (CALL_DATA cd, lindex_t dummy)
 (...)
 (VALUE val)
@@ -2744,10 +2744,10 @@ rtl_opt_send_without_block
     }
 }
 
-/* Specialized call of method with block created from make_rtl_send block:
+/* Specialized call of method with block created from make_sir_send block:
    it should be iseq, not-tail call, no splat args, all leading args */
 DEFINE_INSN
-rtl_cfunc_send
+sir_cfunc_send
 (CALL_DATA cd, ISEQ blockiseq)
 (...)
 (VALUE val)
@@ -2763,7 +2763,7 @@ rtl_cfunc_send
     struct rb_captured_block *captured;
     MIRJIT_CONST(VALUE, klass, vm_cc_class(cc), PRIxVALUE);
 
-    if (klass != CLASS_OF(recv)) goto rtl_cfunc_send_exit;
+    if (klass != CLASS_OF(recv)) goto sir_cfunc_send_exit;
     MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
     VM_ASSERT(callable_method_entry_p(cme) && blockiseq != NULL);
     MIRJIT_CONST_PTR(const rb_method_cfunc_t *, cfunc, vm_method_cfunc_entry(cme));
@@ -2778,22 +2778,22 @@ rtl_cfunc_send
     MIRJIT_CONST_PTR(rb_cfunc_invoker_t, invoker, cfunc->invoker);
     MIRJIT_CONST_PTR(rb_cfunc_func_t, func, cfunc->func);
     val = (*invoker)(recv, argc, reg_cfp->sp + 1, func); // can be improved by calling cfunc->func(arg ... )
-    CHECK_CFP_CONSISTENCY("rtl_cfunc_send");
+    CHECK_CFP_CONSISTENCY("sir_cfunc_send");
     rb_vm_pop_frame(ec);
     EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_RETURN, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, val);
     RUBY_DTRACE_CMETHOD_RETURN_HOOK(ec, cme->owner, cme->def->original_id);
-    goto rtl_cfunc_send_end;
-  rtl_cfunc_send_exit:
-    /* invalidate the current cc as we use cc from safe RTL: */
+    goto sir_cfunc_send_end;
+  sir_cfunc_send_exit:
+    /* invalidate the current cc as we use cc from safe SIR: */
     vm_cc_invalidate(cc);
-    ABS_JUMP(rb_rtl_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(rtl_iseq_send_without_block);
-  rtl_cfunc_send_end:
+    ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
+    END_INSN(sir_iseq_send_without_block);
+  sir_cfunc_send_end:
     ;
 }
 
 DEFINE_INSN
-rtl_iter_start
+sir_iter_start
 (lindex_t func)
 ()
 (VALUE index, VALUE res)
@@ -2802,14 +2802,14 @@ rtl_iter_start
     int (*f)(VALUE, VALUE *) = (void *)func;
 
     if (!f(arg, &index)) {
-        ABS_JUMP(rb_rtl_get_safe_pc(GET_CFP(), reg_pc));
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         END_INSN(NAME_OF_CURRENT_INSN);
     }
     res = Qnil;
 }
 
 DEFINE_INSN
-rtl_iter_cont
+sir_iter_cont
 (OFFSET dst, lindex_t func)
 ()
 ()
@@ -2821,7 +2821,7 @@ rtl_iter_cont
 }
 
 DEFINE_INSN
-rtl_iter_body
+sir_iter_body
 (OFFSET exit, lindex_t bbv, lindex_t func)
 (...)
 (...)
@@ -2844,7 +2844,7 @@ rtl_iter_body
         MIRJIT_CONST(int, param_size, body->param.size, "d");
 
         VM_ASSERT(rb_simple_iseq_p(iseq));
-        INC_SP(-1); /* remove res from iter_start or previous rtl_iter_body */
+        INC_SP(-1); /* remove res from iter_start or previous sir_iter_body */
         TOPN(-1) = GET_SELF();
         if (param_size > 1 && argc == 1 && !NIL_P(ary = rb_check_array_type(arg))) {
             long i, len = RARRAY_LEN(ary);
@@ -2880,7 +2880,7 @@ bbv_start
 {
     struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
     if (--bbv_ref->count < 0)
-        rb_rtl_bbv_start_change(GET_CFP());
+        rb_sir_bbv_start_change(GET_CFP());
 }
 
 DEFINE_INSN
@@ -2899,48 +2899,48 @@ bbv_nop
 {
 }
 
-/* --- rarely used rtl insns: --- */
+/* --- rarely used sir insns: --- */
 
 DEFINE_INSN
-gen_rtl_bbv
+gen_sir_bbv
 (lindex_t bbv, OFFSET origin)
 ()
 ()
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
-/* It occurs only in bbv_encoded and can change rtl insn addresses */
+/* It occurs only in bbv_encoded and can change sir insn addresses */
 {
-    VALUE *cont_pc = rb_rtl_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, TRUE);
+    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, TRUE);
     SET_PC(cont_pc);
-    END_INSN(gen_rtl_bbv); /* to skip pc increase */
+    END_INSN(gen_sir_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
-gen_rtl_bbv2
+gen_sir_bbv2
 (lindex_t bbv, OFFSET origin)
 ()
 ()
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
-/* It occurs only in bbv_encoded and can change rtl insn addresses */
+/* It occurs only in bbv_encoded and can change sir insn addresses */
 {
-    VALUE *cont_pc = rb_rtl_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, FALSE);
+    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, FALSE);
     SET_PC(cont_pc);
-    END_INSN(gen_rtl_bbv2); /* to skip pc increase */
+    END_INSN(gen_sir_bbv2); /* to skip pc increase */
 }
 
 DEFINE_INSN
-gen_rtl_bbv_key
+gen_sir_bbv_key
 (lindex_t bbv, OFFSET origin, VALUE key)
 ()
 ()
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
-/* It occurs only in bbv_encoded and can change rtl insn addresses */
+/* It occurs only in bbv_encoded and can change sir insn addresses */
 {
-    VALUE *cont_pc = rb_rtl_gen_bbv_key(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, key);
+    VALUE *cont_pc = rb_sir_gen_bbv_key(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, key);
     SET_PC(cont_pc);
-    END_INSN(gen_rtl_bbv_key); /* to skip pc increase */
+    END_INSN(gen_sir_bbv_key); /* to skip pc increase */
 }
 
 DEFINE_INSN
@@ -2951,53 +2951,53 @@ specialize_bbv
 {
     struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
     if (1 || --bbv_ref->count < 0) {
-        VALUE *cont_pc = rb_rtl_specialize_bbv(GET_CFP(), bbv_ref);
+        VALUE *cont_pc = rb_sir_specialize_bbv(GET_CFP(), bbv_ref);
         SET_PC(cont_pc);
         END_INSN(specialize_bbv); /* to skip pc increase */
     }
 }
 
 DEFINE_INSN
-make_rtl_bbv
+make_sir_bbv
 (lindex_t bbv_start)
 ()
 ()
 /* It occurs only in iseq_encoded */
 {
-    VALUE *start_pc = rb_rtl_make_bbv(GET_CFP(), bbv_start);
+    VALUE *start_pc = rb_sir_make_bbv(GET_CFP(), bbv_start);
 
     SET_PC(start_pc);
-    END_INSN(make_rtl_bbv); /* to skip pc increase */
+    END_INSN(make_sir_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
-make_rtl_optpc_bbv
+make_sir_optpc_bbv
 (lindex_t opt)
 ()
 ()
 /* It occurs only in iseq_encoded */
 {
-    VALUE *start_pc = rb_rtl_make_optpc_bbv(GET_CFP(), (int)opt);
+    VALUE *start_pc = rb_sir_make_optpc_bbv(GET_CFP(), (int)opt);
 
     SET_PC(start_pc);
-    END_INSN(make_rtl_optpc_bbv); /* to skip pc increase */
+    END_INSN(make_sir_optpc_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
-make_rtl_catch_bbv
+make_sir_catch_bbv
 (lindex_t entry_ind)
 ()
 ()
 /* It occurs only in iseq_encoded */
 {
-    VALUE *start_pc = rb_rtl_make_catch_bbv(GET_CFP(), (int)entry_ind);
+    VALUE *start_pc = rb_sir_make_catch_bbv(GET_CFP(), (int)entry_ind);
 
     SET_PC(start_pc);
-    END_INSN(make_rtl_catch_bbv); /* to skip pc increase */
+    END_INSN(make_sir_catch_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
-make_rtl_getivar
+make_sir_getivar
 (ID id, IVC ic)
 ()
 (VALUE val)
@@ -3005,12 +3005,12 @@ make_rtl_getivar
 {
     VALUE self = GET_SELF();
     val = vm_getinstancevariable(GET_ISEQ(), self, id, ic);
-    rb_rtl_change_getivar(self, GET_CFP(), ic, val);
+    rb_sir_change_getivar(self, GET_CFP(), ic, val);
 }
 
 /* Set value of instance variable id of self to val. */
 DEFINE_INSN
-make_rtl_setivar
+make_sir_setivar
 (ID id, IVC ic)
 (VALUE val)
 ()
@@ -3018,11 +3018,11 @@ make_rtl_setivar
 {
     VALUE self = GET_SELF();
     vm_setinstancevariable(GET_ISEQ(), self, id, val, ic);
-    if (ic->entry != NULL) rb_rtl_change_setivar(self, GET_CFP(), ic);
+    if (ic->entry != NULL) rb_sir_change_setivar(self, GET_CFP(), ic);
 }
 
 DEFINE_INSN
-make_rtl_send
+make_sir_send
 (CALL_DATA cd, lindex_t send_info)
 (...)
 (VALUE val)
@@ -3030,14 +3030,14 @@ make_rtl_send
 // attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
 // attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
 {
-    struct rb_rtl_send_info *si = (void*)send_info;
+    struct rb_sir_send_info *si = (void*)send_info;
     rb_control_frame_t *caller_cfp = GET_CFP();
     VALUE bh = (si->block_iseq == NULL ? VM_BLOCK_HANDLER_NONE
                 : vm_caller_setup_arg_block(ec, GET_CFP(), cd->ci, si->block_iseq, false));
     val = vm_sendish(ec, caller_cfp, cd, bh, mexp_search_method);
     /* The insn can be already changed in a recursive call in sendish -- check it.  */
-    if (caller_cfp->pc[-3] == (VALUE)rtl_dispatch_table[BIN(make_rtl_send)])
-        rb_rtl_change_send(ec, caller_cfp, cd, si);
+    if (caller_cfp->pc[-3] == (VALUE)sir_dispatch_table[BIN(make_sir_send)])
+        rb_sir_change_send(ec, caller_cfp, cd, si);
 
     if (val == Qundef) {
         RESTORE_REGS();

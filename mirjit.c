@@ -1,4 +1,4 @@
-#include "rtl.h"
+#include "sir.h"
 #include "internal/compile.h"
 #include "internal/class.h"
 #include "vm_callinfo.h"

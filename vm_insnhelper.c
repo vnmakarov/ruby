@@ -1480,8 +1480,8 @@ vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_c
 			    entry->iseq == base_iseq &&
 			    entry->start < epc && entry->end >= epc) {
 			    if (entry->cont == epc
-                                || *pc == (VALUE)rtl_dispatch_table[BIN(rtl_iter_cont)]
-                                || *pc == (VALUE)rtl_dispatch_table[BIN(bbv_cont)]) { /* found! */
+                                || *pc == (VALUE)sir_dispatch_table[BIN(sir_iter_cont)]
+                                || *pc == (VALUE)sir_dispatch_table[BIN(bbv_cont)]) { /* found! */
 				is_orphan = 0;
 			    }
 			    break;
@@ -5474,8 +5474,8 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
     if (enabled_flags == 0 && ruby_vm_event_local_num == 0) {
         return;
     } else if (!(body->iseq_encoded <= reg_cfp->pc && reg_cfp->pc <= body->iseq_encoded + body->iseq_size)) {
-        /* It is an RTL trace insn */
-        if ((pc = rb_rtl_trace_stack_insn_pc(ec, reg_cfp)) == NULL) return;
+        /* It is an SIR trace insn */
+        if ((pc = rb_sir_trace_stack_insn_pc(ec, reg_cfp)) == NULL) return;
     } else {
         pc = reg_cfp->pc;
     }

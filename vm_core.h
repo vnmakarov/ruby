@@ -361,7 +361,7 @@ enum rb_attr_val {
 
 struct rb_iseq_bbv;
 struct rb_iseq_bbv_edge {
-    int gen_bbv_disp; /* offset of the corresponding gen_rtl_bbv[1,key] insn in input BBV code */
+    int gen_bbv_disp; /* offset of the corresponding gen_sir_bbv[1,key] insn in input BBV code */
     struct rb_iseq_bbv *in, *out;
     struct rb_iseq_bbv_edge *next_in_edge, *next_out_edge; /* list with the same out and in */
 };
@@ -392,11 +392,11 @@ struct rb_iseq_constant_body {
     VALUE *iseq_start_pc; /* can be iseq_encoded or curr start point in bbv_code */
     VALUE *curr_param_opt_table; /* displacement relative iseq_code */
 
-    /* The following are use for RTL BBV interpretation: */
+    /* The following are use for SIR BBV interpretation: */
     int n_bbvs;
     struct rb_iseq_bbv **bbvs; /* array of pointers to head(non-spec) BB versions sorted by start */
     int bbv_code_bound, bbv_code_free;
-    VALUE *bbv_code; /* container for RTL BBV insns, can be reallocated */
+    VALUE *bbv_code; /* container for SIR BBV insns, can be reallocated */
     /* array of bbv_code_bound:
        if negative: spec bbv pos(index) to non-spec bbv pos
        otherwise: non spec bbv pos(index) to original pos */
@@ -823,11 +823,11 @@ typedef struct rb_vm_struct {
 
 #define BASIC_OP_UNREDEFINED_P(op, klass) (LIKELY((GET_VM()->redefined_flag[(op)]&(klass)) == 0))
 
-struct rb_rtl_call_elem {
+struct rb_sir_call_elem {
     const rb_callable_method_entry_t *cme;
     struct rb_iseq_bbv *bbv;
-    struct rb_rtl_call_elem *next_cme_call_elem, *prev_cme_call_elem;
-    struct rb_rtl_call_elem *next_bbv_call_elem, *prev_bbv_call_elem;
+    struct rb_sir_call_elem *next_cme_call_elem, *prev_cme_call_elem;
+    struct rb_sir_call_elem *next_bbv_call_elem, *prev_bbv_call_elem;
 };
 
 struct rb_iseq_bbv {
@@ -845,7 +845,7 @@ struct rb_iseq_bbv {
        head is always bbv with unknown attrs (default bbv) and non-spec code */
     struct rb_iseq_bbv *next_bbv;
     struct rb_iseq_bbv_edge *in_edges, *out_edges;
-    struct rb_rtl_call_elem *call_elems;
+    struct rb_sir_call_elem *call_elems;
     int bbv_start, bbv_bound; /* start / bound pos in bbv_code */
     int start_stack_size; /* stack size at bb start */
     short used_bops[BOP_LAST_];
@@ -2179,8 +2179,8 @@ rb_exec_event_hook_script_compiled(rb_execution_context_t *ec, const rb_iseq_t *
 
 void rb_vm_trap_exit(rb_vm_t *vm);
 
-VALUE make_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv);
-VALUE gen_rtl_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place);
+VALUE make_sir_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv);
+VALUE gen_sir_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place);
 
 #define MIRJIT_CONST(type, id, init_expr, fmt) type id = init_expr
 #define MIRJIT_CONST_PTR(type, id, init_expr) type id = init_expr

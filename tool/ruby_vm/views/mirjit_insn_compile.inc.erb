@@ -41,7 +41,7 @@ switch (insn_id) {
     }
 % insn.opes.each_with_index do |ope, i|
 %   if ope[:type] == "DBL"
-    MAYBE_UNUSED(<%= ope[:decl] %>) = rtl_val2dbl(operands[<%= i + 1 %>]);
+    MAYBE_UNUSED(<%= ope[:decl] %>) = sir_val2dbl(operands[<%= i + 1 %>]);
 %   else
     MAYBE_UNUSED(<%= ope[:decl] %>) = (<%= ope[:type] %>)operands[<%= i + 1 %>];
 %   end

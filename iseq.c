@@ -35,7 +35,7 @@
 #include "internal/variable.h"
 #include "iseq.h"
 #include "mjit.h"
-#include "rtl.h"
+#include "sir.h"
 #include "ruby/util.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
@@ -112,7 +112,7 @@ rb_iseq_free(const rb_iseq_t *iseq)
 	struct rb_iseq_constant_body *const body = iseq->body;
 	mjit_free_iseq(iseq); /* Notify MJIT */
         rb_yjit_iseq_free(body);
-        rb_rtl_iseq_free(body);
+        rb_sir_iseq_free(body);
 	ruby_xfree((void *)body->iseq_encoded);
 	ruby_xfree((void *)body->insns_info.body);
 	if (body->insns_info.positions) ruby_xfree((void *)body->insns_info.positions);
@@ -1992,7 +1992,7 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	break;
 
     case TS_DBL:{
-	ret = rb_sprintf("%-.10g", rtl_val2dbl(op));
+	ret = rb_sprintf("%-.10g", sir_val2dbl(op));
         break;
     }
     case TS_LINDEX:{
@@ -2859,7 +2859,7 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 		rb_ary_push(ary, INT2FIX(*seq));
 		break;
             case TS_DBL:
-		rb_ary_push(ary, DBL2NUM(rtl_val2dbl(*seq)));
+		rb_ary_push(ary, DBL2NUM(sir_val2dbl(*seq)));
 		break;
             case TS_VALUE:
 		rb_ary_push(ary, obj_resurrect(*seq));
@@ -3347,7 +3347,7 @@ iseq_add_local_tracepoint(const rb_iseq_t *iseq, rb_event_flag_t turnon_events, 
     }
 
     if (n > 0) {
-        rb_rtl_trace_update(iseq);
+        rb_sir_trace_update(iseq);
         if (iseq->aux.exec.local_hooks == NULL) {
             ((rb_iseq_t *)iseq)->aux.exec.local_hooks = RB_ZALLOC(rb_hook_list_t);
         }
@@ -3411,7 +3411,7 @@ iseq_remove_local_tracepoint(const rb_iseq_t *iseq, VALUE tpval)
             pc += encoded_iseq_trace_instrument(body, pc,
                                                 pc_events & (local_events | iseq->aux.exec.global_trace_events), false);
         }
-        rb_rtl_trace_update(iseq);
+        rb_sir_trace_update(iseq);
     }
     return n;
 }
@@ -3463,7 +3463,7 @@ rb_iseq_trace_set(const rb_iseq_t *iseq, rb_event_flag_t turnon_events)
             rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pc);
             pc += encoded_iseq_trace_instrument(body, pc, pc_events & enabled_events, true);
 	}
-        rb_rtl_trace_update(iseq);
+        rb_sir_trace_update(iseq);
     }
 }
 

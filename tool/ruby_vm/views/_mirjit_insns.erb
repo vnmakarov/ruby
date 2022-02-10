@@ -6,14 +6,14 @@
 %# conditions mentioned  in the  file COPYING  are met.   Consult the  file for
 %# details.
 %
-% # see rtl_exec.c
+% # see sir_exec.c
 % require 'set'
 % def get_mir_jit_insns
 %   mir_jit_insns = ['getlocal', 'setlocal', 'opt_send_without_block', 'jump2', 'branch2', 'branchnil2',
-%                    'mov', 'movi', 'rtl_setlocal',
-%                    'rtl_getivar', 'rtl_igetivar', 'rtl_setivar', 'rtl_iseq_send_without_block',
-%                    'rtl_opt_send_ivget', 'rtl_opt_send_ivset', 'rtl_opt_send_without_block',
-%                    'rtl_cfunc_send', 'rtl_iter_start', 'rtl_iter_body'].to_set
+%                    'mov', 'movi', 'sir_setlocal',
+%                    'sir_getivar', 'sir_igetivar', 'sir_setivar', 'sir_iseq_send_without_block',
+%                    'sir_opt_send_ivget', 'sir_opt_send_ivset', 'sir_opt_send_without_block',
+%                    'sir_cfunc_send', 'sir_iter_start', 'sir_iter_body'].to_set
 %   def funcs0(set, n, suffixes)
 %     set << n
 %     suffixes.each do |suf|

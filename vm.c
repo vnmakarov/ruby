@@ -1889,7 +1889,7 @@ rb_vm_check_redefinition_opt_method(const rb_method_entry_t *me, VALUE klass)
             int flag = vm_redefinition_check_flag(klass);
             rb_yjit_bop_redefined(klass, me, (enum ruby_basic_operators)bop);
 	    ruby_vm_redefined_flag[bop] |= flag;
-            rb_rtl_bop_redefined((enum ruby_basic_operators)bop, flag); /* should be after setting the flag */
+            rb_sir_bop_redefined((enum ruby_basic_operators)bop, flag); /* should be after setting the flag */
 	}
     }
 }

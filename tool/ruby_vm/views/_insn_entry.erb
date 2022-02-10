@@ -22,7 +22,7 @@ INSN_ENTRY(<%= insn.name %>)
 %
 % insn.opes.each_with_index do |ope, i|
 %   if ope[:type] == "DBL"
-      <%= ope[:decl] %> = rtl_val2dbl(GET_OPERAND(<%= i + 1 %>));
+      <%= ope[:decl] %> = sir_val2dbl(GET_OPERAND(<%= i + 1 %>));
 %   else
       <%= ope[:decl] %> = (<%= ope[:type] %>)GET_OPERAND(<%= i + 1 %>);
 %end

@@ -1,20 +1,20 @@
 #include "sir.h"
 
-static struct rb_rtl_options rtl_options;
+static struct rb_sir_options sir_options;
 
 int
-rb_rtl_enabled_p(void) { return rtl_options.rtl_enabled_p; }
+rb_sir_enabled_p(void) { return sir_options.sir_enabled_p; }
 
 int
-rb_rtl_debug_p(void) { return rtl_options.debug_p; }
+rb_sir_debug_p(void) { return sir_options.debug_p; }
 
 void
-rb_rtl_init(struct rb_rtl_options *options) {
-    rtl_options = *options;
-    rb_rtl_gen_init();
+rb_sir_init(struct rb_sir_options *options) {
+    sir_options = *options;
+    rb_sir_gen_init();
 }
 
 void
-rb_rtl_finish(struct rb_rtl_options *options) {
-    rb_rtl_gen_finish();
+rb_sir_finish(struct rb_sir_options *options) {
+    rb_sir_gen_finish();
 }
