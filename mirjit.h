@@ -8,6 +8,8 @@
 #ifndef MIRJIT_H
 #define MIRJIT_H 1
 
+#include "vm_core.h"
+
 /* MIRJIT_STATS controls supporting runtime counters in generation and execution of MIRJIT code.
    Switching this on slows down interpretation enormously. */
 #ifndef MIRJIT_EXEC_STATS
@@ -22,6 +24,7 @@ struct rb_mirjit_options {
 
 int rb_mirjit_enabled_p(void);
 int rb_mirjit_debug_p(void);
+void rb_jit_bbv(struct rb_iseq_bbv *bbv);
 void rb_mirjit_init(struct rb_mirjit_options *options);
 void rb_mirjit_finish(void);
 
