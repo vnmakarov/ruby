@@ -211,33 +211,33 @@ get_sir_insn3_id(enum ruby_vminsn_type id, int local_p, int local2_p, int local3
 
 static enum ruby_vminsn_type
 get_var_res_sir_insn_id(enum ruby_vminsn_type id) {
-#define VAR_RES_SIR_INSN_ID_CASE0(insn_name)			\
-    case CONCAT(insn_name, sss): return CONCAT(insn_name, vss);	\
-    case CONCAT(insn_name, svv): return CONCAT(insn_name, vvv);	\
-    case CONCAT(insn_name, svi): return CONCAT(insn_name, vvi);	\
-    case CONCAT(insn_name, svs): return CONCAT(insn_name, vvs);	\
-    case CONCAT(insn_name, ssv): return CONCAT(insn_name, vsv);	\
-    case CONCAT(insn_name, ssi): return CONCAT(insn_name, vsi);
+#define VAR_RES_SIR_INSN_ID_CASE0(insn_name)				\
+    case SIR_NAME2(insn_name, sss): return SIR_NAME2(insn_name, vss);	\
+    case SIR_NAME2(insn_name, svv): return SIR_NAME2(insn_name, vvv);	\
+    case SIR_NAME2(insn_name, svi): return SIR_NAME2(insn_name, vvi);	\
+    case SIR_NAME2(insn_name, svs): return SIR_NAME2(insn_name, vvs);	\
+    case SIR_NAME2(insn_name, ssv): return SIR_NAME2(insn_name, vsv);	\
+    case SIR_NAME2(insn_name, ssi): return SIR_NAME2(insn_name, vsi);
 
-#define VAR_RES_SIR_INSN_ID_CASE(insn_name)			\
-    VAR_RES_SIR_INSN_ID_CASE0(insn_name)			\
-    case CONCAT(insn_name, siv): return CONCAT(insn_name, viv);	\
-    case CONCAT(insn_name, sis): return CONCAT(insn_name, vis);
+#define VAR_RES_SIR_INSN_ID_CASE(insn_name)				\
+    VAR_RES_SIR_INSN_ID_CASE0(insn_name)				\
+    case SIR_NAME2(insn_name, siv): return SIR_NAME2(insn_name, viv);	\
+    case SIR_NAME2(insn_name, sis): return SIR_NAME2(insn_name, vis);
 
     switch (id) {
-    VAR_RES_SIR_INSN_ID_CASE(BIN(sir_iplus))
-    VAR_RES_SIR_INSN_ID_CASE(BIN(sir_iminus))
-    VAR_RES_SIR_INSN_ID_CASE(BIN(sir_imult))
-    VAR_RES_SIR_INSN_ID_CASE(BIN(sir_idiv))
-    VAR_RES_SIR_INSN_ID_CASE(BIN(sir_imod))
-    VAR_RES_SIR_INSN_ID_CASE0(BIN(sir_ior))
-    VAR_RES_SIR_INSN_ID_CASE0(BIN(sir_iand))
-    VAR_RES_SIR_INSN_ID_CASE0(BIN(sir_ieq))
-    VAR_RES_SIR_INSN_ID_CASE0(BIN(sir_ineq))
-    VAR_RES_SIR_INSN_ID_CASE0(BIN(sir_ilt))
-    VAR_RES_SIR_INSN_ID_CASE0(BIN(sir_igt))
-    VAR_RES_SIR_INSN_ID_CASE0(BIN(sir_ile))
-    VAR_RES_SIR_INSN_ID_CASE0(BIN(sir_ige))
+    VAR_RES_SIR_INSN_ID_CASE(iplus)
+    VAR_RES_SIR_INSN_ID_CASE(iminus)
+    VAR_RES_SIR_INSN_ID_CASE(imult)
+    VAR_RES_SIR_INSN_ID_CASE(idiv)
+    VAR_RES_SIR_INSN_ID_CASE(imod)
+    VAR_RES_SIR_INSN_ID_CASE0(ior)
+    VAR_RES_SIR_INSN_ID_CASE0(iand)
+    VAR_RES_SIR_INSN_ID_CASE0(ieq)
+    VAR_RES_SIR_INSN_ID_CASE0(ineq)
+    VAR_RES_SIR_INSN_ID_CASE0(ilt)
+    VAR_RES_SIR_INSN_ID_CASE0(igt)
+    VAR_RES_SIR_INSN_ID_CASE0(ile)
+    VAR_RES_SIR_INSN_ID_CASE0(ige)
     default: return BIN(nop);
     }
 }
