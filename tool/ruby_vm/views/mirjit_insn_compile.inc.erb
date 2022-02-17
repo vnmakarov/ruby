@@ -65,10 +65,9 @@ switch (insn_id) {
 % if call_p
     fmt_output(buff, "  if (pc != 0x%"PRIxVALUE ") goto exit;\n", (VALUE)next_insn_pc);
 % end
-    break;
+    return TRUE;
   }
 % end
   default:
-    fprintf(stderr, "MIR JIT internal error: %s\n", insn_name(insn_id));
-    exit (1);
+    return FALSE;
 }
