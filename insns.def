@@ -2878,9 +2878,6 @@ bbv_start
 ()
 ()
 {
-    struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
-    if (--bbv_ref->count < 0)
-        rb_sir_bbv_start_change(GET_CFP());
 }
 
 DEFINE_INSN
@@ -2892,7 +2889,7 @@ bbv_cont
 }
 
 DEFINE_INSN
-bbv_nop
+bbv_jit_call
 (lindex_t bbv)
 ()
 ()
@@ -2950,7 +2947,7 @@ specialize_bbv
 ()
 {
     struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
-    if (1 || --bbv_ref->count < 0) {
+    if (--bbv_ref->count < 0) {
         VALUE *cont_pc = rb_sir_specialize_bbv(GET_CFP(), bbv_ref);
         SET_PC(cont_pc);
         END_INSN(specialize_bbv); /* to skip pc increase */

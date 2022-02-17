@@ -2704,6 +2704,7 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
         cont_pc = body->bbv_code + bbv_cont_pos;
     }
     RB_VM_LOCK_LEAVE();
+    rb_jit_bbv(bbv);
     return cont_pc;
 }
 
@@ -2908,15 +2909,6 @@ rb_sir_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_c
     }
     RB_VM_LOCK_LEAVE();
     return NULL;
-}
-
-void
-rb_sir_bbv_start_change(rb_control_frame_t *reg_cfp) {
-    if (rb_sir_debug_p()) {
-        fprintf(stderr, "--> Changing %04d %s to %s\n", (int)(reg_cfp->pc - reg_cfp->iseq->body->bbv_code),
-                insn_name(BIN(bbv_start)), insn_name(BIN(bbv_nop)));
-    }
-    *(VALUE *)reg_cfp->pc = (VALUE)sir_dispatch_table[BIN(bbv_nop)];
 }
 
 const VALUE *
