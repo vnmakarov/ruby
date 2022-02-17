@@ -705,17 +705,17 @@ sir_insn_trace_update(const rb_iseq_t *iseq, VALUE *pc) {
     stack_pc = rb_iseq_encoded_pc(iseq, pc);
     VM_ASSERT(body->iseq_encoded <= stack_pc && stack_pc < body->iseq_encoded + body->iseq_size);
     switch (e->insn) {
-    case BIN(make_sir_bbv):
-    case BIN(make_sir_optpc_bbv):
-    case BIN(make_sir_catch_bbv):
+    case BIN(sir_make_bbv):
+    case BIN(sir_make_optpc_bbv):
+    case BIN(sir_make_catch_bbv):
     case BIN(specialize_bbv):
-    case BIN(gen_sir_bbv):
-    case BIN(gen_sir_bbv2):
-    case BIN(gen_sir_bbv_key):
-    case BIN(inspect_type):
-    case BIN(inspect_fixtype):
-    case BIN(inspect_stack_type):
-    case BIN(inspect_stack_fixtype):
+    case BIN(sir_gen_bbv):
+    case BIN(sir_gen_bbv2):
+    case BIN(sir_gen_bbv_key):
+    case BIN(sir_inspect_type):
+    case BIN(sir_inspect_fixtype):
+    case BIN(sir_inspect_stack_type):
+    case BIN(sir_inspect_stack_fixtype):
         /* we don't want to trace these insns */
         *pc = (VALUE)e->notrace_encoded_insn;
         break;
@@ -780,7 +780,7 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound, const char *prefix)
 
     for (i = start;;) {
 	insn_id = rb_vm_insn_decode((VALUE)code[i]);
-        if (insn_id == BIN(gen_sir_bbv) || insn_id == BIN(gen_sir_bbv2)) {
+        if (insn_id == BIN(sir_gen_bbv) || insn_id == BIN(sir_gen_bbv2)) {
             rb_iseq_bbv_t bbv = (rb_iseq_bbv_t)code[i + 1];
             fprintf(stderr, "%s  # %04d: %s(BBV 0x%llx, %s)", prefix,
                     i, insn_name(insn_id), (unsigned long long) bbv, bbv->env_p ? "env" : "stack");
@@ -896,10 +896,10 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
             VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
         }
     }
-    /* Add make_sir_xxx_bbv insns for all entry points and create bbvs for opt_table and catch_table: */
+    /* Add sir_make_xxx_bbv insns for all entry points and create bbvs for opt_table and catch_table: */
     VARR_TRUNC(VALUE, bbv_encoded, 0);
     VARR_TRUNC(int, pos_map, 0);
-    add_insn(0, BIN(make_sir_bbv), 1, 0);
+    add_insn(0, BIN(sir_make_bbv), 1, 0);
     if (body->param.opt_num == 0) {
         body->curr_param_opt_table = NULL;
     } else {
@@ -909,7 +909,7 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
             bbv = create_bbv(iseq, RB_BBV_OPT, i, pos, -1, TRUE, 0, NULL);
             VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
             body->curr_param_opt_table[i] = VARR_LENGTH(VALUE, bbv_encoded);
-            add_insn(pos, BIN(make_sir_optpc_bbv), 1, i);
+            add_insn(pos, BIN(sir_make_optpc_bbv), 1, i);
         }
     }
     if (body->catch_table != NULL) {
@@ -918,7 +918,7 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
             bbv = create_bbv(iseq, RB_BBV_CATCH, i, pos, -1, TRUE, 0, NULL);
             VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
             body->catch_table->entries[i].curr_cont = VARR_LENGTH(VALUE, bbv_encoded);
-            add_insn(pos, BIN(make_sir_catch_bbv), 1, i);
+            add_insn(pos, BIN(sir_make_catch_bbv), 1, i);
         }
     }
     body->n_bbvs = VARR_LENGTH(rb_iseq_bbv_t, bbvs);
@@ -1052,10 +1052,10 @@ set_case_hash_el(VALUE key, VALUE val, VALUE ptr)
     dst = data->origin_case_start + len + FIX2LONG(val);
     dst_bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, dst, data->env_p,
                       (int)VARR_LENGTH(char, attrs), VARR_ADDR(char, attrs));
-    disp = add_insn(dst, BIN(gen_sir_bbv_key), 3, (VALUE)dst_bbv, (VALUE)0, (VALUE) key);
+    disp = add_insn(dst, BIN(sir_gen_bbv_key), 3, (VALUE)dst_bbv, (VALUE)0, (VALUE) key);
     VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
     VARR_PUSH(int, out_gen_bbv_disps, disp);
-    VARR_SET(VALUE, bbv_encoded, disp + 2, (VALUE)(data->case_start - disp - insn_len(BIN(gen_sir_bbv_key))));
+    VARR_SET(VALUE, bbv_encoded, disp + 2, (VALUE)(data->case_start - disp - insn_len(BIN(sir_gen_bbv_key))));
     rb_hash_aset(data->map, key, INT2FIX(disp - (data->case_start + len)));
     return ST_CONTINUE;
 }
@@ -1190,7 +1190,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     }
     SIR_GEN_ASSERT(bbv->iseq_bound < 0 || bbv->iseq_start < bbv->iseq_bound);
     if (rb_mirjit_enabled_p())
-        add_insn_arr(bbv->iseq_start, BIN(bbv_start), 1, (VALUE *)&bbv);
+        add_insn_arr(bbv->iseq_start, BIN(sir_bbv_start), 1, (VALUE *)&bbv);
     for (curr_orig_insn_pos = bbv->iseq_start;;) {
         last_sir_ind = (int)VARR_LENGTH(VALUE, bbv_encoded);
 	insn_id = rb_vm_insn_addr2insn((void *)body->iseq_encoded[curr_orig_insn_pos]);
@@ -1223,7 +1223,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
             break;
         case BIN(nop):
-        case BIN(make_sir_bbv): // ???
+        case BIN(sir_make_bbv): // ???
         case BIN(sir_jump): /* nops not labeled by catch table will be removed */
             if (pos_in_catch_table_p (iseq, curr_orig_insn_pos)) {
                 last_sir_ind = add_insn(curr_orig_insn_pos, BIN(nop), 0);
@@ -1460,7 +1460,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             /* fall through */
         default:
         rest_cases:
-            if (insn_id != BIN(gen_sir_bbv) && insn_id != BIN(gen_sir_bbv2))
+            if (insn_id != BIN(sir_gen_bbv) && insn_id != BIN(sir_gen_bbv2))
                 add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
         stack_update:
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)) {
@@ -1502,32 +1502,32 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             dst = insn_id == BIN(opt_case_dispatch) ? curr_orig_insn_pos : bbv->iseq_bound;
         }
         dst_bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, dst, bbv->env_p, 0, NULL);
-        len = insn_len(BIN(gen_sir_bbv));
-        disp = add_insn(last_pos, BIN(gen_sir_bbv), 2, (VALUE)dst_bbv, (VALUE)0);
+        len = insn_len(BIN(sir_gen_bbv));
+        disp = add_insn(last_pos, BIN(sir_gen_bbv), 2, (VALUE)dst_bbv, (VALUE)0);
         VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
         VARR_PUSH(int, out_gen_bbv_disps, disp);
         VARR_SET(VALUE, bbv_encoded, disp + 2, (VALUE)(last_sir_ind - (disp + len)));
         if (dst2_p) {
-            len = insn_len(BIN(gen_sir_bbv2));
+            len = insn_len(BIN(sir_gen_bbv2));
             dst_bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, dst2, bbv->env_p, 0, NULL);
-            disp2 = add_insn(last_pos, BIN(gen_sir_bbv2), 2, (VALUE)dst_bbv, (VALUE)0);
+            disp2 = add_insn(last_pos, BIN(sir_gen_bbv2), 2, (VALUE)dst_bbv, (VALUE)0);
             VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
             VARR_PUSH(int, out_gen_bbv_disps, disp2);
             VARR_SET(VALUE, bbv_encoded, disp2 + 2, (VALUE)(last_sir_ind - (disp2 + len)));
         }
     }
-    if (insn_id == BIN(opt_case_dispatch)) { /* add gen_sir_bbv for cdhash and else_offset */
+    if (insn_id == BIN(opt_case_dispatch)) { /* add sir_gen_bbv for cdhash and else_offset */
         struct cdhash_set_el data;
 
         else_dst = curr_orig_insn_pos + (OFFSET)operands[1]; /* end of opt_case_dispatch + else dst */
         else_dst_bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, else_dst, bbv->env_p, 0, NULL);
-        else_disp = add_insn(last_pos, BIN(gen_sir_bbv2), 2, (VALUE)else_dst_bbv, (VALUE)0);
+        else_disp = add_insn(last_pos, BIN(sir_gen_bbv2), 2, (VALUE)else_dst_bbv, (VALUE)0);
         VARR_PUSH(rb_iseq_bbv_t, out_bbvs, else_dst_bbv);
         VARR_PUSH(int, out_gen_bbv_disps, else_disp);
-        len = insn_len(BIN(gen_sir_bbv2));
+        len = insn_len(BIN(sir_gen_bbv2));
         VARR_SET(VALUE, bbv_encoded, else_disp + 2, (VALUE)(last_sir_ind - (else_disp + len)));
         VARR_SET(VALUE, bbv_encoded, last_sir_ind + 2, (VALUE)(else_disp - last_sir_ind - len));
-        /* set up new hash and add insns gen_sir_bb_key */
+        /* set up new hash and add insns sir_gen_bb_key */
         data.iseq = iseq;
         data.map = rb_hash_new();
         RHASH_TBL_RAW(data.map)->type = &cdhash_type;
@@ -1548,11 +1548,11 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     if (insn_id != BIN(leave) && insn_id != BIN(throw) && insn_id != BIN(opt_case_dispatch)) {
         insn_id = body->bbv_code[bbv->bbv_start + last_sir_ind];
         offset = last_sir_ind + insn_len(insn_id); /* offset of the branch end from zero */
-        offset = disp - offset; /* offset relative to the 1st gen_sir_code */
+        offset = disp - offset; /* offset relative to the 1st sir_gen_code */
         body->bbv_code[bbv->bbv_start + last_sir_ind + 1] = (VALUE)offset;
         if (dst2_p) {
             offset2 = last_sir_ind + insn_len(insn_id); /* offset of the branch end from zero */
-            offset2 = disp2 - offset2;  /* offset relative to the 2nd gen_sir_code */
+            offset2 = disp2 - offset2;  /* offset relative to the 2nd sir_gen_code */
             body->bbv_code[bbv->bbv_start + last_sir_ind + 2] = (VALUE)offset2;
         }
     }
@@ -1624,15 +1624,15 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv, int gen_p) {
     for (in_e = dst_bbv->in_edges; in_e != NULL; in_e = in_e->next_in_edge) {
         SIR_GEN_ASSERT(in_e->out == dst_bbv);
         bbv = in_e->in;
-        bbv_gen_pos = bbv->bbv_start + in_e->gen_bbv_disp; /* pos of gen_sir_bbvxxx */
+        bbv_gen_pos = bbv->bbv_start + in_e->gen_bbv_disp; /* pos of sir_gen_bbvxxx */
         branch_offset = (OFFSET)body->bbv_code[bbv_gen_pos + 2];
-        if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(gen_sir_bbv)) {
-            branch_pos = bbv_gen_pos + insn_len(BIN(gen_sir_bbv)) + branch_offset;
-        } else if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(gen_sir_bbv2)) {
-            branch_pos = bbv_gen_pos + insn_len(BIN(gen_sir_bbv)) + branch_offset;
+        if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(sir_gen_bbv)) {
+            branch_pos = bbv_gen_pos + insn_len(BIN(sir_gen_bbv)) + branch_offset;
+        } else if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(sir_gen_bbv2)) {
+            branch_pos = bbv_gen_pos + insn_len(BIN(sir_gen_bbv)) + branch_offset;
         } else {
-            SIR_GEN_ASSERT(rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(gen_sir_bbv_key));
-            branch_pos = bbv_gen_pos + insn_len(BIN(gen_sir_bbv_key)) + branch_offset;
+            SIR_GEN_ASSERT(rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(sir_gen_bbv_key));
+            branch_pos = bbv_gen_pos + insn_len(BIN(sir_gen_bbv_key)) + branch_offset;
         }
         branch_id = rb_vm_insn_decode(body->bbv_code[branch_pos]);
         new_dest_pos = (gen_p ? bbv_gen_pos : dst_bbv->bbv_start);
@@ -1641,9 +1641,9 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv, int gen_p) {
             fprintf(stderr, "--> Redirect dest in %04d %s to %d\n",
                     (int)branch_pos, insn_name(branch_id), new_dest_pos);
         }
-        if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(gen_sir_bbv)) {
+        if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(sir_gen_bbv)) {
             body->bbv_code[branch_pos + 1] = offset;
-        } else if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(gen_sir_bbv2)) {
+        } else if (rb_vm_insn_decode(body->bbv_code[bbv_gen_pos]) == BIN(sir_gen_bbv2)) {
             body->bbv_code[branch_pos + 2] = offset;
         } else {
             SIR_GEN_ASSERT(branch_id == BIN(opt_case_dispatch));
@@ -1755,7 +1755,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             SIR_GEN_ASSERT(!profile_p);
             if (i < n_attrs && bbv->attrs[i] == ATTR_FIXNUM) continue;
             new_operands[0] = get_lvar_index(iseq, i);
-            add_spec_insn_arr(orig_bbv->bbv_start, BIN(inspect_type), 1, new_operands);
+            add_spec_insn_arr(orig_bbv->bbv_start, BIN(sir_inspect_type), 1, new_operands);
         }
     }
     for (curr_sir_insn_pos = orig_bbv->bbv_start;
@@ -1775,22 +1775,22 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                 orig_pos = -orig_pos - 1;
         }
         switch (insn_id) {
-        case BIN(inspect_type):
+        case BIN(sir_inspect_type):
             SIR_GEN_ASSERT(profile_p);
             setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_UNKNOWN);
             new_insn_pos = prev_new_insn_pos;
             break;/* it was not changed -- remove it */
-        case BIN(inspect_stack_type):
+        case BIN(sir_inspect_stack_type):
             SIR_GEN_ASSERT(profile_p);
             setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_UNKNOWN);
             new_insn_pos = prev_new_insn_pos;
             break;/* it was not changed -- remove it */
-        case BIN(inspect_fixtype):
+        case BIN(sir_inspect_fixtype):
             SIR_GEN_ASSERT(profile_p);
             setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_FIXNUM);
             add_spec_insn_arr(orig_pos, BIN(check_fixtype), len - 1, operands);
             break;
-        case BIN(inspect_stack_fixtype):
+        case BIN(sir_inspect_stack_fixtype):
             SIR_GEN_ASSERT(profile_p);
             setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_FIXNUM);
             add_spec_insn_arr(orig_pos, BIN(check_stack_fixtype), len - 1, operands);
@@ -2041,12 +2041,12 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         case BIN(getinstancevariable): /* to do specialized insn at the execution */
             SIR_GEN_ASSERT(len == 3);
             if (profile_p) goto rest_cases;
-            add_spec_insn_arr(orig_pos, BIN(make_sir_getivar), 2, operands);
+            add_spec_insn_arr(orig_pos, BIN(sir_make_getivar), 2, operands);
             goto stack_update;
         case BIN(setinstancevariable): /* to do specialized insn at the execution */
             SIR_GEN_ASSERT(len == 3);
             if (profile_p) goto rest_cases;
-            add_spec_insn_arr(orig_pos, BIN(make_sir_setivar), 2, operands);
+            add_spec_insn_arr(orig_pos, BIN(sir_make_setivar), 2, operands);
             goto stack_update;
         case BIN(opt_send_without_block): {
             CALL_DATA cd = (CALL_DATA)operands[0];
@@ -2058,7 +2058,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                 || (flags & VM_CALL_TAILCALL) != 0) goto rest_cases;
             new_operands[0] = operands[0];
             new_operands[1] = (VALUE)get_send_info(bbv, NULL, get_call_attrs(iseq, argc, stack_size));
-            add_spec_insn_arr(orig_pos, BIN(make_sir_send), 2, new_operands);
+            add_spec_insn_arr(orig_pos, BIN(sir_make_send), 2, new_operands);
             goto stack_update;
         }
         case BIN(send): {
@@ -2072,7 +2072,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                 || (flags & VM_CALL_TAILCALL) != 0 || (flags & VM_CALL_ARGS_BLOCKARG) != 0) goto rest_cases;
             new_operands[0] = operands[0];
             new_operands[1] = (VALUE)get_send_info(bbv, (rb_iseq_t *)operands[1], get_call_attrs(iseq, argc, stack_size));
-            add_spec_insn_arr(orig_pos, BIN(make_sir_send), 2, new_operands);
+            add_spec_insn_arr(orig_pos, BIN(sir_make_send), 2, new_operands);
             goto stack_update;
         }
         case BIN(invokesuper): {
@@ -2083,23 +2083,23 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             SIR_GEN_ASSERT(profile_p);
             attr = ATTR_FIXNUM;
             goto add_and_push;
-        case BIN(sir_opt_send_without_block):
+        case BIN(sir_send_without_block):
             SIR_GEN_ASSERT(profile_p);
             new_operands[0] = operands[0];
             add_spec_insn_arr(orig_pos, BIN(opt_send_without_block), 1, new_operands);
             goto stack_update;
         case BIN(sir_getivar):
         case BIN(sir_setivar):
-        case BIN(sir_opt_send_ivget):
-        case BIN(sir_opt_send_ivset):
+        case BIN(sir_send_ivget):
+        case BIN(sir_send_ivset):
             SIR_GEN_ASSERT(profile_p);
             goto rest_cases;
-        case BIN(make_sir_send): {
+        case BIN(sir_make_send): {
             struct rb_sir_send_info *si = (struct rb_sir_send_info *)operands[1];
 
             SIR_GEN_ASSERT(profile_p);
             update_attrs(si->block_iseq);
-            /* make_sir_send is not changed if we call cfunc and leave it by a throw
+            /* sir_make_send is not changed if we call cfunc and leave it by a throw
                (e.g. by break in a nested block) -- specialize it here: */
             if (change_to_cfunc_send(&body->bbv_code[curr_sir_insn_pos], iseq)) goto again;
             goto rest_cases;
@@ -2129,7 +2129,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             add_spec_insn_arr(orig_pos, BIN(sir_iter_start), 1, new_operands);
             disp = 0;
             if (mirjit_enabled_p)
-                disp = insn_len(BIN(bbv_cont));
+                disp = insn_len(BIN(sir_bbv_cont));
             new_operands[0] = (OFFSET)insn_len(BIN(sir_iter_cont)) + disp; /* to iter_finish */
             temp_attrs[1] = ATTR_END_MARKER;
             block_bbv = get_bbv(block_iseq, RB_BBV_REGULAR, 0, 0, FALSE,
@@ -2144,8 +2144,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             add_spec_insn_arr(orig_pos, BIN(sir_iter_body), 3, new_operands);
             disp = 0;
             if (mirjit_enabled_p) {
-                add_spec_insn_arr(orig_pos, BIN(bbv_cont), 1, (VALUE *)&bbv);
-                disp = insn_len(BIN(bbv_cont));
+                add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
+                disp = insn_len(BIN(sir_bbv_cont));
             }
             /* to int_iter */
             new_operands[0] = -(OFFSET)(disp + insn_len(BIN(sir_iter_body)) + insn_len(BIN(sir_iter_cont)));
@@ -2164,7 +2164,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             int argc = vm_ci_argc(((CALL_DATA)operands[0])->ci);
 
             if (mirjit_enabled_p)
-                add_spec_insn_arr(orig_pos, BIN(bbv_cont), 1, (VALUE *)&bbv);
+                add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
             SIR_GEN_ASSERT(profile_p);
             VARR_TRUNC(char, arg_attrs, 0);
             for (i = 0; i < argc; i++)
@@ -2220,7 +2220,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         case BIN(branchunless):
         case BIN(branchnil):
         case BIN(opt_getinlinecache):
-        case BIN(make_sir_bbv):
+        case BIN(sir_make_bbv):
             SIR_GEN_ASSERT(FALSE); /* cannot occur in SIR */
             break;
         case BIN(opt_case_dispatch):
@@ -2233,9 +2233,9 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             new_operands[1] = operands[1];
             add_spec_insn_arr(orig_pos, insn_id, 2, new_operands);
             goto stack_update;
-        case BIN(gen_sir_bbv):
-        case BIN(gen_sir_bbv2):
-        case BIN(gen_sir_bbv_key):
+        case BIN(sir_gen_bbv):
+        case BIN(sir_gen_bbv2):
+        case BIN(sir_gen_bbv_key):
             if (!compacted_attrs_p) {
                 compact_attrs(attrs);
                 compacted_attrs_p = TRUE;
@@ -2245,13 +2245,13 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                                       bbv->env_p, (int)VARR_LENGTH(char, attrs), VARR_ADDR(char, attrs));
             new_operands[0] = (VALUE)dst_bbv;
             new_operands[1] = (VALUE)((OFFSET)operands[1] + sir_branch_offset_add); /* offset of the branch */
-            /* Set up offset in the branch as it can be redirected from gen_sir_bbv */
+            /* Set up offset in the branch as it can be redirected from sir_gen_bbv */
             branch_pos = (int)VARR_LENGTH(VALUE, bbv_encoded) + len + (OFFSET)new_operands[1];
             branch_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, branch_pos);
             offset = VARR_LENGTH(VALUE, bbv_encoded) - branch_pos - insn_len(branch_id);
-            if (insn_id == BIN(gen_sir_bbv)) {
+            if (insn_id == BIN(sir_gen_bbv)) {
                 VARR_SET(VALUE, bbv_encoded, branch_pos + 1, (VALUE)(OFFSET)offset);
-            } else if (insn_id == BIN(gen_sir_bbv2)) {
+            } else if (insn_id == BIN(sir_gen_bbv2)) {
                 VARR_SET(VALUE, bbv_encoded, branch_pos + 2, (VALUE)(OFFSET)offset);
             } else {
                 SIR_GEN_ASSERT(branch_id == BIN(opt_case_dispatch));
@@ -2282,7 +2282,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)
                 || insn_id == BIN(sir_iseq_send_without_block)
                 || insn_id == BIN(sir_cfunc_send)
-                || insn_id == BIN(sir_opt_send_without_block)) {
+                || insn_id == BIN(sir_send_without_block)) {
                 inc = sp_inc_of_sendish(((CALL_DATA)operands[0])->ci);
             } else {
                 inc = insn_stack_increase(insn_id, operands);
@@ -2307,7 +2307,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                 enum ruby_vminsn_type next_insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[curr_sir_insn_pos + len]);
                 if (next_insn_id != BIN(pop)) {
                     new_operands[0] = 0;
-                    add_spec_insn_arr(orig_pos + len, BIN(inspect_stack_type), 1, new_operands);
+                    add_spec_insn_arr(orig_pos + len, BIN(sir_inspect_stack_type), 1, new_operands);
                 }
             }
         }
@@ -2352,26 +2352,26 @@ change_insn(const rb_iseq_t *iseq, VALUE *pc, enum ruby_vminsn_type new_insn_id)
 
 void
 rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
-    if (FIXNUM_P(val) && rb_vm_insn_decode(*cfp->pc) != BIN(inspect_fixtype)
-        && rb_vm_insn_decode(*cfp->pc) != BIN(inspect_stack_fixtype)) {
+    if (FIXNUM_P(val) && rb_vm_insn_decode(*cfp->pc) != BIN(sir_inspect_fixtype)
+        && rb_vm_insn_decode(*cfp->pc) != BIN(sir_inspect_stack_fixtype)) {
         VALUE *insn_pc = (VALUE *)cfp->pc;
         int debug_p = rb_sir_debug_p();
 
         RB_VM_LOCK_ENTER();
         if (stack_p) {
-            if (rb_vm_insn_decode(*cfp->pc) == BIN(inspect_stack_type)) {
+            if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type)) {
                 /* check that it was not already changed, e.g. in another Ractor */
                 if (debug_p)
-                    fprintf(stderr, "--> Changing inspect_stack_type to %4ld inspect_stack_fixtype\n",
+                    fprintf(stderr, "--> Changing sir_inspect_stack_type to %4ld sir_inspect_stack_fixtype\n",
                             insn_pc - cfp->iseq->body->bbv_code);
-                change_insn(cfp->iseq, insn_pc, BIN(inspect_stack_fixtype));
+                change_insn(cfp->iseq, insn_pc, BIN(sir_inspect_stack_fixtype));
             }
         } else {
-            if (rb_vm_insn_decode(*cfp->pc) == BIN(inspect_type)) {
+            if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)) {
                 if (debug_p)
-                    fprintf(stderr, "--> Changing inspect_type to %4ld inspect_fixtype\n",
+                    fprintf(stderr, "--> Changing sir_inspect_type to %4ld sir_inspect_fixtype\n",
                             insn_pc - cfp->iseq->body->bbv_code);
-                change_insn(cfp->iseq, insn_pc, BIN(inspect_fixtype));
+                change_insn(cfp->iseq, insn_pc, BIN(sir_inspect_fixtype));
             }
         }
         RB_VM_LOCK_LEAVE();
@@ -2457,18 +2457,18 @@ rb_sir_gen_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int branch_offset, in
 
     RB_VM_LOCK_ENTER();
     struct rb_iseq_constant_body *body = cfp->iseq->body;
-    int gen_bbv_insn_pos = cfp->pc - body->bbv_code; /* position of gen_sir_bbv end */
+    int gen_bbv_insn_pos = cfp->pc - body->bbv_code; /* position of sir_gen_bbv end */
     enum ruby_vminsn_type branch_id = rb_vm_insn_decode(body->bbv_code[gen_bbv_insn_pos + branch_offset]);
-    int branch_len = insn_len(branch_id), gen_sir_bbv_len = insn_len(BIN(gen_sir_bbv));
+    int branch_len = insn_len(branch_id), sir_gen_bbv_len = insn_len(BIN(sir_gen_bbv));
 
     SIR_GEN_ASSERT(gen_bbv_insn_pos >= 0 && gen_bbv_insn_pos <= body->bbv_code_bound
-                   && insn_len(BIN(gen_sir_bbv)) == insn_len(BIN(gen_sir_bbv2)));
-    gen_bbv_insn_pos -= gen_sir_bbv_len;
-    if (bbv->bbv_start < 0) /* can be generated by another gen_sir_bbv insn */
+                   && insn_len(BIN(sir_gen_bbv)) == insn_len(BIN(sir_gen_bbv2)));
+    gen_bbv_insn_pos -= sir_gen_bbv_len;
+    if (bbv->bbv_start < 0) /* can be generated by another sir_gen_bbv insn */
         gen_sir_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__, 0);
     /* redirect hash from sir_gen_bbv[2] to the generated bbv start */
-    body->bbv_code[gen_bbv_insn_pos + gen_sir_bbv_len + branch_offset + (first_p ? 1 : 2)]
-        = bbv->bbv_start - (gen_bbv_insn_pos + gen_sir_bbv_len + branch_offset + branch_len);
+    body->bbv_code[gen_bbv_insn_pos + sir_gen_bbv_len + branch_offset + (first_p ? 1 : 2)]
+        = bbv->bbv_start - (gen_bbv_insn_pos + sir_gen_bbv_len + branch_offset + branch_len);
     start_pc = body->bbv_code + bbv->bbv_start;
     RB_VM_LOCK_LEAVE();
     return start_pc;
@@ -2480,20 +2480,20 @@ rb_sir_gen_bbv_key(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int case_offset, 
 
     RB_VM_LOCK_ENTER();
     struct rb_iseq_constant_body *body = cfp->iseq->body;
-    int gen_bbv_insn_pos = cfp->pc - body->bbv_code; /* position of gen_sir_code end */
+    int gen_bbv_insn_pos = cfp->pc - body->bbv_code; /* position of sir_gen_code end */
     enum ruby_vminsn_type branch_id = rb_vm_insn_decode(body->bbv_code[gen_bbv_insn_pos + case_offset]);
-    int branch_len = insn_len(branch_id), gen_sir_bbv_len = insn_len(BIN(gen_sir_bbv));
+    int branch_len = insn_len(branch_id), sir_gen_bbv_len = insn_len(BIN(sir_gen_bbv));
     CDHASH hash;
 
     hash = body->bbv_code[gen_bbv_insn_pos + case_offset + 1];
     SIR_GEN_ASSERT(branch_id == BIN(opt_case_dispatch)
                    && gen_bbv_insn_pos >= 0 && gen_bbv_insn_pos <= body->bbv_code_bound);
-    gen_bbv_insn_pos -= gen_sir_bbv_len;
-    if (bbv->bbv_start < 0) /* can be generated by another gen_sir_bbv insn */
+    gen_bbv_insn_pos -= sir_gen_bbv_len;
+    if (bbv->bbv_start < 0) /* can be generated by another sir_gen_bbv insn */
         gen_sir_bbv_code((rb_iseq_t *)cfp->iseq, bbv, cfp->sp - cfp->__bp__, 0);
     /* redirect hash from sir_gen_bbv_key to the generated bbv start */
     rb_hash_aset(hash, key, INT2FIX(bbv->bbv_start
-                                    - (gen_bbv_insn_pos + gen_sir_bbv_len + case_offset + branch_len)));
+                                    - (gen_bbv_insn_pos + sir_gen_bbv_len + case_offset + branch_len)));
     start_pc = body->bbv_code + bbv->bbv_start;
     RB_VM_LOCK_LEAVE();
     return start_pc;
@@ -2637,7 +2637,7 @@ invalidate_bbv_code(rb_iseq_bbv_t bbv) {
     if (bbv->type == RB_BBV_REGULAR && enter_bbv_p)
         body->iseq_start_pc = NULL; /* to check that we process BBV_OPT after BBV_REGULAR entrance */
     remove_out_edges(bbv);
-    redirect_src_bbv_dests(bbv, TRUE); /* redirect branches in src bbvs to corresponding gen_sir_bbvxxx */
+    redirect_src_bbv_dests(bbv, TRUE); /* redirect branches in src bbvs to corresponding sir_gen_bbvxxx */
     bbv->bbv_start = -1; /* mark bbv as needed for new code */
     delete_bbv_call_elems(bbv);
     if(!enter_bbv_p) {
@@ -2696,7 +2696,7 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
             if (debug_p)
                 fprintf(stderr, "<<< Start of further type specialization of called BBVs\n");
             /* Here we can reuse globals.  Remember bbvs is updated only for
-               profile_p and gen_sir_bbv_code never means profile_p. */
+               profile_p and sir_gen_bbv_code never means profile_p. */
             while (VARR_LENGTH(rb_iseq_bbv_t, bbvs) != 0) {
                 called_bbv = VARR_POP(rb_iseq_bbv_t, bbvs);
                 if (called_bbv->bbv_start < 0) /* bbv can occur more one time in bbvs */
@@ -2715,13 +2715,13 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
 
 void
 rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic, VALUE val) {
-    VALUE *insn_pc = (VALUE *)cfp->pc - insn_len(BIN(make_sir_getivar));
+    VALUE *insn_pc = (VALUE *)cfp->pc - insn_len(BIN(sir_make_getivar));
     int debug_p = rb_sir_debug_p(), fixnum_p = FIXNUM_P(val);
 
     if (RB_TYPE_P(self, T_OBJECT)) {
         RB_VM_LOCK_ENTER();
         if (debug_p)
-            fprintf(stderr, "--> Changing make_sir_getivar to %4ld %s\n",
+            fprintf(stderr, "--> Changing sir_make_getivar to %4ld %s\n",
                     insn_pc - cfp->iseq->body->bbv_code, fixnum_p ? "sir_igetivar" : "sir_getivar");
         *insn_pc = (VALUE)sir_dispatch_table[fixnum_p ? BIN(sir_igetivar) : BIN(sir_getivar)];
         RB_VM_LOCK_LEAVE();
@@ -2729,28 +2729,28 @@ rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic, VALUE val) {
     }
     RB_VM_LOCK_ENTER();
     if (debug_p)
-        fprintf(stderr, "--> Changing make_sir_getivar to getinstancevariable\n");
+        fprintf(stderr, "--> Changing sir_make_getivar to getinstancevariable\n");
     change_insn(cfp->iseq, insn_pc, BIN(getinstancevariable));
     RB_VM_LOCK_LEAVE();
 }
 
 void
 rb_sir_change_setivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
-    VALUE *insn_pc = (VALUE *)cfp->pc - insn_len(BIN(make_sir_setivar));
+    VALUE *insn_pc = (VALUE *)cfp->pc - insn_len(BIN(sir_make_setivar));
     int debug_p = rb_sir_debug_p();
 
     SIR_GEN_ASSERT(ic->entry != NULL);
     if (RB_TYPE_P(self, T_OBJECT)) {
         RB_VM_LOCK_ENTER();
         if (debug_p)
-            fprintf(stderr, "--> Changing make_sir_setivar to sir_setivar\n");
+            fprintf(stderr, "--> Changing sir_make_setivar to sir_setivar\n");
         change_insn(cfp->iseq, insn_pc, BIN(sir_setivar));
         RB_VM_LOCK_LEAVE();
         return;
     }
     RB_VM_LOCK_ENTER();
     if (debug_p)
-        fprintf(stderr, "--> Changing make_sir_set_ivar to setinstancevariable\n");
+        fprintf(stderr, "--> Changing sir_make_set_ivar to setinstancevariable\n");
     change_insn(cfp->iseq, insn_pc, BIN(setinstancevariable));
     RB_VM_LOCK_LEAVE();
 }
@@ -2760,7 +2760,7 @@ extern bool rb_iseq_only_optparam_p(const rb_iseq_t *iseq);
 static void
 change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,
                           CALL_DATA cd, struct rb_sir_send_info *si) {
-    VALUE *call_pc = (VALUE *)caller_cfp->pc - insn_len(BIN(make_sir_send));
+    VALUE *call_pc = (VALUE *)caller_cfp->pc - insn_len(BIN(sir_make_send));
     VALUE recv;
     const struct rb_callinfo *ci = cd->ci;
     int argc = vm_ci_argc(ci);
@@ -2782,7 +2782,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             SIR_GEN_ASSERT(0 <= opt && opt <= body->param.opt_num);
             if (debug_p) {
                 fprintf(stderr,
-                        "--> Changing make_sir_send to sir_iseq_send_without_block: argc=%d",
+                        "--> Changing sir_make_send to sir_iseq_send_without_block: argc=%d",
                         argc);
                 print_attrs(si->attrs);
             }
@@ -2796,7 +2796,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
                 gen_sir_bbv_code(iseq, bbv, 0, argc);
             SIR_GEN_ASSERT(bbv->iseq == iseq);
             ec->cfp->pc = &iseq->body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
-            /* Change make_sir_send(cd,send_info) to sir_iseq_send_without_block(cd, bbv) */
+            /* Change sir_make_send(cd,send_info) to sir_iseq_send_without_block(cd, bbv) */
             change_insn(caller_cfp->iseq, call_pc, BIN(sir_iseq_send_without_block));
             call_pc[2] = (VALUE)bbv;
             add_call_elem(si->caller_bbv, vm_cc_cme(cd->cc));
@@ -2808,8 +2808,8 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
                 return; /* do nothing -- no attr index yet */
             SIR_GEN_ASSERT(vm_cc_attr_index(cc) > 0);
             if (debug_p)
-                fprintf(stderr, "--> Changing make_sir_send to sir_opt_send_ivget\n");
-            change_insn(caller_cfp->iseq, call_pc, BIN(sir_opt_send_ivget));
+                fprintf(stderr, "--> Changing sir_make_send to sir_send_ivget\n");
+            change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_ivget));
             call_pc[1] = (VALUE)cc->klass;
             call_pc[2] = (VALUE)vm_cc_attr_index(cc) - 1;
         } else if (cme->def->type == VM_METHOD_TYPE_ATTRSET
@@ -2819,8 +2819,8 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             if (vm_cc_attr_index(cc) <= 0)
                 return; /* do nothing -- no attr index yet */
             if (debug_p)
-                fprintf(stderr, "--> Changing make_sir_send to sir_opt_send_ivset\n");
-            change_insn(caller_cfp->iseq, call_pc, BIN(sir_opt_send_ivset));
+                fprintf(stderr, "--> Changing sir_make_send to sir_send_ivset\n");
+            change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_ivset));
             call_pc[1] = (VALUE)cc->klass;
             call_pc[2] = (VALUE)vm_cc_attr_index(cc) - 1;
         }
@@ -2830,17 +2830,17 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
     if (no_opt_p) {
         if (debug_p) {
             fprintf(stderr,
-                    "--> Changing make_sir_send to sir_opt_send_without_block: argc=%d",
+                    "--> Changing sir_make_send to sir_send_without_block: argc=%d",
                     argc);
             print_attrs(si->attrs);
         }
-        change_insn(caller_cfp->iseq, call_pc, BIN(sir_opt_send_without_block));
+        change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_without_block));
     }
 }
 
 static int
 change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
-    SIR_GEN_ASSERT(*call_pc == (VALUE)sir_dispatch_table[BIN(make_sir_send)]);
+    SIR_GEN_ASSERT(*call_pc == (VALUE)sir_dispatch_table[BIN(sir_make_send)]);
     CALL_DATA cd = (CALL_DATA)call_pc[1];
     struct rb_sir_send_info *si = (void *)call_pc[2];
     const struct rb_callinfo *ci = cd->ci;
@@ -2854,9 +2854,9 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
     cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
     if (argc != cfunc->argc) return FALSE;
     if (debug_p) {
-        fprintf(stderr, "--> Changing make_sir_send to sir_cfunc_send: argc=%d\n", argc);
+        fprintf(stderr, "--> Changing sir_make_send to sir_cfunc_send: argc=%d\n", argc);
     }
-    /* Change make_sir_send(cd,send_info) to sir_cfunc_send(cd, iseq) */
+    /* Change sir_make_send(cd,send_info) to sir_cfunc_send(cd, iseq) */
     change_insn(caller_iseq, call_pc, BIN(sir_cfunc_send));
     call_pc[2] = (VALUE)si->block_iseq;
     add_call_elem(si->caller_bbv, vm_cc_cme(cd->cc));
@@ -2866,7 +2866,7 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
 void
 rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,
                    CALL_DATA cd, struct rb_sir_send_info *si) {
-    VALUE *call_pc = (VALUE *)caller_cfp->pc - insn_len(BIN(make_sir_send));
+    VALUE *call_pc = (VALUE *)caller_cfp->pc - insn_len(BIN(sir_make_send));
     int no_opt_p = FALSE;
 
     RB_VM_LOCK_ENTER();
@@ -2878,12 +2878,12 @@ rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_
     if (no_opt_p) {
         if (rb_sir_debug_p()) {
             fprintf(stderr,
-                    "--> Changing make_sir_send to sir_opt_send_without_block: argc=%d",
+                    "--> Changing sir_make_send to sir_send_without_block: argc=%d",
                     vm_ci_argc(cd->ci));
             print_attrs(si->attrs);
         }
         if (si->block_iseq == NULL) {
-            change_insn(caller_cfp->iseq, call_pc, BIN(sir_opt_send_without_block));
+            change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_without_block));
         } else {
             call_pc[2] = (VALUE)si->block_iseq;
             change_insn(caller_cfp->iseq, call_pc, BIN(send));
@@ -2936,7 +2936,7 @@ rb_sir_iseq_free(struct rb_iseq_constant_body *body) {
         bbv = body->bbvs[i];
         for (curr_bbv = bbv; curr_bbv != NULL; curr_bbv = next_bbv) {
             next_bbv = curr_bbv->next_bbv;
-            /* ??? free attrs in make_sir_send */
+            /* ??? free attrs in sir_make_send */
             ruby_xfree((void *)curr_bbv);
         }
     }

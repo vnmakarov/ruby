@@ -1609,7 +1609,7 @@ sir_setlocal
     (void)RB_DEBUG_COUNTER_INC_IF(lvar_set_dynamic, FALSE);
 }
 
-/* --- Type specialized RTL insns: --- */
+/* --- Type specialized insns: --- */
 DEFINE_INSN
 sir_iplussvv sir_iminussvv sir_imultsvv sir_idivsvv sir_imodsvv
 sir_iorsvv sir_iandsvv sir_ieqsvv sir_ineqsvv
@@ -2041,7 +2041,7 @@ sir_ibeqsi sir_ibneqsi sir_ibltsi sir_ibgtsi sir_iblesi sir_ibgesi
     RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
-/* --- end of specialized SIR insns --- */
+/* --- end of type specialized insns --- */
 
 DEFINE_INSN
 check_fixtype
@@ -2071,6 +2071,7 @@ check_stack_fixtype
 
 
 /* --- general SIR insns: --- */
+
 DEFINE_INSN
 sir_plussvv sir_minussvv sir_multsvv sir_divsvv sir_modsvv sir_orsvv sir_andsvv
 sir_ltsvv sir_gtsvv sir_lesvv sir_gesvv sir_arefsvv
@@ -2522,7 +2523,7 @@ sir_asetvss
 /* --- end of general SIR insns --- */
 
 DEFINE_INSN
-inspect_type inspect_fixtype
+sir_inspect_type sir_inspect_fixtype
 (lindex_t n)
 ()
 ()
@@ -2533,7 +2534,7 @@ inspect_type inspect_fixtype
 }
 
 DEFINE_INSN
-inspect_stack_type inspect_stack_fixtype
+sir_inspect_stack_type sir_inspect_stack_fixtype
 (lindex_t n)
 ()
 ()
@@ -2666,7 +2667,7 @@ sir_iseq_send_without_block
 /* Specialized call of method without block created from make_sir_send:
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
-sir_opt_send_ivget
+sir_send_ivget
 (VALUE klass, lindex_t index)
 (...)
 (VALUE val)
@@ -2676,24 +2677,24 @@ sir_opt_send_ivget
 {
     VALUE recv = TOPN(0);
 
-    if (klass != CLASS_OF(recv)) goto sir_opt_send_ivget_exit;
+    if (klass != CLASS_OF(recv)) goto sir_send_ivget_exit;
     VM_ASSERT(RB_TYPE_P(recv, T_OBJECT));
     if (LIKELY(index < ROBJECT_NUMIV(recv))) {
         reg_cfp->sp--; /* poping recv */
         val = ROBJECT_IVPTR(recv)[index];
-        goto sir_opt_send_ivget_end;
+        goto sir_send_ivget_end;
     }
-  sir_opt_send_ivget_exit:
+  sir_send_ivget_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
     END_INSN(sir_opt_ivget);
-  sir_opt_send_ivget_end:
+  sir_send_ivget_end:
     ;
 }
 
 /* Specialized call of method without block created from make_sir_send:
    it should be iseq, not-tail call, no splat args, all leading args  */
 DEFINE_INSN
-sir_opt_send_ivset
+sir_send_ivset
 (VALUE klass, lindex_t index)
 (...)
 (VALUE val)
@@ -2703,7 +2704,7 @@ sir_opt_send_ivset
 {
     VALUE recv = TOPN(1);
 
-    if (klass != CLASS_OF(recv)) goto sir_opt_send_ivset_exit;
+    if (klass != CLASS_OF(recv)) goto sir_send_ivset_exit;
     VM_ASSERT(RB_TYPE_P(recv, T_OBJECT));
     val = TOPN(0);
     if (LIKELY(!RB_OBJ_FROZEN_RAW(recv))) { /* to exlude more of rb_check_frozen_internal */
@@ -2714,18 +2715,18 @@ sir_opt_send_ivset
         }
         VALUE *ptr = ROBJECT_IVPTR(recv);
         RB_OBJ_WRITE(recv, &ptr[index], val);
-        goto sir_opt_send_ivset_end;
+        goto sir_send_ivset_end;
     }
-  sir_opt_send_ivset_exit:
+  sir_send_ivset_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(sir_opt_send_ivset);
-  sir_opt_send_ivset_end:
+    END_INSN(sir_send_ivset);
+  sir_send_ivset_end:
     ;
 }
 
 /* Non-specialized call of method without block created from make_sir_send */
 DEFINE_INSN
-sir_opt_send_without_block
+sir_send_without_block
 (CALL_DATA cd, lindex_t dummy)
 (...)
 (VALUE val)
@@ -2875,7 +2876,7 @@ sir_iter_body
 }
 
 DEFINE_INSN
-bbv_start
+sir_bbv_start
 (lindex_t bbv)
 ()
 ()
@@ -2883,7 +2884,7 @@ bbv_start
 }
 
 DEFINE_INSN
-bbv_cont
+sir_bbv_cont
 (lindex_t bbv)
 ()
 ()
@@ -2891,7 +2892,7 @@ bbv_cont
 }
 
 DEFINE_INSN
-bbv_jit_call
+sir_bbv_jit_call
 (lindex_t bbv)
 ()
 ()
@@ -2901,7 +2902,7 @@ bbv_jit_call
 /* --- rarely used sir insns: --- */
 
 DEFINE_INSN
-gen_sir_bbv
+sir_gen_bbv
 (lindex_t bbv, OFFSET origin)
 ()
 ()
@@ -2911,11 +2912,11 @@ gen_sir_bbv
 {
     VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, TRUE);
     SET_PC(cont_pc);
-    END_INSN(gen_sir_bbv); /* to skip pc increase */
+    END_INSN(sir_gen_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
-gen_sir_bbv2
+sir_gen_bbv2
 (lindex_t bbv, OFFSET origin)
 ()
 ()
@@ -2925,11 +2926,11 @@ gen_sir_bbv2
 {
     VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, FALSE);
     SET_PC(cont_pc);
-    END_INSN(gen_sir_bbv2); /* to skip pc increase */
+    END_INSN(sir_gen_bbv2); /* to skip pc increase */
 }
 
 DEFINE_INSN
-gen_sir_bbv_key
+sir_gen_bbv_key
 (lindex_t bbv, OFFSET origin, VALUE key)
 ()
 ()
@@ -2939,7 +2940,7 @@ gen_sir_bbv_key
 {
     VALUE *cont_pc = rb_sir_gen_bbv_key(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, key);
     SET_PC(cont_pc);
-    END_INSN(gen_sir_bbv_key); /* to skip pc increase */
+    END_INSN(sir_gen_bbv_key); /* to skip pc increase */
 }
 
 DEFINE_INSN
@@ -2957,7 +2958,7 @@ specialize_bbv
 }
 
 DEFINE_INSN
-make_sir_bbv
+sir_make_bbv
 (lindex_t bbv_start)
 ()
 ()
@@ -2966,11 +2967,11 @@ make_sir_bbv
     VALUE *start_pc = rb_sir_make_bbv(GET_CFP(), bbv_start);
 
     SET_PC(start_pc);
-    END_INSN(make_sir_bbv); /* to skip pc increase */
+    END_INSN(sir_make_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
-make_sir_optpc_bbv
+sir_make_optpc_bbv
 (lindex_t opt)
 ()
 ()
@@ -2979,11 +2980,11 @@ make_sir_optpc_bbv
     VALUE *start_pc = rb_sir_make_optpc_bbv(GET_CFP(), (int)opt);
 
     SET_PC(start_pc);
-    END_INSN(make_sir_optpc_bbv); /* to skip pc increase */
+    END_INSN(sir_make_optpc_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
-make_sir_catch_bbv
+sir_make_catch_bbv
 (lindex_t entry_ind)
 ()
 ()
@@ -2992,11 +2993,11 @@ make_sir_catch_bbv
     VALUE *start_pc = rb_sir_make_catch_bbv(GET_CFP(), (int)entry_ind);
 
     SET_PC(start_pc);
-    END_INSN(make_sir_catch_bbv); /* to skip pc increase */
+    END_INSN(sir_make_catch_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
-make_sir_getivar
+sir_make_getivar
 (ID id, IVC ic)
 ()
 (VALUE val)
@@ -3009,7 +3010,7 @@ make_sir_getivar
 
 /* Set value of instance variable id of self to val. */
 DEFINE_INSN
-make_sir_setivar
+sir_make_setivar
 (ID id, IVC ic)
 (VALUE val)
 ()
@@ -3021,7 +3022,7 @@ make_sir_setivar
 }
 
 DEFINE_INSN
-make_sir_send
+sir_make_send
 (CALL_DATA cd, lindex_t send_info)
 (...)
 (VALUE val)
@@ -3035,7 +3036,7 @@ make_sir_send
                 : vm_caller_setup_arg_block(ec, GET_CFP(), cd->ci, si->block_iseq, false));
     val = vm_sendish(ec, caller_cfp, cd, bh, mexp_search_method);
     /* The insn can be already changed in a recursive call in sendish -- check it.  */
-    if (caller_cfp->pc[-3] == (VALUE)sir_dispatch_table[BIN(make_sir_send)])
+    if (caller_cfp->pc[-3] == (VALUE)sir_dispatch_table[BIN(sir_make_send)])
         rb_sir_change_send(ec, caller_cfp, cd, si);
 
     if (val == Qundef) {

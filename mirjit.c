@@ -157,8 +157,8 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
 
         len = insn_len(insn_id);
         switch (insn_id) {
-        case BIN(bbv_start):
-        case BIN(bbv_cont):
+        case BIN(sir_bbv_start):
+        case BIN(sir_bbv_cont):
             bbv_pc = pc;
             VARR_TRUNC(char, buff, 0);
             insns_num = 0;
@@ -172,12 +172,12 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
                 insns_num++;
 #if 0
                 switch (insn_id) {
-                BRANCH_CASES(BIN(opt_ibeq)):
-                BRANCH_CASES(BIN(opt_ibneq)):
-                BRANCH_CASES(BIN(opt_iblt)):
-                BRANCH_CASES(BIN(opt_ibgt)):
-                BRANCH_CASES(BIN(opt_ible)):
-                BRANCH_CASES(BIN(opt_ibge)):
+                BRANCH_CASES(BIN(sir_ibeq)):
+                BRANCH_CASES(BIN(sir_ibneq)):
+                BRANCH_CASES(BIN(sir_iblt)):
+                BRANCH_CASES(BIN(sir_ibgt)):
+                BRANCH_CASES(BIN(sir_ible)):
+                BRANCH_CASES(BIN(sir_ibge)):
                 case BIN(branch2):
                 case BIN(branchnil2):
                     if (((dst = (OFFSET)body->bbv_code[pc + 1]) < 0 && pc + len + dst >= bbv_pc)
