@@ -11,6 +11,31 @@
 
 #include "mirjit.h"
 
+#include "mir.h"
+#include "mir-gen.h"
+#include "c2mir.h"
+
+// Return time in milliseconds as a double.
+#ifndef _WIN32
+#include <sys/time.h>
+static double real_usec_time (void) {
+  struct timeval tv;
+
+  gettimeofday (&tv, NULL);
+  return tv.tv_usec + tv.tv_sec * 1000000.0;
+}
+#else
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+static double real_usec_time (void) {
+  LARGE_INTEGER freq, count;
+
+  if (QueryPerformanceFrequency (&freq) && QueryPerformanceCounter (&count))
+    return (double) count.QuadPart / ((double) freq.QuadPart * 1.0E-6);
+  return 0.0;
+}
+#endif
+
 static const char *header = "typedef void *CALL_DATA;\n"
     "typedef void *IC;\n"
     "typedef void *IVC;\n"
