@@ -18,7 +18,7 @@
 // Return time in milliseconds as a double.
 #ifndef _WIN32
 #include <sys/time.h>
-static double real_usec_time (void) {
+static double real_usec_time(void) {
   struct timeval tv;
 
   gettimeofday (&tv, NULL);
@@ -27,7 +27,7 @@ static double real_usec_time (void) {
 #else
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-static double real_usec_time (void) {
+static double real_usec_time(void) {
   LARGE_INTEGER freq, count;
 
   if (QueryPerformanceFrequency (&freq) && QueryPerformanceCounter (&count))
@@ -124,14 +124,15 @@ struct input {
 
 static struct input curr_input;
 
-static int t_getc (void *data) {
+static int t_getc(void *data) {
   struct input *input = data;
   return input->curr_char >= input->code_len ? EOF : input->code[input->curr_char++];
 }
 
-static void *import_resolver (const char *name) {
-    fprintf(stderr, "resolving %s\n", name);
-    return (void*)42;
+static void *import_resolver(const char *name) {
+    if (rb_mirjit_debug_p())
+        fprintf(stderr, "resolving %s\n", name);
+    return (void*)42; // ????
 }
 
 #define CONCAT(a, b) a ## b
@@ -245,7 +246,7 @@ rb_mirjit_debug_p(void) { return mirjit_options.debug_p; }
 
 static size_t curr_input_byte_num;
 
-static int read_byte (MIR_context_t ctx) {
+static int read_byte(MIR_context_t ctx) {
   if (curr_input_byte_num >= sizeof (mir_code)) return EOF;
   return mir_code[curr_input_byte_num++];
 }
