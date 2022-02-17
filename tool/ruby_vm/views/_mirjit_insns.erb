@@ -9,7 +9,8 @@
 % # see sir_exec.c
 % require 'set'
 % def get_mir_jit_insns
-%   mir_jit_insns = ['getlocal', 'setlocal', 'opt_send_without_block', 'jump2', 'branch2', 'branchnil2',
+%   mir_jit_insns = ['getlocal', 'getlocal_WC_0', 'getlocal_WC_1', 'setlocal', 'setlocal_WC_0', 'setlocal_WC_1',
+%                    'opt_send_without_block', 'jump2', 'branch2', 'branchnil2',
 %                    'mov', 'movi', 'sir_setlocal',
 %                    'sir_getivar', 'sir_igetivar', 'sir_setivar', 'sir_iseq_send_without_block',
 %                    'sir_opt_send_ivget', 'sir_opt_send_ivset', 'sir_opt_send_without_block',
@@ -73,8 +74,8 @@
 %
 %   cmp_suff = ['ss', 'vv', 'vi', 'vs', 'sv', 'si']
 %   ['eq', 'neq', 'lt', 'gt', 'le', 'ge'].each do |n|
-%     br_funcs(mir_jit_insns, 'opt_i' + n, cmp_suff)
-%     br_funcs(mir_jit_insns, 'opt_f' + n, cmp_suff)
+%     br_funcs(mir_jit_insns, 'opt_ib' + n, cmp_suff)
+%     br_funcs(mir_jit_insns, 'opt_fb' + n, cmp_suff)
 %   end
 %   mir_jit_insns
 % end
