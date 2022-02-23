@@ -273,10 +273,12 @@ rb_mirjit_init(struct rb_mirjit_options *options) {
     curr_input.options.asm_p = curr_input.options.object_p = FALSE;
     curr_input.options.no_prepro_p = curr_input.options.prepro_only_p = FALSE;
     curr_input.options.syntax_only_p = curr_input.options.pedantic_p = FALSE;
+    rb_mirjit_resolver_init();
 }
 
 void
 rb_mirjit_finish(void) {
+    rb_mirjit_resolver_finish();
     VARR_DESTROY(char, jit_c_code);
     MIR_gen_finish (ctx);
     c2mir_finish(ctx);

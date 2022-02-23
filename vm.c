@@ -29,6 +29,7 @@
 #include "iseq.h"
 #include "mjit.h"
 #include "sir.h"
+#include "mirjit.h"
 #include "yjit.h"
 #include "ruby/st.h"
 #include "ruby/vm.h"
@@ -4201,7 +4202,7 @@ static int mir_resolver_eq_p(mir_resolver_el_t el1, mir_resolver_el_t el2, void 
     return strcmp(el1.name, el2.name) == 0;
 }
 
-void mir_resolver_init(void) {
+void rb_mirjit_resolver_init(void) {
     HTAB_CREATE(mir_resolver_el_t, mir_resolver_tab,
                 2 * sizeof(mir_resolver_els) / sizeof(mir_resolver_el_t),
                 mir_resolver_hash, mir_resolver_eq_p, NULL);
@@ -4215,7 +4216,7 @@ void mir_resolver_init(void) {
     }
 }
 
-void *mir_import_resolver(const char *name) {
+void *rb_mirjit_import_resolver(const char *name) {
     mir_resolver_el_t el, tab_el;
 
     el.name = name;
@@ -4225,6 +4226,6 @@ void *mir_import_resolver(const char *name) {
     return NULL;
 }
 
-void mir_resolver_finish(void) {
+void rb_mirjit_resolver_finish(void) {
     HTAB_DESTROY(mir_resolver_el_t, mir_resolver_tab);
 }

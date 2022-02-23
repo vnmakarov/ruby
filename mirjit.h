@@ -28,4 +28,9 @@ void rb_jit_bbv(struct rb_iseq_bbv *bbv);
 void rb_mirjit_init(struct rb_mirjit_options *options);
 void rb_mirjit_finish(void);
 
+/* vm.c: */
+void rb_mirjit_resolver_init(void);
+void *rb_mirjit_import_resolver(const char *name);
+void rb_mirjit_resolver_finish(void);
+
 #endif /* #ifndef MIRJIT_H */
