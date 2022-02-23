@@ -4186,6 +4186,8 @@ rb_vm_empty_cc(void)
 
 #ifndef MJIT_HEADER
 
+#ifdef HAVE_LIBMIR
+
 #include "mir.h"
 
 typedef struct mir_resolver_el {const char *name; void *addr;} mir_resolver_el_t;
@@ -4231,5 +4233,7 @@ void *rb_mirjit_import_resolver(const char *name) {
 void rb_mirjit_resolver_finish(void) {
     HTAB_DESTROY(mir_resolver_el_t, mir_resolver_tab);
 }
+
+#endif /* #ifdef HAVE_LIBMIR */
 
 #endif /* #ifndef MJIT_HEADER */

@@ -2709,7 +2709,9 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
         cont_pc = body->bbv_code + bbv_cont_pos;
     }
     RB_VM_LOCK_LEAVE();
+#ifdef HAVE_LIBMIR
     rb_jit_bbv(bbv);
+#endif
     return cont_pc;
 }
 

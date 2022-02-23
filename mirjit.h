@@ -10,6 +10,10 @@
 
 #include "vm_core.h"
 
+int rb_mirjit_enabled_p(void);
+
+#ifdef HAVE_LIBMIR
+
 /* MIRJIT_STATS controls supporting runtime counters in generation and execution of MIRJIT code.
    Switching this on slows down interpretation enormously. */
 #ifndef MIRJIT_EXEC_STATS
@@ -22,7 +26,6 @@ struct rb_mirjit_options {
     int exec_stats_p; /* print MIRJIT execution stats if collecting stats is enabled */
 };
 
-int rb_mirjit_enabled_p(void);
 int rb_mirjit_debug_p(void);
 void rb_jit_bbv(struct rb_iseq_bbv *bbv);
 void rb_mirjit_init(struct rb_mirjit_options *options);
@@ -33,4 +36,5 @@ void rb_mirjit_resolver_init(void);
 void *rb_mirjit_import_resolver(const char *name);
 void rb_mirjit_resolver_finish(void);
 
+#endif /* #ifdef HAVE_LIBMIR */
 #endif /* #ifndef MIRJIT_H */

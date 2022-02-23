@@ -13,6 +13,14 @@
 
 #include "mir.h"
 #include "mir-gen.h"
+
+#ifndef HAVE_LIBMIR
+
+int
+rb_mirjit_enabled_p(void) { return FALSE; }
+
+#else
+
 #include "c2mir.h"
 
 // Return time in milliseconds as a double.
@@ -284,3 +292,5 @@ rb_mirjit_finish(void) {
     c2mir_finish(ctx);
     MIR_finish (ctx);
 }
+
+#endif /* #ifdef HAVE_LIBMIR */

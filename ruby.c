@@ -193,8 +193,9 @@ struct ruby_cmdline_options {
 #endif
     struct rb_yjit_options yjit;
     struct rb_sir_options sir;
+#ifdef HAVE_LIBMIR
     struct rb_mirjit_options mirjit;
-
+#endif
     int sflag, xflag;
     unsigned int warning: 1;
     unsigned int verbose: 1;
@@ -363,7 +364,7 @@ usage(const char *name, int help, int highlight, int columns)
         M("--sir-debug",             "", "Print SIR basic block generation to stderr"),
     };
     static const struct message mirjit_options[] = {
-#if MIRJIT_EXEC_STATS
+#if defined(HAVE_LIBMIR) && MIRJIT_EXEC_STATS
         M("--mirjit-stats",             "", "Enable collecting MIRJIT generation statistics"),
 #endif
         M("--mirjit-debug",             "", "Print MIRJIT debug info to stderr"),
@@ -1205,6 +1206,7 @@ setup_sir_options(const char *s, struct rb_sir_options *sir_opt)
     return true;
 }
 
+#ifdef HAVE_LIBMIR
 static bool
 setup_mirjit_options(const char *s, struct rb_mirjit_options *mirjit_opt)
 {
@@ -1230,6 +1232,7 @@ setup_mirjit_options(const char *s, struct rb_mirjit_options *mirjit_opt)
     }
     return true;
 }
+#endif /* #ifdef HAVE_LIBMIR */
 
 static long
 proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
@@ -1616,10 +1619,16 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
             else if (strcmp("sir", s) == 0 || setup_sir_options(s, &opt->sir)) {
                 opt->sir.sir_enabled_p = TRUE;
             }
+#ifdef HAVE_LIBMIR
             else if (strcmp("mirjit", s) == 0 || setup_mirjit_options(s, &opt->mirjit)) {
                 opt->sir.sir_enabled_p = TRUE;
                 opt->mirjit.mirjit_enabled_p = TRUE;
             }
+#else
+            else if (strncmp("mirjit", s, 6) == 0) {
+                rb_warn("MIRJIT support is disabled.");
+            }
+#endif /* #ifdef HAVE_LIBMIR */
 	    else if (strcmp("yydebug", s) == 0) {
 		if (envopt) goto noenvopt_long;
 		opt->dump |= DUMP_BIT(yydebug);
@@ -2001,7 +2010,9 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
         rb_yjit_init(&opt->yjit);
     }
     rb_sir_init(&opt->sir);
+#ifdef HAVE_LIBMIR
     rb_mirjit_init(&opt->mirjit);
+#endif
     if (opt->dump & (DUMP_BIT(version) | DUMP_BIT(version_v))) {
 #if USE_MJIT
         mjit_opts.on = opt->mjit.on; /* used by ruby_show_version(). mjit_init() still can't be called here. */
