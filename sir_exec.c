@@ -80,51 +80,28 @@ SIR_FUNCS0(aref,vm_opt_aref)
     static sir_inline void SIR_CONCAT(iname, sss)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
 
 
-static sir_inline void pushvv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;}
-static sir_inline void pushvi(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;}
-static sir_inline void pushiv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;}
-static sir_inline void pushvs(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {INC_SP(1); TOPN(0) = v2; TOPN(1) = v1;}
-static sir_inline void pushsv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {INC_SP(1); TOPN(0) = v2;}
-static sir_inline void pushsi(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {INC_SP(1); TOPN(0) = v2;}
-static sir_inline void pushis(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {INC_SP(1); TOPN(0) = v2; TOPN(1) = v1;}
-static sir_inline void pushss(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2) {}
+#define pushvv(v1, v2) do {INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;} while (0)
+#define pushvi(v1, v2) do {INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;} while (0)
+#define pushiv(v1, v2) do {INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;} while (0)
+#define pushvs(v1, v2) do {INC_SP(1); TOPN(0) = v2; TOPN(1) = v1;} while (0)
+#define pushsv(v1, v2) do {INC_SP(1); TOPN(0) = v2;} while (0)
+#define pushsi(v1, v2) do {INC_SP(1); TOPN(0) = v2;} while (0)
+#define pushis(v1, v2) do {INC_SP(1); TOPN(0) = v2; TOPN(1) = v1;} while (0)
+#define pushss(v1, v2)
 
-static sir_inline void pushsvv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(2); TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushsiv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(2); TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushsvs(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(1); TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushssv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(1); TOPN(0) = v2;
-}
-static sir_inline void pushsis(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(1); TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushsss(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-}
+#define pushsvv(v1, v2, v3) do {INC_SP(2); TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushsiv(v1, v2, v3) do {INC_SP(2); TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushsvs(v1, v2, v3) do {INC_SP(1); TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushssv(v1, v2, v3) do {INC_SP(1); TOPN(0) = v2;} while (0)
+#define pushsis(v1, v2, v3) do {INC_SP(1); TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushsss(v1, v2, v3)
 
-static sir_inline void pushvvv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(3); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushviv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(3); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushvvs(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(2); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushvsv(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(2); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushvis(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(2); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;
-}
-static sir_inline void pushvss(rb_control_frame_t *reg_cfp, VALUE v1, VALUE v2, VALUE v3) {
-    INC_SP(1); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;
-}
+#define pushvvv(v1, v2, v3) do {INC_SP(3); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushviv(v1, v2, v3) do {INC_SP(3); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushvvs(v1, v2, v3) do {INC_SP(2); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushvsv(v1, v2, v3) do {INC_SP(2); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushvis(v1, v2, v3) do {INC_SP(2); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
+#define pushvss(v1, v2, v3) do {INC_SP(1); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
 
 #define SIR_FUNCS3(iname)                                           \
     static sir_inline VALUE SIR_CONCAT(iname, svv)(VALUE v0, VALUE v1, VALUE v2) { return iname(v0, v1, v2); }\
@@ -316,7 +293,7 @@ SIR_BR_FUNCS(vm_sir_fble, vm_sir_fle)
 SIR_BR_FUNCS(vm_sir_fbge, vm_sir_fge)
 #endif
 
-#define CHECK_RES_FUNC_NAME(insn_name) SIR_CONCAT(result_check_, insn_name)
+#define CHECK_RES_FUNC_NAME(insn_name) SIR_CONCAT(insn_name, _result_check)
 
 #define SIR_RES_CHECK_FUNCS2(iname, fname)			                                        		\
     static sir_inline VALUE CHECK_RES_FUNC_NAME(SIR_CONCAT(iname, svv))(VALUE res) { return fname(res); }\
@@ -336,40 +313,40 @@ SIR_BR_FUNCS(vm_sir_fbge, vm_sir_fge)
     static sir_inline VALUE CHECK_RES_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE res) { return fname(res); }\
     static sir_inline VALUE CHECK_RES_FUNC_NAME(SIR_CONCAT(iname, vis))(VALUE res) { return fname(res); }
 
-static sir_inline int check_res_fixnum(VALUE res) { return !FIXNUM_P(res); }
-static sir_inline int check_res_flonum(VALUE res) { return !FLONUM_P(res); }
-static sir_inline int check_res_undef(VALUE res) { return res == Qundef; }
-static sir_inline int check_res_nothing(VALUE res) { return FALSE; }
+static sir_inline int sir_check_res_fixnum(VALUE res) { return !FIXNUM_P(res); }
+static sir_inline int sir_check_res_flonum(VALUE res) { return !FLONUM_P(res); }
+static sir_inline int sir_check_res_undef(VALUE res) { return res == Qundef; }
+static sir_inline int sir_check_res_nothing(VALUE res) { return FALSE; }
 
-SIR_RES_CHECK_FUNCS2(sir_iplus, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_iminus, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_imult, check_res_fixnum)
-SIR_RES_CHECK_FUNCS2(sir_idiv, check_res_fixnum)
-SIR_RES_CHECK_FUNCS2(sir_imod, check_res_fixnum)
-SIR_RES_CHECK_FUNCS2(sir_ior, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_iand, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_ieq, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_ineq, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_ilt, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_igt, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_ile, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_ige, check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_iplus, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_iminus, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_imult, sir_check_res_fixnum)
+SIR_RES_CHECK_FUNCS2(sir_idiv, sir_check_res_fixnum)
+SIR_RES_CHECK_FUNCS2(sir_imod, sir_check_res_fixnum)
+SIR_RES_CHECK_FUNCS2(sir_ior, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_iand, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_ieq, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_ineq, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_ilt, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_igt, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_ile, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_ige, sir_check_res_nothing)
 #ifdef FLONUM_INSNS
-SIR_RES_CHECK_FUNCS2(sir_fplus, check_res_flonum)
-SIR_RES_CHECK_FUNCS2(sir_fminus, check_res_flonum)
-SIR_RES_CHECK_FUNCS2(sir_fmult, check_res_flonum)
-SIR_RES_CHECK_FUNCS2(sir_fdiv, check_res_flonum)
-SIR_RES_CHECK_FUNCS2(sir_fmod, check_res_flonum)
-SIR_RES_CHECK_FUNCS2(sir_feq, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_fneq, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_flt, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_fgt, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_fle, check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_fge, check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_fplus, sir_check_res_flonum)
+SIR_RES_CHECK_FUNCS2(sir_fminus, sir_check_res_flonum)
+SIR_RES_CHECK_FUNCS2(sir_fmult, sir_check_res_flonum)
+SIR_RES_CHECK_FUNCS2(sir_fdiv, sir_check_res_flonum)
+SIR_RES_CHECK_FUNCS2(sir_fmod, sir_check_res_flonum)
+SIR_RES_CHECK_FUNCS2(sir_feq, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_fneq, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_flt, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_fgt, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_fle, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_fge, sir_check_res_nothing)
 #endif
-SIR_RES_CHECK_FUNCS2(sir_iaref, check_res_undef)
+SIR_RES_CHECK_FUNCS2(sir_iaref, sir_check_res_undef)
 
-#define CHECK_FUNC_NAME(insn_name) SIR_CONCAT(input_check_, insn_name)
+#define CHECK_FUNC_NAME(insn_name) SIR_CONCAT(sir_input_check_, insn_name)
 
 #define SIR_CHECK_FUNCS2(iname, fname)			                                        		\
     static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
@@ -389,38 +366,38 @@ SIR_RES_CHECK_FUNCS2(sir_iaref, check_res_undef)
     static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
     static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(VALUE v1, VALUE v2) { return fname(v1, v2); }
 
-static sir_inline int check_zero(VALUE v1, VALUE v2) { return v2 == LONG2FIX(0); }
-static sir_inline int check_nothing(VALUE v1, VALUE v2) { return FALSE; }
+static sir_inline int sir_check_zero(VALUE v1, VALUE v2) { return v2 == LONG2FIX(0); }
+static sir_inline int sir_check_nothing(VALUE v1, VALUE v2) { return FALSE; }
 
-SIR_CHECK_FUNCS2(sir_iplus, check_nothing)
-SIR_CHECK_FUNCS2(sir_iminus, check_nothing)
-SIR_CHECK_FUNCS2(sir_imult, check_nothing)
-SIR_CHECK_FUNCS2(sir_idiv, check_zero)
-SIR_CHECK_FUNCS2(sir_imod, check_zero)
-SIR_CHECK_FUNCS2(sir_ior, check_nothing)
-SIR_CHECK_FUNCS2(sir_iand, check_nothing)
-SIR_CHECK_FUNCS2(sir_ieq, check_nothing)
-SIR_CHECK_FUNCS2(sir_ineq, check_nothing)
-SIR_CHECK_FUNCS2(sir_ilt, check_nothing)
-SIR_CHECK_FUNCS2(sir_igt, check_nothing)
-SIR_CHECK_FUNCS2(sir_ile, check_nothing)
-SIR_CHECK_FUNCS2(sir_ige, check_nothing)
+SIR_CHECK_FUNCS2(sir_iplus, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_iminus, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_imult, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_idiv, sir_check_zero)
+SIR_CHECK_FUNCS2(sir_imod, sir_check_zero)
+SIR_CHECK_FUNCS2(sir_ior, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_iand, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_ieq, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_ineq, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_ilt, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_igt, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_ile, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_ige, sir_check_nothing)
 #ifdef FLONUM_INSNS
-SIR_CHECK_FUNCS2(sir_fplus, check_nothing)
-SIR_CHECK_FUNCS2(sir_fminus, check_nothing)
-SIR_CHECK_FUNCS2(sir_fmult, check_nothing)
-SIR_CHECK_FUNCS2(sir_fdiv, check_nothing)
-SIR_CHECK_FUNCS2(sir_fmod, check_nothing)
-SIR_CHECK_FUNCS2(sir_feq, check_nothing)
-SIR_CHECK_FUNCS2(sir_fneq, check_nothing)
-SIR_CHECK_FUNCS2(sir_flt, check_nothing)
-SIR_CHECK_FUNCS2(sir_fgt, check_nothing)
-SIR_CHECK_FUNCS2(sir_fle, check_nothing)
-SIR_CHECK_FUNCS2(sir_fge, check_nothing)
+SIR_CHECK_FUNCS2(sir_fplus, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_fminus, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_fmult, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_fdiv, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_fmod, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_feq, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_fneq, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_flt, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_fgt, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_fle, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_fge, sir_check_nothing)
 #endif
-SIR_CHECK_FUNCS2(sir_iaref, check_nothing)
+SIR_CHECK_FUNCS2(sir_iaref, sir_check_nothing)
 
-#define CHECK_INPUTS(iname, push_fname, v1, v2)                 \
+#define CHECK_INPUTS(iname, v1, v2)		                \
     if (UNLIKELY(CHECK_FUNC_NAME(iname)(v1, v2))) {             \
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));	\
         END_INSN(iname); 					\

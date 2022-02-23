@@ -1620,7 +1620,7 @@ sir_iarefsvv
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1640,7 +1640,7 @@ sir_iarefsvi
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1);
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1658,7 +1658,7 @@ sir_iarefsiv
 (VALUE val)
 {
     VALUE v2 = *(GET_EP() - op2);
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushiv, imm, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1678,7 +1678,7 @@ sir_iarefsvs
 (VALUE val)
 {
     VALUE v1 = *(GET_EP() - op1);
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1698,7 +1698,7 @@ sir_iarefssv
 (VALUE val)
 {
     VALUE v2 = *(GET_EP() - op2);
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1717,7 +1717,7 @@ sir_iarefssi
 (VALUE v1)
 (VALUE val)
 {
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1734,7 +1734,7 @@ sir_iarefsis
 (VALUE v2)
 (VALUE val)
 {
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushis, imm, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1753,7 +1753,7 @@ sir_iarefsss
 (VALUE v1, VALUE v2)
 (VALUE val)
 {
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushss, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1773,7 +1773,7 @@ sir_iarefvvv
 ()
 {
     VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvv, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1794,7 +1794,7 @@ sir_iarefvvi
 ()
 {
     VALUE v1 = *(GET_EP() - op1), val;
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvi, v1, imm);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1813,7 +1813,7 @@ sir_iarefviv
 ()
 {
     VALUE v2 = *(GET_EP() - op2), val;
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushiv, imm, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1834,7 +1834,7 @@ sir_iarefvvs
 ()
 {
     VALUE v1 = *(GET_EP() - op1), val;
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushvs, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1855,7 +1855,7 @@ sir_iarefvsv
 ()
 {
     VALUE v2 = *(GET_EP() - op2), val;
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsv, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1876,7 +1876,7 @@ sir_iarefvsi
 ()
 {
     VALUE val;
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushsi, v1, imm);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1895,7 +1895,7 @@ sir_iarefvis
 ()
 {
     VALUE val;
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushis, imm, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1916,7 +1916,7 @@ sir_iarefvss
 ()
 {
     VALUE val;
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, pushss, v1, v2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -2082,7 +2082,7 @@ sir_ltsvv sir_gtsvv sir_lesvv sir_gesvv sir_arefsvv
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        pushvv(reg_cfp, v1, v2);
+        pushvv(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2097,7 +2097,7 @@ sir_ltsvi sir_gtsvi sir_lesvi sir_gesvi sir_arefsvi
     VALUE v1 = *(GET_EP() - op1);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (val == Qundef) {
-        pushvi(reg_cfp, v1, imm);
+        pushvi(v1, imm);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2112,7 +2112,7 @@ sir_ltsiv sir_gtsiv sir_lesiv sir_gesiv sir_arefsiv
     VALUE v2 = *(GET_EP() - op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (val == Qundef) {
-        pushiv(reg_cfp, imm, v2);
+        pushiv(imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2127,7 +2127,7 @@ sir_ltsvs sir_gtsvs sir_lesvs sir_gesvs sir_arefsvs
     VALUE v1 = *(GET_EP() - op1);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        pushvs(reg_cfp, v1, v2);
+        pushvs(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2142,7 +2142,7 @@ sir_ltssv sir_gtssv sir_lessv sir_gessv sir_arefssv
     VALUE v2 = *(GET_EP() - op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        pushsv(reg_cfp, v1, v2);
+        pushsv(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2156,7 +2156,7 @@ sir_ltssi sir_gtssi sir_lessi sir_gessi sir_arefssi
 {
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (val == Qundef) {
-        pushsi(reg_cfp, v1, imm);
+        pushsi(v1, imm);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2170,7 +2170,7 @@ sir_ltsis sir_gtsis sir_lesis sir_gesis sir_arefsis
 {
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (val == Qundef) {
-        pushis(reg_cfp, imm, v2);
+        pushis(imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2184,7 +2184,7 @@ sir_eqsvv
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     val = opt_equality(GET_ISEQ(), v1, v2, cd);
     if (val == Qundef) {
-        pushvv(reg_cfp, v1, v2);
+        pushvv(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2198,7 +2198,7 @@ sir_eqsvi
     VALUE v1 = *(GET_EP() - op1);
     val = opt_equality(GET_ISEQ(), v1, imm, cd);
     if (val == Qundef) {
-        pushvi(reg_cfp, v1, imm);
+        pushvi(v1, imm);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2212,7 +2212,7 @@ sir_eqsiv
     VALUE v2 = *(GET_EP() - op2);
     val = opt_equality(GET_ISEQ(), imm, v2, cd);
     if (val == Qundef) {
-        pushiv(reg_cfp, imm, v2);
+        pushiv(imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2226,7 +2226,7 @@ sir_eqsvs
     VALUE v1 = *(GET_EP() - op1);
     val = opt_equality(GET_ISEQ(), v1, v2, cd);
     if (val == Qundef) {
-        pushvs(reg_cfp, v1, v2);
+        pushvs(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2240,7 +2240,7 @@ sir_eqssv
     VALUE v2 = *(GET_EP() - op2);
     val = opt_equality(GET_ISEQ(), v1, v2, cd);
     if (val == Qundef) {
-        pushsv(reg_cfp, v1, v2);
+        pushsv(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2253,7 +2253,7 @@ sir_eqssi
 {
     val = opt_equality(GET_ISEQ(), v1, imm, cd);
     if (val == Qundef) {
-        pushsi(reg_cfp, v1, imm);
+        pushsi(v1, imm);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2266,7 +2266,7 @@ sir_eqsis
 {
     val = opt_equality(GET_ISEQ(), imm, v2, cd);
     if (val == Qundef) {
-        pushis(reg_cfp, imm, v2);
+        pushis(imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2280,7 +2280,7 @@ sir_neqsvv
     VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, v2);
     if (val == Qundef) {
-        pushvv(reg_cfp, v1, v2);
+        pushvv(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2294,7 +2294,7 @@ sir_neqsvi
     VALUE v1 = *(GET_EP() - op1);
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, imm);
     if (val == Qundef) {
-        pushvi(reg_cfp, v1, imm);
+        pushvi(v1, imm);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2308,7 +2308,7 @@ sir_neqsiv
     VALUE v2 = *(GET_EP() - op2);
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, imm, v2);
     if (val == Qundef) {
-        pushiv(reg_cfp, imm, v2);
+        pushiv(imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2322,7 +2322,7 @@ sir_neqsvs
     VALUE v1 = *(GET_EP() - op1);
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, v2);
     if (val == Qundef) {
-        pushvs(reg_cfp, v1, v2);
+        pushvs(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2336,7 +2336,7 @@ sir_neqssv
     VALUE v2 = *(GET_EP() - op2);
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, v2);
     if (val == Qundef) {
-        pushsv(reg_cfp, v1, v2);
+        pushsv(v1, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2349,7 +2349,7 @@ sir_neqssi
 {
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, v1, imm);
     if (val == Qundef) {
-        pushsi(reg_cfp, v1, imm);
+        pushsi(v1, imm);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2362,7 +2362,7 @@ sir_neqsis
 {
     val = vm_opt_neq(GET_ISEQ(), cd, cd_eq, imm, v2);
     if (val == Qundef) {
-        pushis(reg_cfp, imm, v2);
+        pushis(imm, v2);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2376,7 +2376,7 @@ sir_asetsvv
     VALUE ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushsvv(reg_cfp, arr, ind, set);
+        pushsvv(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2390,7 +2390,7 @@ sir_asetsiv
     VALUE set = *(GET_EP() - set_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushsiv(reg_cfp, arr, ind, set);
+        pushsiv(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2404,7 +2404,7 @@ sir_asetsvs
     VALUE ind = *(GET_EP() - ind_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushsvs(reg_cfp, arr, ind, set);
+        pushsvs(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2418,7 +2418,7 @@ sir_asetssv
     VALUE set = *(GET_EP() - set_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushssv(reg_cfp, arr, ind, set);
+        pushssv(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2431,7 +2431,7 @@ sir_asetsis
 {
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushsis(reg_cfp, arr, ind, set);
+        pushsis(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2445,7 +2445,7 @@ sir_asetvvv
     VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushvvv(reg_cfp, arr, ind, set);
+        pushvvv(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2459,7 +2459,7 @@ sir_asetviv
     VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushviv(reg_cfp, arr, ind, set);
+        pushviv(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2473,7 +2473,7 @@ sir_asetvvs
     VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushvvs(reg_cfp, arr, ind, set);
+        pushvvs(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2487,7 +2487,7 @@ sir_asetvsv
     VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushvsv(reg_cfp, arr, ind, set);
+        pushvsv(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2501,7 +2501,7 @@ sir_asetvis
     VALUE arr = *(GET_EP() - arr_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushvis(reg_cfp, arr, ind, set);
+        pushvis(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
@@ -2515,7 +2515,7 @@ sir_asetvss
     VALUE arr = *(GET_EP() - arr_idx);
     val = vm_opt_aset(arr, ind, set);
     if (val == Qundef) {
-        pushvss(reg_cfp, arr, ind, set);
+        pushvss(arr, ind, set);
         CALL_SIMPLE_METHOD();
     }
 }
