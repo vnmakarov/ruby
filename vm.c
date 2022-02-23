@@ -4182,3 +4182,49 @@ rb_vm_empty_cc(void)
 #endif /* #ifndef MJIT_HEADER */
 
 #include "vm_call_iseq_optimized.inc" /* required from vm_insnhelper.c */
+
+#include "mir.h"
+
+typedef struct mir_resolver_el {const char *name; void *addr;} mir_resolver_el_t;
+static mir_resolver_el_t mir_resolver_els[] = {
+#include "mir_resolver.inc"
+};
+
+DEF_HTAB(mir_resolver_el_t);
+static HTAB(mir_resolver_el_t) *mir_resolver_tab;
+
+static htab_hash_t mir_resolver_hash(mir_resolver_el_t el, void *arg) {
+    return (htab_hash_t)(uintptr_t)el.name; // ???
+}
+
+static int mir_resolver_eq_p(mir_resolver_el_t el1, mir_resolver_el_t el2, void *arg) {
+    return strcmp(el1.name, el2.name) == 0;
+}
+
+void mir_resolver_init(void) {
+    HTAB_CREATE(mir_resolver_el_t, mir_resolver_tab,
+                2 * sizeof(mir_resolver_els) / sizeof(mir_resolver_el_t),
+                mir_resolver_hash, mir_resolver_eq_p, NULL);
+    for (size_t i = 0; i < sizeof(mir_resolver_els) / sizeof(mir_resolver_el_t); i++) {
+        int MAYBE_UNUSED(exist_p);
+        mir_resolver_el_t el, MAYBE_UNUSED(tab_el);
+
+        el = mir_resolver_els[i];
+        exist_p = HTAB_DO(mir_resolver_el_t, mir_resolver_tab, el, HTAB_INSERT, tab_el);
+        assert(!exist_p);
+    }
+}
+
+void *mir_import_resolver(const char *name) {
+    mir_resolver_el_t el, tab_el;
+
+    el.name = name;
+    if (HTAB_DO(mir_resolver_el_t, mir_resolver_tab, el, HTAB_FIND, tab_el))
+        return tab_el.addr;
+    assert(FALSE);
+    return NULL;
+}
+
+void mir_resolver_finish(void) {
+    HTAB_DESTROY(mir_resolver_el_t, mir_resolver_tab);
+}
