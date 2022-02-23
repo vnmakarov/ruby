@@ -1297,6 +1297,17 @@ AS_CASE("$target_cpu", [x64|x86_64|i[3-6]86*], [
 ])
 RUBY_UNIVERSAL_CHECK_HEADER([x86_64, i386], x86intrin.h)
 
+AC_ARG_WITH([mir],
+  [AS_HELP_STRING([--without-mir],
+    [disable MIR used for MIRJIT])],
+  [],
+  [with_mir=yes])
+AS_IF([test "x$with_mir" != xno],
+  [AC_CHECK_HEADERS(mir.h)
+   AS_IF([test "x$ac_cv_header_mir_h" != xno],
+     AC_SEARCH_LIBS([MIR_gen_init], [mir],
+       [AC_DEFINE(HAVE_LIBMIR, 1)], [], [-lpthread]))])
+
 AC_ARG_WITH([gmp],
   [AS_HELP_STRING([--without-gmp],
     [disable GNU GMP to accelerate Bignum operations])],
