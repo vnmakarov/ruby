@@ -29,25 +29,6 @@ static void __builtin_unreachable(void) {abort();}
 #include "probes_helper.h"
 #endif
 
-#define vm_opt_plus mirjit_plus
-#define vm_opt_minus mirjit_minus
-#define vm_opt_mult mirjit_mult
-#define vm_opt_div mirjit_div
-#define vm_opt_mod mirjit_mod
-#define vm_opt_or mirjit_or
-#define vm_opt_and mirjit_and
-#define vm_opt_lt mirjit_lt
-#define vm_opt_gt mirjit_gt
-#define vm_opt_le mirjit_le
-#define vm_opt_ge mirjit_ge
-#define vm_opt_aref mirjit_aref
-#define vm_opt_aset mirjit_aset
-
-#define vm_env_write mirjit_env_write
-#define vm_push_frame mirjit_push_frame
-#define vm_method_cfunc_entry mirjit_method_cfunc_entry
-#define vm_sendish mirjit_sendish
-
 #include "sir_exec.c"
 
 #undef  RESTORE_REGS
