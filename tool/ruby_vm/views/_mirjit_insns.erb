@@ -23,7 +23,7 @@
 %
 %   stack_suff = ['svv', 'svi', 'siv', 'svs', 'ssv', 'ssi', 'sis'];
 %   ['plus', 'minus', 'mult', 'div', 'mod', 'or', 'and', 'lt', 'gt', 'le', 'ge', 'aref'].each do |n|
-%      funcs0(mir_jit_insns, 'opt_' + n, stack_suff)
+%      funcs0(mir_jit_insns, 'sir_' + n, stack_suff)
 %   end
 %
 %   def funcs(set, n, suffixes)
@@ -34,7 +34,7 @@
 %
 %   all_suff = stack_suff + ['vvv', 'vvi', 'viv', 'vvs', 'vsv', 'vsi', 'vis', 'vss', 'sss']
 %   ['plus', 'minus', 'mult', 'div', 'mod', 'or', 'and', 'eq', 'neq', 'lt', 'gt', 'le', 'ge', 'aref'].each do |n|
-%     funcs(mir_jit_insns, 'opt_i' + n, all_suff)
+%     funcs(mir_jit_insns, 'sir_i' + n, all_suff)
 %   end
 %
 %   def funcs3(set, n)
@@ -44,17 +44,17 @@
 %   end
 %
 %   ['aset', 'iaset'].each do |n|
-%     funcs3(mir_jit_insns, 'opt_' + n)
+%     funcs3(mir_jit_insns, 'sir_' + n)
 %   end
 %
 %   def flo_funcs2(set, n)
-%     set << 'opt_f' + n
-%     set << 'opt_f' + n + 'f'
+%     set << 'sir_f' + n
+%     set << 'sir_f' + n + 'f'
 %   end
 %
 %   def flo_funcs3(set, n)
 %     flo_funcs2(set, n);
-%     set << 'opt_fr' + n + 'f'
+%     set << 'sir_fr' + n + 'f'
 %   end
 %
 %   ['plus', 'mult', 'eq', 'neq'].each do |n|
@@ -73,8 +73,8 @@
 %
 %   cmp_suff = ['ss', 'vv', 'vi', 'vs', 'sv', 'si']
 %   ['eq', 'neq', 'lt', 'gt', 'le', 'ge'].each do |n|
-%     br_funcs(mir_jit_insns, 'opt_ib' + n, cmp_suff)
-%     br_funcs(mir_jit_insns, 'opt_fb' + n, cmp_suff)
+%     br_funcs(mir_jit_insns, 'sir_ib' + n, cmp_suff)
+%     br_funcs(mir_jit_insns, 'sir_fb' + n, cmp_suff)
 %   end
 %   mir_jit_insns
 % end
