@@ -29,7 +29,7 @@ rb_mirjit_enabled_p(void) { return FALSE; }
 static double real_usec_time(void) {
   struct timeval tv;
 
-  gettimeofday (&tv, NULL);
+  gettimeofday(&tv, NULL);
   return tv.tv_usec + tv.tv_sec * 1000000.0;
 }
 #else
@@ -38,8 +38,8 @@ static double real_usec_time(void) {
 static double real_usec_time(void) {
   LARGE_INTEGER freq, count;
 
-  if (QueryPerformanceFrequency (&freq) && QueryPerformanceCounter (&count))
-    return (double) count.QuadPart / ((double) freq.QuadPart * 1.0E-6);
+  if (QueryPerformanceFrequency(&freq) && QueryPerformanceCounter (&count))
+    return (double)count.QuadPart / ((double)freq.QuadPart * 1.0E-6);
   return 0.0;
 }
 #endif
@@ -138,9 +138,9 @@ static int t_getc(void *data) {
 }
 
 static void *import_resolver(const char *name) {
-    if (rb_mirjit_debug_p())
-        fprintf(stderr, "resolving %s\n", name);
-    return (void*)42; // ????
+    void *addr = rb_mirjit_import_resolver(name);
+    assert(addr != NULL);
+    return addr;
 }
 
 #define CONCAT(a, b) a ## b
@@ -202,30 +202,34 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
             } else if (bbv_pc >= 0 && insns_num > 0) {
                 fmt_output(buff, "  exit: return pc;\n}\n");
                 if (mirjit_debug_p) {
-                    fprintf (stderr, "C code for BBV 0x%llx @ %d:\n%s",
-                             (unsigned long long)bbv, bbv_pc - bbv->bbv_start, VARR_ADDR(char, buff));
+                    fprintf(stderr, "C code for BBV 0x%llx @ %d:\n%s",
+                            (unsigned long long)bbv, bbv_pc - bbv->bbv_start, VARR_ADDR(char, buff));
                 }
                 curr_input.code = (uint8_t *)VARR_ADDR(char, buff);
                 curr_input.code_len = strlen((char *) curr_input.code);
-                double start_time = real_usec_time ();
+                double start_time = real_usec_time();
                 if (!c2mir_compile (ctx, &curr_input.options, t_getc, &curr_input, "jit_c_code.c", NULL)) {
                     if (mirjit_debug_p) {
-                        fprintf (stderr, "Failure in compilation of C code for BBV 0x%llx @ %d\n",
-                                 (unsigned long long)bbv, bbv_pc - bbv->bbv_start);
+                        fprintf(stderr, "Failure in compilation of C code for BBV 0x%llx @ %d\n",
+                                (unsigned long long)bbv, bbv_pc - bbv->bbv_start);
                     }
                 } else {
                     if (mirjit_debug_p) {
-                        fprintf (stderr, "Finish C to MIR compilation -- compilation time %.0f usec\n",
-                                 real_usec_time () - start_time);
-                        MIR_gen_set_debug_file (ctx, 0, stderr);
-                        MIR_gen_set_debug_level (ctx, 0, 1);
+                        fprintf(stderr, "Finish C to MIR compilation -- compilation time %.0f usec\n",
+                                real_usec_time() - start_time);
+                        MIR_gen_set_debug_file(ctx, 0, stderr);
+                        MIR_gen_set_debug_level(ctx, 0, 3);
                     }
-                    MIR_module_t module = DLIST_TAIL (MIR_module_t, *MIR_get_module_list (ctx));
-                    MIR_load_module (ctx, module);
-                    MIR_link (ctx, MIR_set_lazy_gen_interface, import_resolver);
-#if 0
-                    void *func = NULL;
-                    body->bbv_code[bbv->bbv_start] = (VALUE)func;
+                    MIR_module_t module = DLIST_TAIL(MIR_module_t, *MIR_get_module_list(ctx));
+                    MIR_load_module(ctx, module);
+                    MIR_link(ctx, MIR_set_lazy_gen_interface, import_resolver);
+#if 1
+                    MIR_item_t func = DLIST_TAIL(MIR_item_t, module->items);
+                    while(func != NULL && func->item_type != MIR_func_item)
+                        func = DLIST_PREV(MIR_item_t, func);
+                    assert(func != NULL && func->item_type == MIR_func_item);
+                    body->bbv_code[bbv_pc] = (VALUE)sir_dispatch_table[BIN(sir_bbv_jit_call)];
+                    body->bbv_code[bbv_pc + 1] = (VALUE)MIR_gen(ctx, 0, func);
 #endif
                 }
                 bbv_pc = -1;
@@ -255,23 +259,23 @@ rb_mirjit_debug_p(void) { return mirjit_options.debug_p; }
 static size_t curr_input_byte_num;
 
 static int read_byte(MIR_context_t ctx) {
-  if (curr_input_byte_num >= sizeof (mir_code)) return EOF;
+  if (curr_input_byte_num >= sizeof(mir_code)) return EOF;
   return mir_code[curr_input_byte_num++];
 }
 
 void
 rb_mirjit_init(struct rb_mirjit_options *options) {
-    double start_time = real_usec_time ();
+    double start_time = real_usec_time();
     mirjit_options = *options;
     int mirjit_debug_p = rb_mirjit_debug_p();
     MIR_module_t module;
-    ctx = MIR_init ();
-    MIR_read_with_func (ctx, read_byte);
-    module = DLIST_HEAD (MIR_module_t, *MIR_get_module_list (ctx));
-    MIR_load_module (ctx, module);
+    ctx = MIR_init();
+    MIR_read_with_func(ctx, read_byte);
+    module = DLIST_HEAD(MIR_module_t, *MIR_get_module_list(ctx));
+    MIR_load_module(ctx, module);
     if (mirjit_debug_p)
-        fprintf (stderr, "Finish of MIR reading from memory -- read time %.0f usec\n",
-                 real_usec_time () - start_time);
+        fprintf(stderr, "Finish of MIR reading from memory -- read time %.0f usec\n",
+                real_usec_time() - start_time);
     VARR_CREATE(char, jit_c_code, 0);
     c2mir_init(ctx);
     MIR_gen_init(ctx, 1);
@@ -288,9 +292,9 @@ void
 rb_mirjit_finish(void) {
     rb_mirjit_resolver_finish();
     VARR_DESTROY(char, jit_c_code);
-    MIR_gen_finish (ctx);
+    MIR_gen_finish(ctx);
     c2mir_finish(ctx);
-    MIR_finish (ctx);
+    MIR_finish(ctx);
 }
 
 #endif /* #ifdef HAVE_LIBMIR */
