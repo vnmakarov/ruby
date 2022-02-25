@@ -407,6 +407,13 @@ vm_push_frame(rb_execution_context_t *ec,
     vm_push_frame_debug_counter_inc(ec, cfp, type);
 }
 
+void
+ext_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type,
+               VALUE self, VALUE specval, VALUE cref_or_me, const VALUE *pc,
+               VALUE *sp, int local_size, int stack_max) {
+    vm_push_frame(ec, iseq, type, self, specval, cref_or_me, pc, sp, local_size, stack_max);
+}
+
 /* return TRUE if the frame is finished */
 static inline int
 vm_pop_frame(rb_execution_context_t *ec, rb_control_frame_t *cfp, const VALUE *ep)
@@ -463,6 +470,12 @@ vm_env_write_slowpath(const VALUE *ep, int index, VALUE v)
     VM_FORCE_WRITE(&ep[index], v);
     VM_ENV_FLAGS_UNSET(ep, VM_ENV_FLAG_WB_REQUIRED);
     RB_DEBUG_COUNTER_INC(lvar_set_slowpath);
+}
+
+void
+ext_env_write_slowpath(const VALUE *ep, int index, VALUE v)
+{
+    vm_env_write_slowpath(ep, index, v);
 }
 
 static inline void
@@ -5408,6 +5421,20 @@ vm_opt_regexpmatch2(VALUE recv, VALUE obj)
 	return Qundef;
     }
 }
+
+VALUE ext_opt_plus(VALUE recv, VALUE obj) { return vm_opt_plus(recv, obj); }
+VALUE ext_opt_minus(VALUE recv, VALUE obj) { return vm_opt_minus(recv, obj); }
+VALUE ext_opt_mult(VALUE recv, VALUE obj) { return vm_opt_mult(recv, obj); }
+VALUE ext_opt_div(VALUE recv, VALUE obj) { return vm_opt_div(recv, obj); }
+VALUE ext_opt_mod(VALUE recv, VALUE obj) { return vm_opt_mod(recv, obj); }
+VALUE ext_opt_or(VALUE recv, VALUE obj) { return vm_opt_or(recv, obj); }
+VALUE ext_opt_and(VALUE recv, VALUE obj) { return vm_opt_and(recv, obj); }
+VALUE ext_opt_lt(VALUE recv, VALUE obj) { return vm_opt_lt(recv, obj); }
+VALUE ext_opt_gt(VALUE recv, VALUE obj) { return vm_opt_gt(recv, obj); }
+VALUE ext_opt_le(VALUE recv, VALUE obj) { return vm_opt_le(recv, obj); }
+VALUE ext_opt_ge(VALUE recv, VALUE obj) { return vm_opt_ge(recv, obj); }
+VALUE ext_opt_aref(VALUE recv, VALUE obj) { return vm_opt_aref(recv, obj); }
+VALUE ext_opt_aset(VALUE recv, VALUE obj, VALUE set) { return vm_opt_aset(recv, obj, set); }
 
 rb_event_flag_t rb_iseq_event_flags(const rb_iseq_t *iseq, size_t pos);
 
