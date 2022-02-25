@@ -2893,10 +2893,13 @@ sir_bbv_cont
 
 DEFINE_INSN
 sir_bbv_jit_call
-(lindex_t bbv)
+(lindex_t addr)
 ()
 ()
+// attr bool leaf = false; /* has rb_check_frozen_internal() */
 {
+    const VALUE *(*f)(rb_execution_context_t *e, rb_control_frame_t *, const VALUE *) = (void*)addr;
+    reg_pc = f(ec, reg_cfp, reg_pc);
 }
 
 /* --- rarely used sir insns: --- */
