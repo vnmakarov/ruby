@@ -11,7 +11,10 @@
 
 
 #define MIRJIT
+
+#include <stdlib.h>  // for abort
 static void __builtin_unreachable(void) {abort();}
+#define __builtin_expect(c,e) (c)
 
 #include "vm_core.h"
 #include "internal/numeric.h"
@@ -28,6 +31,25 @@ static void __builtin_unreachable(void) {abort();}
 #include "probes.h"
 #include "probes_helper.h"
 #endif
+
+#define vm_opt_plus ext_opt_plus
+#define vm_opt_minus ext_opt_minus
+#define vm_opt_mult ext_opt_mult
+#define vm_opt_div ext_opt_div
+#define vm_opt_mod ext_opt_mod
+#define vm_opt_or ext_opt_or
+#define vm_opt_and ext_opt_and
+#define vm_opt_lt ext_opt_lt
+#define vm_opt_gt ext_opt_gt
+#define vm_opt_le ext_opt_le
+#define vm_opt_ge ext_opt_ge
+#define vm_opt_aref ext_opt_aref
+#define vm_opt_aset ext_opt_aset
+#define vm_opt_plus ext_opt_plus
+#define vm_push_frame ext_push_frame
+
+#define RUBY_DTRACE_CMETHOD_RETURN_HOOK(ec, klass, id)
+#define RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, klass, id)
 
 #include "sir_exec.c"
 
@@ -74,5 +96,7 @@ VM_CFP_TO_CAPTURED_BLOCK(const rb_control_frame_t *cfp)
 #define NEXT_INSN() goto exit
 #undef END_INSN
 #define END_INSN(n) goto exit
+
+#define leafness_of_check_ints false
 
 #include "mirjit_insn_funcs.inc"
