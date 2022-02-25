@@ -487,10 +487,12 @@ ruby-glommed.$(OBJEXT):
 mirjit_env_shrink$(EXEEXT): $(srcdir)/mirjit_env_shrink.c
 	$(Q) $(CC) -g $< -lmir -o $@
 
-mirjit_code_env.bmir mir_resolver.inc: mirjit_code_env.mir mirjit_env_shrink
-	$(ECHO) generating mirjit_code_env.bmir mir_resolver.inc
-	$(Q) ./mirjit_env_shrink$(EXEEXT) < mirjit_code_env.mir mirjit_code_env.bmir.new mir_resolver.inc.new && \
-		$(MV) mirjit_code_env.bmir.new mirjit_code_env.bmir && $(MV) mir_resolver.inc.new mir_resolver.inc
+mirjit_code_env.bmir: mirjit_code_env.mir mirjit_env_shrink
+	$(ECHO) generating $@ mir_resolver.inc
+	$(Q) ./mirjit_env_shrink$(EXEEXT) < mirjit_code_env.mir $@.new mir_resolver.inc.new && \
+		$(MV) $@.new $@ && $(MV) mir_resolver.inc.new mir_resolver.inc
+
+mir_resolver.inc: mirjit_code_env.mir mirjit_env_shrink
 
 mirjit_code_env.mir: mirjit_code_env.c
 	$(ECHO) generating $@
