@@ -2182,8 +2182,13 @@ void rb_vm_trap_exit(rb_vm_t *vm);
 VALUE make_sir_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv **dst_bbv);
 VALUE gen_sir_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, VALUE *label_place);
 
+#ifdef MIRJIT
+#define MIRJIT_CONST(type, id, init_expr, fmt)
+#define MIRJIT_CONST_PTR(type, id, init_expr)
+#else
 #define MIRJIT_CONST(type, id, init_expr, fmt) type id = init_expr
 #define MIRJIT_CONST_PTR(type, id, init_expr) type id = init_expr
+#endif
 
 RUBY_SYMBOL_EXPORT_BEGIN
 
