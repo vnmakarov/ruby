@@ -129,7 +129,7 @@ static sir_inline VALUE vm_sir_igt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
 static sir_inline VALUE vm_sir_ile(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2); }
 static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 > (SIGNED_VALUE)v2); }
 
-#if !__has_builtin(__builtin_add_overflow)
+#if !__has_builtin(__builtin_add_overflow) || defined(MIRJIT)
 #define vm_sir_iplus(res, v1, v2, ov_label)                      \
     {                                                            \
         long r = FIX2LONG(v1) + FIX2LONG(v2);                    \
@@ -169,7 +169,7 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
 #define vm_sir_iplusvvi(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusvvi)
 #define vm_sir_iplusviv(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusviv)
 
-#if !__has_builtin(__builtin_sub_overflow)
+#if !__has_builtin(__builtin_sub_overflow) || defined(MIRJIT)
 #define vm_sir_iminus(res, v1, v2, ov_label)                     \
     {                                                            \
         long r = FIX2LONG(v1) - FIX2LONG(v2);                    \
@@ -491,4 +491,9 @@ sir_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *), int (**arg_f
 	return FALSE;
     }
     return TRUE;
+}
+
+void
+mirjit_opt_send_without_block(rb_execution_context_t *ec, rb_control_frame_t *cfp, VALUE *pc, CALL_DATA cd) {
+    // ???
 }
