@@ -4199,7 +4199,7 @@ DEF_HTAB(mir_resolver_el_t);
 static HTAB(mir_resolver_el_t) *mir_resolver_tab;
 
 static htab_hash_t mir_resolver_hash(mir_resolver_el_t el, void *arg) {
-    return (htab_hash_t)(uintptr_t)el.name; // ???
+    return st_hash(el.name, strlen(el.name), 42);
 }
 
 static int mir_resolver_eq_p(mir_resolver_el_t el1, mir_resolver_el_t el2, void *arg) {
