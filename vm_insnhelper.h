@@ -271,23 +271,23 @@ enum method_explorer_type {
 };
 #endif
 
-VALUE mirjit_plus(VALUE recv, VALUE obj);
-VALUE mirjit_minus(VALUE recv, VALUE obj);
-VALUE mirjit_mult(VALUE recv, VALUE obj);
-VALUE mirjit_div(VALUE recv, VALUE obj);
-VALUE mirjit_mod(VALUE recv, VALUE obj);
-VALUE mirjit_or(VALUE recv, VALUE obj);
-VALUE mirjit_and(VALUE recv, VALUE obj);
-VALUE mirjit_lt(VALUE recv, VALUE obj);
-VALUE mirjit_gt(VALUE recv, VALUE obj);
-VALUE mirjit_le(VALUE recv, VALUE obj);
-VALUE mirjit_ge(VALUE recv, VALUE obj);
-VALUE mirjit_aref(VALUE recv, VALUE obj);
-VALUE mirjit_aset(VALUE recv, VALUE obj, VALUE set);
-void mirjit_env_write_slowpath(const VALUE *ep, int index, VALUE v);
-void mirjit_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type,
-                       VALUE self, VALUE specval, VALUE cref_or_me, const VALUE *pc,
-                       VALUE *sp, int local_size, int stack_max);
+VALUE ext_opt_plus(VALUE recv, VALUE obj);
+VALUE ext_opt_minus(VALUE recv, VALUE obj);
+VALUE ext_opt_mult(VALUE recv, VALUE obj);
+VALUE ext_opt_div(VALUE recv, VALUE obj);
+VALUE ext_opt_mod(VALUE recv, VALUE obj);
+VALUE ext_opt_or(VALUE recv, VALUE obj);
+VALUE ext_opt_and(VALUE recv, VALUE obj);
+VALUE ext_opt_lt(VALUE recv, VALUE obj);
+VALUE ext_opt_gt(VALUE recv, VALUE obj);
+VALUE ext_opt_le(VALUE recv, VALUE obj);
+VALUE ext_opt_ge(VALUE recv, VALUE obj);
+VALUE ext_opt_aref(VALUE recv, VALUE obj);
+VALUE ext_opt_aset(VALUE recv, VALUE obj, VALUE set);
+void ext_env_write_slowpath(const VALUE *ep, int index, VALUE v);
+void ext_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type,
+                    VALUE self, VALUE specval, VALUE cref_or_me, const VALUE *pc,
+                    VALUE *sp, int local_size, int stack_max);
 
 VALUE mirjit_sendish(struct rb_execution_context_struct *ec, struct rb_control_frame_struct *reg_cfp,
                      struct rb_call_data *cd, VALUE block_handler, enum method_explorer_type method_explorer);
@@ -311,7 +311,7 @@ mirjit_env_write(const VALUE *ep, int index, VALUE v)
 	VM_STACK_ENV_WRITE(ep, index, v);
     }
     else {
-	mirjit_env_write_slowpath(ep, index, v);
+	ext_env_write_slowpath(ep, index, v);
     }
 }
 
