@@ -242,7 +242,8 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
                         func = DLIST_PREV(MIR_item_t, func);
                     assert(func != NULL && func->item_type == MIR_func_item);
                     body->bbv_code[bbv_pc] = (VALUE)sir_dispatch_table[BIN(sir_bbv_jit_call)];
-                    body->bbv_code[bbv_pc + 1] = (VALUE)MIR_gen(ctx, 0, func);
+                    void *thunk = MIR_gen(ctx, 0, func);
+                    body->bbv_code[bbv_pc + 1] = (VALUE) _MIR_get_thunk_addr(ctx, thunk);
 #endif
                 }
                 bbv_pc = -1;
