@@ -99,4 +99,6 @@ VM_CFP_TO_CAPTURED_BLOCK(const rb_control_frame_t *cfp)
 
 #define leafness_of_check_ints false
 
+#define vm_env_write mirjit_env_write
+
 #include "mirjit_insn_funcs.inc"
