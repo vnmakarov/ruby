@@ -66,7 +66,15 @@ DEF_VARR(char);
 DEF_VARR(MIR_op_t);
 
 static int env_prefix_p(const char *name) {
-    return strncmp(name, "sir_", 4) == 0 || strncmp(name, "vm_sir_", 7) == 0 || strncmp(name, "mirjit_", 7) == 0;
+    return strncmp(name, "sir_", 4) == 0 || strncmp(name, "vm_sir_", 7) == 0 || strncmp(name, "mirjit_", 7) == 0
+        || strcmp(name, "rb_fix2long") == 0
+        || strcmp(name, "VM_STACK_ENV_WRITE") == 0
+        || strcmp(name, "VM_FORCE_WRITE") == 0
+        || strcmp(name, "rb_vm_check_ints") == 0 || strcmp(name, "vm_get_ep") == 0
+        || strcmp(name, "RB_INT2FIX") == 0 || strcmp(name, "RB_TEST") == 0
+        || strcmp(name, "rbimpl_fix2long_by_idiv") == 0 || strcmp(name, "rbimpl_fix2long_by_shift") == 0
+        || strcmp(name, "rbimpl_right_shift_is_arithmetic_p") == 0
+        || strcmp(name, "RUBY_VM_INTERRUPTED_ANY") == 0;
 }
 
 int main(int argc, const char *argv[]) {
