@@ -273,9 +273,13 @@ rb_mirjit_init(struct rb_mirjit_options *options) {
     MIR_read_with_func(ctx, read_byte);
     module = DLIST_HEAD(MIR_module_t, *MIR_get_module_list(ctx));
     MIR_load_module(ctx, module);
-    if (mirjit_debug_p)
+    if (mirjit_debug_p) {
+#if 0
+        MIR_output_module (ctx, stderr, module);
+#endif
         fprintf(stderr, "Finish of MIR reading from memory -- read time %.0f usec\n",
                 real_usec_time() - start_time);
+    }
     VARR_CREATE(char, jit_c_code, 0);
     c2mir_init(ctx);
     MIR_gen_init(ctx, 1);

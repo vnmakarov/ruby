@@ -63,6 +63,7 @@ void rb_sir_change_getivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic, V
 void rb_sir_change_setivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic);
 void rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,
                         CALL_DATA cd, struct rb_sir_send_info *si);
+void rb_sir_change_bbv(struct rb_iseq_bbv *bbv);
 const VALUE *rb_sir_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp);
 const VALUE *rb_sir_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);
 

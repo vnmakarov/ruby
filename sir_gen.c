@@ -2,7 +2,7 @@
 
   sir_gen.c - Generate SIR insns.
 
-  Copyright (C) 2021 Vladimir Makarov vmakarov@redhat.com
+  Copyright (C) 2022 Vladimir Makarov vmakarov@redhat.com
 
 **********************************************************************/
 
@@ -440,6 +440,7 @@ compare_bbvs(const void *b1, const void *b2) {
     return compare_bbv_with_keys(bbv1, bbv2->type, bbv2->index, bbv2->iseq_start);
 }
 
+#define BBV_COUNT_TO_PROFILE_SPECIALIZE 3
 #define BBV_COUNT_TO_JIT 10
 
 static rb_iseq_bbv_t
@@ -449,7 +450,7 @@ create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bou
 
     check_final_attrs(n_attrs, attrs);
     bbv = (rb_iseq_bbv_t)ALLOC_N(char, sizeof (struct rb_iseq_bbv) + (attrs == NULL ? 0 : n_attrs - 1));
-    bbv->count = BBV_COUNT_TO_JIT;
+    bbv->count = BBV_COUNT_TO_PROFILE_SPECIALIZE;
     bbv->iseq = iseq;
     bbv->cme = NULL;
     bbv->iseq_start = start;
@@ -1189,8 +1190,6 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         VARR_PUSH(char, operands_changed_p, FALSE);
     }
     SIR_GEN_ASSERT(bbv->iseq_bound < 0 || bbv->iseq_start < bbv->iseq_bound);
-    if (rb_mirjit_enabled_p())
-        add_insn_arr(bbv->iseq_start, BIN(sir_bbv_start), 1, (VALUE *)&bbv);
     for (curr_orig_insn_pos = bbv->iseq_start;;) {
         last_sir_ind = (int)VARR_LENGTH(VALUE, bbv_encoded);
 	insn_id = rb_vm_insn_addr2insn((void *)body->iseq_encoded[curr_orig_insn_pos]);
@@ -1724,6 +1723,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     int mirjit_enabled_p = rb_mirjit_enabled_p();
 
     profile_p = inspect_types_num < 0;
+    mirjit_enabled_p = mirjit_enabled_p && profile_p;
     SIR_GEN_ASSERT(profile_p || bbv->bbv_start < 0);
     if (head_bbv == NULL)
         head_bbv = bbv;
@@ -1757,6 +1757,10 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             new_operands[0] = get_lvar_index(iseq, i);
             add_spec_insn_arr(orig_bbv->bbv_start, BIN(sir_inspect_type), 1, new_operands);
         }
+    }
+    if (mirjit_enabled_p) {
+        add_insn_arr(bbv->iseq_start, BIN(sir_bbv_start), 1, (VALUE *)&bbv);
+        bbv->count = BBV_COUNT_TO_JIT;
     }
     for (curr_sir_insn_pos = orig_bbv->bbv_start;
          curr_sir_insn_pos < orig_bbv->bbv_bound;
@@ -2709,9 +2713,6 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
         cont_pc = body->bbv_code + bbv_cont_pos;
     }
     RB_VM_LOCK_LEAVE();
-#ifdef HAVE_LIBMIR
-    rb_jit_bbv(bbv);
-#endif
     return cont_pc;
 }
 
@@ -2892,6 +2893,26 @@ rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_
         }
     }
     RB_VM_LOCK_LEAVE();
+}
+
+void
+rb_sir_change_bbv(rb_iseq_bbv_t bbv)
+{
+#ifdef HAVE_LIBMIR
+    rb_iseq_t *iseq = bbv->iseq;
+    struct rb_iseq_constant_body *body = iseq->body;
+
+    if (rb_sir_debug_p()) {
+        fprintf(stderr, "\n## JITting BBV 0x%llx:", (unsigned long long)bbv);
+        print_attrs(bbv->attrs);
+        print_iseq_title(iseq);
+        fprintf(stderr, "\n");
+        print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
+    }
+    RB_VM_LOCK_ENTER();
+    rb_jit_bbv(bbv);
+    RB_VM_LOCK_LEAVE();
+#endif
 }
 
 const VALUE *

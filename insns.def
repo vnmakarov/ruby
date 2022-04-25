@@ -2881,6 +2881,10 @@ sir_bbv_start
 ()
 ()
 {
+    struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
+    if (--bbv_ref->count < 0) {
+        rb_sir_change_bbv(bbv);
+    }
 }
 
 DEFINE_INSN
