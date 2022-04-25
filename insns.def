@@ -2902,8 +2902,15 @@ sir_bbv_jit_call
 ()
 // attr bool leaf = false; /* has rb_check_frozen_internal() */
 {
+#if defined(__x86_64__)
+    void (*f)(rb_execution_context_t *e) = (void*)addr;
+    asm volatile ("call *%[func]"
+                  : "+r" (reg_cfp), "+r" (reg_pc) : [ec] "D" (ec), [func] "a" (f)
+                  : "rdx", "rcx", "rsi", "r8", "r9", "r10", "r11", "memory");
+#else
     const VALUE *(*f)(rb_execution_context_t *e, rb_control_frame_t *, const VALUE *) = (void*)addr;
     reg_pc = f(ec, reg_cfp, reg_pc);
+#endif
 }
 
 /* --- rarely used sir insns: --- */

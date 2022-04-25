@@ -62,7 +62,12 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "typedef long OFFSET;\n"
     "typedef double DBL;\n"
     "typedef unsigned long lindex_t;\n"
-    "typedef unsigned long rb_num_t;\n";
+    "typedef unsigned long rb_num_t;\n"
+#if defined(__x86_64__)
+    "register VALUE *pc asm(\"r14\");\n"
+    "register void *cfp asm(\"r15\");\n"
+#endif
+    "\n";
 
 DEF_VARR(char);
 
@@ -171,7 +176,11 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
             VARR_TRUNC(char, buff, 0);
             insns_num = 0;
             fmt_output(buff, "%s", header);
+#if !defined(__x86_64__)
             fmt_output(buff, "VALUE *jit_bbv%d(void *ec, void *cfp, VALUE *pc) {\n", pc);
+#else
+            fmt_output(buff, "void jit_bbv%d(void *ec) {\n", pc);
+#endif
             memset(insn_used_p, 0, VM_INSTRUCTION_SIZE);
             break;
         default:
@@ -200,7 +209,11 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
                 }
 #endif
             } else if (bbv_pc >= 0 && insns_num > 0) {
+#if defined(__x86_64__)
+                fmt_output(buff, "  exit: return;\n}\n");
+#else
                 fmt_output(buff, "  exit: return pc;\n}\n");
+#endif
                 if (mirjit_debug_p) {
                     fprintf(stderr, "C code for BBV 0x%llx @ %d:\n%s",
                             (unsigned long long)bbv, bbv_pc - bbv->bbv_start, VARR_ADDR(char, buff));
