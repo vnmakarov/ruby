@@ -67,11 +67,17 @@ DEF_VARR(MIR_op_t);
 
 static int env_prefix_p(const char *name) {
     return strncmp(name, "sir_", 4) == 0 || strncmp(name, "vm_sir_", 7) == 0 || strncmp(name, "mirjit_", 7) == 0
+        || strncmp(name, "attr_handles_sp_sir_", strlen ("attr_handles_sp_sir_")) == 0
         || strcmp(name, "rb_fix2long") == 0
         || strcmp(name, "VM_STACK_ENV_WRITE") == 0
         || strcmp(name, "VM_FORCE_WRITE") == 0
         || strcmp(name, "rb_vm_check_ints") == 0 || strcmp(name, "vm_get_ep") == 0
+        || strcmp(name, "RB_FIXNUM_P") == 0 || strcmp(name, "RB_FLONUM_P") == 0
+        || strcmp(name, "RB_SPECIAL_CONST_P") == 0 || strcmp(name, "RB_STATIC_SYM_P") == 0
+        || strcmp(name, "RB_IMMEDIATE_P") == 0
         || strcmp(name, "RB_INT2FIX") == 0 || strcmp(name, "RB_TEST") == 0
+        || strcmp(name, "RBASIC_CLASS") == 0 || strcmp(name, "rb_class_of") == 0
+        || strcmp(name, "vm_cc_class_check") == 0 || strcmp(name, "vm_cc_class") == 0
         || strcmp(name, "rbimpl_fix2long_by_idiv") == 0 || strcmp(name, "rbimpl_fix2long_by_shift") == 0
         || strcmp(name, "rbimpl_right_shift_is_arithmetic_p") == 0
         || strcmp(name, "RUBY_VM_INTERRUPTED_ANY") == 0;

@@ -898,11 +898,20 @@ struct rb_block {
 };
 
 typedef struct rb_control_frame_struct {
+#ifdef __MIRC__
+    const VALUE *pc __mirc_attribute__ ((antialias (val)));		/* cfp[0] */
+    VALUE *sp __mirc_attribute__ ((antialias (val)));		/* cfp[1] */
+#else
     const VALUE *pc;		/* cfp[0] */
     VALUE *sp;			/* cfp[1] */
+#endif
     const rb_iseq_t *iseq;	/* cfp[2] */
     VALUE self;			/* cfp[3] / block[0] */
+#ifdef __MIRC__
+    const VALUE *ep __mirc_attribute__ ((antialias (val)));		/* cfp[4] / block[1] */
+#else
     const VALUE *ep;		/* cfp[4] / block[1] */
+#endif
     const void *block_code;     /* cfp[5] / block[2] */ /* iseq or ifunc or forwarded block handler */
     VALUE *__bp__;              /* cfp[6] */ /* outside vm_push_frame, use vm_base_ptr instead. */
 

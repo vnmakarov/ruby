@@ -14,7 +14,6 @@
 
 #include <stdlib.h>  // for abort
 static void __builtin_unreachable(void) {abort();}
-#define __builtin_expect(c,e) (c)
 
 #include "vm_core.h"
 #include "internal/numeric.h"
@@ -46,7 +45,7 @@ static void __builtin_unreachable(void) {abort();}
 #define vm_opt_aref ext_opt_aref
 #define vm_opt_aset ext_opt_aset
 #define vm_opt_plus ext_opt_plus
-#define vm_push_frame ext_push_frame
+#define vm_push_frame mirjit_push_frame
 
 #define RUBY_DTRACE_CMETHOD_RETURN_HOOK(ec, klass, id)
 #define RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, klass, id)
@@ -92,13 +91,24 @@ VM_CFP_TO_CAPTURED_BLOCK(const rb_control_frame_t *cfp)
 #include "insns.inc"
 #include "insns_info.inc"
 
+#define MIRJIT_EXIT(n) do { *exit_flag = n; goto exit; } while (0)
 #undef NEXT_INSN
-#define NEXT_INSN() goto exit
+#define NEXT_INSN() MIRJIT_EXIT(0)
 #undef END_INSN
-#define END_INSN(n) goto exit
+#define END_INSN(n) MIRJIT_EXIT(0)
+#undef ABNORMAL_END_INSN
+#define ABNORMAL_END_INSN(n) MIRJIT_EXIT(1)
+#undef RUBY_VM_CHECK_INTS
+#define RUBY_VM_CHECK_INTS(ec) do if (UNLIKELY(RUBY_VM_INTERRUPTED_ANY(ec))) MIRJIT_EXIT(1); while (0)
 
 #define leafness_of_check_ints false
 
 #define vm_env_write mirjit_env_write
+
+#ifdef __MIRC__
+#define cfp_member_attr __mirc_attribute__ ((antialias (val)))
+#else
+#define cfp_member_attr
+#endif
 
 #include "mirjit_insn_funcs.inc"

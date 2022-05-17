@@ -28,7 +28,7 @@ switch (insn_id) {
   case BIN(<%= insn.name %>): {
 % body = render_c_expr(insn.expr).gsub(/^#/, '#   ')
     if (proto_gen_p) {
-        fmt_output(buff, "  VALUE *mirjit_<%= insn.name %>(void *ec, void *cfp, VALUE *pc");
+        fmt_output(buff, "  VALUE *mirjit_<%= insn.name %>(void *ec, void *cfp, VALUE *pc, VALUE *exit_flag");
 % insn.opes.each_with_index do |ope, i|
         fmt_output(buff, ", <%= ope.fetch(:type) %>");
 % end
@@ -41,12 +41,12 @@ switch (insn_id) {
     }
 % insn.opes.each_with_index do |ope, i|
 %   if ope[:type] == "DBL"
-    MAYBE_UNUSED(<%= ope[:decl] %>) = sir_val2dbl(operands[<%= i + 1 %>]);
+    MAYBE_UNUSED(<%= ope[:decl] %>) = sir_val2dbl(operands[<%= i %>]);
 %   else
-    MAYBE_UNUSED(<%= ope[:decl] %>) = (<%= ope[:type] %>)operands[<%= i + 1 %>];
+    MAYBE_UNUSED(<%= ope[:decl] %>) = (<%= ope[:type] %>)operands[<%= i %>];
 %   end
 % end
-    fmt_output(buff, "  pc = mirjit_<%= insn.name %>(ec, cfp, pc");
+    fmt_output(buff, "  pc = mirjit_<%= insn.name %>(ec, cfp, pc, &exit_flag");
 % call_p = false
 % insn.opes.each_with_index do |ope, i|
     fmt_output(buff, ", 0x%"PRIxVALUE, operands[<%= i %>]);
@@ -62,8 +62,13 @@ switch (insn_id) {
                <%= call.gsub(/MIRJIT_CONST/, 'MIRJIT_CONST_VAL') %>);
 % end
     fmt_output(buff, ");\n");
+    fmt_output(buff, "  if (__builtin_expect (exit_flag, 0)) goto exit;\n");
 % if call_p
-    fmt_output(buff, "  if (pc != 0x%"PRIxVALUE ") goto exit;\n", (VALUE)next_insn_pc);
+    fmt_output(buff, "  if (pc != (VALUE *)0x%"PRIxVALUE ") {\n", (VALUE)next_insn_pc);
+    fmt_output(buff, "    cfp = ((void **)ec)[%d];\n",
+               (int) (offsetof(struct rb_execution_context_struct, cfp) / sizeof (void *)));
+    fmt_output(buff, "    goto exit;\n");
+    fmt_output(buff, "  }\n");
 % end
     return TRUE;
   }

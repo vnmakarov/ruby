@@ -9,7 +9,7 @@
 %;
 % body = render_c_expr(insn.expr).gsub(/^#/, '#   ')
 
-VALUE *mirjit_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *VM_REG_CFP, VALUE *VM_REG_PC
+VALUE *mirjit_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *VM_REG_CFP, VALUE *VM_REG_PC cfp_member_attr, VALUE *exit_flag
 % insn.opes.each_with_index do |ope, i|
     , <%= ope[:decl] %>
 % end
@@ -73,6 +73,7 @@ VALUE *mirjit_<%= insn.name %>(rb_execution_context_t *ec, rb_control_frame_t *V
     if (leaf) ADD_PC(<%= insn.width -%>);
 #   undef attr_witdh_<%= insn.name %>
 #   undef INSN_ATTR
+    *exit_flag = 0;
    exit:
     return VM_REG_PC;
 }

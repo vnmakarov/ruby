@@ -8,6 +8,8 @@
 #ifndef MIRJIT_H
 #define MIRJIT_H 1
 
+//#define JRET
+
 #include "vm_core.h"
 
 int rb_mirjit_enabled_p(void);

@@ -1625,7 +1625,7 @@ sir_iarefsvv
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
@@ -1645,7 +1645,7 @@ sir_iarefsvi
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
@@ -1663,7 +1663,7 @@ sir_iarefsiv
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
@@ -1683,7 +1683,7 @@ sir_iarefsvs
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
@@ -1703,7 +1703,7 @@ sir_iarefssv
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
@@ -1722,7 +1722,7 @@ sir_iarefssi
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
@@ -1739,7 +1739,7 @@ sir_iarefsis
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
@@ -1758,7 +1758,7 @@ sir_iarefsss
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
 }
@@ -1778,7 +1778,7 @@ sir_iarefvvv
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
@@ -1799,7 +1799,7 @@ sir_iarefvvi
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
@@ -1818,7 +1818,7 @@ sir_iarefviv
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
@@ -1839,7 +1839,7 @@ sir_iarefvvs
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
@@ -1860,7 +1860,7 @@ sir_iarefvsv
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
@@ -1881,7 +1881,7 @@ sir_iarefvsi
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
@@ -1900,7 +1900,7 @@ sir_iarefvis
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
@@ -1921,7 +1921,7 @@ sir_iarefvss
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
@@ -1965,10 +1965,11 @@ sir_ibeqss sir_ibneqss sir_ibltss sir_ibgtss sir_ibless sir_ibgess
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2))
+        JUMP(tdst);
+    else
+        JUMP(fdst);
     RUBY_VM_CHECK_INTS(ec);
-    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -1979,10 +1980,12 @@ sir_ibeqvv sir_ibneqvv sir_ibltvv sir_ibgtvv sir_iblevv sir_ibgevv
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    if (SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2))
+        JUMP(tdst);
+    else
+        JUMP(fdst);
     RUBY_VM_CHECK_INTS(ec);
-    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -1993,10 +1996,12 @@ sir_ibeqvi sir_ibneqvi sir_ibltvi sir_ibgtvi sir_iblevi sir_ibgevi
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE val, v1 = *(GET_EP() - op1);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    VALUE v1 = *(GET_EP() - op1);
+    if (SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm))
+        JUMP(tdst);
+    else
+        JUMP(fdst);
     RUBY_VM_CHECK_INTS(ec);
-    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -2007,10 +2012,12 @@ sir_ibeqvs sir_ibneqvs sir_ibltvs sir_ibgtvs sir_iblevs sir_ibgevs
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE val, v1 = *(GET_EP() - op1);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    VALUE v1 = *(GET_EP() - op1);
+    if (SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2))
+        JUMP(tdst);
+    else
+        JUMP(fdst);
     RUBY_VM_CHECK_INTS(ec);
-    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -2021,10 +2028,12 @@ sir_ibeqsv sir_ibneqsv sir_ibltsv sir_ibgtsv sir_iblesv sir_ibgesv
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE v2 = *(GET_EP() - op2), val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    VALUE v2 = *(GET_EP() - op2);
+    if (SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2))
+        JUMP(tdst);
+    else
+        JUMP(fdst);
     RUBY_VM_CHECK_INTS(ec);
-    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 DEFINE_INSN
@@ -2035,10 +2044,11 @@ sir_ibeqsi sir_ibneqsi sir_ibltsi sir_ibgtsi sir_iblesi sir_ibgesi
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 {
-    VALUE val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm))
+        JUMP(tdst);
+    else
+        JUMP(fdst);
     RUBY_VM_CHECK_INTS(ec);
-    RTEST(val) ? JUMP(tdst) : JUMP(fdst);
 }
 
 /* --- end of type specialized insns --- */
@@ -2052,7 +2062,7 @@ check_fixtype
     VALUE val = *(GET_EP() - n);
     if (!FIXNUM_P(val)) {
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
 }
 
@@ -2065,7 +2075,7 @@ check_stack_fixtype
     VALUE val = TOPN(n);
     if (!FIXNUM_P(val)) {
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
 }
 
@@ -2563,7 +2573,7 @@ sir_getivar
     }
   sir_getivar_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(sir_getivar);
+    ABNORMAL_END_INSN(sir_getivar);
   sir_getivar_end:
     ;
 }
@@ -2589,7 +2599,7 @@ sir_igetivar
     }
   sir_igetivar_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(sir_getivar);
+    ABNORMAL_END_INSN(sir_getivar);
   sir_igetivar_end:
     ;
 }
@@ -2620,7 +2630,7 @@ sir_setivar
     }
   sir_setivar_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(sir_setivar);
+    ABNORMAL_END_INSN(sir_setivar);
   sir_setivar_end:
     ;
 }
@@ -2645,7 +2655,7 @@ sir_iseq_send_without_block
     VALUE *argv = reg_cfp->sp - argc;
     VALUE recv = TOPN(argc);
 
-    if (!vm_cc_class_check(cc, CLASS_OF(recv))) goto sir_iseq_send_without_block_exit;
+    if (UNLIKELY(!vm_cc_class_check(cc, CLASS_OF(recv)))) goto sir_iseq_send_without_block_exit;
     MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
     VM_ASSERT(callable_method_entry_p(cme) && argc == param_size);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
@@ -2661,7 +2671,7 @@ sir_iseq_send_without_block
     /* invalidate the current cc as we use cc from safe SIR: */
     if (cc != vm_cc_empty()) vm_cc_invalidate(cc);
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(sir_iseq_send_without_block);
+    ABNORMAL_END_INSN(sir_iseq_send_without_block);
 }
 
 /* Specialized call of method without block created from make_sir_send:
@@ -2686,7 +2696,7 @@ sir_send_ivget
     }
   sir_send_ivget_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(sir_opt_ivget);
+    ABNORMAL_END_INSN(sir_opt_ivget);
   sir_send_ivget_end:
     ;
 }
@@ -2719,7 +2729,7 @@ sir_send_ivset
     }
   sir_send_ivset_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(sir_send_ivset);
+    ABNORMAL_END_INSN(sir_send_ivset);
   sir_send_ivset_end:
     ;
 }
@@ -2790,7 +2800,7 @@ sir_cfunc_send
     /* invalidate the current cc as we use cc from safe SIR: */
     vm_cc_invalidate(cc);
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
-    END_INSN(sir_iseq_send_without_block);
+    ABNORMAL_END_INSN(sir_iseq_send_without_block);
   sir_cfunc_send_end:
     ;
 }
@@ -2806,7 +2816,7 @@ sir_iter_start
 
     if (!f(arg, &index)) {
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        END_INSN(NAME_OF_CURRENT_INSN);
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
     res = Qnil;
 }
@@ -2882,7 +2892,7 @@ sir_bbv_start
 ()
 {
     struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)bbv;
-    if (--bbv_ref->count < 0) {
+    if (--bbv_ref->count == 0) {
         rb_sir_change_bbv(bbv);
     }
 }
@@ -2904,9 +2914,14 @@ sir_bbv_jit_call
 {
 #if defined(__x86_64__)
     void (*f)(rb_execution_context_t *e) = (void*)addr;
-    asm volatile ("call *%[func]"
-                  : "+r" (reg_cfp), "+r" (reg_pc) : [ec] "D" (ec), [func] "a" (f)
-                  : "rdx", "rcx", "rsi", "r8", "r9", "r10", "r11", "memory");
+#ifdef JRET
+    asm volatile ("jmpq *%[func]" : : "r" (reg_cfp), "r" (reg_pc) , "r" (ec), [func] "a" (f)
+                  : "rdx", "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory");
+    __builtin_unreachable ();
+#else
+    asm volatile ("call *%[func]" : "+r" (reg_cfp), "+r" (reg_pc) , "+r" (ec)  : [func] "a" (f)
+                  : "rdx", "rcx", "rsi", "rdi", "r8", "r9", "r10", "r11", "memory");
+#endif
 #else
     const VALUE *(*f)(rb_execution_context_t *e, rb_control_frame_t *, const VALUE *) = (void*)addr;
     reg_pc = f(ec, reg_cfp, reg_pc);
@@ -2926,7 +2941,7 @@ sir_gen_bbv
 {
     VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, TRUE);
     SET_PC(cont_pc);
-    END_INSN(sir_gen_bbv); /* to skip pc increase */
+    ABNORMAL_END_INSN(sir_gen_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
@@ -2940,7 +2955,7 @@ sir_gen_bbv2
 {
     VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, FALSE);
     SET_PC(cont_pc);
-    END_INSN(sir_gen_bbv2); /* to skip pc increase */
+    ABNORMAL_END_INSN(sir_gen_bbv2); /* to skip pc increase */
 }
 
 DEFINE_INSN
@@ -2954,7 +2969,7 @@ sir_gen_bbv_key
 {
     VALUE *cont_pc = rb_sir_gen_bbv_key(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, key);
     SET_PC(cont_pc);
-    END_INSN(sir_gen_bbv_key); /* to skip pc increase */
+    ABNORMAL_END_INSN(sir_gen_bbv_key); /* to skip pc increase */
 }
 
 DEFINE_INSN
@@ -2967,7 +2982,7 @@ specialize_bbv
     if (--bbv_ref->count < 0) {
         VALUE *cont_pc = rb_sir_specialize_bbv(GET_CFP(), bbv_ref);
         SET_PC(cont_pc);
-        END_INSN(specialize_bbv); /* to skip pc increase */
+        ABNORMAL_END_INSN(specialize_bbv); /* to skip pc increase */
     }
 }
 
@@ -2981,7 +2996,7 @@ sir_make_bbv
     VALUE *start_pc = rb_sir_make_bbv(GET_CFP(), bbv_start);
 
     SET_PC(start_pc);
-    END_INSN(sir_make_bbv); /* to skip pc increase */
+    ABNORMAL_END_INSN(sir_make_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
@@ -2994,7 +3009,7 @@ sir_make_optpc_bbv
     VALUE *start_pc = rb_sir_make_optpc_bbv(GET_CFP(), (int)opt);
 
     SET_PC(start_pc);
-    END_INSN(sir_make_optpc_bbv); /* to skip pc increase */
+    ABNORMAL_END_INSN(sir_make_optpc_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN
@@ -3007,7 +3022,7 @@ sir_make_catch_bbv
     VALUE *start_pc = rb_sir_make_catch_bbv(GET_CFP(), (int)entry_ind);
 
     SET_PC(start_pc);
-    END_INSN(sir_make_catch_bbv); /* to skip pc increase */
+    ABNORMAL_END_INSN(sir_make_catch_bbv); /* to skip pc increase */
 }
 
 DEFINE_INSN

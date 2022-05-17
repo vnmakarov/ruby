@@ -64,7 +64,8 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "typedef unsigned long lindex_t;\n"
     "typedef unsigned long rb_num_t;\n"
 #if defined(__x86_64__)
-    "register VALUE *pc asm(\"r14\");\n"
+    "register void *ec asm(\"r13\");\n"
+    "register VALUE *pc asm(\"r14\") __mirc_attribute__ ((antialias (val)));\n"
     "register void *cfp asm(\"r15\");\n"
 #endif
     "\n";
@@ -107,7 +108,7 @@ fmt_output(VARR(char) *buff, const char *fmt, ...) {
 
 #define MIRJIT_CONST_PARAM_STR_PTR(type, id, init_expru) "void *"
 #define MIRJIT_CONST_FMT_PTR(type, id, init_expr) "0x%" PRIxPTR
-#define MIRJIT_CONST_VAL_PTR(type, id, init_expr) (intptr_t)id
+#define MIRJIT_CONST_VAL_PTR(type, id, init_expr) (uintptr_t)id
 
 #define vm_method_cfunc_entry mirjit_method_cfunc_entry
 
@@ -159,19 +160,31 @@ static void *import_resolver(const char *name) {
 
 static void
 gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
-    int len, mirjit_debug_p = rb_mirjit_debug_p(), insns_num = 0, bbv_pc = -1;
+    int len, pc, next_pc, mirjit_debug_p = rb_mirjit_debug_p(), insns_num = 0, bbv_pc = -1;
+    int finish_jit_code_p;
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
+    enum ruby_vminsn_type insn_id, next_insn_id;
     char insn_used_p[VM_INSTRUCTION_SIZE];
-    OFFSET dst;
 
-    for (int pc = bbv->bbv_start; pc < bbv->bbv_bound; pc += len) {
-	enum ruby_vminsn_type insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[pc]);
-
+    finish_jit_code_p = FALSE;
+    assert (bbv->bbv_start < bbv->bbv_bound);
+    for (pc = bbv->bbv_start, insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[pc]);
+         pc < bbv->bbv_bound;
+         pc = next_pc, insn_id = next_insn_id) {
         len = insn_len(insn_id);
+        next_pc = pc + len;
+        next_insn_id = next_pc < bbv->bbv_bound ? rb_vm_insn_addr2insn((void *)body->bbv_code[next_pc]) : 0;
         switch (insn_id) {
-        case BIN(sir_bbv_start):
         case BIN(sir_bbv_cont):
+            if (bbv_pc >= 0) { /* generate code for previous bbv part and start generation for this part */
+                next_insn_id = insn_id;
+                next_pc = pc;
+                finish_jit_code_p = TRUE;
+                break;
+            }
+            /* Fall through: */
+        case BIN(sir_bbv_start):
             bbv_pc = pc;
             VARR_TRUNC(char, buff, 0);
             insns_num = 0;
@@ -179,14 +192,20 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
 #if !defined(__x86_64__)
             fmt_output(buff, "VALUE *jit_bbv%d(void *ec, void *cfp, VALUE *pc) {\n", pc);
 #else
-            fmt_output(buff, "void jit_bbv%d(void *ec) {\n", pc);
+            fmt_output(buff, "void jit_bbv%d(void) {\n", pc);
+#ifdef JRET
+            fmt_output(buff, "  pc += 2; *(VALUE **)cfp = pc;\n"); // skip sir_bbv_{start, cont}
 #endif
+#endif
+            fmt_output(buff, "  VALUE exit_flag = 0;\n");
             memset(insn_used_p, 0, VM_INSTRUCTION_SIZE);
             break;
         default:
-            fmt_output(buff, "l%d:;\n", (int)(pc - bbv->bbv_start));
-            if (gen_insn_code(buff, body->bbv_code + pc, insn_id, insn_used_p)) {
+            if (!gen_insn_code(buff, body->bbv_code + pc, insn_id, insn_used_p)) {
+                finish_jit_code_p = TRUE;
+            } else {
                 insns_num++;
+                fmt_output(buff, "l%d:;\n", (int)(pc - bbv->bbv_start));
 #if 0
                 switch (insn_id) {
                 BRANCH_CASES(BIN(sir_ibeq)):
@@ -196,7 +215,8 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
                 BRANCH_CASES(BIN(sir_ible)):
                 BRANCH_CASES(BIN(sir_ibge)):
                 case BIN(branch2):
-                case BIN(branchnil2):
+                case BIN(branchnil2): {
+                    OFFSET dst;
                     if (((dst = (OFFSET)body->bbv_code[pc + 1]) < 0 && pc + len + dst >= bbv_pc)
                         || ((dst = (OFFSET)body->bbv_code[pc + 2]) < 0 && pc + len + dst >= bbv_pc)) {
                         fmt_output(buff, "  if ((VALUE)pc == 0x%llx) goto l%d;\n",
@@ -204,54 +224,65 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
                                    (int)(pc + len + dst - bbv->bbv_start));
                     }
                     break;
+                }
                 default:
                     break;
                 }
 #endif
-            } else if (bbv_pc >= 0 && insns_num > 0) {
-#if defined(__x86_64__)
-                fmt_output(buff, "  exit: return;\n}\n");
-#else
-                fmt_output(buff, "  exit: return pc;\n}\n");
-#endif
-                if (mirjit_debug_p) {
-                    fprintf(stderr, "C code for BBV 0x%llx @ %d:\n%s",
-                            (unsigned long long)bbv, bbv_pc - bbv->bbv_start, VARR_ADDR(char, buff));
-                }
-                curr_input.code = (uint8_t *)VARR_ADDR(char, buff);
-                curr_input.code_len = strlen((char *) curr_input.code);
-                double start_time = real_usec_time();
-                if (!c2mir_compile (ctx, &curr_input.options, t_getc, &curr_input, "jit_c_code.c", NULL)) {
-                    if (mirjit_debug_p) {
-                        fprintf(stderr, "Failure in compilation of C code for BBV 0x%llx @ %d\n",
-                                (unsigned long long)bbv, bbv_pc - bbv->bbv_start);
-                    }
-                } else {
-                    if (mirjit_debug_p) {
-                        fprintf(stderr, "Finish C to MIR compilation -- compilation time %.0f usec\n",
-                                real_usec_time() - start_time);
-                        MIR_gen_set_debug_file(ctx, 0, stderr);
-                        MIR_gen_set_debug_level(ctx, 0, 3);
-                    }
-                    MIR_module_t module = DLIST_TAIL(MIR_module_t, *MIR_get_module_list(ctx));
-                    MIR_load_module(ctx, module);
-                    MIR_link(ctx, MIR_set_lazy_gen_interface, import_resolver);
-#if 1
-                    MIR_item_t func = DLIST_TAIL(MIR_item_t, module->items);
-                    while(func != NULL && func->item_type != MIR_func_item)
-                        func = DLIST_PREV(MIR_item_t, func);
-                    assert(func != NULL && func->item_type == MIR_func_item);
-                    body->bbv_code[bbv_pc] = (VALUE)sir_dispatch_table[BIN(sir_bbv_jit_call)];
-                    void *thunk = MIR_gen(ctx, 0, func);
-                    body->bbv_code[bbv_pc + 1] = (VALUE) _MIR_get_thunk_addr(ctx, thunk);
-#endif
-                }
-                bbv_pc = -1;
-            } else {
-                bbv_pc = -1;
             }
             break;
         }
+        if (!finish_jit_code_p) continue;
+        if (bbv_pc >= 0 && insns_num > 0) {
+#if defined(__x86_64__)
+#ifdef JRET
+            fmt_output(buff, "  exit: __builtin_jret (*(void **)pc);\n}\n");
+#else
+            fmt_output(buff, "  exit: return;\n}\n");
+#endif
+#else
+            fmt_output(buff, "  exit: return pc;\n}\n");
+#endif
+            if (mirjit_debug_p) {
+                fprintf(stderr, "C code for BBV 0x%llx @ %d:\n%s",
+                        (unsigned long long)bbv, bbv_pc - bbv->bbv_start, VARR_ADDR(char, buff));
+            }
+            curr_input.code = (uint8_t *)VARR_ADDR(char, buff);
+            curr_input.code_len = strlen((char *) curr_input.code);
+            curr_input.curr_char = 0;
+            double start_time = real_usec_time();
+            if (!c2mir_compile (ctx, &curr_input.options, t_getc, &curr_input, "jit_c_code.c", NULL)) {
+                if (mirjit_debug_p) {
+                    fprintf(stderr, "Failure in compilation of C code for BBV 0x%llx @ %d\n",
+                            (unsigned long long)bbv, bbv_pc - bbv->bbv_start);
+                }
+            } else {
+                if (mirjit_debug_p) {
+                    fprintf(stderr, "Finish C to MIR compilation -- compilation time %.0f usec\n",
+                            real_usec_time() - start_time);
+                    MIR_gen_set_debug_file(ctx, 0, stderr);
+                    MIR_gen_set_debug_level(ctx, 0, 3);
+                }
+                MIR_module_t module = DLIST_TAIL(MIR_module_t, *MIR_get_module_list(ctx));
+                MIR_load_module(ctx, module);
+                MIR_link(ctx, MIR_set_lazy_gen_interface, import_resolver);
+#if 1
+                MIR_item_t func = DLIST_TAIL(MIR_item_t, module->items);
+                while(func != NULL && func->item_type != MIR_func_item)
+                    func = DLIST_PREV(MIR_item_t, func);
+                assert(func != NULL && func->item_type == MIR_func_item);
+                void *thunk = MIR_gen(ctx, 0, func);
+#ifdef JRET
+                body->bbv_code[bbv_pc] = (VALUE) _MIR_get_thunk_addr(ctx, thunk);
+#else
+                body->bbv_code[bbv_pc] = (VALUE)sir_dispatch_table[BIN(sir_bbv_jit_call)];
+                body->bbv_code[bbv_pc + 1] = (VALUE) _MIR_get_thunk_addr(ctx, thunk);
+#endif
+#endif
+            }
+        }
+        bbv_pc = -1;
+        finish_jit_code_p = FALSE;
     }
 }
 
@@ -299,7 +330,8 @@ rb_mirjit_init(struct rb_mirjit_options *options) {
     MIR_gen_init(ctx, 1);
     curr_input.options.message_file = stderr;
     curr_input.options.output_file_name = NULL;
-    curr_input.options.debug_p = curr_input.options.verbose_p = curr_input.options.ignore_warnings_p = FALSE;
+    curr_input.options.debug_p = curr_input.options.verbose_p = FALSE;
+    curr_input.options.ignore_warnings_p = TRUE;
     curr_input.options.asm_p = curr_input.options.object_p = FALSE;
     curr_input.options.no_prepro_p = curr_input.options.prepro_only_p = FALSE;
     curr_input.options.syntax_only_p = curr_input.options.pedantic_p = FALSE;

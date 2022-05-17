@@ -129,7 +129,7 @@ static sir_inline VALUE vm_sir_igt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
 static sir_inline VALUE vm_sir_ile(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2); }
 static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 > (SIGNED_VALUE)v2); }
 
-#if !__has_builtin(__builtin_add_overflow) || defined(MIRJIT)
+#if !__has_builtin(__builtin_add_overflow)
 #define vm_sir_iplus(res, v1, v2, ov_label)                      \
     {                                                            \
         long r = FIX2LONG(v1) + FIX2LONG(v2);                    \
@@ -141,10 +141,10 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
         }                                                        \
     }
 #else
-#define vm_sir_iplus(res, v1, v2, ov_label)                     \
-    {								\
+#define vm_sir_iplus(res, v1, v2, ov_label)                     			\
+    {											\
         long r;							\
-        if (__builtin_add_overflow((long)v1, (long)v2-1, &r)) { \
+        if (__builtin_expect (__builtin_add_overflow((long)v1, (long)v2-1, &r), 0)) {	\
             *res = rb_int2big(rb_overflowed_fix_to_int(r));     \
             goto SIR_CONCAT(exit_sir_, ov_label);               \
         }                                                       \
@@ -269,28 +269,42 @@ SIR_FUNCS3(vm_sir_iaset)
 
 SIR_FUNCS3(vm_opt_aset)
 
-#define SIR_BR_FUNCS(iname, func_name)                              \
-    static sir_inline void SIR_CONCAT(iname, ss)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
-    static sir_inline void SIR_CONCAT(iname, vv)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
-    static sir_inline void SIR_CONCAT(iname, vi)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
-    static sir_inline void SIR_CONCAT(iname, vs)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
-    static sir_inline void SIR_CONCAT(iname, sv)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }\
-    static sir_inline void SIR_CONCAT(iname, si)(VALUE *res, VALUE v1, VALUE v2) { *res = func_name(v1, v2); }
+static sir_inline int vm_sir_ibeq(VALUE v1, VALUE v2) { return v1 == v2; }
+static sir_inline int vm_sir_ibneq(VALUE v1, VALUE v2) { return v1 != v2; }
+static sir_inline int vm_sir_iblt(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 < (SIGNED_VALUE)v2; }
+static sir_inline int vm_sir_ibgt(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 > (SIGNED_VALUE)v2; }
+static sir_inline int vm_sir_ible(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2; }
+static sir_inline int vm_sir_ibge(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 > (SIGNED_VALUE)v2; }
 
-SIR_BR_FUNCS(vm_sir_ibeq, vm_sir_ieq)
-SIR_BR_FUNCS(vm_sir_ibneq, vm_sir_ineq)
-SIR_BR_FUNCS(vm_sir_iblt, vm_sir_ilt)
-SIR_BR_FUNCS(vm_sir_ibgt, vm_sir_igt)
-SIR_BR_FUNCS(vm_sir_ible, vm_sir_ile)
-SIR_BR_FUNCS(vm_sir_ibge, vm_sir_ige)
+#define SIR_BR_FUNCS(iname)                                  \
+    static sir_inline int SIR_CONCAT(iname, ss)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+    static sir_inline int SIR_CONCAT(iname, vv)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+    static sir_inline int SIR_CONCAT(iname, vi)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+    static sir_inline int SIR_CONCAT(iname, vs)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+    static sir_inline int SIR_CONCAT(iname, sv)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
+    static sir_inline int SIR_CONCAT(iname, si)(VALUE v1, VALUE v2) { return iname(v1, v2); }
+
+SIR_BR_FUNCS(vm_sir_ibeq)
+SIR_BR_FUNCS(vm_sir_ibneq)
+SIR_BR_FUNCS(vm_sir_iblt)
+SIR_BR_FUNCS(vm_sir_ibgt)
+SIR_BR_FUNCS(vm_sir_ible)
+SIR_BR_FUNCS(vm_sir_ibge)
 
 #ifdef FLONUM_INSNS
-SIR_BR_FUNCS(vm_sir_fbeq, vm_sir_feq)
-SIR_BR_FUNCS(vm_sir_fbneq, vm_sir_fneq)
-SIR_BR_FUNCS(vm_sir_fblt, vm_sir_flt)
-SIR_BR_FUNCS(vm_sir_fbgt, vm_sir_fgt)
-SIR_BR_FUNCS(vm_sir_fble, vm_sir_fle)
-SIR_BR_FUNCS(vm_sir_fbge, vm_sir_fge)
+static sir_inline int sir_fbeq(DBL v1, DBL v2) { return v1 == v2; }
+static sir_inline int sir_fbneq(DBL v1, DBL v2) { return v1 != v2; }
+static sir_inline int sir_fblt(DBL v1, DBL v2) { return v1 < v2; }
+static sir_inline int sir_fbgt(DBL v1, DBL v2) { return v1 > v2; }
+static sir_inline int sir_fble(DBL v1, DBL v2) { return v1 <= v2; }
+static sir_inline int sir_fbge(DBL v1, DBL v2) { return v1 >= v2; }
+
+SIR_BR_FUNCS(vm_sir_fbeq)
+SIR_BR_FUNCS(vm_sir_fbneq)
+SIR_BR_FUNCS(vm_sir_fblt)
+SIR_BR_FUNCS(vm_sir_fbgt)
+SIR_BR_FUNCS(vm_sir_fble)
+SIR_BR_FUNCS(vm_sir_fbge)
 #endif
 
 #define CHECK_RES_FUNC_NAME(insn_name) SIR_CONCAT(insn_name, _result_check)
@@ -491,6 +505,36 @@ sir_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *), int (**arg_f
 	return FALSE;
     }
     return TRUE;
+}
+
+static void
+mirjit_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type, VALUE self, VALUE specval,
+	      VALUE cref_or_me, const VALUE *pc, VALUE *sp, int local_size, int stack_max)
+{
+    rb_control_frame_t *const cfp = RUBY_VM_NEXT_CONTROL_FRAME(ec->cfp);
+
+    /* check stack overflow */
+//    CHECK_VM_STACK_OVERFLOW0(cfp, sp, local_size + stack_max);
+
+    /* setup vm value stack */
+    /* initialize local variables */
+    for (int i=0; i < local_size; i++) *sp++ = Qnil;
+
+    /* setup ep with managing data */
+    *sp++ = cref_or_me; /* ep[-2] / Qnil or T_IMEMO(cref) or T_IMEMO(ment) */
+    *sp++ = specval     /* ep[-1] / block handler or prev env ptr */;
+    *sp++ = type;       /* ep[-0] / ENV_FLAGS */
+
+    /* setup new frame */
+    cfp->pc = pc;
+    cfp->sp = sp;
+    cfp->iseq = iseq;
+    cfp->self = self;
+    cfp->block_code = NULL;
+    cfp->__bp__ = sp;
+    cfp->jit_return = NULL;
+
+    ec->cfp = cfp;
 }
 
 void

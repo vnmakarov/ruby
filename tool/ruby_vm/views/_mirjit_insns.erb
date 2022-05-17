@@ -8,7 +8,9 @@
 % # see sir_exec.c
 % require 'set'
 % def get_mir_jit_insns
-%   mir_jit_insns = ['getlocal', 'getlocal_WC_0', 'getlocal_WC_1', 'setlocal', 'setlocal_WC_0', 'setlocal_WC_1',
+%   mir_jit_insns = ['putself', 'getlocal', 'getlocal_WC_0', 'getlocal_WC_1',
+%                    'setlocal', 'setlocal_WC_0', 'setlocal_WC_1',
+%                    'check_fixtype', 'check_stack_fixtype',
 %                    'jump2', 'branch2', 'branchnil2',
 %                    'mov', 'movi', 'sir_setlocal',
 %                    'sir_getivar', 'sir_igetivar', 'sir_setivar', 'sir_iseq_send_without_block',

@@ -1720,7 +1720,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     int offset, specialize_bbv_pos = -1;
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t head_bbv = bbv->head_bbv, orig_bbv, dst_bbv, old_dst_bbv, body_bbv;
-    int mirjit_enabled_p = rb_mirjit_enabled_p();
+    int add_bbv_cont_p, mirjit_enabled_p = rb_mirjit_enabled_p();
 
     profile_p = inspect_types_num < 0;
     mirjit_enabled_p = mirjit_enabled_p && profile_p;
@@ -1778,6 +1778,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             if (orig_pos < 0)
                 orig_pos = -orig_pos - 1;
         }
+        add_bbv_cont_p = FALSE;
         switch (insn_id) {
         case BIN(sir_inspect_type):
             SIR_GEN_ASSERT(profile_p);
@@ -2167,8 +2168,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             /* attrs can be changed so the target bbv can */
             int argc = vm_ci_argc(((CALL_DATA)operands[0])->ci);
 
-            if (mirjit_enabled_p)
-                add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
+            if (mirjit_enabled_p) add_bbv_cont_p = TRUE;
             SIR_GEN_ASSERT(profile_p);
             VARR_TRUNC(char, arg_attrs, 0);
             for (i = 0; i < argc; i++)
@@ -2282,6 +2282,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         default:
         rest_cases:
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            if (add_bbv_cont_p)
+                add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
         stack_update:
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)
                 || insn_id == BIN(sir_iseq_send_without_block)
