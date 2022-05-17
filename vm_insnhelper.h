@@ -285,9 +285,6 @@ VALUE ext_opt_ge(VALUE recv, VALUE obj);
 VALUE ext_opt_aref(VALUE recv, VALUE obj);
 VALUE ext_opt_aset(VALUE recv, VALUE obj, VALUE set);
 void ext_env_write_slowpath(const VALUE *ep, int index, VALUE v);
-void ext_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type,
-                    VALUE self, VALUE specval, VALUE cref_or_me, const VALUE *pc,
-                    VALUE *sp, int local_size, int stack_max);
 
 VALUE mirjit_sendish(struct rb_execution_context_struct *ec, struct rb_control_frame_struct *reg_cfp,
                      struct rb_call_data *cd, VALUE block_handler, enum method_explorer_type method_explorer);

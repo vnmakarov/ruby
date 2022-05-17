@@ -407,13 +407,6 @@ vm_push_frame(rb_execution_context_t *ec,
     vm_push_frame_debug_counter_inc(ec, cfp, type);
 }
 
-void
-ext_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type,
-               VALUE self, VALUE specval, VALUE cref_or_me, const VALUE *pc,
-               VALUE *sp, int local_size, int stack_max) {
-    vm_push_frame(ec, iseq, type, self, specval, cref_or_me, pc, sp, local_size, stack_max);
-}
-
 /* return TRUE if the frame is finished */
 static inline int
 vm_pop_frame(rb_execution_context_t *ec, rb_control_frame_t *cfp, const VALUE *ep)
