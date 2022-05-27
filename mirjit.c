@@ -50,11 +50,14 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "typedef void *ISEQ;\n"
     "typedef void *rb_insn_func_t;\n"
     "typedef void *RB_BUILTIN;\n"
+    "typedef unsigned uint32_t;\n"
 #if SIZEOF_LONG == SIZEOF_VOIDP
     "typedef unsigned long VALUE;\n"
+    "typedef long SIGNED_VALUE;\n"
     "typedef unsigned long ID;\n"
 #elif SIZEOF_LONG_LONG == SIZEOF_VOIDP
     "typedef unsigned LONG_LONG VALUE;\n"
+    "typedef LONG_LONG SIGNED_VALUE;\n"
     "typedef unsigned LONG_LONG ID;\n"
 #else
 # error ---->> ruby requires sizeof(void*) == sizeof(long) or sizeof(LONG_LONG) to be compiled. <<----
@@ -63,10 +66,18 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "typedef double DBL;\n"
     "typedef unsigned long lindex_t;\n"
     "typedef unsigned long rb_num_t;\n"
+#if defined(_WIN32)
+    "typdef long rb_atomic_t;\n"
+#else
+    "typedef unsigned rb_atomic_t;\n"
+#endif
 #if defined(__x86_64__)
     "register void *ec asm(\"r13\");\n"
     "register VALUE *pc asm(\"r14\") __mirc_attribute__ ((antialias (val)));\n"
     "register void *cfp asm(\"r15\");\n"
+#endif
+#ifdef MIRJIT_RESTART_STAT
+    "extern long mirjit_run_nums, mirjit_restart_nums;\n"
 #endif
     "\n";
 
