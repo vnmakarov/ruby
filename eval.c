@@ -32,6 +32,8 @@
 #include "ruby/fiber/scheduler.h"
 #include "iseq.h"
 #include "mjit.h"
+#include "sir.h"
+#include "mirjit.h"
 #include "probes.h"
 #include "probes_helper.h"
 #include "ruby/vm.h"
@@ -252,6 +254,11 @@ rb_ec_cleanup(rb_execution_context_t *ec, int ex0)
     }
 
     mjit_finish(true); // We still need ISeqs here.
+
+#ifdef HAVE_LIBMIR
+    rb_mirjit_finish();
+#endif
+    rb_sir_finish();
 
     rb_ec_finalize(ec);
 
