@@ -1614,7 +1614,6 @@ DEFINE_INSN
 sir_iplussvv sir_iminussvv sir_imultsvv sir_idivsvv sir_imodsvv
 sir_iorsvv sir_iandsvv sir_ieqsvv sir_ineqsvv
 sir_iltsvv sir_igtsvv sir_ilesvv sir_igesvv
-sir_iarefsvv
 (lindex_t op1, lindex_t op2)
 ()
 (VALUE val)
@@ -1634,7 +1633,6 @@ DEFINE_INSN
 sir_iplussvi sir_iminussvi sir_imultsvi sir_idivsvi sir_imodsvi
 sir_iorsvi sir_iandsvi sir_ieqsvi sir_ineqsvi
 sir_iltsvi sir_igtsvi sir_ilesvi sir_igesvi
-sir_iarefsvi
 (lindex_t op1, VALUE imm)
 ()
 (VALUE val)
@@ -1652,7 +1650,8 @@ sir_iarefsvi
 
 DEFINE_INSN
 sir_iplussiv sir_iminussiv sir_imultsiv sir_idivsiv sir_imodsiv
-sir_iarefsiv
+sir_iorsiv sir_iandsiv sir_ieqsiv sir_ineqsiv
+sir_iltsiv sir_igtsiv sir_ilesiv sir_igesiv
 (VALUE imm, lindex_t op2)
 ()
 (VALUE val)
@@ -1672,7 +1671,6 @@ DEFINE_INSN
 sir_iplussvs sir_iminussvs sir_imultsvs sir_idivsvs sir_imodsvs
 sir_iorsvs sir_iandsvs sir_ieqsvs sir_ineqsvs
 sir_iltsvs sir_igtsvs sir_ilesvs sir_igesvs
-sir_iarefsvs
 (lindex_t op1)
 (VALUE v2)
 (VALUE val)
@@ -1692,7 +1690,6 @@ DEFINE_INSN
 sir_iplusssv sir_iminusssv sir_imultssv sir_idivssv sir_imodssv
 sir_iorssv sir_iandssv sir_ieqssv sir_ineqssv
 sir_iltssv sir_igtssv sir_ilessv sir_igessv
-sir_iarefssv
 (lindex_t op2)
 (VALUE v1)
 (VALUE val)
@@ -1712,7 +1709,6 @@ DEFINE_INSN
 sir_iplusssi sir_iminusssi sir_imultssi sir_idivssi sir_imodssi
 sir_iorssi sir_iandssi sir_ieqssi sir_ineqssi
 sir_iltssi sir_igtssi sir_ilessi sir_igessi
-sir_iarefssi
 (VALUE imm)
 (VALUE v1)
 (VALUE val)
@@ -1729,7 +1725,8 @@ sir_iarefssi
 
 DEFINE_INSN
 sir_iplussis sir_iminussis sir_imultsis sir_idivsis sir_imodsis
-sir_iarefsis
+sir_iorsis sir_iandsis sir_ieqsis sir_ineqsis
+sir_iltsis sir_igtsis sir_ilesis sir_igesis
 (VALUE imm)
 (VALUE v2)
 (VALUE val)
@@ -1748,7 +1745,6 @@ DEFINE_INSN
 sir_iplussss sir_iminussss sir_imultsss sir_idivsss sir_imodsss
 sir_iorsss sir_iandsss sir_ieqsss sir_ineqsss
 sir_iltsss sir_igtsss sir_ilesss sir_igesss
-sir_iarefsss
 ()
 (VALUE v1, VALUE v2)
 (VALUE val)
@@ -1767,7 +1763,6 @@ DEFINE_INSN
 sir_iplusvvv sir_iminusvvv sir_imultvvv sir_idivvvv sir_imodvvv
 sir_iorvvv sir_iandvvv sir_ieqvvv sir_ineqvvv
 sir_iltvvv sir_igtvvv sir_ilevvv sir_igevvv
-sir_iarefvvv
 (lindex_t res, lindex_t op1, lindex_t op2)
 ()
 ()
@@ -1788,7 +1783,6 @@ DEFINE_INSN
 sir_iplusvvi sir_iminusvvi sir_imultvvi sir_idivvvi sir_imodvvi
 sir_iorvvi sir_iandvvi sir_ieqvvi sir_ineqvvi
 sir_iltvvi sir_igtvvi sir_ilevvi sir_igevvi
-sir_iarefvvi
 (lindex_t res, lindex_t op1, VALUE imm)
 ()
 ()
@@ -1807,7 +1801,8 @@ sir_iarefvvi
 
 DEFINE_INSN
 sir_iplusviv sir_iminusviv sir_imultviv sir_idivviv sir_imodviv
-sir_iarefviv
+sir_iorviv sir_iandviv sir_ieqviv sir_ineqviv
+sir_iltviv sir_igtviv sir_ileviv sir_igeviv
 (lindex_t res, VALUE imm, lindex_t op2)
 ()
 ()
@@ -1828,7 +1823,6 @@ DEFINE_INSN
 sir_iplusvvs sir_iminusvvs sir_imultvvs sir_idivvvs sir_imodvvs
 sir_iorvvs sir_iandvvs sir_ieqvvs sir_ineqvvs
 sir_iltvvs sir_igtvvs sir_ilevvs sir_igevvs
-sir_iarefvvs
 (lindex_t res, lindex_t op1)
 (VALUE v2)
 ()
@@ -1849,7 +1843,6 @@ DEFINE_INSN
 sir_iplusvsv sir_iminusvsv sir_imultvsv sir_idivvsv sir_imodvsv
 sir_iorvsv sir_iandvsv sir_ieqvsv sir_ineqvsv
 sir_iltvsv sir_igtvsv sir_ilevsv sir_igevsv
-sir_iarefvsv
 (lindex_t res, lindex_t op2)
 (VALUE v1)
 ()
@@ -1870,7 +1863,6 @@ DEFINE_INSN
 sir_iplusvsi sir_iminusvsi sir_imultvsi sir_idivvsi sir_imodvsi
 sir_iorvsi sir_iandvsi sir_ieqvsi sir_ineqvsi
 sir_iltvsi sir_igtvsi sir_ilevsi sir_igevsi
-sir_iarefvsi
 (lindex_t res, VALUE imm)
 (VALUE v1)
 ()
@@ -1889,7 +1881,8 @@ sir_iarefvsi
 
 DEFINE_INSN
 sir_iplusvis sir_iminusvis sir_imultvis sir_idivvis sir_imodvis
-sir_iarefvis
+sir_iorvis sir_iandvis sir_ieqvis sir_ineqvis
+sir_iltvis sir_igtvis sir_ilevis sir_igevis
 (lindex_t res, VALUE imm)
 (VALUE v2)
 ()
@@ -1910,13 +1903,11 @@ DEFINE_INSN
 sir_iplusvss sir_iminusvss sir_imultvss sir_idivvss sir_imodvss
 sir_iorvss sir_iandvss sir_ieqvss sir_ineqvss
 sir_iltvss sir_igtvss sir_ilevss sir_igevss
-sir_iarefvss
 (lindex_t res)
 (VALUE v1, VALUE v2)
 ()
 {
     VALUE val;
-    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
       SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
@@ -1925,6 +1916,421 @@ sir_iarefvss
         goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
     }
     VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iarefsvv
+(lindex_t op1, lindex_t op2)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (val == Qundef) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iarefsvi
+(lindex_t op1, VALUE imm)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (val == Qundef) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iarefsiv
+(VALUE imm, lindex_t op2)
+()
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (val == Qundef) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iarefsvs
+(lindex_t op1)
+(VALUE v2)
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() - op1);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (val == Qundef) {
+        push1(v2);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iarefssv
+(lindex_t op2)
+(VALUE v1)
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() - op2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (val == Qundef) {
+        push1(v1);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iarefssi
+(VALUE imm)
+(VALUE v1)
+(VALUE val)
+{
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (val == Qundef) {
+        push1(v1);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iarefsis
+(VALUE imm)
+(VALUE v2)
+(VALUE val)
+{
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (val == Qundef) {
+        push1(v2);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iarefsss
+()
+(VALUE v1, VALUE v2)
+(VALUE val)
+{
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (val == Qundef) {
+        push2(v1, v2);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iarefvvv
+(lindex_t res, lindex_t op1, lindex_t op2)
+()
+()
+{
+    VALUE val, v1 = *(GET_EP() - op1), v2 = *(GET_EP() - op2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (val == Qundef) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iarefvvi
+(lindex_t res, lindex_t op1, VALUE imm)
+()
+()
+{
+    VALUE v1 = *(GET_EP() - op1), val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (val == Qundef) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iarefviv
+(lindex_t res, VALUE imm, lindex_t op2)
+()
+()
+{
+    VALUE v2 = *(GET_EP() - op2), val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (val == Qundef) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iarefvvs
+(lindex_t res, lindex_t op1)
+(VALUE v2)
+()
+{
+    VALUE v1 = *(GET_EP() - op1), val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (val == Qundef) {
+        push1(v2);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iarefvsv
+(lindex_t res, lindex_t op2)
+(VALUE v1)
+()
+{
+    VALUE v2 = *(GET_EP() - op2), val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (val == Qundef) {
+        push1(v1);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iarefvsi
+(lindex_t res, VALUE imm)
+(VALUE v1)
+()
+{
+    VALUE val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (val == Qundef) {
+        push1(v1);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iarefvis
+(lindex_t res, VALUE imm)
+(VALUE v2)
+()
+{
+    VALUE val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (val == Qundef) {
+        push1(v2);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iarefvss
+(lindex_t res)
+(VALUE v1, VALUE v2)
+()
+{
+    VALUE val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (val == Qundef) {
+        push2(v1, v2);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+    VM_STACK_ENV_WRITE(GET_EP(), -(int)res, val);
+}
+
+DEFINE_INSN
+sir_iasetsvv
+(lindex_t ind_idx, lindex_t set_idx)
+(VALUE arr)
+(VALUE val)
+{
+    VALUE ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push1(arr);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetsiv
+(VALUE ind, lindex_t set_idx)
+(VALUE arr)
+(VALUE val)
+{
+    VALUE set = *(GET_EP() - set_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push1(arr);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetsvs
+(lindex_t ind_idx)
+(VALUE arr, VALUE set)
+(VALUE val)
+{
+    VALUE ind = *(GET_EP() - ind_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push2(arr, set);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetssv
+(lindex_t set_idx)
+(VALUE arr, VALUE ind)
+(VALUE val)
+{
+    VALUE set = *(GET_EP() - set_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push2(arr, ind);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetsis
+(VALUE ind)
+(VALUE arr, VALUE set)
+(VALUE val)
+{
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push2(arr, set);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetsss
+(CALL_DATA cd)
+(VALUE arr, VALUE ind, VALUE set)
+(VALUE val)
+{
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push3(arr, ind, set);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetvvv
+(lindex_t arr_idx, lindex_t ind_idx, lindex_t set_idx)
+()
+(VALUE val)
+{
+    VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetviv
+(lindex_t arr_idx, VALUE ind, lindex_t set_idx)
+()
+(VALUE val)
+{
+    VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetvvs
+(lindex_t arr_idx, lindex_t ind_idx)
+(VALUE set)
+(VALUE val)
+{
+    VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push1(set);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetvsv
+(lindex_t arr_idx, lindex_t set_idx)
+(VALUE ind)
+(VALUE val)
+{
+    VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push1(ind);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetvis
+(lindex_t arr_idx, VALUE ind)
+(VALUE set)
+(VALUE val)
+{
+    VALUE arr = *(GET_EP() - arr_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push1(set);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_iasetvss
+(lindex_t arr_idx)
+(VALUE ind, VALUE set)
+(VALUE val)
+{
+    VALUE arr = *(GET_EP() - arr_idx);
+    val = vm_sir_iaset(arr, ind, set);
+    if (UNLIKELY(val == Qundef)) {
+        push2(ind, set);
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
 }
 
 DEFINE_INSN

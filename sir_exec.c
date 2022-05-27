@@ -103,6 +103,10 @@ SIR_FUNCS0(aref,vm_opt_aref)
 #define pushvis(v1, v2, v3) do {INC_SP(2); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
 #define pushvss(v1, v2, v3) do {INC_SP(1); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
 
+#define push1(v1)         do {INC_SP(1); TOPN(0) = v1;} while (0)
+#define push2(v1, v2)     do {INC_SP(2); TOPN(2) = v1; TOPN(1) = v2;} while (0)
+#define push3(v1, v2, v3) do {INC_SP(3); TOPN(2) = v1; TOPN(1) = v2; TOPN(0) = v3;} while (0)
+
 #define SIR_FUNCS3(iname)                                           \
     static sir_inline VALUE SIR_CONCAT(iname, svv)(VALUE v0, VALUE v1, VALUE v2) { return iname(v0, v1, v2); }\
     static sir_inline VALUE SIR_CONCAT(iname, siv)(VALUE v0, VALUE v1, VALUE v2) { return iname(v0, v1, v2); }\
@@ -265,7 +269,6 @@ static sir_inline VALUE vm_sir_iaset(VALUE arr, VALUE ind, VALUE set) {
     rb_ary_store(arr, FIX2LONG(ind), set);
     return set;
 }
-SIR_FUNCS3(vm_sir_iaset)
 
 SIR_FUNCS3(vm_opt_aset)
 
@@ -409,7 +412,6 @@ SIR_CHECK_FUNCS2(sir_fgt, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_fle, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_fge, sir_check_nothing)
 #endif
-SIR_CHECK_FUNCS2(sir_iaref, sir_check_nothing)
 
 #define CHECK_INPUTS(iname, v1, v2)		                \
     if (UNLIKELY(CHECK_FUNC_NAME(iname)(v1, v2))) {             \
