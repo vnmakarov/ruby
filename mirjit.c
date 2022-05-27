@@ -95,7 +95,7 @@ output_str(VARR(char) *buff, const char *str) {
     }
 }
 
-#define TEMP_STR_SIZE 512
+#define TEMP_STR_SIZE 1024
 static void
 #ifdef __GNUC__
 __attribute__ ((format (__printf__, 2, 3)))
