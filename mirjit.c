@@ -71,10 +71,23 @@ static const char *header = "typedef void *CALL_DATA;\n"
 #else
     "typedef unsigned rb_atomic_t;\n"
 #endif
+    "typedef struct rb_control_frame_struct {\n"
+    "  VALUE *pc __mirc_attribute__ ((antialias (val)));\n"
+    "  VALUE *sp __mirc_attribute__ ((antialias (val)));\n"
+    "  void *iseq;\n"
+    "  VALUE self;\n"
+    "  VALUE *ep __mirc_attribute__ ((antialias (val)));\n"
+    "  void *block_code;\n"
+    "  VALUE *__bp__;\n"
+#if VM_DEBUG_BP_CHECK
+    "  VALUE *bp_check;\n"
+#endif
+    "  void *jit_return;\n"
+    "} rb_control_frame_t;\n"
 #if defined(__x86_64__)
     "register void *ec asm(\"r13\");\n"
     "register VALUE *pc asm(\"r14\") __mirc_attribute__ ((antialias (val)));\n"
-    "register void *cfp asm(\"r15\");\n"
+    "register rb_control_frame_t *cfp asm(\"r15\");\n"
 #endif
 #ifdef MIRJIT_RESTART_STAT
     "extern long mirjit_run_nums, mirjit_restart_nums;\n"
@@ -181,8 +194,8 @@ static void gen_push_frame(VARR(char) *buff, int local_size, int stack_max, int 
     /* CHECK_VM_STACK_OVERFLOW0(new_cfp, new_sp, local_size + stack_max): */
     gen_check_overflow0(buff, "new_cfp", "new_sp", local_size + stack_max);
     O("    pc += %d;\n", send_insn_len);
-    O("    *(VALUE **)((char *)cfp + %d) = pc;\n", (int)offsetof(rb_control_frame_t, pc));
-    O("    *(void **)((char *)cfp + %d) = new_sp;\n", (int)offsetof(rb_control_frame_t, sp)); /* cfp->sp */
+    O("    cfp->pc = pc;\n");
+    O("    cfp->sp = new_sp;\n"); /* cfp->sp */
     O("    cfp = new_cfp; pc = 0x%"PRIxVALUE ";\n", start_pc);
     if (local_size <= 6) {
         for (int i = 0; i < local_size; i++)
@@ -194,16 +207,15 @@ static void gen_push_frame(VARR(char) *buff, int local_size, int stack_max, int 
     O("    *sp++= specval;\n"); /* *sp++ = specval */
     O("    *sp++= 0x%"PRIxVALUE ";\n", type); /* *sp++ = type */
     /* cfp->pc = pc; cfp->sp = sp; cfp->iseq = iseq; cfp->self = self: */
-    O("    *(VALUE *)((char *)cfp + %d) = pc;\n", (int)offsetof(rb_control_frame_t, pc));
-    O("    *(VALUE *)((char *)cfp + %d) = sp;\n", (int)offsetof(rb_control_frame_t, sp));
-    O("    *(VALUE *)((char *)cfp + %d) = 0x%"PRIxVALUE ";\n",
-      (int)offsetof(rb_control_frame_t, iseq), iseq);
-    O("    *(VALUE *)((char *)cfp + %d) = recv;\n", (int)offsetof(rb_control_frame_t, self));
+    O("    cfp->pc = pc;\n");
+    O("    cfp->sp = sp;\n");
+    O("    cfp->iseq = (void *)0x%"PRIxVALUE ";\n", iseq);
+    O("    cfp->self = recv;\n");
     /* cfp->ep = sp - 1; cfp->block_code = NULL; cfp->__bp__ = sp; cfp->jit_return = NULL: */
-    O("    *(VALUE *)((char *)cfp + %d) = sp - 1;\n", (int)offsetof(rb_control_frame_t, ep));
-    O("    *(VALUE *)((char *)cfp + %d) = 0;\n", (int)offsetof(rb_control_frame_t, block_code));
-    O("    *(VALUE *)((char *)cfp + %d) = sp;\n", (int)offsetof(rb_control_frame_t, __bp__));
-    O("    *(VALUE *)((char *)cfp + %d) = 0;\n", (int)offsetof(rb_control_frame_t, jit_return));
+    O("    cfp->ep = sp - 1;\n");
+    O("    cfp->block_code = 0;\n");
+    O("    cfp->__bp__ = sp;\n");
+    O("    cfp->jit_return = 0;\n");
     O("    *(VALUE *)((char *)ec + %d) = cfp;\n", (int)offsetof(rb_execution_context_t, cfp)); /* ec->cfp = cfp */
 }
 
@@ -213,10 +225,10 @@ static void gen_pop_frame(VARR(char) *buff, int res_on_stack_p) {
       (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
     if (res_on_stack_p) O("  val = *--sp;\n");
     /* cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp): */
-    O("  cfp = (char *)cfp + %d;\n", (int)sizeof(rb_control_frame_t));
+    O("  cfp++;\n");
     O("  *(VALUE *)((char *)ec + %d) = cfp;\n", (int)offsetof(rb_execution_context_t, cfp)); /* ec->cfp = cfp */
-    O("  pc = *(VALUE **)((char *)cfp + %d);\n", (int)offsetof(rb_control_frame_t, pc));
-    O("  sp = *(void **)((char *)cfp + %d);\n", (int)offsetof(rb_control_frame_t, sp)); /* sp = cfp->sp */
+    O("  pc = cfp->pc;\n");
+    O("  sp = cfp->sp;\n");
     O("  *sp++ = val;\n");
 }
 
@@ -236,7 +248,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putself):
-        O("  *sp++ = *(VALUE *)((char *)cfp + %d);\n", (int)offsetof(rb_control_frame_t, self));
+        O("  *sp++ = cfp->self;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putobject):
@@ -1192,8 +1204,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  flags = *ep;\n");
         O("  if (flags & 0x%"PRIxVALUE ") goto restart;\n", (VALUE)VM_FRAME_FLAG_FINISH);
         if (OPT_CHECKED_RUN)
-            O("  if (__builtin_expect(sp - 1 != *(VALUE **)((char *)cfp + %d), 0)) goto restart;\n",
-              (int)offsetof(rb_control_frame_t, __bp__));
+            O("  if (__builtin_expect(sp - 1 != cfp->__bp__, 0)) goto restart;\n");
         gen_pop_frame(buff, TRUE);
         break;
     case BIN(sir_iseq_send_without_block): // ??? visibility
@@ -1237,7 +1248,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rb_serial_t class_serial = entry == NULL ? 0 : entry->class_serial;
         uint32_t index = entry->index;
 
-        O("  val = *(VALUE *)((char *)cfp + %d);\n", (int)offsetof(rb_control_frame_t, self)); /* self */
+        O("  val = cfp->self;\n");
         O("  val2 = *(VALUE *)((char *)val + %d);\n", (int)offsetof(struct RBasic, klass)); /* self class */
         O("  if (*(VALUE *)((char *)val2 + %d) != 0x%"PRIxVALUE ") goto restart;\n",
           (int)offsetof(struct RClass, class_serial), (VALUE)class_serial);
@@ -1345,7 +1356,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("      goto exit;\n");
         O("    }\n");
         O("    sp--;\n"); /* remove res from iter_start or previous sir_iter_body */
-        O("    self = *(VALUE *)((char *)cfp + %d);\n", (int)offsetof(rb_control_frame_t, self)); /* self */
+        O("    self = cfp->self;\n"); /* self */
         O("    *sp = self;\n");
         if (param_size > 1 && argc == 1) {
             O("    ary = rb_check_array_type(arg);\n");
@@ -1366,7 +1377,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         }
         O("    }\n");
         O("    VALUE *argv = sp + 1;\n");
-        O("    VALUE specval = *(VALUE *)((char *)cfp + %d) | 1;\n", (int)offsetof(rb_control_frame_t, ep));
+        O("    VALUE specval = cfp->ep | 1;\n");
         O("    recv = self;\n"); /* self */
         gen_push_frame(buff, local_size, stack_max, (int)insn_len(insn_id), (VALUE)cme,
                        (VALUE)VM_FRAME_MAGIC_METHOD, (VALUE)iseq, (VALUE)start_pc);
@@ -1514,10 +1525,8 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
             O("void jit_bbv%d(void) {\n", pc);
 #endif
             O("  VALUE val, val2, r, t, flags, *pv, *pv2;\n");
-            O("  VALUE *ep __mirc_attribute__ ((antialias (val))) = *(VALUE **)((char *)cfp+%d);\n",
-              (int)offsetof(rb_control_frame_t, ep));
-            O("  VALUE *sp __mirc_attribute__ ((antialias (val))) = *(VALUE **)((char *)cfp+%d);\n",
-              (int)offsetof(rb_control_frame_t, sp));
+            O("  VALUE *ep __mirc_attribute__ ((antialias (val))) = cfp->ep;\n");
+            O("  VALUE *sp __mirc_attribute__ ((antialias (val))) = cfp->sp;\n");
 #if defined(__x86_64__) && defined(JRET)
             /* skip sir_bbv_{start, cont} */
             O("  pc += %d;\n", insn_len(BIN(sir_bbv_start)));
@@ -1568,8 +1577,8 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
             O("  mirjit_restart_nums++;\n");
 #endif
             O(" exit:\n");
-            O("  *(VALUE **)((char *)cfp+%d)=sp;\n", (int)offsetof(rb_control_frame_t, sp));
-            O("  *(VALUE **)((char *)cfp+%d)=pc;\n", (int)offsetof(rb_control_frame_t, pc));
+            O("  cfp->sp = sp;\n");
+            O("  cfp->pc = pc;\n");
 #if defined(__x86_64__)
 #ifdef JRET
             O("  __builtin_jret (*(void **)pc);\n}\n");
