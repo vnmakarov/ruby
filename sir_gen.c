@@ -2236,10 +2236,10 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             int (*arg_func)(VALUE, VALUE, VALUE *);
             VALUE (*cont_func)(VALUE, VALUE);
 
+            if (block_iseq == NULL) goto rest_cases;
             update_attrs(block_iseq);
             cme = vm_cc_cme(cc);
             SIR_GEN_ASSERT(cme != NULL && cme->def->type == VM_METHOD_TYPE_CFUNC && profile_p);
-            SIR_GEN_ASSERT(block_iseq != NULL);
             if (!rb_simple_iseq_p(block_iseq)) goto rest_cases;
             cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
             SIR_GEN_ASSERT(stack_size >= 1);
@@ -2876,7 +2876,7 @@ rb_sir_change_setivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
 
 extern bool rb_iseq_only_optparam_p(const rb_iseq_t *iseq);
 
-static void
+static int
 change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,
                           CALL_DATA cd, struct rb_sir_send_info *si) {
     VALUE *call_pc = (VALUE *)caller_cfp->pc - insn_len(BIN(sir_make_send));
@@ -2887,7 +2887,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     rb_iseq_bbv_t bbv;
     rb_iseq_t *iseq;
-    int no_opt_p = FALSE, debug_p = rb_sir_debug_p();
+    int debug_p = rb_sir_debug_p();
 
     if (cme != NULL) {
         recv = *caller_cfp->sp;
@@ -2924,7 +2924,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
                    && RB_TYPE_P(recv, T_OBJECT)) {
             rb_check_arity(argc, 0, 0);
             if (vm_cc_attr_index(cc) <= 0)
-                return; /* do nothing -- no attr index yet */
+                return TRUE; /* do nothing -- no attr index yet */
             SIR_GEN_ASSERT(vm_cc_attr_index(cc) > 0);
             if (debug_p)
                 fprintf(stderr, "--> Changing sir_make_send to sir_send_ivget\n");
@@ -2936,25 +2936,18 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
                    && RB_TYPE_P(recv, T_OBJECT)) {
             rb_check_arity(argc, 1, 1);
             if (vm_cc_attr_index(cc) <= 0)
-                return; /* do nothing -- no attr index yet */
+                return TRUE; /* do nothing -- no attr index yet */
             if (debug_p)
                 fprintf(stderr, "--> Changing sir_make_send to sir_send_ivset\n");
             change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_ivset));
             call_pc[1] = (VALUE)cc->klass;
             call_pc[2] = (VALUE)vm_cc_attr_index(cc) - 1;
+        } else {
+            return FALSE;
         }
-    } else {
-        no_opt_p = TRUE;
+        return TRUE;
     }
-    if (no_opt_p) {
-        if (debug_p) {
-            fprintf(stderr,
-                    "--> Changing sir_make_send to sir_send_without_block: argc=%d",
-                    argc);
-            print_attrs(si->attrs);
-        }
-        change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_without_block));
-    }
+    return FALSE;
 }
 
 static int
@@ -2969,9 +2962,11 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
     int debug_p = rb_sir_debug_p();
     const rb_method_cfunc_t *cfunc;
 
-    if (si->block_iseq == NULL || cme == NULL || cme->def->type != VM_METHOD_TYPE_CFUNC) return FALSE;
+    if (cme == NULL || cme->def->type != VM_METHOD_TYPE_CFUNC) return FALSE;
     cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
+#if 0
     if (argc != cfunc->argc) return FALSE;
+#endif
     if (debug_p) {
         fprintf(stderr, "--> Changing sir_make_send to sir_cfunc_send: argc=%d\n", argc);
     }
@@ -2986,14 +2981,11 @@ void
 rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,
                    CALL_DATA cd, struct rb_sir_send_info *si) {
     VALUE *call_pc = (VALUE *)caller_cfp->pc - insn_len(BIN(sir_make_send));
-    int no_opt_p = FALSE;
+    int no_opt_p = TRUE;
 
     RB_VM_LOCK_ENTER();
-    if (si->block_iseq == NULL) {
-        change_send_without_block(ec, caller_cfp, cd, si);
-    } else {
-        no_opt_p = !change_to_cfunc_send(call_pc, (rb_iseq_t *)caller_cfp->iseq);
-    }
+    if (si->block_iseq == NULL) no_opt_p = !change_send_without_block(ec, caller_cfp, cd, si);
+    if (no_opt_p) no_opt_p = !change_to_cfunc_send(call_pc, (rb_iseq_t *)caller_cfp->iseq);
     if (no_opt_p) {
         if (rb_sir_debug_p()) {
             fprintf(stderr,
