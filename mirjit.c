@@ -1468,9 +1468,10 @@ static int t_getc(void *data) {
 long mirjit_run_nums, mirjit_restart_nums;
 #endif
 static void *import_resolver(const char *name) {
-    void *addr = rb_mirjit_import_resolver(name);
+    void *addr = NULL;
     if (addr == NULL && strcmp(name, "rb_gc_writebarrier") == 0) addr = rb_gc_writebarrier;
     if (addr == NULL && strcmp(name, "rb_check_array_type") == 0) addr = rb_check_array_type;
+    if (addr == NULL && strcmp(name, "rb_check_cfp_consistency") == 0) addr = rb_check_cfp_consistency;
 #ifdef MIRJIT_RESTART_STAT
     if (addr == NULL && strcmp(name, "mirjit_run_nums") == 0) addr = &mirjit_run_nums;
     if (addr == NULL && strcmp(name, "mirjit_restart_nums") == 0) addr = &mirjit_restart_nums;
@@ -1655,7 +1656,6 @@ rb_mirjit_init(struct rb_mirjit_options *options) {
     curr_input.options.asm_p = curr_input.options.object_p = FALSE;
     curr_input.options.no_prepro_p = curr_input.options.prepro_only_p = FALSE;
     curr_input.options.syntax_only_p = curr_input.options.pedantic_p = FALSE;
-    rb_mirjit_resolver_init();
 }
 
 void
@@ -1664,7 +1664,6 @@ rb_mirjit_finish(void) {
 #ifdef MIRJIT_RESTART_STAT
     fprintf(stderr, "MIRJIT CODE RUNS=%ld, RESTARTS=%ld\n", mirjit_run_nums, mirjit_restart_nums);
 #endif
-    rb_mirjit_resolver_finish();
     VARR_DESTROY(char, jit_c_code);
     MIR_gen_finish(ctx);
     c2mir_finish(ctx);
