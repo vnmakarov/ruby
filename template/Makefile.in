@@ -484,27 +484,6 @@ ruby-glommed.$(OBJEXT):
 	@$(ECHO) generating a glommed object with DTrace probes for static library
 	$(Q) $(LD) -r -o $@ $(OBJS)
 
-mirjit_env_shrink$(EXEEXT): $(srcdir)/mirjit_env_shrink.c
-	$(Q) $(CC) -g $< -lmir -o $@
-
-mirjit_code_env.bmir: mirjit_code_env.mir mirjit_env_shrink
-	$(ECHO) generating $@ mir_resolver.inc
-	$(Q) ./mirjit_env_shrink$(EXEEXT) < mirjit_code_env.mir $@.new mir_resolver.inc.new && \
-		$(MV) $@.new $@ && $(MV) mir_resolver.inc.new mir_resolver.inc
-
-mir_resolver.inc: mirjit_code_env.mir mirjit_env_shrink
-
-mirjit_code_env.mir: mirjit_code_env.c
-	$(ECHO) generating $@
-	$(Q) $(CC) -fsyntax-only -DRUBY_EXPORT $(INCFLAGS) $<
-	$(Q) c2m -w -DRUBY_EXPORT -S $(INCFLAGS) $<
-
-mirjit_code_env.mir: mirjit_insn_funcs.inc
-
-mirjit_code_env.inc: mirjit_code_env.bmir
-	$(ECHO) generating $@
-	$(Q) b2ctab < $< > $@
-
 clean-local::
 	$(Q)$(RM) \
 	  ext/extinit.c ext/extinit.$(OBJEXT) ext/ripper/y.output \
@@ -611,7 +590,7 @@ update-known-errors:
 	$(IFCHANGE) $(srcdir)/defs/known_errors.def -
 
 INSNS	= opt_sc.inc optinsn.inc optunifs.inc insns.inc insns_info.inc \
-	  vmtc.inc vm.inc mjit_compile.inc mirjit_insn_funcs.inc mirjit_insn_compile.inc
+	  vmtc.inc vm.inc
 
 $(INSNS): $(srcdir)/insns.def vm_opts.h \
 	  $(srcdir)/defs/opt_operand.def $(srcdir)/defs/opt_insn_unif.def \
@@ -645,9 +624,6 @@ $(INSNS): $(srcdir)/insns.def vm_opts.h \
 	  $(tooldir)/ruby_vm/views/_insn_sp_pc_dependency.erb \
 	  $(tooldir)/ruby_vm/views/_insn_type_chars.erb \
 	  $(tooldir)/ruby_vm/views/_leaf_helpers.erb \
-	  $(tooldir)/ruby_vm/views/_mirjit_insns.erb \
-	  $(tooldir)/ruby_vm/views/_mirjit_insn_func.erb \
-	  $(tooldir)/ruby_vm/views/_mirjit_trace_insn_func.erb \
 	  $(tooldir)/ruby_vm/views/_mjit_compile_insn.erb \
 	  $(tooldir)/ruby_vm/views/_mjit_compile_insn_body.erb \
 	  $(tooldir)/ruby_vm/views/_mjit_compile_ivar.erb \
@@ -658,8 +634,6 @@ $(INSNS): $(srcdir)/insns.def vm_opts.h \
 	  $(tooldir)/ruby_vm/views/_trace_instruction.erb \
 	  $(tooldir)/ruby_vm/views/insns.inc.erb \
 	  $(tooldir)/ruby_vm/views/insns_info.inc.erb \
-	  $(tooldir)/ruby_vm/views/mirjit_insn_compile.inc.erb \
-	  $(tooldir)/ruby_vm/views/mirjit_insn_funcs.inc.erb \
 	  $(tooldir)/ruby_vm/views/mjit_compile.inc.erb \
 	  $(tooldir)/ruby_vm/views/opt_sc.inc.erb \
 	  $(tooldir)/ruby_vm/views/optinsn.inc.erb \

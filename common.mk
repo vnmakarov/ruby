@@ -1867,8 +1867,6 @@ a.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 a.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 a.$(OBJEXT): {$(VPATH)}iseq.h
 a.$(OBJEXT): {$(VPATH)}method.h
-a.$(OBJEXT): {$(VPATH)}mirjit_code_env.c
-a.$(OBJEXT): {$(VPATH)}mirjit_insn_funcs.inc
 a.$(OBJEXT): {$(VPATH)}missing.h
 a.$(OBJEXT): {$(VPATH)}node.h
 a.$(OBJEXT): {$(VPATH)}ractor.h
@@ -9267,8 +9265,6 @@ mirjit.$(OBJEXT): {$(VPATH)}iseq.h
 mirjit.$(OBJEXT): {$(VPATH)}method.h
 mirjit.$(OBJEXT): {$(VPATH)}mirjit.c
 mirjit.$(OBJEXT): {$(VPATH)}mirjit.h
-mirjit.$(OBJEXT): {$(VPATH)}mirjit_code_env.inc
-mirjit.$(OBJEXT): {$(VPATH)}mirjit_insn_compile.inc
 mirjit.$(OBJEXT): {$(VPATH)}missing.h
 mirjit.$(OBJEXT): {$(VPATH)}node.h
 mirjit.$(OBJEXT): {$(VPATH)}ruby_assert.h

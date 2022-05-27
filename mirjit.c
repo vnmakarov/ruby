@@ -1235,7 +1235,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  }\n");
         break;
         // ??? fp insns
-        // ??? iaref insns
         // ??? general rtl insns
     case BIN(sir_getivar):
     case BIN(sir_igetivar):
@@ -1634,8 +1633,6 @@ rb_jit_bbv(struct rb_iseq_bbv *bbv) {
     gen_bbv_code(jit_c_code, bbv);
 }
 
-#include "mirjit_code_env.inc"
-
 static struct rb_mirjit_options mirjit_options;
 
 int
@@ -1644,30 +1641,10 @@ rb_mirjit_enabled_p(void) { return mirjit_options.mirjit_enabled_p; }
 int
 rb_mirjit_debug_p(void) { return mirjit_options.debug_p; }
 
-static size_t curr_input_byte_num;
-
-static int read_byte(MIR_context_t ctx) {
-  if (curr_input_byte_num >= sizeof(mir_code)) return EOF;
-  return mir_code[curr_input_byte_num++];
-}
-
 void
 rb_mirjit_init(struct rb_mirjit_options *options) {
-    double start_time = real_usec_time();
     mirjit_options = *options;
-    int mirjit_debug_p = rb_mirjit_debug_p();
-    MIR_module_t module;
     ctx = MIR_init();
-    MIR_read_with_func(ctx, read_byte);
-    module = DLIST_HEAD(MIR_module_t, *MIR_get_module_list(ctx));
-    MIR_load_module(ctx, module);
-    if (mirjit_debug_p) {
-#if 0
-        MIR_output_module (ctx, stderr, module);
-#endif
-        fprintf(stderr, "Finish of MIR reading from memory -- read time %.0f usec\n",
-                real_usec_time() - start_time);
-    }
     VARR_CREATE(char, jit_c_code, 0);
     c2mir_init(ctx);
     MIR_gen_init(ctx, 1);
