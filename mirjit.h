@@ -8,7 +8,9 @@
 #ifndef MIRJIT_H
 #define MIRJIT_H 1
 
-//#define JRET
+#define JRET
+//#define MIRJIT_RESTART_STAT
+//#define MIRJIT_ITER_INSNS
 
 #include "vm_core.h"
 
