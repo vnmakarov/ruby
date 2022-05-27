@@ -3184,15 +3184,19 @@ sir_cfunc_send
 
     if (klass != CLASS_OF(recv)) goto sir_cfunc_send_exit;
     MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
-    VM_ASSERT(callable_method_entry_p(cme) && blockiseq != NULL);
+    VM_ASSERT(callable_method_entry_p(cme));
     MIRJIT_CONST_PTR(const rb_method_cfunc_t *, cfunc, vm_method_cfunc_entry(cme));
     RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, cme->owner, cme->def->original_id);
     EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, Qundef);
-    captured = VM_CFP_TO_CAPTURED_BLOCK(GET_CFP());
-    captured->code.iseq = blockiseq;
-    bh = VM_BH_FROM_ISEQ_BLOCK(captured);
+    if (blockiseq == NULL) {
+        bh = VM_BLOCK_HANDLER_NONE;
+    } else {
+        captured = VM_CFP_TO_CAPTURED_BLOCK(reg_cfp);
+        captured->code.iseq = blockiseq;
+        bh = VM_BH_FROM_ISEQ_BLOCK(captured);
+    }
     vm_push_frame(ec, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
-                  bh, (VALUE)cme, 0, ec->cfp->sp, 0, 0);
+                  bh, (VALUE)cme, 0, reg_cfp->sp, 0, 0);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
     MIRJIT_CONST_PTR(rb_cfunc_invoker_t, invoker, cfunc->invoker);
     MIRJIT_CONST_PTR(rb_cfunc_func_t, func, cfunc->func);
