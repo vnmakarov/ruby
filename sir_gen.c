@@ -2262,14 +2262,20 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             new_operands[2] = (lindex_t)arg_func;
             add_spec_insn_arr(orig_pos, BIN(sir_iter_body), 3, new_operands);
             disp = 0;
+#ifdef MIRJIT_ITER_INSNS
             if (mirjit_enabled_p) {
                 add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
                 disp = insn_len(BIN(sir_bbv_cont));
             }
+#endif
             /* to int_iter */
             new_operands[0] = -(OFFSET)(disp + insn_len(BIN(sir_iter_body)) + insn_len(BIN(sir_iter_cont)));
             new_operands[1] = (lindex_t)cont_func;
             add_spec_insn_arr(orig_pos, BIN(sir_iter_cont), 2, new_operands);
+            if (mirjit_enabled_p) {
+                add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
+                disp = insn_len(BIN(sir_bbv_cont));
+            }
             goto stack_update;
         }
         case BIN(sir_iter_body): {
