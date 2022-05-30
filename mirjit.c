@@ -1,6 +1,7 @@
 #include "sir.h"
 #include "internal/compile.h"
 #include "internal/class.h"
+#include "internal/numeric.h"
 #include "vm_callinfo.h"
 #define YJIT_STATS 0 /* used in vm_insnhelper.h */
 #include "vm_insnhelper.h"
@@ -89,6 +90,21 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "register VALUE *pc asm(\"r14\") __mirc_attribute__ ((antialias (val)));\n"
     "register rb_control_frame_t *cfp asm(\"r15\");\n"
 #endif
+    "extern DBL mirjit_rfloat_value(VALUE);\n"
+    "extern VALUE mirjit_dbl2num(DBL);\n"
+    "extern VALUE mirjit_fplus(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fplusf(VALUE, DBL);\n"
+    "extern VALUE mirjit_fminus(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fminusf(VALUE, DBL);\n"
+    "extern VALUE mirjit_frminusf(DBL, VALUE);\n"
+    "extern VALUE mirjit_fmult(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fmultf(VALUE, DBL);\n"
+    "extern VALUE mirjit_fdiv(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fdivf(VALUE, DBL);\n"
+    "extern VALUE mirjit_frdivf(DBL, VALUE);\n"
+    "extern VALUE mirjit_fmod(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fmodf(VALUE, DBL);\n"
+    "extern VALUE mirjit_frmodf(DBL, VALUE);\n"
 #ifdef MIRJIT_RESTART_STAT
     "extern long mirjit_run_nums, mirjit_restart_nums;\n"
 #endif
@@ -108,7 +124,7 @@ output_str(VARR(char) *buff, const char *str) {
     }
 }
 
-#define TEMP_STR_SIZE 1024
+#define TEMP_STR_SIZE 2048
 static void
 #ifdef __GNUC__
 __attribute__ ((format (__printf__, 2, 3)))
@@ -1141,6 +1157,71 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  else\n");
         O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* false label */
         break;
+    case BIN(sir_fplus):
+        O("  val = sp[-2]; val2 = *--sp;\n");
+        O("  sp[-1] = mirjit_fplus(val, val2);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fplusf):
+        O("  val = sp[-1]; d = operands[0];\n");
+        O("  sp[-1] = mirjit_fplusf(val, d);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fminus):
+        O("  val = sp[-2]; val2 = *--sp;\n");
+        O("  sp[-1] = mirjit_fminus(val, val2);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fminusf):
+        O("  val = sp[-1]; d = operands[0];\n");
+        O("  sp[-1] = mirjit_fminusf(val, d);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_frminusf):
+        O("  val = sp[-1]; d = operands[0];\n");
+        O("  sp[-1] = mirjit_frminusf(d, val);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fmult):
+        O("  val = sp[-2]; val2 = *--sp;\n");
+        O("  sp[-1] = mirjit_fmult(val, val2);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fmultf):
+        O("  val = sp[-1]; d = operands[0];\n");
+        O("  sp[-1] = mirjit_fmultf(val, d);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fdiv):
+        O("  val = sp[-2]; val2 = *--sp;\n");
+        O("  sp[-1] = mirjit_fdiv(val, val2);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fdivf):
+        O("  val = sp[-1]; d = operands[0];\n");
+        O("  sp[-1] = mirjit_fdivf(val, d);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_frdivf):
+        O("  val = sp[-1]; d = operands[0];\n");
+        O("  sp[-1] = mirjit_frdivf(d, val);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fmod):
+        O("  val = sp[-2]; val2 = *--sp;\n");
+        O("  sp[-1] = mirjit_fmod(val, val2);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fmodf):
+        O("  val = sp[-1]; d = operands[0];\n");
+        O("  sp[-1] = mirjit_fmodf(val, d);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_frmodf):
+        O("  val = sp[-1]; d = operands[0];\n");
+        O("  sp[-1] = mirjit_frmodf(d, val);\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
     case BIN(sir_jump): // ??? test only for backward jumps/branches
         O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
           (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
@@ -1464,20 +1545,92 @@ static int t_getc(void *data) {
   return input->curr_char >= input->code_len ? EOF : input->code[input->curr_char++];
 }
 
+static VALUE mirjit_dbl2num(DBL d) {return DBL2NUM(d);}
+static DBL mirjit_rfloat_value(VALUE v) {return RFLOAT_VALUE(v);}
+
+static VALUE mirjit_fplus(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) + RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fplusf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) + d); }
+static VALUE mirjit_fminus(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) - RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fminusf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) - d); }
+static VALUE mirjit_frminusf(DBL d, VALUE v){ return DBL2NUM(d - RFLOAT_VALUE(v)); }
+static VALUE mirjit_fmult(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) * RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fmultf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) * d); }
+static VALUE mirjit_fdiv(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_div(RFLOAT_VALUE(v1), RFLOAT_VALUE(v2))); }
+static VALUE mirjit_fdivf(VALUE v, DBL d){ return DBL2NUM(ruby_float_div(RFLOAT_VALUE(v), d)); }
+static VALUE mirjit_frdivf(DBL d, VALUE v){ return DBL2NUM(ruby_float_div(d, RFLOAT_VALUE(v))); }
+static VALUE mirjit_fmod(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_mod(RFLOAT_VALUE(v1), RFLOAT_VALUE(v2))); }
+static VALUE mirjit_fmodf(VALUE v, DBL d){ return DBL2NUM(ruby_float_mod(RFLOAT_VALUE(v), d)); }
+static VALUE mirjit_frmodf(DBL d, VALUE v){ return DBL2NUM(ruby_float_mod(d, RFLOAT_VALUE(v))); }
+
 #ifdef MIRJIT_RESTART_STAT
 long mirjit_run_nums, mirjit_restart_nums;
 #endif
-static void *import_resolver(const char *name) {
-    void *addr = NULL;
-    if (addr == NULL && strcmp(name, "rb_gc_writebarrier") == 0) addr = rb_gc_writebarrier;
-    if (addr == NULL && strcmp(name, "rb_check_array_type") == 0) addr = rb_check_array_type;
-    if (addr == NULL && strcmp(name, "rb_check_cfp_consistency") == 0) addr = rb_check_cfp_consistency;
+
+typedef struct resolver_el {const char *name; void *addr;} resolver_el_t;
+static resolver_el_t resolver_els[] = {
+    {"rb_gc_writebarrier", rb_gc_writebarrier},
+    {"rb_check_array_type", rb_check_array_type},
+    {"rb_check_cfp_consistency", rb_check_cfp_consistency},
+    {"mirjit_rfloat_value", mirjit_rfloat_value},
+    {"mirjit_dbl2num", mirjit_dbl2num},
+    {"mirjit_fplus", mirjit_fplus},
+    {"mirjit_fplusf", mirjit_fplusf},
+    {"mirjit_fminus", mirjit_fminus},
+    {"mirjit_fminusf", mirjit_fminusf},
+    {"mirjit_frminusf", mirjit_frminusf},
+    {"mirjit_fmult", mirjit_fmult},
+    {"mirjit_fmultf", mirjit_fmultf},
+    {"mirjit_fdiv", mirjit_fdiv},
+    {"mirjit_fdivf", mirjit_fdivf},
+    {"mirjit_frdivf", mirjit_frdivf},
+    {"mirjit_fplus", mirjit_fplus},
+    {"mirjit_fplusf", mirjit_fplusf},
+    {"mirjit_fmod", mirjit_fmod},
+    {"mirjit_fmodf", mirjit_fmodf},
+    {"mirjit_frmodf", mirjit_frmodf},
 #ifdef MIRJIT_RESTART_STAT
-    if (addr == NULL && strcmp(name, "mirjit_run_nums") == 0) addr = &mirjit_run_nums;
-    if (addr == NULL && strcmp(name, "mirjit_restart_nums") == 0) addr = &mirjit_restart_nums;
+    {"mirjit_run_nums", &mirjit_run_nums},
+    {"mirjit_restart_nums", &mirjit_restart_nums},
 #endif
-    assert(addr != NULL);
-    return addr;
+};
+
+DEF_HTAB(resolver_el_t);
+static HTAB(resolver_el_t) *resolver_tab;
+
+static htab_hash_t resolver_hash(resolver_el_t el, void *arg) {
+    return st_hash(el.name, strlen(el.name), 42);
+}
+
+static int resolver_eq_p(resolver_el_t el1, resolver_el_t el2, void *arg) {
+    return strcmp(el1.name, el2.name) == 0;
+}
+
+static void resolver_init(void) {
+    HTAB_CREATE(resolver_el_t, resolver_tab,
+                2 * sizeof(resolver_els) / sizeof(resolver_el_t),
+                resolver_hash, resolver_eq_p, NULL);
+    for (size_t i = 0; i < sizeof(resolver_els) / sizeof(resolver_el_t); i++) {
+        int MAYBE_UNUSED(exist_p);
+        resolver_el_t el, MAYBE_UNUSED(tab_el);
+
+        el = resolver_els[i];
+        exist_p = HTAB_DO(resolver_el_t, resolver_tab, el, HTAB_INSERT, tab_el);
+        assert(!exist_p);
+    }
+}
+
+static void *import_resolver(const char *name) {
+    resolver_el_t el, tab_el;
+
+    el.name = name;
+    if (HTAB_DO(resolver_el_t, resolver_tab, el, HTAB_FIND, tab_el))
+        return tab_el.addr;
+    assert(FALSE);
+    return NULL;
+}
+
+static void resolver_finish(void) {
+    HTAB_DESTROY(resolver_el_t, resolver_tab);
 }
 
 #define CONCAT(a, b) a ## b
@@ -1656,6 +1809,7 @@ rb_mirjit_init(struct rb_mirjit_options *options) {
     curr_input.options.asm_p = curr_input.options.object_p = FALSE;
     curr_input.options.no_prepro_p = curr_input.options.prepro_only_p = FALSE;
     curr_input.options.syntax_only_p = curr_input.options.pedantic_p = FALSE;
+    resolver_init();
 }
 
 void
@@ -1664,6 +1818,7 @@ rb_mirjit_finish(void) {
 #ifdef MIRJIT_RESTART_STAT
     fprintf(stderr, "MIRJIT CODE RUNS=%ld, RESTARTS=%ld\n", mirjit_run_nums, mirjit_restart_nums);
 #endif
+    resolver_finish();
     VARR_DESTROY(char, jit_c_code);
     MIR_gen_finish(ctx);
     c2mir_finish(ctx);
