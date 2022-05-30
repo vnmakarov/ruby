@@ -474,7 +474,9 @@ create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bou
 
     check_final_attrs(n_attrs, attrs);
     bbv = (rb_iseq_bbv_t)ALLOC_N(char, sizeof (struct rb_iseq_bbv) + (attrs == NULL ? 0 : n_attrs - 1));
-    bbv->count = BBV_COUNT_TO_PROFILE_SPECIALIZE;
+    bbv->spec_count = BBV_COUNT_TO_PROFILE_SPECIALIZE;
+    bbv->jit_count = BBV_COUNT_TO_JIT;
+    SIR_GEN_ASSERT(BBV_COUNT_TO_PROFILE_SPECIALIZE + 1 < BBV_COUNT_TO_JIT);
     bbv->iseq = iseq;
     bbv->cme = NULL;
     bbv->iseq_start = start;
@@ -1795,7 +1797,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     }
     if (mirjit_enabled_p) {
         add_insn_arr(bbv->iseq_start, BIN(sir_bbv_start), 1, (VALUE *)&bbv);
-        bbv->count = BBV_COUNT_TO_JIT;
+        bbv->jit_count = BBV_COUNT_TO_JIT;
     }
     for (curr_sir_insn_pos = orig_bbv->bbv_start;
          curr_sir_insn_pos < orig_bbv->bbv_bound;

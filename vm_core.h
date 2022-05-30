@@ -831,7 +831,7 @@ struct rb_sir_call_elem {
 };
 
 struct rb_iseq_bbv {
-    long count;
+    int spec_count, jit_count;
     rb_iseq_t *iseq;
     const struct rb_callable_method_entry_struct *cme;
     /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch/leave/throw */
