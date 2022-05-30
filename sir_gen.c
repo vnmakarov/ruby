@@ -2093,6 +2093,23 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         SIR_INSN2_SPEC_LVAR_CASES0(iand):
             setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_FIXNUM); /* attr of lvar */
             goto rest_cases;
+        case BIN(sir_fplus):
+        case BIN(sir_fminus):
+        case BIN(sir_fmult):
+        case BIN(sir_fdiv):
+        case BIN(sir_fmod):
+        case BIN(sir_fplusf):
+        case BIN(sir_fminusf):
+        case BIN(sir_fmultf):
+        case BIN(sir_fdivf):
+        case BIN(sir_fmodf):
+        case BIN(sir_frminusf):
+        case BIN(sir_frdivf):
+        case BIN(sir_frmodf):
+            inc = insn_stack_increase(insn_id, operands);
+            stack_size += inc - 1;
+            attr = ATTR_FLONUM; /* attr of temp */
+            goto add_and_push;
         case BIN(sir_jump):
         case BIN(sir_getinlinecache):
         BRANCH_CASES(ibeq):
@@ -2966,7 +2983,7 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
     const struct rb_callcache *cc = cd->cc;
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     int debug_p = rb_sir_debug_p();
-    const rb_method_cfunc_t *cfunc;
+    MAYBE_UNUSED (const rb_method_cfunc_t *cfunc);
 
     if (cme == NULL || cme->def->type != VM_METHOD_TYPE_CFUNC) return FALSE;
     cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
