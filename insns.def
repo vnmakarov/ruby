@@ -2233,7 +2233,7 @@ sir_iasetsis
 
 DEFINE_INSN
 sir_iasetsss
-(CALL_DATA cd)
+()
 (VALUE arr, VALUE ind, VALUE set)
 (VALUE val)
 {
