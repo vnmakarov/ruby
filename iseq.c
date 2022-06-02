@@ -18,6 +18,8 @@
 # include <dlfcn.h>
 #endif
 
+#include <float.h>
+
 #include "eval_intern.h"
 #include "gc.h"
 #include "id_table.h"
@@ -1992,7 +1994,7 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	break;
 
     case TS_DBL:{
-	ret = rb_sprintf("%-.10g", sir_val2dbl(op));
+	ret = rb_sprintf("%*.e", DECIMAL_DIG, sir_val2dbl(op));
         break;
     }
     case TS_LINDEX:{
