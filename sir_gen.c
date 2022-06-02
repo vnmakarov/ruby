@@ -2179,6 +2179,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             SIR_GEN_ASSERT(stack_size > 0);
             if (bbv->env_p) {
                 SIR_GEN_ASSERT(insn_id != BIN(sir_setlocal));
+                attr = get_attr(get_temp_num(iseq, stack_size - 1));
+                setup_attr(get_lvar_num(iseq, operands[0]), attr); /* attr of temp */
                 goto rest_cases;
             }
             attr = get_attr(get_temp_num(iseq, stack_size - 1));
