@@ -1070,6 +1070,8 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     iaset: /* r[val] = val2; */
         gen_class_of(buff, "t", "r");
         O("  if (t != 0x%"PRIxVALUE ") goto restart;\n", rb_cArray);
+        O("  if (__builtin_expect(*((VALUE *)((char *)r + %d)) & 0x%"PRIxVALUE ", 0)) goto restart;\n",
+          (int)offsetof(struct RBasic, flags), (VALUE)ELTS_SHARED); /* check shared array */
         gen_array_aref_len(buff, "pv", "t", "r"); /* t is len */
         /* rb_ary_store(r, FIX2LONG(val), val2); */
         O("  val = (SIGNED_VALUE)val >> 1;\n"); /* offset = FIX2LONG(val) */
