@@ -260,6 +260,45 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  *sp--;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
+    case BIN(dup):
+        O("  val = sp[-1];\n");
+        O("  *sp++ = val;\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(dupn): {
+        rb_num_t n = (rb_num_t)operands[0];
+        O("  pv = &sp[-%ld];\n", (long)n);
+        O("  pv2 = sp; sp += %ld;\n", (long)n);
+        O("  memcpy(pv2, pv, %ld);\n", (long)(sizeof (VALUE) * n));
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    }
+    case BIN(swap):
+        O("  val = sp[-1];\n");
+        O("  sp[-1] = sp[-2];\n");
+        O("  sp[-2] = val;\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(topn): {
+        rb_num_t n = (rb_num_t)operands[0];
+        O("  val = sp[-%ld];\n", (long)n + 1);
+        O("  *sp++ = val;\n");
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    }
+    case BIN(setn): {
+        rb_num_t n = (rb_num_t)operands[0];
+        O("  val = sp[- 1];\n");
+        O("  sp[-%ld] = val;\n", (long)n + 1);
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    }
+    case BIN(adjuststack): {
+        rb_num_t n = (rb_num_t)operands[0];
+        O("  sp -= %ld;\n", (long)n);
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    }
     case BIN(putnil):
         O("  *sp++ = (VALUE)0x%x;\n", (int)Qnil);
         O("  pc += %d;\n", insn_len(insn_id));
