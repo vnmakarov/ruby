@@ -2335,6 +2335,44 @@ sir_iasetvss
 
 DEFINE_INSN
 sir_fplus sir_fminus sir_fmult sir_fdiv sir_fmod
+()
+(VALUE v1, VALUE v2)
+(VALUE val)
+{
+    val = SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, v2);
+    if (!FLONUM_P(val)) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_fplusf sir_fminusf sir_fmultf sir_fdivf sir_fmodf
+(DBL imm)
+(VALUE v1)
+(VALUE val)
+{
+    val = SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(v1, imm);
+    if (!FLONUM_P(val)) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+sir_frminusf sir_frdivf sir_frmodf
+(DBL imm)
+(VALUE v2)
+(VALUE val)
+{
+    val = SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(imm, v2);
+    if (!FLONUM_P(val)) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
 sir_feq sir_fneq sir_flt sir_fgt sir_fle sir_fge
 ()
 (VALUE v1, VALUE v2)
@@ -2344,7 +2382,6 @@ sir_feq sir_fneq sir_flt sir_fgt sir_fle sir_fge
 }
 
 DEFINE_INSN
-sir_fplusf sir_fminusf sir_fmultf sir_fdivf sir_fmodf
 sir_feqf sir_fneqf sir_fltf sir_fgtf sir_flef sir_fgef
 (DBL imm)
 (VALUE v1)
@@ -2354,7 +2391,6 @@ sir_feqf sir_fneqf sir_fltf sir_fgtf sir_flef sir_fgef
 }
 
 DEFINE_INSN
-sir_frminusf sir_frdivf sir_frmodf
 sir_frltf sir_frgtf sir_frlef sir_frgef
 (DBL imm)
 (VALUE v2)
@@ -2485,6 +2521,31 @@ check_stack_fixtype
     }
 }
 
+DEFINE_INSN
+check_flotype
+(lindex_t n)
+()
+()
+{
+    VALUE val = *(GET_EP() - n);
+    if (!FLONUM_P(val)) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
+
+DEFINE_INSN
+check_stack_flotype
+(lindex_t n)
+()
+()
+{
+    VALUE val = TOPN(n);
+    if (!FLONUM_P(val)) {
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
+    }
+}
 
 /* --- general SIR insns: --- */
 
@@ -2939,7 +3000,7 @@ sir_asetvss
 /* --- end of general SIR insns --- */
 
 DEFINE_INSN
-sir_inspect_type sir_inspect_fixtype
+sir_inspect_type sir_inspect_fixtype sir_inspect_flotype
 (lindex_t n)
 ()
 ()
@@ -2950,7 +3011,7 @@ sir_inspect_type sir_inspect_fixtype
 }
 
 DEFINE_INSN
-sir_inspect_stack_type sir_inspect_stack_fixtype
+sir_inspect_stack_type sir_inspect_stack_fixtype sir_inspect_stack_flotype
 (lindex_t n)
 ()
 ()
