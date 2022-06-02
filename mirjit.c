@@ -90,6 +90,7 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "register VALUE *pc asm(\"r14\") __mirc_attribute__ ((antialias (val)));\n"
     "register rb_control_frame_t *cfp asm(\"r15\");\n"
 #endif
+#ifdef FLONUM_INSNS
     "extern DBL mirjit_rfloat_value(VALUE);\n"
     "extern VALUE mirjit_dbl2num(DBL);\n"
     "extern VALUE mirjit_fplus(VALUE, VALUE);\n"
@@ -105,6 +106,15 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "extern VALUE mirjit_fmod(VALUE, VALUE);\n"
     "extern VALUE mirjit_fmodf(VALUE, DBL);\n"
     "extern VALUE mirjit_frmodf(DBL, VALUE);\n"
+    "extern VALUE mirjit_feq(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fneq(VALUE, VALUE);\n"
+    "extern VALUE mirjit_flt(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fgt(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fle(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fge(VALUE, VALUE);\n"
+#endif
+    "extern void printf(const char *, ...);\n"
+    "extern void *memcpy(void *, const void *, VALUE);\n"
 #ifdef MIRJIT_RESTART_STAT
     "extern long mirjit_run_nums, mirjit_restart_nums;\n"
 #endif
@@ -1229,71 +1239,120 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  else\n");
         O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* false label */
         break;
+#ifdef FLONUM_INSNS
     case BIN(sir_fplus):
+        fn = "fplus";
+    fop:
         O("  val = sp[-2]; val2 = *--sp;\n");
-        O("  sp[-1] = mirjit_fplus(val, val2);\n");
+        O("  sp[-1] = mirjit_%s(val, val2);\n", fn);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_fplusf):
-        O("  val = sp[-1]; d = operands[0];\n");
-        O("  sp[-1] = mirjit_fplusf(val, d);\n");
+        fn = "fplusf";
+    fop_imm:
+        O("  val = sp[-1]; d = %*.e;\n", DECIMAL_DIG, sir_val2dbl(operands[0]));
+        O("  sp[-1] = mirjit_%s(val, d);\n", fn);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_fminus):
-        O("  val = sp[-2]; val2 = *--sp;\n");
-        O("  sp[-1] = mirjit_fminus(val, val2);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        fn = "fminus";
+        goto fop;
     case BIN(sir_fminusf):
-        O("  val = sp[-1]; d = operands[0];\n");
-        O("  sp[-1] = mirjit_fminusf(val, d);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        goto fop_imm;
     case BIN(sir_frminusf):
-        O("  val = sp[-1]; d = operands[0];\n");
-        O("  sp[-1] = mirjit_frminusf(d, val);\n");
+        fn = "frminusf";
+    frop_imm:
+        O("  val = sp[-1]; d = %*.e;\n", DECIMAL_DIG, sir_val2dbl(operands[0]));
+        O("  sp[-1] = mirjit_%s(d, val);\n", fn);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_fmult):
-        O("  val = sp[-2]; val2 = *--sp;\n");
-        O("  sp[-1] = mirjit_fmult(val, val2);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        fn = "fmult";
+        goto fop;
     case BIN(sir_fmultf):
-        O("  val = sp[-1]; d = operands[0];\n");
-        O("  sp[-1] = mirjit_fmultf(val, d);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        fn = "fmultf";
+        goto fop_imm;
     case BIN(sir_fdiv):
-        O("  val = sp[-2]; val2 = *--sp;\n");
-        O("  sp[-1] = mirjit_fdiv(val, val2);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        fn = "fdiv";
+        goto fop;
     case BIN(sir_fdivf):
-        O("  val = sp[-1]; d = operands[0];\n");
-        O("  sp[-1] = mirjit_fdivf(val, d);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        fn = "fdivf";
+        goto fop_imm;
     case BIN(sir_frdivf):
-        O("  val = sp[-1]; d = operands[0];\n");
-        O("  sp[-1] = mirjit_frdivf(d, val);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        fn = "frdivf";
+        goto frop_imm;
     case BIN(sir_fmod):
-        O("  val = sp[-2]; val2 = *--sp;\n");
-        O("  sp[-1] = mirjit_fmod(val, val2);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        fn = "fmod";
+        goto fop;
     case BIN(sir_fmodf):
-        O("  val = sp[-1]; d = operands[0];\n");
-        O("  sp[-1] = mirjit_fmodf(val, d);\n");
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
+        fn = "fmodf";
+        goto fop_imm;
     case BIN(sir_frmodf):
-        O("  val = sp[-1]; d = operands[0];\n");
-        O("  sp[-1] = mirjit_frmodf(d, val);\n");
+        fn = "frmodf";
+        goto frop_imm;
+    case BIN(sir_feq):
+        fn = "feq";
+    fcmp:
+        O("  val = sp[-2]; val2 = *--sp;\n");
+        O("  sp[-1] = mirjit_%s(val, val2);\n", fn);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
+    case BIN(sir_fneq):
+        fn = "fneq";
+        goto fcmp;
+    case BIN(sir_flt):
+        fn = "flt";
+        goto fcmp;
+    case BIN(sir_fgt):
+        fn = "fgt";
+        goto fcmp;
+    case BIN(sir_fle):
+        fn = "fle";
+        goto fcmp;
+    case BIN(sir_fge):
+        fn = "fge";
+        goto fcmp;
+    case BIN(sir_feqf):
+        op = "==";
+    fcmp_imm:
+        O("  val = sp[-1]; d = %*.e;\n", DECIMAL_DIG, sir_val2dbl(operands[0]));
+        O("  sp[-1] = 0x%"PRIxVALUE "; if (mirjit_rfloat_value(val) %s d) sp[-1] = 0x%"PRIxVALUE ";\n",
+          (VALUE)Qfalse, op, (VALUE)Qtrue);
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_fneqf):
+        op = "!=";
+        goto fcmp_imm;
+    case BIN(sir_fltf):
+        op = "<";
+        goto fcmp_imm;
+    case BIN(sir_fgtf):
+        op = ">";
+        goto fcmp_imm;
+    case BIN(sir_flef):
+        op = "<=";
+        goto fcmp_imm;
+    case BIN(sir_fgef):
+        op = ">=";
+        goto fcmp_imm;
+    case BIN(sir_frltf):
+        op = "<";
+    frcmp_imm:
+        O("  val = sp[-1]; d = %*.e;\n", DECIMAL_DIG, sir_val2dbl(operands[0]));
+        O("  sp[-1] = 0x%"PRIxVALUE "; if (d %s mirjit_rfloat_value(val)) sp[-1] = 0x%"PRIxVALUE ";\n",
+          (VALUE)Qfalse, op, (VALUE)Qtrue);
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(sir_frgtf):
+        op = ">";
+        goto frcmp_imm;
+    case BIN(sir_frlef):
+        op = "<=";
+        goto frcmp_imm;
+    case BIN(sir_frgef):
+        op = ">=";
+        goto frcmp_imm;
+#endif
     case BIN(sir_jump): // ??? test only for backward jumps/branches
         O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
           (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
@@ -1617,6 +1676,7 @@ static int t_getc(void *data) {
   return input->curr_char >= input->code_len ? EOF : input->code[input->curr_char++];
 }
 
+#ifdef FLONUM_INSNS
 static VALUE mirjit_dbl2num(DBL d) {return DBL2NUM(d);}
 static DBL mirjit_rfloat_value(VALUE v) {return RFLOAT_VALUE(v);}
 
@@ -1633,6 +1693,13 @@ static VALUE mirjit_frdivf(DBL d, VALUE v){ return DBL2NUM(ruby_float_div(d, RFL
 static VALUE mirjit_fmod(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_mod(RFLOAT_VALUE(v1), RFLOAT_VALUE(v2))); }
 static VALUE mirjit_fmodf(VALUE v, DBL d){ return DBL2NUM(ruby_float_mod(RFLOAT_VALUE(v), d)); }
 static VALUE mirjit_frmodf(DBL d, VALUE v){ return DBL2NUM(ruby_float_mod(d, RFLOAT_VALUE(v))); }
+static VALUE mirjit_feq(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) == RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fneq(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) != RFLOAT_VALUE(v2)); }
+static VALUE mirjit_flt(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) < RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fgt(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) > RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fle(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) <= RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fge(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) >= RFLOAT_VALUE(v2)); }
+#endif
 
 #ifdef MIRJIT_RESTART_STAT
 long mirjit_run_nums, mirjit_restart_nums;
@@ -1643,6 +1710,7 @@ static resolver_el_t resolver_els[] = {
     {"rb_gc_writebarrier", rb_gc_writebarrier},
     {"rb_check_array_type", rb_check_array_type},
     {"rb_check_cfp_consistency", rb_check_cfp_consistency},
+#ifdef FLONUM_INSNS
     {"mirjit_rfloat_value", mirjit_rfloat_value},
     {"mirjit_dbl2num", mirjit_dbl2num},
     {"mirjit_fplus", mirjit_fplus},
@@ -1660,6 +1728,14 @@ static resolver_el_t resolver_els[] = {
     {"mirjit_fmod", mirjit_fmod},
     {"mirjit_fmodf", mirjit_fmodf},
     {"mirjit_frmodf", mirjit_frmodf},
+    {"mirjit_feq", mirjit_feq},
+    {"mirjit_fneq", mirjit_fneq},
+    {"mirjit_flt", mirjit_flt},
+    {"mirjit_fgt", mirjit_fgt},
+    {"mirjit_fle", mirjit_fle},
+    {"mirjit_fge", mirjit_fge},
+#endif
+    {"memcpy", memcpy},
 #ifdef MIRJIT_RESTART_STAT
     {"mirjit_run_nums", &mirjit_run_nums},
     {"mirjit_restart_nums", &mirjit_restart_nums},
@@ -1698,6 +1774,7 @@ static void *import_resolver(const char *name) {
     if (HTAB_DO(resolver_el_t, resolver_tab, el, HTAB_FIND, tab_el))
         return tab_el.addr;
     assert(FALSE);
+    if (strcmp(name, "printf") == 0) return printf;
     return NULL;
 }
 
@@ -1750,6 +1827,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
             O("void jit_bbv%d(void) {\n", pc);
 #endif
             O("  VALUE val, val2, r, t, flags, *pv, *pv2;\n");
+            O("  DBL d;\n");
             O("  VALUE *ep __mirc_attribute__ ((antialias (val))) = cfp->ep;\n");
             O("  VALUE *sp __mirc_attribute__ ((antialias (val))) = cfp->sp;\n");
 #if defined(__x86_64__) && defined(JRET)
