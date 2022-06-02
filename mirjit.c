@@ -237,8 +237,6 @@ static void gen_push_frame(VARR(char) *buff, int local_size, int stack_max, int 
 
 /* Used vars: ec, cfp, sp, pc, val */
 static void gen_pop_frame(VARR(char) *buff, int res_on_stack_p) {
-    O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
-      (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
     if (res_on_stack_p) O("  val = *--sp;\n");
     /* cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp): */
     O("  cfp++;\n");
@@ -246,6 +244,9 @@ static void gen_pop_frame(VARR(char) *buff, int res_on_stack_p) {
     O("  pc = cfp->pc;\n");
     O("  sp = cfp->sp;\n");
     O("  *sp++ = val;\n");
+    /* Put interrupt check here to have non-zero pc after cfunc return: */
+    O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
+      (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
 }
 
 static int
