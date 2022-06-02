@@ -2507,7 +2507,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
            VARR_LENGTH(int, pos_map) * sizeof(int));
     sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
     if (debug_p) {
-        fprintf(stderr, "## %s specialized BBV x%llx (%s):\n", profile_p ? "Profile" : "Type",
+        fprintf(stderr, "## %s specialized BBV 0x%llx (%s):\n", profile_p ? "Profile" : "Type",
                 (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
         print_pos_map(iseq, bbv->bbv_start, bbv->bbv_bound, TRUE);
@@ -3067,7 +3067,7 @@ rb_sir_change_bbv(rb_iseq_bbv_t bbv)
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
 
-    if (rb_sir_debug_p()) {
+    if (rb_mirjit_debug_p()) {
         fprintf(stderr, "\n## JITting BBV 0x%llx:", (unsigned long long)bbv);
         print_attrs(bbv->attrs);
         print_iseq_title(iseq);
