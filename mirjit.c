@@ -398,6 +398,18 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  if (!(sp[-%d] & 0x%x)) goto restart;\n", (int)(lindex_t)operands[0] + 1, (int)RUBY_FIXNUM_FLAG);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
+#ifdef FLONUM_INSNS
+    case BIN(check_flotype):
+        O("  val = ep[-%d];\n", (int)(lindex_t)operands[0]);
+        O("  if ((val & 0x%x) != 0x%x) goto restart;\n", (int)RUBY_FLONUM_MASK, (int)RUBY_FLONUM_FLAG);
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+    case BIN(check_stack_flotype):
+        O("  if ((sp[-%d] & 0x%x) != 0x%x) goto restart;\n",
+          (int)(lindex_t)operands[0] + 1, (int)RUBY_FLONUM_MASK, (int)RUBY_FLONUM_FLAG);
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
+#endif
     case BIN(sir_iminussvv):
     case BIN(sir_iplussvv):
     case BIN(sir_imultsvv):
