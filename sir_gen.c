@@ -145,6 +145,7 @@ get_sir_spec_insn2_id(enum ruby_vminsn_type id, int attr, short *bop_mask, int *
         default: return BIN(nop);
         }
     } else if (attr == ATTR_FLONUM) {
+#ifdef FLONUM_INSNS
         switch (id) {
 #define SIR_FLO_INSN_ID_CASE0(bop, flag, insn_name, fname)                   						\
     case OPT_NAME(insn_name):												\
@@ -175,6 +176,7 @@ get_sir_spec_insn2_id(enum ruby_vminsn_type id, int attr, short *bop_mask, int *
         SIR_FLO_INSN_ID_CASE2(BOP_GE, FLOAT_REDEFINED_OP_FLAG, ge, fge, frge)
         default: return BIN(nop);
         }
+#endif
     }
     return BIN(nop);
 }
@@ -741,8 +743,10 @@ sir_insn_trace_update(const rb_iseq_t *iseq, VALUE *pc) {
     case BIN(sir_gen_bbv_key):
     case BIN(sir_inspect_type):
     case BIN(sir_inspect_fixtype):
+    case BIN(sir_inspect_flotype):
     case BIN(sir_inspect_stack_type):
     case BIN(sir_inspect_stack_fixtype):
+    case BIN(sir_inspect_stack_flotype):
         /* we don't want to trace these insns */
         *pc = (VALUE)e->notrace_encoded_insn;
         break;
@@ -1790,7 +1794,11 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         n_attrs = strlen(bbv->attrs);
         for (i = 0; i < body->param.lead_num; i++) {
             SIR_GEN_ASSERT(!profile_p);
+#ifdef FLONUM_INSNS
+            if (i < n_attrs && bbv->attrs[i] != ATTR_UNKNOWN) continue;
+#else
             if (i < n_attrs && bbv->attrs[i] == ATTR_FIXNUM) continue;
+#endif
             new_operands[0] = get_lvar_index(iseq, i);
             add_spec_insn_arr(orig_bbv->bbv_start, BIN(sir_inspect_type), 1, new_operands);
         }
@@ -1837,8 +1845,22 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_FIXNUM);
             add_spec_insn_arr(orig_pos, BIN(check_stack_fixtype), len - 1, operands);
             break;
+#ifdef FLONUM_INSNS
+        case BIN(sir_inspect_flotype):
+            SIR_GEN_ASSERT(profile_p);
+            setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_FLONUM);
+            add_spec_insn_arr(orig_pos, BIN(check_flotype), len - 1, operands);
+            break;
+        case BIN(sir_inspect_stack_flotype):
+            SIR_GEN_ASSERT(profile_p);
+            setup_attr(get_temp_num(iseq, stack_size - (int)operands[0] - 1), ATTR_FLONUM);
+            add_spec_insn_arr(orig_pos, BIN(check_stack_flotype), len - 1, operands);
+            break;
+#endif
         case BIN(check_fixtype):
         case BIN(check_stack_fixtype):
+        case BIN(check_flotype):
+        case BIN(check_stack_flotype):
             /* it can be here because repeated specialization by ractors
                and yields from recursive calls of one functions */
             goto rest_cases; 
@@ -2095,6 +2117,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         SIR_INSN2_SPEC_LVAR_CASES0(iand):
             setup_attr(get_lvar_num(iseq, (int)operands[0]), ATTR_FIXNUM); /* attr of lvar */
             goto rest_cases;
+#ifdef FLONUM_INSNS
         case BIN(sir_fplus):
         case BIN(sir_fminus):
         case BIN(sir_fmult):
@@ -2112,6 +2135,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             stack_size += inc - 1;
             attr = ATTR_FLONUM; /* attr of temp */
             goto add_and_push;
+#endif
         case BIN(sir_jump):
         case BIN(sir_getinlinecache):
         BRANCH_CASES(ibeq):
@@ -2497,27 +2521,33 @@ change_insn(const rb_iseq_t *iseq, VALUE *pc, enum ruby_vminsn_type new_insn_id)
 
 void
 rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
-    if (FIXNUM_P(val) && rb_vm_insn_decode(*cfp->pc) != BIN(sir_inspect_fixtype)
-        && rb_vm_insn_decode(*cfp->pc) != BIN(sir_inspect_stack_fixtype)) {
+#ifdef FLONUM_INSNS
+    int guard_p = FIXNUM_P(val) || FLONUM_P(val);
+#else
+    int guard_p = FIXNUM_P(val);
+#endif
+    if (guard_p
+        && (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)
+            || rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type))) {
         VALUE *insn_pc = (VALUE *)cfp->pc;
         int debug_p = rb_sir_debug_p();
-
+        int new_insn_id;
         RB_VM_LOCK_ENTER();
         if (stack_p) {
+            new_insn_id = FIXNUM_P(val) ? BIN(sir_inspect_stack_fixtype) : BIN(sir_inspect_stack_flotype);
             if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type)) {
                 /* check that it was not already changed, e.g. in another Ractor */
                 if (debug_p)
-                    fprintf(stderr, "--> Changing sir_inspect_stack_type to %4ld sir_inspect_stack_fixtype\n",
-                            insn_pc - cfp->iseq->body->bbv_code);
-                change_insn(cfp->iseq, insn_pc, BIN(sir_inspect_stack_fixtype));
+                    fprintf(stderr, "--> Changing sir_inspect_stack_type to %4ld %s\n",
+                            insn_pc - cfp->iseq->body->bbv_code, insn_name(new_insn_id));
+                change_insn(cfp->iseq, insn_pc, new_insn_id);
             }
-        } else {
-            if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)) {
-                if (debug_p)
-                    fprintf(stderr, "--> Changing sir_inspect_type to %4ld sir_inspect_fixtype\n",
-                            insn_pc - cfp->iseq->body->bbv_code);
-                change_insn(cfp->iseq, insn_pc, BIN(sir_inspect_fixtype));
-            }
+        } else if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)) {
+            new_insn_id = FIXNUM_P(val) ? BIN(sir_inspect_fixtype) : BIN(sir_inspect_flotype);
+            if (debug_p)
+                fprintf(stderr, "--> Changing sir_inspect_type to %4ld %s\n",
+                        insn_pc - cfp->iseq->body->bbv_code, insn_name(new_insn_id));
+            change_insn(cfp->iseq, insn_pc, new_insn_id);
         }
         RB_VM_LOCK_LEAVE();
     }
