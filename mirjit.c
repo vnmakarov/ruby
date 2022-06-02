@@ -252,7 +252,7 @@ static void gen_pop_frame(VARR(char) *buff, int res_on_stack_p) {
 static int
 gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn_id) {
     const VALUE *operands = &insn_pc[1];
-    const char *op;
+    const char *op, *fn;
     int rv_p, v1_p, v2_p, imm1_p, imm2_p, nil_p, start, stack_ops_num;
 
     switch (insn_id) {
@@ -778,7 +778,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("     if (x == %lld && y == -1) goto restart;\n", (long long)FIXNUM_MIN);
             O("     div = x / y; mod = x %% y;\n");
             O("     if (y > 0 ? mod < 0 : mod > 0) div -= 1;\n");
-            O("     r = (VALUE)div << 1 + 1;\n");
+            O("     r = ((VALUE)div << 1) + 1;\n");
             O("  }\n");
             break;
         case BIN(sir_imodsss):
@@ -804,7 +804,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("     } else {\n");
             O("       mod = x %% y;\n");
             O("       if (y > 0 ? mod < 0 : mod > 0) mod += y;\n");
-            O("       r = (VALUE)mod << 1 + 1;\n");
+            O("       r = ((VALUE)mod << 1) + 1;\n");
             O("     }\n");
             O("  }\n");
             break;
