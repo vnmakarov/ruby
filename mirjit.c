@@ -699,6 +699,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             stack_ops_num++;
         }
         switch (insn_id) {
+        case BIN(sir_iplussss):
         case BIN(sir_iplussvv):
         case BIN(sir_iplussvi):
         case BIN(sir_iplussiv):
@@ -716,6 +717,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_iplusvss):
             O("  if (__builtin_expect (__builtin_add_overflow((long)val, (long)val2-1, &r), 0)) goto restart;\n");
             break;
+        case BIN(sir_iminussss):
         case BIN(sir_iminussvv):
         case BIN(sir_iminussvi):
         case BIN(sir_iminussiv):
@@ -733,6 +735,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_iminusvss):
             O("  if (__builtin_expect (__builtin_sub_overflow((long)val, (long)val2-1, &r), 0)) goto restart;\n");
             break;
+        case BIN(sir_imultsss):
         case BIN(sir_imultsvv):
         case BIN(sir_imultsvi):
         case BIN(sir_imultsiv):
@@ -754,6 +757,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("     r++;\n");
             O("  }\n");
             break;
+        case BIN(sir_idivsss):
         case BIN(sir_idivsvv):
         case BIN(sir_idivsvi):
         case BIN(sir_idivsiv):
@@ -777,6 +781,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("     r = (VALUE)div << 1 + 1;\n");
             O("  }\n");
             break;
+        case BIN(sir_imodsss):
         case BIN(sir_imodsvv):
         case BIN(sir_imodsvi):
         case BIN(sir_imodsiv):
@@ -803,6 +808,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("     }\n");
             O("  }\n");
             break;
+        case BIN(sir_iorsss):
         case BIN(sir_iorsvv):
         case BIN(sir_iorsvi):
         case BIN(sir_iorsiv):
@@ -820,6 +826,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_iorvss):
             O("  r = val | val2;\n");
             break;
+        case BIN(sir_iandsss):
         case BIN(sir_iandsvv):
         case BIN(sir_iandsvi):
         case BIN(sir_iandsiv):
@@ -837,6 +844,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_iandvss):
             O("  r = (val & val2) | 1;\n");
             break;
+        case BIN(sir_ieqsss):
         case BIN(sir_ieqsvv):
         case BIN(sir_ieqsvi):
         case BIN(sir_ieqsiv):
@@ -854,6 +862,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_ieqvss):
             O("  r = val == val2 ? 0x%x : 0x%x;\n", (int)Qtrue, (int)Qfalse);
             break;
+        case BIN(sir_ineqsss):
         case BIN(sir_ineqsvv):
         case BIN(sir_ineqsvi):
         case BIN(sir_ineqsiv):
@@ -871,6 +880,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_ineqvss):
             O("  r = val != val2 ? 0x%x : 0x%x;\n", (int)Qtrue, (int)Qfalse);
             break;
+        case BIN(sir_iltsss):
         case BIN(sir_iltsvv):
         case BIN(sir_iltsvi):
         case BIN(sir_iltsiv):
@@ -888,6 +898,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_iltvss):
             O("  r = (SIGNED_VALUE)val < (SIGNED_VALUE)val2 ? 0x%x : 0x%x;\n", (int)Qtrue, (int)Qfalse);
             break;
+        case BIN(sir_igtsss):
         case BIN(sir_igtsvv):
         case BIN(sir_igtsvi):
         case BIN(sir_igtsiv):
@@ -905,6 +916,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_igtvss):
             O("  r = (SIGNED_VALUE)val > (SIGNED_VALUE)val2 ? 0x%x : 0x%x;\n", (int)Qtrue, (int)Qfalse);
             break;
+        case BIN(sir_ilesss):
         case BIN(sir_ilesvv):
         case BIN(sir_ilesvi):
         case BIN(sir_ilesiv):
@@ -922,6 +934,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_ilevss):
             O("  r = (SIGNED_VALUE)val <= (SIGNED_VALUE)val2 ? 0x%x : 0x%x;\n", (int)Qtrue, (int)Qfalse);
             break;
+        case BIN(sir_igesss):
         case BIN(sir_igesvv):
         case BIN(sir_igesvi):
         case BIN(sir_igesiv):
@@ -939,6 +952,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_igevss):
             O("  r = (SIGNED_VALUE)val >= (SIGNED_VALUE)val2 ? 0x%x : 0x%x;\n", (int)Qtrue, (int)Qfalse);
             break;
+        case BIN(sir_iarefsss):
         case BIN(sir_iarefsvv):
         case BIN(sir_iarefsvi):
         case BIN(sir_iarefsiv):
