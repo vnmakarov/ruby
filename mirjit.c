@@ -1,3 +1,4 @@
+#include <float.h>
 #include "sir.h"
 #include "internal/compile.h"
 #include "internal/class.h"
