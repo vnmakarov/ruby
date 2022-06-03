@@ -92,15 +92,15 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "register rb_control_frame_t *cfp asm(\"r15\");\n"
 #endif
 #ifdef FLONUM_INSNS
-    "extern DBL mirjit_rfloat_value(VALUE);\n"
-    "extern VALUE mirjit_dbl2num(DBL);\n"
     "extern VALUE mirjit_fplus(VALUE, VALUE);\n"
     "extern VALUE mirjit_fplusf(VALUE, DBL);\n"
+    "extern VALUE mirjit_frplusf(DBL, VALUE);\n"
     "extern VALUE mirjit_fminus(VALUE, VALUE);\n"
     "extern VALUE mirjit_fminusf(VALUE, DBL);\n"
     "extern VALUE mirjit_frminusf(DBL, VALUE);\n"
     "extern VALUE mirjit_fmult(VALUE, VALUE);\n"
     "extern VALUE mirjit_fmultf(VALUE, DBL);\n"
+    "extern VALUE mirjit_frmultf(DBL, VALUE);\n"
     "extern VALUE mirjit_fdiv(VALUE, VALUE);\n"
     "extern VALUE mirjit_fdivf(VALUE, DBL);\n"
     "extern VALUE mirjit_frdivf(DBL, VALUE);\n"
@@ -108,11 +108,23 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "extern VALUE mirjit_fmodf(VALUE, DBL);\n"
     "extern VALUE mirjit_frmodf(DBL, VALUE);\n"
     "extern VALUE mirjit_feq(VALUE, VALUE);\n"
+    "extern VALUE mirjit_feqf(VALUE, DBL);\n"
+    "extern VALUE mirjit_freqf(DBL, VALUE);\n"
     "extern VALUE mirjit_fneq(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fneqf(VALUE, DBL);\n"
+    "extern VALUE mirjit_frneqf(DBL, VALUE);\n"
     "extern VALUE mirjit_flt(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fltf(VALUE, DBL);\n"
+    "extern VALUE mirjit_frltf(DBL, VALUE);\n"
     "extern VALUE mirjit_fgt(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fgtf(VALUE, DBL);\n"
+    "extern VALUE mirjit_frgtf(DBL, VALUE);\n"
     "extern VALUE mirjit_fle(VALUE, VALUE);\n"
+    "extern VALUE mirjit_flef(VALUE, DBL);\n"
+    "extern VALUE mirjit_frlef(DBL, VALUE);\n"
     "extern VALUE mirjit_fge(VALUE, VALUE);\n"
+    "extern VALUE mirjit_fgef(VALUE, DBL);\n"
+    "extern VALUE mirjit_frgef(DBL, VALUE);\n"
 #endif
     "extern void printf(const char *, ...);\n"
     "extern void *memcpy(void *, const void *, VALUE);\n"
@@ -135,7 +147,7 @@ output_str(VARR(char) *buff, const char *str) {
     }
 }
 
-#define TEMP_STR_SIZE 2048
+#define TEMP_STR_SIZE 4096
 static void
 #ifdef __GNUC__
 __attribute__ ((format (__printf__, 2, 3)))
@@ -264,9 +276,14 @@ static int
 gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn_id) {
     const VALUE *operands = &insn_pc[1];
     const char *op, *fn;
-    int rv_p, v1_p, v2_p, imm1_p, imm2_p, nil_p, start, stack_ops_num;
+    int rv_p, v1_p, v2_p, imm1_p, imm2_p, fop_p, nil_p, start, stack_ops_num;
 
+    fop_p = FALSE;
     switch (insn_id) {
+    case BIN(nop):
+    case BIN(nop2):
+        O("  pc += %d;\n", insn_len(insn_id));
+        break;
     case BIN(pop):
         O("  *sp--;\n");
         O("  pc += %d;\n", insn_len(insn_id));
@@ -409,7 +426,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  if (!(sp[-%d] & 0x%x)) goto restart;\n", (int)(lindex_t)operands[0] + 1, (int)RUBY_FIXNUM_FLAG);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
-#ifdef FLONUM_INSNS
     case BIN(check_flotype):
         O("  val = ep[-%d];\n", (int)(lindex_t)operands[0]);
         O("  if ((val & 0x%x) != 0x%x) goto restart;\n", (int)RUBY_FLONUM_MASK, (int)RUBY_FLONUM_FLAG);
@@ -420,7 +436,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
           (int)(lindex_t)operands[0] + 1, (int)RUBY_FLONUM_MASK, (int)RUBY_FLONUM_FLAG);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
-#endif
+    case BIN(sir_fminussvv):
+    case BIN(sir_fplussvv):
+    case BIN(sir_fmultsvv):
+    case BIN(sir_fdivsvv):
+    case BIN(sir_fmodsvv):
+    case BIN(sir_feqsvv):
+    case BIN(sir_fneqsvv):
+    case BIN(sir_fltsvv):
+    case BIN(sir_fgtsvv):
+    case BIN(sir_flesvv):
+    case BIN(sir_fgesvv):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminussvv):
     case BIN(sir_iplussvv):
     case BIN(sir_imultsvv):
@@ -438,6 +466,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = imm1_p = imm2_p = FALSE;
         v1_p = v2_p = TRUE;
         goto op2;
+    case BIN(sir_fminussvi):
+    case BIN(sir_fplussvi):
+    case BIN(sir_fmultsvi):
+    case BIN(sir_fdivsvi):
+    case BIN(sir_fmodsvi):
+    case BIN(sir_feqsvi):
+    case BIN(sir_fneqsvi):
+    case BIN(sir_fltsvi):
+    case BIN(sir_fgtsvi):
+    case BIN(sir_flesvi):
+    case BIN(sir_fgesvi):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminussvi):
     case BIN(sir_iplussvi):
     case BIN(sir_imultsvi):
@@ -455,6 +496,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v2_p = imm1_p = FALSE;
         v1_p = imm2_p = TRUE;
         goto op2;
+    case BIN(sir_fminussiv):
+    case BIN(sir_fplussiv):
+    case BIN(sir_fmultsiv):
+    case BIN(sir_fdivsiv):
+    case BIN(sir_fmodsiv):
+    case BIN(sir_feqsiv):
+    case BIN(sir_fneqsiv):
+    case BIN(sir_fltsiv):
+    case BIN(sir_fgtsiv):
+    case BIN(sir_flesiv):
+    case BIN(sir_fgesiv):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminussiv):
     case BIN(sir_iplussiv):
     case BIN(sir_imultsiv):
@@ -472,6 +526,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = imm2_p = FALSE;
         v2_p = imm1_p = TRUE;
         goto op2;
+    case BIN(sir_fminussvs):
+    case BIN(sir_fplussvs):
+    case BIN(sir_fmultsvs):
+    case BIN(sir_fdivsvs):
+    case BIN(sir_fmodsvs):
+    case BIN(sir_feqsvs):
+    case BIN(sir_fneqsvs):
+    case BIN(sir_fltsvs):
+    case BIN(sir_fgtsvs):
+    case BIN(sir_flesvs):
+    case BIN(sir_fgesvs):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminussvs):
     case BIN(sir_iplussvs):
     case BIN(sir_imultsvs):
@@ -489,6 +556,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v2_p = imm1_p = imm2_p = FALSE;
         v1_p = TRUE;
         goto op2;
+    case BIN(sir_fminusssv):
+    case BIN(sir_fplusssv):
+    case BIN(sir_fmultssv):
+    case BIN(sir_fdivssv):
+    case BIN(sir_fmodssv):
+    case BIN(sir_feqssv):
+    case BIN(sir_fneqssv):
+    case BIN(sir_fltssv):
+    case BIN(sir_fgtssv):
+    case BIN(sir_flessv):
+    case BIN(sir_fgessv):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusssv):
     case BIN(sir_iplusssv):
     case BIN(sir_imultssv):
@@ -506,6 +586,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = imm1_p = imm2_p = FALSE;
         v2_p = TRUE;
         goto op2;
+    case BIN(sir_fminusssi):
+    case BIN(sir_fplusssi):
+    case BIN(sir_fmultssi):
+    case BIN(sir_fdivssi):
+    case BIN(sir_fmodssi):
+    case BIN(sir_feqssi):
+    case BIN(sir_fneqssi):
+    case BIN(sir_fltssi):
+    case BIN(sir_fgtssi):
+    case BIN(sir_flessi):
+    case BIN(sir_fgessi):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusssi):
     case BIN(sir_iplusssi):
     case BIN(sir_imultssi):
@@ -523,6 +616,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = v2_p = imm1_p = FALSE;
         imm2_p = TRUE;
         goto op2;
+    case BIN(sir_fminussis):
+    case BIN(sir_fplussis):
+    case BIN(sir_fmultsis):
+    case BIN(sir_fdivsis):
+    case BIN(sir_fmodsis):
+    case BIN(sir_feqsis):
+    case BIN(sir_fneqsis):
+    case BIN(sir_fltsis):
+    case BIN(sir_fgtsis):
+    case BIN(sir_flesis):
+    case BIN(sir_fgesis):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminussis):
     case BIN(sir_iplussis):
     case BIN(sir_imultsis):
@@ -540,6 +646,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = v2_p = imm2_p = FALSE;
         imm1_p = TRUE;
         goto op2;
+    case BIN(sir_fminussss):
+    case BIN(sir_fplussss):
+    case BIN(sir_fmultsss):
+    case BIN(sir_fdivsss):
+    case BIN(sir_fmodsss):
+    case BIN(sir_feqsss):
+    case BIN(sir_fneqsss):
+    case BIN(sir_fltsss):
+    case BIN(sir_fgtsss):
+    case BIN(sir_flesss):
+    case BIN(sir_fgesss):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminussss):
     case BIN(sir_iplussss):
     case BIN(sir_imultsss):
@@ -556,6 +675,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_iarefsss):
         rv_p = v1_p = v2_p = imm1_p = imm2_p = FALSE;
         goto op2;
+    case BIN(sir_fminusvvv):
+    case BIN(sir_fplusvvv):
+    case BIN(sir_fmultvvv):
+    case BIN(sir_fdivvvv):
+    case BIN(sir_fmodvvv):
+    case BIN(sir_feqvvv):
+    case BIN(sir_fneqvvv):
+    case BIN(sir_fltvvv):
+    case BIN(sir_fgtvvv):
+    case BIN(sir_flevvv):
+    case BIN(sir_fgevvv):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusvvv):
     case BIN(sir_iplusvvv):
     case BIN(sir_imultvvv):
@@ -573,6 +705,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = v2_p = TRUE;
         imm1_p = imm2_p = FALSE;
         goto op2;
+    case BIN(sir_fminusvvi):
+    case BIN(sir_fplusvvi):
+    case BIN(sir_fmultvvi):
+    case BIN(sir_fdivvvi):
+    case BIN(sir_fmodvvi):
+    case BIN(sir_feqvvi):
+    case BIN(sir_fneqvvi):
+    case BIN(sir_fltvvi):
+    case BIN(sir_fgtvvi):
+    case BIN(sir_flevvi):
+    case BIN(sir_fgevvi):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusvvi):
     case BIN(sir_iplusvvi):
     case BIN(sir_imultvvi):
@@ -590,6 +735,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = imm2_p = TRUE;
         v2_p = imm1_p = FALSE;
         goto op2;
+    case BIN(sir_fminusviv):
+    case BIN(sir_fplusviv):
+    case BIN(sir_fmultviv):
+    case BIN(sir_fdivviv):
+    case BIN(sir_fmodviv):
+    case BIN(sir_feqviv):
+    case BIN(sir_fneqviv):
+    case BIN(sir_fltviv):
+    case BIN(sir_fgtviv):
+    case BIN(sir_fleviv):
+    case BIN(sir_fgeviv):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusviv):
     case BIN(sir_iplusviv):
     case BIN(sir_imultviv):
@@ -607,6 +765,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v2_p = imm1_p = TRUE;
         v1_p = imm2_p = FALSE;
         goto op2;
+    case BIN(sir_fminusvvs):
+    case BIN(sir_fplusvvs):
+    case BIN(sir_fmultvvs):
+    case BIN(sir_fdivvvs):
+    case BIN(sir_fmodvvs):
+    case BIN(sir_feqvvs):
+    case BIN(sir_fneqvvs):
+    case BIN(sir_fltvvs):
+    case BIN(sir_fgtvvs):
+    case BIN(sir_flevvs):
+    case BIN(sir_fgevvs):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusvvs):
     case BIN(sir_iplusvvs):
     case BIN(sir_imultvvs):
@@ -624,6 +795,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = TRUE;
         v2_p = imm1_p = imm2_p = FALSE;
         goto op2;
+    case BIN(sir_fminusvsv):
+    case BIN(sir_fplusvsv):
+    case BIN(sir_fmultvsv):
+    case BIN(sir_fdivvsv):
+    case BIN(sir_fmodvsv):
+    case BIN(sir_feqvsv):
+    case BIN(sir_fneqvsv):
+    case BIN(sir_fltvsv):
+    case BIN(sir_fgtvsv):
+    case BIN(sir_flevsv):
+    case BIN(sir_fgevsv):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusvsv):
     case BIN(sir_iplusvsv):
     case BIN(sir_imultvsv):
@@ -641,6 +825,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v2_p = TRUE;
         v1_p = imm1_p = imm2_p = FALSE;
         goto op2;
+    case BIN(sir_fminusvsi):
+    case BIN(sir_fplusvsi):
+    case BIN(sir_fmultvsi):
+    case BIN(sir_fdivvsi):
+    case BIN(sir_fmodvsi):
+    case BIN(sir_feqvsi):
+    case BIN(sir_fneqvsi):
+    case BIN(sir_fltvsi):
+    case BIN(sir_fgtvsi):
+    case BIN(sir_flevsi):
+    case BIN(sir_fgevsi):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusvsi):
     case BIN(sir_iplusvsi):
     case BIN(sir_imultvsi):
@@ -658,6 +855,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = imm2_p = TRUE;
         v1_p = v2_p = imm1_p = FALSE;
         goto op2;
+    case BIN(sir_fminusvis):
+    case BIN(sir_fplusvis):
+    case BIN(sir_fmultvis):
+    case BIN(sir_fdivvis):
+    case BIN(sir_fmodvis):
+    case BIN(sir_feqvis):
+    case BIN(sir_fneqvis):
+    case BIN(sir_fltvis):
+    case BIN(sir_fgtvis):
+    case BIN(sir_flevis):
+    case BIN(sir_fgevis):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusvis):
     case BIN(sir_iplusvis):
     case BIN(sir_imultvis):
@@ -675,6 +885,19 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = imm1_p = TRUE;
         v1_p = v2_p = imm2_p = FALSE;
         goto op2;
+    case BIN(sir_fminusvss):
+    case BIN(sir_fplusvss):
+    case BIN(sir_fmultvss):
+    case BIN(sir_fdivvss):
+    case BIN(sir_fmodvss):
+    case BIN(sir_feqvss):
+    case BIN(sir_fneqvss):
+    case BIN(sir_fltvss):
+    case BIN(sir_fgtvss):
+    case BIN(sir_flevss):
+    case BIN(sir_fgevss):
+        fop_p = TRUE;
+        /* fall through */
     case BIN(sir_iminusvss):
     case BIN(sir_iplusvss):
     case BIN(sir_imultvss):
@@ -691,20 +914,27 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_iarefvss):
         rv_p = TRUE;
         v1_p = v2_p = imm1_p = imm2_p = FALSE;
-        goto op2;
     op2:
         start = rv_p ? 1 : 0;
         stack_ops_num = 0;
         if (v2_p) {
             O("  val2 = ep[-%d];\n", (int)(lindex_t)operands[v1_p || imm1_p ? start + 1 : start]);
         } else if (imm2_p) {
-            O("  val2 = 0x%"PRIxVALUE ";\n", operands[v1_p || imm1_p ? start + 1 : start]);
+            if (fop_p)
+                O("  d = %.*e;\n", DECIMAL_DIG, RFLOAT_VALUE(operands[v1_p || imm1_p ? start + 1 : start]));
+            else
+                O("  val2 = 0x%"PRIxVALUE ";\n", operands[v1_p || imm1_p ? start + 1 : start]);
         } else {
             O("  val2 = sp[-1];\n");
             stack_ops_num++;
         }
         if (v1_p) {
             O("  val = ep[-%d];\n", (int)(lindex_t)operands[start]);
+        } else if (imm1_p) {
+            if (fop_p)
+                O("  d = %.*e;\n", DECIMAL_DIG, RFLOAT_VALUE(operands[start]));
+            else
+                O("  val = 0x%"PRIxVALUE ";\n", operands[start]);
         } else {
             O("  val = sp[-%d];\n", v2_p || imm2_p ? 1 : 2);
             stack_ops_num++;
@@ -967,6 +1197,213 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_igevss):
             O("  r = (SIGNED_VALUE)val >= (SIGNED_VALUE)val2 ? 0x%x : 0x%x;\n", (int)Qtrue, (int)Qfalse);
             break;
+#ifdef FLONUM_INSNS
+        case BIN(sir_fplussss):
+        case BIN(sir_fplussvv):
+        case BIN(sir_fplussvi):
+        case BIN(sir_fplussiv):
+        case BIN(sir_fplussvs):
+        case BIN(sir_fplusssv):
+        case BIN(sir_fplusssi):
+        case BIN(sir_fplussis):
+        case BIN(sir_fplusvvv):
+        case BIN(sir_fplusvvi):
+        case BIN(sir_fplusviv):
+        case BIN(sir_fplusvvs):
+        case BIN(sir_fplusvsv):
+        case BIN(sir_fplusvsi):
+        case BIN(sir_fplusvis):
+        case BIN(sir_fplusvss):
+            fn = "plus";
+            goto fop;
+        case BIN(sir_fminussss):
+        case BIN(sir_fminussvv):
+        case BIN(sir_fminussvi):
+        case BIN(sir_fminussiv):
+        case BIN(sir_fminussvs):
+        case BIN(sir_fminusssv):
+        case BIN(sir_fminusssi):
+        case BIN(sir_fminussis):
+        case BIN(sir_fminusvvv):
+        case BIN(sir_fminusvvi):
+        case BIN(sir_fminusviv):
+        case BIN(sir_fminusvvs):
+        case BIN(sir_fminusvsv):
+        case BIN(sir_fminusvsi):
+        case BIN(sir_fminusvis):
+        case BIN(sir_fminusvss):
+            fn = "minus";
+            goto fop;
+        case BIN(sir_fmultsss):
+        case BIN(sir_fmultsvv):
+        case BIN(sir_fmultsvi):
+        case BIN(sir_fmultsiv):
+        case BIN(sir_fmultsvs):
+        case BIN(sir_fmultssv):
+        case BIN(sir_fmultssi):
+        case BIN(sir_fmultsis):
+        case BIN(sir_fmultvvv):
+        case BIN(sir_fmultvvi):
+        case BIN(sir_fmultviv):
+        case BIN(sir_fmultvvs):
+        case BIN(sir_fmultvsv):
+        case BIN(sir_fmultvsi):
+        case BIN(sir_fmultvis):
+        case BIN(sir_fmultvss):
+            fn = "mult";
+            goto fop;
+        case BIN(sir_fdivsss):
+        case BIN(sir_fdivsvv):
+        case BIN(sir_fdivsvi):
+        case BIN(sir_fdivsiv):
+        case BIN(sir_fdivsvs):
+        case BIN(sir_fdivssv):
+        case BIN(sir_fdivssi):
+        case BIN(sir_fdivsis):
+        case BIN(sir_fdivvvv):
+        case BIN(sir_fdivvvi):
+        case BIN(sir_fdivviv):
+        case BIN(sir_fdivvvs):
+        case BIN(sir_fdivvsv):
+        case BIN(sir_fdivvsi):
+        case BIN(sir_fdivvis):
+        case BIN(sir_fdivvss):
+            fn = "div";
+            goto fop;
+        case BIN(sir_fmodsss):
+        case BIN(sir_fmodsvv):
+        case BIN(sir_fmodsvi):
+        case BIN(sir_fmodsiv):
+        case BIN(sir_fmodsvs):
+        case BIN(sir_fmodssv):
+        case BIN(sir_fmodssi):
+        case BIN(sir_fmodsis):
+        case BIN(sir_fmodvvv):
+        case BIN(sir_fmodvvi):
+        case BIN(sir_fmodviv):
+        case BIN(sir_fmodvvs):
+        case BIN(sir_fmodvsv):
+        case BIN(sir_fmodvsi):
+        case BIN(sir_fmodvis):
+        case BIN(sir_fmodvss):
+            fn = "mod";
+            goto fop;
+        case BIN(sir_feqsss):
+        case BIN(sir_feqsvv):
+        case BIN(sir_feqsvi):
+        case BIN(sir_feqsiv):
+        case BIN(sir_feqsvs):
+        case BIN(sir_feqssv):
+        case BIN(sir_feqssi):
+        case BIN(sir_feqsis):
+        case BIN(sir_feqvvv):
+        case BIN(sir_feqvvi):
+        case BIN(sir_feqviv):
+        case BIN(sir_feqvvs):
+        case BIN(sir_feqvsv):
+        case BIN(sir_feqvsi):
+        case BIN(sir_feqvis):
+        case BIN(sir_feqvss):
+            fn = "eq";
+            goto fop;
+        case BIN(sir_fneqsss):
+        case BIN(sir_fneqsvv):
+        case BIN(sir_fneqsvi):
+        case BIN(sir_fneqsiv):
+        case BIN(sir_fneqsvs):
+        case BIN(sir_fneqssv):
+        case BIN(sir_fneqssi):
+        case BIN(sir_fneqsis):
+        case BIN(sir_fneqvvv):
+        case BIN(sir_fneqvvi):
+        case BIN(sir_fneqviv):
+        case BIN(sir_fneqvvs):
+        case BIN(sir_fneqvsv):
+        case BIN(sir_fneqvsi):
+        case BIN(sir_fneqvis):
+        case BIN(sir_fneqvss):
+            fn = "neq";
+            goto fop;
+        case BIN(sir_fltsss):
+        case BIN(sir_fltsvv):
+        case BIN(sir_fltsvi):
+        case BIN(sir_fltsiv):
+        case BIN(sir_fltsvs):
+        case BIN(sir_fltssv):
+        case BIN(sir_fltssi):
+        case BIN(sir_fltsis):
+        case BIN(sir_fltvvv):
+        case BIN(sir_fltvvi):
+        case BIN(sir_fltviv):
+        case BIN(sir_fltvvs):
+        case BIN(sir_fltvsv):
+        case BIN(sir_fltvsi):
+        case BIN(sir_fltvis):
+        case BIN(sir_fltvss):
+            fn = "lt";
+            goto fop;
+        case BIN(sir_fgtsss):
+        case BIN(sir_fgtsvv):
+        case BIN(sir_fgtsvi):
+        case BIN(sir_fgtsiv):
+        case BIN(sir_fgtsvs):
+        case BIN(sir_fgtssv):
+        case BIN(sir_fgtssi):
+        case BIN(sir_fgtsis):
+        case BIN(sir_fgtvvv):
+        case BIN(sir_fgtvvi):
+        case BIN(sir_fgtviv):
+        case BIN(sir_fgtvvs):
+        case BIN(sir_fgtvsv):
+        case BIN(sir_fgtvsi):
+        case BIN(sir_fgtvis):
+        case BIN(sir_fgtvss):
+            fn = "gt";
+            goto fop;
+        case BIN(sir_flesss):
+        case BIN(sir_flesvv):
+        case BIN(sir_flesvi):
+        case BIN(sir_flesiv):
+        case BIN(sir_flesvs):
+        case BIN(sir_flessv):
+        case BIN(sir_flessi):
+        case BIN(sir_flesis):
+        case BIN(sir_flevvv):
+        case BIN(sir_flevvi):
+        case BIN(sir_fleviv):
+        case BIN(sir_flevvs):
+        case BIN(sir_flevsv):
+        case BIN(sir_flevsi):
+        case BIN(sir_flevis):
+        case BIN(sir_flevss):
+            fn = "le";
+            goto fop;
+        case BIN(sir_fgesss):
+        case BIN(sir_fgesvv):
+        case BIN(sir_fgesvi):
+        case BIN(sir_fgesiv):
+        case BIN(sir_fgesvs):
+        case BIN(sir_fgessv):
+        case BIN(sir_fgessi):
+        case BIN(sir_fgesis):
+        case BIN(sir_fgevvv):
+        case BIN(sir_fgevvi):
+        case BIN(sir_fgeviv):
+        case BIN(sir_fgevvs):
+        case BIN(sir_fgevsv):
+        case BIN(sir_fgevsi):
+        case BIN(sir_fgevis):
+        case BIN(sir_fgevss):
+            fn = "ge";
+        fop:
+            if (imm1_p)
+                O("  r = mirjit_fr%sf(d, val2);\n", fn);
+            else if (imm2_p)
+                O("  r = mirjit_f%sf(val, d);\n", fn);
+            else
+                O("  r = mirjit_f%s(val, val2);\n", fn);
+            break;
+#endif
         case BIN(sir_iarefsss):
         case BIN(sir_iarefsvv):
         case BIN(sir_iarefsvi):
@@ -1240,120 +1677,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  else\n");
         O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* false label */
         break;
-#ifdef FLONUM_INSNS
-    case BIN(sir_fplus):
-        fn = "fplus";
-    fop:
-        O("  val = sp[-2]; val2 = *--sp;\n");
-        O("  sp[-1] = mirjit_%s(val, val2);\n", fn);
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
-    case BIN(sir_fplusf):
-        fn = "fplusf";
-    fop_imm:
-        O("  val = sp[-1]; d = %*.e;\n", DECIMAL_DIG, sir_val2dbl(operands[0]));
-        O("  sp[-1] = mirjit_%s(val, d);\n", fn);
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
-    case BIN(sir_fminus):
-        fn = "fminus";
-        goto fop;
-    case BIN(sir_fminusf):
-        goto fop_imm;
-    case BIN(sir_frminusf):
-        fn = "frminusf";
-    frop_imm:
-        O("  val = sp[-1]; d = %*.e;\n", DECIMAL_DIG, sir_val2dbl(operands[0]));
-        O("  sp[-1] = mirjit_%s(d, val);\n", fn);
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
-    case BIN(sir_fmult):
-        fn = "fmult";
-        goto fop;
-    case BIN(sir_fmultf):
-        fn = "fmultf";
-        goto fop_imm;
-    case BIN(sir_fdiv):
-        fn = "fdiv";
-        goto fop;
-    case BIN(sir_fdivf):
-        fn = "fdivf";
-        goto fop_imm;
-    case BIN(sir_frdivf):
-        fn = "frdivf";
-        goto frop_imm;
-    case BIN(sir_fmod):
-        fn = "fmod";
-        goto fop;
-    case BIN(sir_fmodf):
-        fn = "fmodf";
-        goto fop_imm;
-    case BIN(sir_frmodf):
-        fn = "frmodf";
-        goto frop_imm;
-    case BIN(sir_feq):
-        fn = "feq";
-    fcmp:
-        O("  val = sp[-2]; val2 = *--sp;\n");
-        O("  sp[-1] = mirjit_%s(val, val2);\n", fn);
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
-    case BIN(sir_fneq):
-        fn = "fneq";
-        goto fcmp;
-    case BIN(sir_flt):
-        fn = "flt";
-        goto fcmp;
-    case BIN(sir_fgt):
-        fn = "fgt";
-        goto fcmp;
-    case BIN(sir_fle):
-        fn = "fle";
-        goto fcmp;
-    case BIN(sir_fge):
-        fn = "fge";
-        goto fcmp;
-    case BIN(sir_feqf):
-        op = "==";
-    fcmp_imm:
-        O("  val = sp[-1]; d = %*.e;\n", DECIMAL_DIG, sir_val2dbl(operands[0]));
-        O("  sp[-1] = 0x%"PRIxVALUE "; if (mirjit_rfloat_value(val) %s d) sp[-1] = 0x%"PRIxVALUE ";\n",
-          (VALUE)Qfalse, op, (VALUE)Qtrue);
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
-    case BIN(sir_fneqf):
-        op = "!=";
-        goto fcmp_imm;
-    case BIN(sir_fltf):
-        op = "<";
-        goto fcmp_imm;
-    case BIN(sir_fgtf):
-        op = ">";
-        goto fcmp_imm;
-    case BIN(sir_flef):
-        op = "<=";
-        goto fcmp_imm;
-    case BIN(sir_fgef):
-        op = ">=";
-        goto fcmp_imm;
-    case BIN(sir_frltf):
-        op = "<";
-    frcmp_imm:
-        O("  val = sp[-1]; d = %*.e;\n", DECIMAL_DIG, sir_val2dbl(operands[0]));
-        O("  sp[-1] = 0x%"PRIxVALUE "; if (d %s mirjit_rfloat_value(val)) sp[-1] = 0x%"PRIxVALUE ";\n",
-          (VALUE)Qfalse, op, (VALUE)Qtrue);
-        O("  pc += %d;\n", insn_len(insn_id));
-        break;
-    case BIN(sir_frgtf):
-        op = ">";
-        goto frcmp_imm;
-    case BIN(sir_frlef):
-        op = "<=";
-        goto frcmp_imm;
-    case BIN(sir_frgef):
-        op = ">=";
-        goto frcmp_imm;
-#endif
     case BIN(sir_jump): // ??? test only for backward jumps/branches
         O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
           (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
@@ -1683,11 +2006,13 @@ static DBL mirjit_rfloat_value(VALUE v) {return RFLOAT_VALUE(v);}
 
 static VALUE mirjit_fplus(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) + RFLOAT_VALUE(v2)); }
 static VALUE mirjit_fplusf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) + d); }
+static VALUE mirjit_frplusf(DBL d, VALUE v){ return DBL2NUM(d + RFLOAT_VALUE(v)); }
 static VALUE mirjit_fminus(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) - RFLOAT_VALUE(v2)); }
 static VALUE mirjit_fminusf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) - d); }
 static VALUE mirjit_frminusf(DBL d, VALUE v){ return DBL2NUM(d - RFLOAT_VALUE(v)); }
 static VALUE mirjit_fmult(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) * RFLOAT_VALUE(v2)); }
 static VALUE mirjit_fmultf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) * d); }
+static VALUE mirjit_frmultf(DBL d, VALUE v){ return DBL2NUM(d * RFLOAT_VALUE(v)); }
 static VALUE mirjit_fdiv(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_div(RFLOAT_VALUE(v1), RFLOAT_VALUE(v2))); }
 static VALUE mirjit_fdivf(VALUE v, DBL d){ return DBL2NUM(ruby_float_div(RFLOAT_VALUE(v), d)); }
 static VALUE mirjit_frdivf(DBL d, VALUE v){ return DBL2NUM(ruby_float_div(d, RFLOAT_VALUE(v))); }
@@ -1695,11 +2020,23 @@ static VALUE mirjit_fmod(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_mod(RFLO
 static VALUE mirjit_fmodf(VALUE v, DBL d){ return DBL2NUM(ruby_float_mod(RFLOAT_VALUE(v), d)); }
 static VALUE mirjit_frmodf(DBL d, VALUE v){ return DBL2NUM(ruby_float_mod(d, RFLOAT_VALUE(v))); }
 static VALUE mirjit_feq(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) == RFLOAT_VALUE(v2)); }
+static VALUE mirjit_feqf(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) == d); }
+static VALUE mirjit_freqf(DBL d, VALUE v){ return RBOOL(d == RFLOAT_VALUE(v)); }
 static VALUE mirjit_fneq(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) != RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fneqf(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) != d); }
+static VALUE mirjit_frneqf(DBL d, VALUE v){ return RBOOL(d != RFLOAT_VALUE(v)); }
 static VALUE mirjit_flt(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) < RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fltf(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) < d); }
+static VALUE mirjit_frltf(DBL d, VALUE v){ return RBOOL(d < RFLOAT_VALUE(v)); }
 static VALUE mirjit_fgt(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) > RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fgtf(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) > d); }
+static VALUE mirjit_frgtf(DBL d, VALUE v){ return RBOOL(d < RFLOAT_VALUE(v)); }
 static VALUE mirjit_fle(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) <= RFLOAT_VALUE(v2)); }
+static VALUE mirjit_flef(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) <= d); }
+static VALUE mirjit_frlef(DBL d, VALUE v){ return RBOOL(d <= RFLOAT_VALUE(v)); }
 static VALUE mirjit_fge(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) >= RFLOAT_VALUE(v2)); }
+static VALUE mirjit_fgef(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) >= d); }
+static VALUE mirjit_frgef(DBL d, VALUE v){ return RBOOL(d >= RFLOAT_VALUE(v)); }
 #endif
 
 #ifdef MIRJIT_RESTART_STAT
@@ -1716,25 +2053,37 @@ static resolver_el_t resolver_els[] = {
     {"mirjit_dbl2num", mirjit_dbl2num},
     {"mirjit_fplus", mirjit_fplus},
     {"mirjit_fplusf", mirjit_fplusf},
+    {"mirjit_frplusf", mirjit_frplusf},
     {"mirjit_fminus", mirjit_fminus},
     {"mirjit_fminusf", mirjit_fminusf},
     {"mirjit_frminusf", mirjit_frminusf},
     {"mirjit_fmult", mirjit_fmult},
     {"mirjit_fmultf", mirjit_fmultf},
+    {"mirjit_frmultf", mirjit_frmultf},
     {"mirjit_fdiv", mirjit_fdiv},
     {"mirjit_fdivf", mirjit_fdivf},
     {"mirjit_frdivf", mirjit_frdivf},
-    {"mirjit_fplus", mirjit_fplus},
-    {"mirjit_fplusf", mirjit_fplusf},
     {"mirjit_fmod", mirjit_fmod},
     {"mirjit_fmodf", mirjit_fmodf},
     {"mirjit_frmodf", mirjit_frmodf},
     {"mirjit_feq", mirjit_feq},
+    {"mirjit_feqf", mirjit_feqf},
+    {"mirjit_freqf", mirjit_freqf},
     {"mirjit_fneq", mirjit_fneq},
+    {"mirjit_fneqf", mirjit_fneqf},
+    {"mirjit_frneqf", mirjit_frneqf},
     {"mirjit_flt", mirjit_flt},
+    {"mirjit_fltf", mirjit_fltf},
+    {"mirjit_frltf", mirjit_frltf},
     {"mirjit_fgt", mirjit_fgt},
+    {"mirjit_fgtf", mirjit_fgtf},
+    {"mirjit_frgtf", mirjit_frgtf},
     {"mirjit_fle", mirjit_fle},
+    {"mirjit_flef", mirjit_flef},
+    {"mirjit_frlef", mirjit_frlef},
     {"mirjit_fge", mirjit_fge},
+    {"mirjit_fgef", mirjit_fgef},
+    {"mirjit_frgef", mirjit_frgef},
 #endif
     {"memcpy", memcpy},
 #ifdef MIRJIT_RESTART_STAT

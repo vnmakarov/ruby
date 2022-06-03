@@ -26,6 +26,8 @@
 # define SIR_EXEC_STATS RUBY_DEBUG
 #endif
 
+#define FLONUM_INSNS
+
 struct rb_sir_options {
     int sir_enabled_p; /* true means generation and execution of SIR BBV */
     /* maximal versions for SIR BB, one version is always reserved for unknown incoming attrs: */
