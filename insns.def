@@ -3235,7 +3235,7 @@ sir_cfunc_send
     goto sir_cfunc_send_end;
   sir_cfunc_send_exit:
     /* invalidate the current cc as we use cc from safe SIR: */
-    vm_cc_invalidate(cc);
+    if (cc != vm_cc_empty()) vm_cc_invalidate(cc);
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
     ABNORMAL_END_INSN(sir_iseq_send_without_block);
   sir_cfunc_send_end:
