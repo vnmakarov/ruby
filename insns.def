@@ -2001,7 +2001,6 @@ sir_iarefsvs
     VALUE v1 = *(GET_EP() - op1);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        push1(v2);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2016,7 +2015,6 @@ sir_iarefssv
     VALUE v2 = *(GET_EP() - op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        push1(v1);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2030,7 +2028,6 @@ sir_iarefssi
 {
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (val == Qundef) {
-        push1(v1);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2044,7 +2041,6 @@ sir_iarefsis
 {
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (val == Qundef) {
-        push1(v2);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2058,7 +2054,6 @@ sir_iarefsss
 {
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        push2(v1, v2);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2118,7 +2113,6 @@ sir_iarefvvs
     VALUE v1 = *(GET_EP() - op1), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        push1(v2);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2134,7 +2128,6 @@ sir_iarefvsv
     VALUE v2 = *(GET_EP() - op2), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        push1(v1);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2150,7 +2143,6 @@ sir_iarefvsi
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (val == Qundef) {
-        push1(v1);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2166,7 +2158,6 @@ sir_iarefvis
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (val == Qundef) {
-        push1(v2);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2182,7 +2173,6 @@ sir_iarefvss
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (val == Qundef) {
-        push2(v1, v2);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2198,7 +2188,6 @@ sir_iasetsvv
     VALUE ind = *(GET_EP() - ind_idx), set = *(GET_EP() - set_idx);
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push1(arr);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2213,7 +2202,6 @@ sir_iasetsiv
     VALUE set = *(GET_EP() - set_idx);
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push1(arr);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2228,7 +2216,6 @@ sir_iasetsvs
     VALUE ind = *(GET_EP() - ind_idx);
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push2(arr, set);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2243,7 +2230,6 @@ sir_iasetssv
     VALUE set = *(GET_EP() - set_idx);
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push2(arr, ind);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2257,7 +2243,6 @@ sir_iasetsis
 {
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push2(arr, set);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2271,7 +2256,6 @@ sir_iasetsss
 {
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push3(arr, ind, set);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2314,7 +2298,6 @@ sir_iasetvvs
     VALUE arr = *(GET_EP() - arr_idx), ind = *(GET_EP() - ind_idx);
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push1(set);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2329,7 +2312,6 @@ sir_iasetvsv
     VALUE arr = *(GET_EP() - arr_idx), set = *(GET_EP() - set_idx);
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push1(ind);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2344,7 +2326,6 @@ sir_iasetvis
     VALUE arr = *(GET_EP() - arr_idx);
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push1(set);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
@@ -2359,7 +2340,6 @@ sir_iasetvss
     VALUE arr = *(GET_EP() - arr_idx);
     val = vm_sir_iaset(arr, ind, set);
     if (UNLIKELY(val == Qundef)) {
-        push2(ind, set);
         ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
         ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
     }
