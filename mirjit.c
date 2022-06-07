@@ -208,9 +208,10 @@ static void gen_write_barrier(VARR(char) *buff, const char *a, const char *b) {
 }
 
 static void gen_array_aref_len(VARR(char) *buff, const char *aref, const char *len, const char *ary) {
-    O("  if (*((VALUE *)((char *)%s + %d)) & 0x%"PRIxVALUE ") {\n", ary,
-      (int)offsetof(struct RBasic, flags), (VALUE)RARRAY_EMBED_FLAG);
-    O("    %s = %d;\n", len, (int)RARRAY_EMBED_LEN_MAX);
+    O("  flags = *((VALUE *)((char *)%s + %d));\n", ary, (int)offsetof(struct RBasic, flags));
+    O("  if (flags & 0x%"PRIxVALUE ") {\n", (VALUE)RARRAY_EMBED_FLAG);
+    O("    %s = (flags & 0x%"PRIxVALUE ") >> 0x%"PRIxVALUE ";\n", len, 
+      (VALUE)RARRAY_EMBED_LEN_MASK, (VALUE)RARRAY_EMBED_LEN_SHIFT);
     O("    %s = (VALUE *)((char *)%s + %d);\n", aref, ary, (int)offsetof(struct RArray, as.ary));
     O("  } else {\n");
     O("    %s = *(long *)((char *)%s + %d);\n", len, ary, (int)offsetof(struct RArray, as.heap.len));
@@ -351,7 +352,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         int level = (int)(rb_num_t)operands[1];
         if (level != 0) {
             O("  {\n");
-            O("    VALUE *vp = ep;");
+            O("    VALUE *vp = ep;\n");
             if (level <= 3) {
                 for (int i = 0; i < level; i++)
                     O("    vp = (VALUE *)(vp[-1] & ~0x03);\n"); /* vp = GET_PREV_EP(vp); */
