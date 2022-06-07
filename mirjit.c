@@ -2218,7 +2218,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
 #endif
             break;
         default:
-            if (!gen_insn_code(buff, body->bbv_code + pc, insn_id)) {
+            if (!gen_insn_code(buff, body->bbv_code + pc, insn_id) || insn_id == BIN(leave)) {
                 finish_jit_code_p = TRUE;
             } else {
                 insns_num++;
