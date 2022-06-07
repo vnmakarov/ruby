@@ -1958,7 +1958,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         if (block_iseq == NULL) {
             O("    VALUE specval = 0x%"PRIxVALUE ";\n", (VALUE)VM_BLOCK_HANDLER_NONE);
         } else {
-            O("    VALUE *captured = (VALUE *)((char*)cfp + %d);\n", (int)offsetof(struct rb_captured_block, self));
+            O("    VALUE *captured = &cfp->self;\n");
             O("    *(VALUE *)((char*)captured + %d) = 0x%"PRIxVALUE ";\n",
               (int)offsetof(struct rb_captured_block, code.iseq), (VALUE)block_iseq);
             O("    VALUE specval = (VALUE)captured | 1;\n");
