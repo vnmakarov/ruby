@@ -3365,6 +3365,16 @@ nop2
 /* --- rarely used sir insns: --- */
 
 DEFINE_INSN
+sir_rejit_bbv
+(lindex_t bbv)
+()
+()
+{
+    rb_rejit_bbv (bbv);
+    ABNORMAL_END_INSN(sir_gen_bbv); /* to skip pc increase and start with the same insn address */
+}
+
+DEFINE_INSN
 sir_gen_bbv
 (lindex_t bbv, OFFSET origin)
 ()
@@ -3405,6 +3415,7 @@ sir_gen_bbv_key
     SET_PC(cont_pc);
     ABNORMAL_END_INSN(sir_gen_bbv_key); /* to skip pc increase */
 }
+
 
 DEFINE_INSN
 specialize_bbv
