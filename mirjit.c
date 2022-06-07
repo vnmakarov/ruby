@@ -74,11 +74,11 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "typedef unsigned rb_atomic_t;\n"
 #endif
     "typedef struct rb_control_frame_struct {\n"
-    "  VALUE *pc __mirc_attribute__ ((antialias (val)));\n"
-    "  VALUE *sp __mirc_attribute__ ((antialias (val)));\n"
+    "  VALUE *pc /*__mirc_attribute__ ((antialias (val)))*/;\n"
+    "  VALUE *sp /*__mirc_attribute__ ((antialias (val)))*/;\n"
     "  void *iseq;\n"
     "  VALUE self;\n"
-    "  VALUE *ep __mirc_attribute__ ((antialias (val)));\n"
+    "  VALUE *ep /*__mirc_attribute__ ((antialias (val)))*/;\n"
     "  void *block_code;\n"
     "  VALUE *__bp__;\n"
 #if VM_DEBUG_BP_CHECK
@@ -88,7 +88,7 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "} rb_control_frame_t;\n"
 #if defined(__x86_64__)
     "register void *ec asm(\"r13\");\n"
-    "register VALUE *pc asm(\"r14\") __mirc_attribute__ ((antialias (val)));\n"
+    "register VALUE *pc asm(\"r14\") /*__mirc_attribute__ ((antialias (val)))*/;\n"
     "register rb_control_frame_t *cfp asm(\"r15\");\n"
 #endif
 #ifdef FLONUM_INSNS
@@ -1743,7 +1743,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  if (__builtin_expect(sp - 1 != cfp->__bp__, 0)) goto restart;\n");
         gen_pop_frame(buff, TRUE);
         break;
-    case BIN(sir_iseq_send_without_block): // ??? visibility
+    case BIN(sir_iseq_send_without_block): { // ??? visibility
         CALL_DATA cd = (CALL_DATA)operands[0];
         struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)operands[1];
         rb_iseq_t *iseq = bbv_ref->iseq;
@@ -1770,7 +1770,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
                        (VALUE)iseq, (VALUE)start_pc);
         O("  }\n");
         break;
-        // ??? fp insns
+    }
         // ??? general rtl insns
     case BIN(sir_getivar):
     case BIN(sir_igetivar):
@@ -2178,8 +2178,8 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
 #endif
             O("  VALUE val, val2, r, t, flags, *pv, *pv2;\n");
             O("  DBL d;\n");
-            O("  VALUE *ep __mirc_attribute__ ((antialias (val))) = cfp->ep;\n");
-            O("  VALUE *sp __mirc_attribute__ ((antialias (val))) = cfp->sp;\n");
+            O("  VALUE *ep /*__mirc_attribute__ ((antialias (val)))*/ = cfp->ep;\n");
+            O("  VALUE *sp /*__mirc_attribute__ ((antialias (val)))*/ = cfp->sp;\n");
 #if defined(__x86_64__) && defined(JRET)
             /* skip sir_bbv_{start, cont} */
             O("  pc += %d;\n", insn_len(BIN(sir_bbv_start)));
