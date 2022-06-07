@@ -825,6 +825,11 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound, const char *prefix)
     }
 }
 
+void
+rb_sir_print_bbv(rb_iseq_bbv_t bbv) {
+    print_bb(bbv->iseq, bbv->iseq->body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
+}
+
 static void
 print_iseq_title(rb_iseq_t *iseq) {
     const rb_code_location_t *loc = &iseq->body->location.code_location;
