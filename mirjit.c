@@ -46,6 +46,26 @@ static double real_usec_time(void) {
 }
 #endif
 
+static st_table *pc_dispatch_addr_map; /* pc to original dispatch insn addr before it was changed to jitted code */
+
+void *rb_mirjit_get_pc_dispatch_addr(VALUE *pc) {
+    st_data_t value;
+
+    if (rb_st_lookup(pc_dispatch_addr_map, (st_data_t)pc, &value)) return (void *)value;
+    return NULL;
+}
+
+void rb_mirjit_set_pc_dispatch_addr(VALUE *pc, void *addr) {
+    st_insert(pc_dispatch_addr_map, (st_data_t)pc, (st_data_t)addr);
+}
+
+enum ruby_vminsn_type rb_mirjit_insn_decode(VALUE *slot) {
+    void *addr;
+
+    if ((addr = rb_mirjit_get_pc_dispatch_addr(slot)) == NULL) addr = (void *)*slot;
+    return rb_vm_insn_addr2insn(addr);
+}
+
 static const char *header = "typedef void *CALL_DATA;\n"
     "typedef void *IC;\n"
     "typedef void *IVC;\n"
@@ -2143,7 +2163,7 @@ static void resolver_finish(void) {
     case CONCAT(name, vi)
 
 static void
-gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
+gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
     int len, pc, next_pc, mirjit_debug_p = rb_mirjit_debug_p(), insns_num = 0, bbv_pc = -1;
     int finish_jit_code_p;
     rb_iseq_t *iseq = bbv->iseq;
@@ -2152,12 +2172,20 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
 
     finish_jit_code_p = FALSE;
     assert (bbv->bbv_start < bbv->bbv_bound);
-    for (pc = bbv->bbv_start, insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[pc]);
+    if (rejit_p) {
+        assert(BIN(sir_rejit_bbv) == rb_mirjit_insn_decode(&body->bbv_code[bbv->bbv_start]));
+        body->bbv_code[bbv->bbv_start] = (VALUE)sir_dispatch_table[BIN(sir_bbv_start)];
+        if (mirjit_debug_p) {
+            fprintf (stderr, "## Rejitting BBV 0x%llx\n", (unsigned long long)bbv);
+            rb_sir_print_bbv(bbv);
+        }
+    }
+    for (pc = bbv->bbv_start, insn_id = rb_mirjit_insn_decode(&body->bbv_code[pc]);
          pc < bbv->bbv_bound;
          pc = next_pc, insn_id = next_insn_id) {
         len = insn_len(insn_id);
         next_pc = pc + len;
-        next_insn_id = next_pc < bbv->bbv_bound ? rb_vm_insn_addr2insn((void *)body->bbv_code[next_pc]) : 0;
+        next_insn_id = next_pc < bbv->bbv_bound ? rb_mirjit_insn_decode(&body->bbv_code[next_pc]) : 0;
         switch (insn_id) {
         case BIN(sir_bbv_cont):
             if (bbv_pc >= 0) { /* generate code for previous bbv part and start generation for this part */
@@ -2270,6 +2298,9 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
                     func = DLIST_PREV(MIR_item_t, func);
                 assert(func != NULL && func->item_type == MIR_func_item);
                 void *thunk = MIR_gen(ctx, 0, func);
+                VALUE *pc_addr = &body->bbv_code[bbv_pc];
+                if (rb_mirjit_get_pc_dispatch_addr(pc_addr) == NULL) /* set up only original dispatch addr */
+                    rb_mirjit_set_pc_dispatch_addr(pc_addr, (void*)*pc_addr);
 #ifdef JRET
                 body->bbv_code[bbv_pc] = (VALUE) _MIR_get_thunk_addr(ctx, thunk);
 #else
@@ -2285,7 +2316,26 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv) {
 
 void
 rb_jit_bbv(struct rb_iseq_bbv *bbv) {
-    gen_bbv_code(jit_c_code, bbv);
+    gen_bbv_code(jit_c_code, bbv, FALSE);
+}
+
+void
+rb_rejit_bbv(struct rb_iseq_bbv *bbv) {
+    gen_bbv_code(jit_c_code, bbv, TRUE);
+}
+
+void
+rb_mirjit_mark_bbv_change(struct rb_iseq_bbv *bbv) {
+    rb_iseq_t *iseq = bbv->iseq;
+    struct rb_iseq_constant_body *body = iseq->body;
+    enum ruby_vminsn_type insn_id;
+
+    insn_id = rb_mirjit_insn_decode(&body->bbv_code[bbv->bbv_start]);
+    if (insn_id == BIN(sir_rejit_bbv)) return;
+    assert(insn_id == BIN(sir_bbv_start));
+    body->bbv_code[bbv->bbv_start] = (VALUE)sir_dispatch_table[BIN(sir_rejit_bbv)];
+    if (rb_mirjit_debug_p())
+        fprintf (stderr, "## Mark BBV 0x%llx for rejitting\n", (unsigned long long)bbv);
 }
 
 static struct rb_mirjit_options mirjit_options;
@@ -2311,6 +2361,7 @@ rb_mirjit_init(struct rb_mirjit_options *options) {
     curr_input.options.no_prepro_p = curr_input.options.prepro_only_p = FALSE;
     curr_input.options.syntax_only_p = curr_input.options.pedantic_p = FALSE;
     resolver_init();
+    pc_dispatch_addr_map = rb_st_init_numtable();
 }
 
 void
@@ -2324,6 +2375,7 @@ rb_mirjit_finish(void) {
     MIR_gen_finish(ctx);
     c2mir_finish(ctx);
     MIR_finish(ctx);
+    rb_st_free_table(pc_dispatch_addr_map);
 }
 
 #endif /* #ifdef HAVE_LIBMIR */
