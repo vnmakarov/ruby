@@ -1774,7 +1774,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         int param_size = body->param.size;
         const struct rb_callable_method_entry_struct *cme = vm_cc_cme(cc);
         VALUE *start_pc = body->bbv_code + bbv_ref->bbv_start;
-        int local_size = body->local_table_size - param_size;
+        int local_size = body->local_table_size - argc;
         int stack_max = body->stack_max;
 
         assert(callable_method_entry_p(cme) && argc == param_size);
