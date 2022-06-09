@@ -3336,7 +3336,7 @@ sir_bbv_jit_call
 /* Use to replace some insns */
 DEFINE_INSN
 nop2 
-(VALUE dummy)
+(lindex_t dummy)
 ()
 ()
 {
@@ -3350,7 +3350,7 @@ sir_rejit_bbv
 ()
 ()
 {
-    rb_rejit_bbv (bbv);
+    rb_rejit_bbv((struct rb_iseq_bbv *)bbv);
     ABNORMAL_END_INSN(sir_gen_bbv); /* to skip pc increase and start with the same insn address */
 }
 
