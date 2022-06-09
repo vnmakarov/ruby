@@ -261,7 +261,7 @@ static void gen_push_frame(VARR(char) *buff, int local_size, int stack_max, int 
         for (int i = 0; i < local_size; i++)
             O("    *sp++ = 0x%x;\n", (int)Qnil);
     } else {
-        O("    for (int i = 0; i < %d; i++) *sp = 0x%x;\n", local_size, (int)Qnil);
+        O("    for (int i = 0; i < %d; i++) *sp++ = 0x%x;\n", local_size, (int)Qnil);
     }
     O("    *sp++= 0x%"PRIxVALUE ";\n", cme); /* *sp++ = cref_or_me */
     O("    *sp++= specval;\n"); /* *sp++ = specval */
