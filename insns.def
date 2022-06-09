@@ -2528,7 +2528,7 @@ sir_ltsvi sir_gtsvi sir_lesvi sir_gesvi sir_arefsvi
 DEFINE_INSN
 sir_plussiv sir_minussiv sir_multsiv sir_divsiv sir_modsiv sir_orsiv sir_andsiv
 sir_ltsiv sir_gtsiv sir_lesiv sir_gesiv sir_arefsiv
-(VALUE imm, VALUE op2, CALL_DATA cd)
+(VALUE imm, lindex_t op2, CALL_DATA cd)
 ()
 (VALUE val)
 {
@@ -3147,7 +3147,7 @@ sir_send_ivset
     ;
 }
 
-/* Non-specialized call of method without block created from make_sir_send */
+/* Non-specialized call of method without block created from sir_make_send */
 DEFINE_INSN
 sir_send_without_block
 (CALL_DATA cd, lindex_t dummy)
