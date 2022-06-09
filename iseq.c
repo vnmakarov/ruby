@@ -42,6 +42,7 @@
 #include "vm_core.h"
 #include "vm_callinfo.h"
 #include "yjit.h"
+#include "mirjit.h"
 #include "ruby/ractor.h"
 #include "builtin.h"
 #include "insns.inc"
@@ -165,9 +166,8 @@ typedef VALUE iseq_value_itr_t(void *ctx, VALUE obj);
 typedef VALUE rb_vm_insns_translator_t(const void *addr);
 
 static int
-iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data, rb_vm_insns_translator_t * translator)
+iseq_extract_insn_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data, VALUE insn)
 {
-    VALUE insn = translator((void *)code[pos]);
     int len = insn_len(insn);
     int op_no;
     const char *types = insn_op_types(insn);
@@ -232,6 +232,12 @@ iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data
     return len;
 }
 
+static int
+iseq_extract_values(VALUE *code, size_t pos, iseq_value_itr_t * func, void *data, rb_vm_insns_translator_t * translator)
+{
+    return iseq_extract_insn_values(code, pos, func, data, translator((void *)code[pos]));
+}
+
 static void
 rb_iseq_each_value(const rb_iseq_t *iseq, iseq_value_itr_t * func, void *data)
 {
@@ -250,6 +256,12 @@ rb_iseq_each_value(const rb_iseq_t *iseq, iseq_value_itr_t * func, void *data)
 
     for (n = 0; n < size;) {
 	n += iseq_extract_values(code, n, func, data, translator);
+    }
+
+    size = body->bbv_code_free;
+    code = body->bbv_code;
+    for (n = 0; n < size;) {
+	n += iseq_extract_insn_values(code, n, func, data, (VALUE)rb_mirjit_insn_decode(&code[n]));
     }
 }
 
