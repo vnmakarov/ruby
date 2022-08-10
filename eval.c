@@ -255,12 +255,12 @@ rb_ec_cleanup(rb_execution_context_t *ec, int ex0)
 
     mjit_finish(true); // We still need ISeqs here.
 
+    rb_ec_finalize(ec);
+
 #ifdef HAVE_LIBMIR
     rb_mirjit_finish();
 #endif
     rb_sir_finish();
-
-    rb_ec_finalize(ec);
 
     /* unlock again if finalizer took mutexes. */
     rb_threadptr_unlock_all_locking_mutexes(th);
