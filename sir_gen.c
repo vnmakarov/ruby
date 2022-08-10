@@ -1607,9 +1607,10 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         }
     }
     SIR_GEN_ASSERT(VARR_LENGTH(rb_iseq_bbv_t, out_bbvs) == VARR_LENGTH(int, out_gen_bbv_disps));
+    /* make no alloc between changing bbv_bound and encode: */
+    bbv_encode(&body->bbv_code[bbv->bbv_start], len);
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, out_bbvs); i++)
         add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i));
-    bbv_encode(&body->bbv_code[bbv->bbv_start], len);
     sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
     if (debug_p) {
         fprintf(stderr, "## SIR BBV:\n");
@@ -2482,6 +2483,9 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     bbv->bbv_start = get_bbv_code_space(iseq, len);
     bbv->bbv_bound = bbv->bbv_start + len;
     bbv_encode(VARR_ADDR(VALUE, bbv_encoded), len);
+    memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
+    memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map),
+           VARR_LENGTH(int, pos_map) * sizeof(int));
     if (!compacted_attrs_p)
         compact_attrs(attrs);
     if (profile_p) { /* attrs can change -- remove targets and change source bbv destinations: */
@@ -2492,9 +2496,6 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
     SIR_GEN_ASSERT(VARR_LENGTH(rb_iseq_bbv_t, out_bbvs) == VARR_LENGTH(int, out_gen_bbv_disps));
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, out_bbvs); i++)
         add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i) - nops_num);
-    memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
-    memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map),
-           VARR_LENGTH(int, pos_map) * sizeof(int));
     sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
     if (debug_p) {
         fprintf(stderr, "## %s specialized BBV 0x%llx (%s):\n", profile_p ? "Profile" : "Type",
