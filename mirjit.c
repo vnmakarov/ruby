@@ -1015,12 +1015,8 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_imultvss):
             O("  {\n");
             O("     SIGNED_VALUE mul, x = (SIGNED_VALUE)val >> 1, y = (SIGNED_VALUE)val2 >> 1;\n");
-#if 0
             O("     if (__builtin_mul_overflow(x, y, &mul) || (r = (VALUE)mul << 1) >> 1 != (VALUE)mul) goto restart;\n");
             O("     r++;\n");
-#else
-            O("     r = ((x * y) << 1) + 1;\n");
-#endif
             O("  }\n");
             break;
         case BIN(sir_idivsss):
@@ -1771,7 +1767,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         struct rb_iseq_constant_body *body = iseq->body;
         const struct rb_callcache *cc = cd->cc;
         int argc = vm_ci_argc(cd->ci);
-        int param_size = body->param.size;
         const struct rb_callable_method_entry_struct *cme = vm_cc_cme(cc);
         VALUE *start_pc = body->bbv_code + bbv_ref->bbv_start;
         int local_size = body->local_table_size - argc;
