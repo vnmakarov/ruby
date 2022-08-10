@@ -31,7 +31,7 @@
 struct rb_sir_options {
     int sir_enabled_p; /* true means generation and execution of SIR BBV */
     /* maximal versions for SIR BB, one version is always reserved for unknown incoming attrs: */
-    unsigned max_versions;
+    unsigned max_bb_versions;
     int debug_p;
     int exec_stats_p; /* print SIR execution stats if collecting stats is enabled */
 };

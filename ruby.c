@@ -360,7 +360,7 @@ usage(const char *name, int help, int highlight, int columns)
 #if SIR_EXEC_STATS
         M("--sir-stats",             "", "Enable collecting SIR BBV execution statistics"),
 #endif
-        M("--sir-max-versions",      "", "Maximum number of versions per SIR basic block (default: 4)"),
+        M("--sir-max-bb-versions",   "", "Maximum number of versions per SIR basic block (default: 4)"),
         M("--sir-debug",             "", "Print SIR basic block generation to stderr"),
     };
     static const struct message mirjit_options[] = {
@@ -1190,8 +1190,8 @@ setup_sir_options(const char *s, struct rb_sir_options *sir_opt)
         return FALSE;
     }
 
-    if (sir_opt_match_arg(s, l, "max-versions")) {
-        sir_opt->max_versions = atoi(s + 1);
+    if (sir_opt_match_arg(s, l, "max-bb-versions")) {
+        sir_opt->max_bb_versions = atoi(s + 1);
     }
     else if (sir_opt_match_noarg(s, l, "debug")) {
         sir_opt->debug_p = TRUE;
