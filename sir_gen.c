@@ -2514,35 +2514,55 @@ change_insn(const rb_iseq_t *iseq, VALUE *pc, enum ruby_vminsn_type new_insn_id)
 
 void
 rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
+    int insn_id, new_insn_id;
+    int fixtype_p = FIXNUM_P(val);
 #ifdef FLONUM_INSNS
-    int guard_p = FIXNUM_P(val) || FLONUM_P(val);
+    int flotype_p = FLONUM_P(val);
 #else
-    int guard_p = FIXNUM_P(val);
+    int flotype_p = FALSE;
 #endif
-    if (guard_p
-        && (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)
-            || rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type))) {
-        VALUE *insn_pc = (VALUE *)cfp->pc;
-        int debug_p = rb_sir_debug_p();
-        int new_insn_id;
+    if ((!fixtype_p && (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_fixtype)
+                        || rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_fixtype)))
+#ifdef FLONUM_INSNS
+        || (!flotype_p && (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_flotype)
+                           || rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_flotype)))
+#endif
+        ) {
         RB_VM_LOCK_ENTER();
-        if (stack_p) {
-            new_insn_id = FIXNUM_P(val) ? BIN(sir_inspect_stack_fixtype) : BIN(sir_inspect_stack_flotype);
-            if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type)) {
-                /* check that it was not already changed, e.g. in another Ractor */
+        if ((insn_id = rb_vm_insn_decode(*cfp->pc)) != BIN(nop2)) {
+            VALUE *insn_pc = (VALUE *)cfp->pc;
+            int debug_p = rb_sir_debug_p();
+            /* check that it was not already changed, e.g. in another Ractor */
+            if (debug_p)
+                fprintf(stderr, "--> Changing %s to %4ld nop2\n",
+                        insn_name(insn_id), insn_pc - cfp->iseq->body->bbv_code);
+            change_insn(cfp->iseq, insn_pc, BIN(nop2));
+        }
+        RB_VM_LOCK_LEAVE();
+    } else if (fixtype_p || flotype_p) {
+        if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)
+            || rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type)) {
+            VALUE *insn_pc = (VALUE *)cfp->pc;
+            int debug_p = rb_sir_debug_p();
+            RB_VM_LOCK_ENTER();
+            if (stack_p) {
+                new_insn_id = fixtype_p ? BIN(sir_inspect_stack_fixtype) : BIN(sir_inspect_stack_flotype);
+                if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type)) {
+                    /* check that it was not already changed, e.g. in another Ractor */
+                    if (debug_p)
+                        fprintf(stderr, "--> Changing sir_inspect_stack_type to %4ld %s\n",
+                                insn_pc - cfp->iseq->body->bbv_code, insn_name(new_insn_id));
+                    change_insn(cfp->iseq, insn_pc, new_insn_id);
+                }
+            } else if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)) {
+                new_insn_id = fixtype_p ? BIN(sir_inspect_fixtype) : BIN(sir_inspect_flotype);
                 if (debug_p)
-                    fprintf(stderr, "--> Changing sir_inspect_stack_type to %4ld %s\n",
+                    fprintf(stderr, "--> Changing sir_inspect_type to %4ld %s\n",
                             insn_pc - cfp->iseq->body->bbv_code, insn_name(new_insn_id));
                 change_insn(cfp->iseq, insn_pc, new_insn_id);
             }
-        } else if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)) {
-            new_insn_id = FIXNUM_P(val) ? BIN(sir_inspect_fixtype) : BIN(sir_inspect_flotype);
-            if (debug_p)
-                fprintf(stderr, "--> Changing sir_inspect_type to %4ld %s\n",
-                        insn_pc - cfp->iseq->body->bbv_code, insn_name(new_insn_id));
-            change_insn(cfp->iseq, insn_pc, new_insn_id);
+            RB_VM_LOCK_LEAVE();
         }
-        RB_VM_LOCK_LEAVE();
     }
 }
 
@@ -2865,12 +2885,13 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
 
     RB_VM_LOCK_ENTER();
     /* specialize curr bbv by profile: */
-    SIR_GEN_ASSERT(rb_vm_insn_decode(*cfp->pc) == BIN(specialize_bbv));
     VARR_TRUNC(rb_iseq_bbv_t, bbvs, 0);
     bbv_cont_pos = gen_specialized_sir(bbv->iseq, bbv, -1);
     if (bbv_cont_pos < 0) {
+        /* already changed in another ractor */
         cont_pc = (VALUE*)cfp->pc + insn_len(BIN(specialize_bbv));
     } else {
+        assert(rb_vm_insn_decode(*cfp->pc) == BIN(specialize_bbv));
         if (VARR_LENGTH(rb_iseq_bbv_t, bbvs) != 0) {
             int debug_p = rb_sir_debug_p();
             if (debug_p)
@@ -3016,6 +3037,8 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
 
 static int
 change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
+    if (*call_pc != (VALUE)sir_dispatch_table[BIN(sir_make_send)])
+        return *call_pc == (VALUE)sir_dispatch_table[BIN(sir_cfunc_send)];
     SIR_GEN_ASSERT(*call_pc == (VALUE)sir_dispatch_table[BIN(sir_make_send)]);
     CALL_DATA cd = (CALL_DATA)call_pc[1];
     struct rb_sir_send_info *si = (void *)call_pc[2];
