@@ -144,7 +144,7 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
 #define vm_sir_iplus(res, v1, v2, ov_label)                     			\
     {											\
         long r;							\
-        if (__builtin_expect (__builtin_add_overflow((long)v1, (long)v2-1, &r), 0)) {	\
+        if (__builtin_expect(__builtin_add_overflow((long)v1, (long)v2-1, &r), 0)) {	\
             *res = rb_int2big(rb_overflowed_fix_to_int(r));     \
             goto SIR_CONCAT(exit_sir_, ov_label);               \
         }                                                       \
