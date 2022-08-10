@@ -2166,7 +2166,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
     enum ruby_vminsn_type insn_id, next_insn_id;
 
     finish_jit_code_p = FALSE;
-    assert (bbv->bbv_start < bbv->bbv_bound);
+    assert(bbv->bbv_start < bbv->bbv_bound);
     if (rejit_p) {
         assert(BIN(sir_rejit_bbv) == rb_mirjit_insn_decode(&body->bbv_code[bbv->bbv_start]));
         body->bbv_code[bbv->bbv_start] = (VALUE)sir_dispatch_table[BIN(sir_bbv_start)];
@@ -2270,10 +2270,10 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
                         (unsigned long long)bbv, bbv_pc - bbv->bbv_start, VARR_ADDR(char, buff));
             }
             curr_input.code = (uint8_t *)VARR_ADDR(char, buff);
-            curr_input.code_len = strlen((char *) curr_input.code);
+            curr_input.code_len = strlen((char *)curr_input.code);
             curr_input.curr_char = 0;
             double start_time = real_usec_time();
-            if (!c2mir_compile (ctx, &curr_input.options, t_getc, &curr_input, "jit_c_code.c", NULL)) {
+            if (!c2mir_compile(ctx, &curr_input.options, t_getc, &curr_input, "jit_c_code.c", NULL)) {
                 if (mirjit_debug_p) {
                     fprintf(stderr, "Failure in compilation of C code for BBV 0x%llx @ %d\n",
                             (unsigned long long)bbv, bbv_pc - bbv->bbv_start);
@@ -2330,7 +2330,7 @@ rb_mirjit_mark_bbv_change(struct rb_iseq_bbv *bbv) {
     assert(insn_id == BIN(sir_bbv_start));
     body->bbv_code[bbv->bbv_start] = (VALUE)sir_dispatch_table[BIN(sir_rejit_bbv)];
     if (rb_mirjit_debug_p())
-        fprintf (stderr, "## Mark BBV 0x%llx for rejitting\n", (unsigned long long)bbv);
+        fprintf(stderr, "## Mark BBV 0x%llx for rejitting\n", (unsigned long long)bbv);
 }
 
 static struct rb_mirjit_options mirjit_options;
