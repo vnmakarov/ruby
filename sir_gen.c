@@ -470,7 +470,7 @@ create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bou
     rb_iseq_bbv_t bbv;
 
     check_final_attrs(n_attrs, attrs);
-    bbv = (rb_iseq_bbv_t)ALLOC_N(char, sizeof (struct rb_iseq_bbv) + (attrs == NULL ? 0 : n_attrs - 1));
+    bbv = (rb_iseq_bbv_t)ALLOC_N(char, sizeof(struct rb_iseq_bbv) + (attrs == NULL ? 0 : n_attrs - 1));
     bbv->spec_count = BBV_COUNT_TO_PROFILE_SPECIALIZE;
     bbv->jit_count = BBV_COUNT_TO_JIT;
     SIR_GEN_ASSERT(BBV_COUNT_TO_PROFILE_SPECIALIZE + 1 < BBV_COUNT_TO_JIT);
@@ -492,7 +492,7 @@ create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bou
     } else {
         memcpy(bbv->attrs, attrs, n_attrs);
     }
-    memset(bbv->used_bops, 0, sizeof (bbv->used_bops));
+    memset(bbv->used_bops, 0, sizeof(bbv->used_bops));
     VARR_PUSH(rb_iseq_bbv_t, all_bbvs, bbv);
     return bbv;
 }
@@ -659,13 +659,13 @@ add_insn(int orig_pos, enum ruby_vminsn_type insn_id, int nops, ...) {
     int start, i;
     va_list va;
 
-    va_start (va, nops);
+    va_start(va, nops);
     start = (int)VARR_LENGTH(VALUE, bbv_encoded);
     VARR_PUSH(VALUE, bbv_encoded, (VALUE)insn_id);
     for (i = 0; i < nops; i++) {
         VARR_PUSH(VALUE, bbv_encoded, va_arg(va, VALUE));
     }
-    va_end (va);
+    va_end(va);
     update_pos_map(start, orig_pos, nops + 1);
     return start;
 }
@@ -809,7 +809,7 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound, const char *prefix)
         if (insn_id == BIN(sir_gen_bbv) || insn_id == BIN(sir_gen_bbv2)) {
             rb_iseq_bbv_t bbv = (rb_iseq_bbv_t)code[i + 1];
             fprintf(stderr, "%s  # %04d: %s(BBV 0x%llx, %s)", prefix,
-                    i, insn_name(insn_id), (unsigned long long) bbv, bbv->env_p ? "env" : "stack");
+                    i, insn_name(insn_id), (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
             print_attrs(bbv->attrs);
         }
         print_insn(iseq, insn_id, code, i, prefix);
@@ -909,7 +909,7 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
             insn_id = rb_vm_insn_addr2insn((void *)encoded[i]);
             if (i < (int)VARR_LENGTH(char, labeled_p) && VARR_GET(char, labeled_p, i)) {
                 bbv = create_bbv(iseq, RB_BBV_REGULAR, 0, i, -1, TRUE, 0, NULL);
-                VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
+                VARR_PUSH(rb_iseq_bbv_t, bbvs, bbv);
             }
         }
     } else { /* create bbv at the **end** of the BB */
@@ -918,13 +918,13 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
             insn_id = rb_vm_insn_addr2insn((void *)encoded[i]);
             if (i != 0 && i < (int)VARR_LENGTH(char, labeled_p) && VARR_GET(char, labeled_p, i)) {
                 bbv = create_bbv(iseq, RB_BBV_REGULAR, 0, curr_bb_start, i, TRUE, 0, NULL);
-                VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
+                VARR_PUSH(rb_iseq_bbv_t, bbvs, bbv);
                 curr_bb_start = i;
             }
         }
         if (curr_bb_start != (int)body->iseq_size) {
             bbv = create_bbv(iseq, RB_BBV_REGULAR, 0, curr_bb_start, (int)body->iseq_size, TRUE, 0, NULL);
-            VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
+            VARR_PUSH(rb_iseq_bbv_t, bbvs, bbv);
         }
     }
     /* Add sir_make_xxx_bbv insns for all entry points and create bbvs for opt_table and catch_table: */
@@ -947,14 +947,14 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
         for (i = 0; i < (int)body->catch_table->size; i++) { /* exception continuation pc */
             pos = body->catch_table->entries[i].cont;
             bbv = create_bbv(iseq, RB_BBV_CATCH, i, pos, -1, TRUE, 0, NULL);
-            VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
+            VARR_PUSH(rb_iseq_bbv_t, bbvs, bbv);
             body->catch_table->entries[i].curr_cont = VARR_LENGTH(VALUE, bbv_encoded);
             add_insn(pos, BIN(sir_make_catch_bbv), 1, i);
         }
     }
     body->n_bbvs = VARR_LENGTH(rb_iseq_bbv_t, bbvs);
     body->bbvs = ALLOC_N(rb_iseq_bbv_t, body->n_bbvs);
-    memcpy (body->bbvs, VARR_ADDR(rb_iseq_bbv_t, bbvs), body->n_bbvs * sizeof (rb_iseq_bbv_t));
+    memcpy(body->bbvs, VARR_ADDR(rb_iseq_bbv_t, bbvs), body->n_bbvs * sizeof(rb_iseq_bbv_t));
     qsort(body->bbvs, body->n_bbvs, sizeof(rb_iseq_bbv_t), compare_bbvs);
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
     make_bbv_area_start = get_bbv_code_space(iseq, len);
@@ -1083,7 +1083,7 @@ set_case_hash_el(VALUE key, VALUE val, VALUE ptr)
     dst = data->origin_case_start + len + FIX2LONG(val);
     dst_bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, dst, data->env_p,
                       (int)VARR_LENGTH(char, attrs), VARR_ADDR(char, attrs));
-    disp = add_insn(dst, BIN(sir_gen_bbv_key), 3, (VALUE)dst_bbv, (VALUE)0, (VALUE) key);
+    disp = add_insn(dst, BIN(sir_gen_bbv_key), 3, (VALUE)dst_bbv, (VALUE)0, (VALUE)key);
     VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
     VARR_PUSH(int, out_gen_bbv_disps, disp);
     VARR_SET(VALUE, bbv_encoded, disp + 2, (VALUE)(data->case_start - disp - insn_len(BIN(sir_gen_bbv_key))));
@@ -1095,7 +1095,7 @@ static int
 contains_input_lvar_p(int insn_pos, int lvar) {
     if (insn_pos < 0) return FALSE;
 
-    enum ruby_vminsn_type insn_id = (enum ruby_vminsn_type) VARR_GET(VALUE, bbv_encoded, insn_pos);
+    enum ruby_vminsn_type insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, insn_pos);
     VALUE *operands = VARR_ADDR(VALUE, bbv_encoded) + insn_pos + 1;
     SIR_GEN_ASSERT(lvar >= 0);
 
@@ -1249,7 +1249,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         switch (insn_id) {
         case BIN(setn):
             stack_size = VARR_LENGTH(int, stack);
-            n = (int) operands[0];
+            n = (int)operands[0];
             SIR_GEN_ASSERT(stack_size > n);
             for (i = 0; i <= n; i++) /* we can not use stack above n w/o change setn arg */
                 VARR_SET(int, stack, stack_size - i - 1, -1); /* flag of unknown insn */
@@ -1259,7 +1259,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             n = 1;
             goto dup;
         case BIN(dupn): /* ??? optimize: when values are only putobject|getlocal */
-            n = (int) operands[0];
+            n = (int)operands[0];
         dup:
             stack_size = VARR_LENGTH(int, stack);
             SIR_GEN_ASSERT(stack_size >= n);
@@ -1275,7 +1275,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         case BIN(nop):
         case BIN(sir_make_bbv): // ???
         case BIN(sir_jump): /* nops not labeled by catch table will be removed */
-            if (pos_in_catch_table_p (iseq, curr_orig_insn_pos)) {
+            if (pos_in_catch_table_p(iseq, curr_orig_insn_pos)) {
                 last_sir_ind = add_insn(curr_orig_insn_pos, BIN(nop), 0);
                 update_labeled(last_sir_ind);
             }
@@ -1434,7 +1434,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             SIR_GEN_ASSERT(stack_size > 0);
             if ((op_insn_pos = VARR_LAST(int, stack)) < 0) goto change_setlocal0;
             if (VARR_LAST(char, operands_changed_p)) goto change_setlocal0;
-            op_insn_id = (enum ruby_vminsn_type) VARR_GET(VALUE, bbv_encoded, op_insn_pos);
+            op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
             new_insn_id = get_var_res_sir_insn_id(op_insn_id);
             if (new_insn_id == BIN(nop)) {
                 switch (op_insn_id) {
@@ -1896,7 +1896,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             n = 1;
             goto dup;
         case BIN(dupn): /* ??? optimize: when values are only putobject|getlocal */
-            n = (int) operands[0];
+            n = (int)operands[0];
         dup:
             SIR_GEN_ASSERT(stack_size >= n);
             for (i = 0; i < n; i++)
@@ -2146,7 +2146,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
             }
             if (prev_new_insn_pos < 0) goto rest_cases;
-            prev_new_insn_id = (enum ruby_vminsn_type) VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos);
+            prev_new_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos);
             new_insn_id = get_branch_sir_insn_id(prev_new_insn_id);
             if (new_insn_id == BIN(nop)) goto rest_cases;
             nops = insn_len(new_insn_id) - 1;
@@ -2180,7 +2180,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
             prev_new_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos);
             new_insn_id = get_var_res_sir_insn_id(prev_new_insn_id);
             if (new_insn_id == BIN(nop)) goto sir_setlocal;
-            nops = insn_len (new_insn_id) - 1;
+            nops = insn_len(new_insn_id) - 1;
             SIR_GEN_ASSERT(nops <= 3); /* longest variant is vvv or vvi */
             new_operands[0] = operands[0];
             if (nops > 1)
@@ -2840,8 +2840,8 @@ invalidate_bbv_code(rb_iseq_bbv_t bbv, rb_callable_method_entry_t *except_cme) {
     redirect_src_bbv_dests(bbv, TRUE); /* redirect branches in src bbvs to corresponding sir_gen_bbvxxx */
     bbv->bbv_start = -1; /* mark bbv as needed for new code */
     delete_bbv_call_elems(bbv, except_cme);
-    if(!enter_bbv_p) {
-        memset(bbv->used_bops, 0, sizeof (bbv->used_bops));
+    if (!enter_bbv_p) {
+        memset(bbv->used_bops, 0, sizeof(bbv->used_bops));
     } else {
         /* We need to generate code for iseq enter BBV here as we need
            already code in sir_iseq_send_without_block.  We could do
