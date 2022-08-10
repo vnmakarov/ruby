@@ -340,6 +340,7 @@ rb_iseq_update_references(rb_iseq_t *iseq)
         mjit_update_references(iseq);
 #endif
         rb_yjit_iseq_update_references(body);
+        rb_sir_iseq_update_references(iseq);
     }
 }
 

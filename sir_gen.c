@@ -3122,6 +3122,17 @@ rb_sir_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
 }
 
 void
+rb_sir_iseq_update_references(rb_iseq_t *iseq) {
+    const struct rb_iseq_constant_body *body = iseq->body;
+
+    SIR_GEN_ASSERT (body != NULL);
+    for (int n = 0; n < body->n_bbvs; n++) {
+        for (rb_iseq_bbv_t curr = body->bbvs[n]; curr != NULL; curr = curr->next_bbv)
+            curr->iseq = iseq;
+    }
+}
+
+void
 rb_sir_iseq_free(struct rb_iseq_constant_body *body) {
     rb_iseq_bbv_t bbv, curr_bbv, next_bbv;
     int i;
