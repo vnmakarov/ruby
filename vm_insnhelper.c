@@ -5440,23 +5440,31 @@ vm_trace_hook(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VAL
 {
     rb_event_flag_t event = pc_events & target_event;
     VALUE self = GET_SELF();
+    int sir_p = rb_sir_enabled_p();
+    VALUE *saved_pc = reg_cfp->pc;
 
     VM_ASSERT(rb_popcount64((uint64_t)event) == 1);
 
     if (event & global_hooks->events) {
+        if (sir_p) {
+            reg_cfp->pc = rb_sir_trace_stack_insn_pc(ec, reg_cfp);
+        }
         /* increment PC because source line is calculated with PC-1 */
         reg_cfp->pc++;
         vm_dtrace(event, ec);
         rb_exec_event_hook_orig(ec, global_hooks, event, self, 0, 0, 0 , val, 0);
-        reg_cfp->pc--;
+        reg_cfp->pc = saved_pc;
     }
 
     if (local_hooks != NULL) {
         if (event & local_hooks->events) {
+            if (sir_p) {
+                reg_cfp->pc = rb_sir_trace_stack_insn_pc(ec, reg_cfp);
+            }
             /* increment PC because source line is calculated with PC-1 */
             reg_cfp->pc++;
             rb_exec_event_hook_orig(ec, local_hooks, event, self, 0, 0, 0 , val, 0);
-            reg_cfp->pc--;
+            reg_cfp->pc = saved_pc;
         }
     }
 }
