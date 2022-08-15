@@ -2833,7 +2833,7 @@ invalidate_bbv_code(rb_iseq_bbv_t bbv, rb_callable_method_entry_t *except_cme) {
     }
     ec = GET_EC();
     for (cfp = ec->cfp; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
-        if (cfp->iseq != NULL && cfp->iseq->body->bbv_code != NULL
+        if (cfp->iseq != NULL && cfp->iseq->body->bbv_code != NULL && cfp->iseq == bbv->iseq
             && cfp->iseq->body->bbv_code + bbv->bbv_start <= cfp->pc
             && cfp->pc < cfp->iseq->body->bbv_code + bbv->bbv_bound) { /* switch given bbv pc to safe code one */
             cfp->pc = rb_sir_get_safe_pc(cfp, cfp->pc);
