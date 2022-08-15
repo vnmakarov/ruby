@@ -2863,11 +2863,15 @@ rb_sir_bop_redefined(enum ruby_basic_operators bop, int klass_flag) { // ???
     rb_iseq_bbv_t bbv;
     int i;
 
+    if (!rb_sir_enabled_p()) return;
+    RB_VM_LOCK_ENTER();
+    rb_vm_barrier (); /* the change can be non-atomic */
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
         bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
         if ((bbv->used_bops[bop] & klass_flag) != 0)
             invalidate_bbv_code(bbv, NULL);
     }
+    RB_VM_LOCK_LEAVE();
 }
 
 void
@@ -2875,10 +2879,30 @@ rb_sir_cme_invalidate(rb_callable_method_entry_t *cme) {
     struct rb_sir_call_elem *call_elem, *next_call_elem;
     if (cme_call_elems_tab == NULL)
         return; /* we did not initialize it yet */
+    if (!rb_sir_enabled_p()) return;
+    RB_VM_LOCK_ENTER();
+    rb_vm_barrier (); /* the change can be non-atomic */
     for (call_elem = find_cme_call_elem_list_head(cme); call_elem != NULL; call_elem = next_call_elem) {
         next_call_elem = call_elem->next_cme_call_elem;
         invalidate_bbv_code(call_elem->bbv, cme);
     }
+    RB_VM_LOCK_LEAVE();
+}
+
+void
+rb_sir_trace_invalidate(void) {
+    rb_iseq_bbv_t bbv;
+    int i;
+
+    if (!rb_sir_enabled_p()) return;
+    RB_VM_LOCK_ENTER();
+    rb_vm_barrier (); /* the change can be non-atomic */
+    for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
+        bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
+        if (bbv->head_bbv == NULL) continue;
+        invalidate_bbv_code(bbv, NULL);
+    }
+    RB_VM_LOCK_LEAVE();
 }
 
 VALUE *
@@ -3077,6 +3101,7 @@ rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_
     int no_opt_p = TRUE;
 
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier (); /* the change can be non-atomic */
     if (si->block_iseq == NULL) no_opt_p = !change_send_without_block(ec, caller_cfp, cd, si);
     if (no_opt_p) no_opt_p = !change_to_cfunc_send(call_pc, (rb_iseq_t *)caller_cfp->iseq);
     if (no_opt_p) {

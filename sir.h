@@ -62,6 +62,7 @@ VALUE *rb_sir_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int bran
 VALUE *rb_sir_gen_bbv_key(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int case_offset, VALUE key);
 void rb_sir_bop_redefined(enum ruby_basic_operators bop, int klass_flag);
 void rb_sir_cme_invalidate(rb_callable_method_entry_t *cme);
+void rb_sir_trace_invalidate(void);
 VALUE *rb_sir_specialize_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv);
 void rb_sir_change_getivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic, VALUE val);
 void rb_sir_change_setivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic);

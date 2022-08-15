@@ -31,6 +31,7 @@
 #include "vm_core.h"
 #include "ruby/ractor.h"
 #include "yjit.h"
+#include "sir.h"
 
 #include "builtin.h"
 
@@ -107,6 +108,7 @@ update_global_event_hook(rb_event_flag_t vm_events)
         // Internal events fire inside C routines so don't need special handling.
         // Do this last so other ractors see updated vm events when they wake up.
         rb_yjit_tracing_invalidate_all();
+        rb_sir_trace_invalidate();
     }
 }
 
@@ -1221,6 +1223,7 @@ rb_tracepoint_enable_for_target(VALUE tpval, VALUE target, VALUE target_line)
     }
 
     rb_yjit_tracing_invalidate_all();
+    rb_sir_trace_invalidate();
 
     ruby_vm_event_local_num++;
 
