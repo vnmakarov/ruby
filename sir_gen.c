@@ -2529,10 +2529,10 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
 #endif
         ) {
         RB_VM_LOCK_ENTER();
+        /* check that it was not already changed, e.g. in another Ractor */
         if ((insn_id = rb_vm_insn_decode(*cfp->pc)) != BIN(nop2)) {
             VALUE *insn_pc = (VALUE *)cfp->pc;
             int debug_p = rb_sir_debug_p();
-            /* check that it was not already changed, e.g. in another Ractor */
             if (debug_p)
                 fprintf(stderr, "--> Changing %s to %4ld nop2\n",
                         insn_name(insn_id), insn_pc - cfp->iseq->body->bbv_code);
@@ -2547,8 +2547,8 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
             RB_VM_LOCK_ENTER();
             if (stack_p) {
                 new_insn_id = fixtype_p ? BIN(sir_inspect_stack_fixtype) : BIN(sir_inspect_stack_flotype);
+                /* check that it was not already changed, e.g. in another Ractor */
                 if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type)) {
-                    /* check that it was not already changed, e.g. in another Ractor */
                     if (debug_p)
                         fprintf(stderr, "--> Changing sir_inspect_stack_type to %4ld %s\n",
                                 insn_pc - cfp->iseq->body->bbv_code, insn_name(new_insn_id));
@@ -2700,6 +2700,9 @@ rb_sir_gen_bbv_key(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int case_offset, 
 static st_table *call_elems_tab, *cme_call_elems_tab;
 
 static void remove_call_elem_from_cme_list(struct rb_sir_call_elem *elem) {
+    if (0)
+        fprintf (stderr, "deleting 0x%lx (bbv=0x%lx, cme=0x%lx)\n",
+                 (long)elem, (long)elem->bbv, (long)elem->cme);
     if (elem->next_cme_call_elem != NULL)
         elem->next_cme_call_elem->prev_cme_call_elem = elem->prev_cme_call_elem;
     if (elem->prev_cme_call_elem != NULL) {
@@ -2720,6 +2723,7 @@ static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv, rb_callable_method_en
         next_call_elem = call_elem->next_bbv_call_elem;
         if (call_elem->cme == except_cme) continue;
         remove_call_elem_from_cme_list(call_elem);
+        rb_st_delete(call_elems_tab, (st_data_t)call_elem, NULL);
         ruby_xfree((void *)call_elem);
     }
     bbv->call_elems = NULL;
@@ -2745,11 +2749,14 @@ add_call_elem(struct rb_iseq_bbv *bbv, const rb_callable_method_entry_t *cme) {
     call_elem->bbv = bbv;
     call_elem->cme = cme;
     call_elem->prev_cme_call_elem = call_elem->prev_bbv_call_elem = NULL;
+    if (0)
+        fprintf (stderr, "inserting 0x%lx (bbv=0x%lx, cme=0x%lx)\n",
+                 (long)call_elem, (long)bbv, (long)cme);
     found_p = rb_st_lookup(cme_call_elems_tab, (st_data_t)cme, &value);
     found_elem = found_p ? (struct rb_sir_call_elem *)value : NULL;
     call_elem->next_cme_call_elem = found_elem;
     if (found_p)
-        found_elem->prev_bbv_call_elem = call_elem;
+        found_elem->prev_cme_call_elem = call_elem;
     found_p = st_insert(cme_call_elems_tab, (st_data_t)cme, (st_data_t)call_elem);
     call_elem->next_bbv_call_elem = bbv->call_elems;
     if (bbv->call_elems != NULL)
@@ -2759,11 +2766,10 @@ add_call_elem(struct rb_iseq_bbv *bbv, const rb_callable_method_entry_t *cme) {
 }
 
 static int
-call_elem_cmp(st_data_t lhs, st_data_t rhs)
-{
+call_elem_cmp(st_data_t lhs, st_data_t rhs) {
     const struct rb_sir_call_elem *e1 = (struct rb_sir_call_elem *)lhs;
     const struct rb_sir_call_elem *e2 = (struct rb_sir_call_elem *)rhs;
-    return e1->cme == e2->cme && e1->bbv == e2->bbv;
+    return e1->cme == e2->cme && e1->bbv == e2->bbv ? 0 : 1;
 }
 
 static st_index_t
