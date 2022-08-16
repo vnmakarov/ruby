@@ -20,6 +20,7 @@ RubyVM::Typemap = {
   "ISE"            => %w[T TS_ISE],
   "ISEQ"           => %w[S TS_ISEQ],
   "OFFSET"         => %w[O TS_OFFSET],
+  "EPDISP"         => %w[P TS_EPDISP],
   "VALUE"          => %w[V TS_VALUE],
   "lindex_t"       => %w[L TS_LINDEX],
   "rb_insn_func_t" => %w[F TS_FUNCPTR],
@@ -37,7 +38,7 @@ class << RubyVM::Typemap
       raise "cast not possible: #{val}"
     when 'VALUE' then
       return val
-    when 'rb_num_t', 'lindex_t' then
+    when 'rb_num_t', 'lindex_t', 'EPDISP' then
       return "NUM2LONG(#{val})"
     when 'DBL' then
       return "rtl_val2dbl(#{val})"
@@ -54,7 +55,7 @@ class << RubyVM::Typemap
       return val
     when 'ISEQ', 'rb_insn_func_t' then
       return "(VALUE)(#{val})"
-    when 'rb_num_t', 'lindex_t' then
+    when 'rb_num_t', 'lindex_t', 'EPDISP' then
       "LONG2NUM(#{val})"
     when 'DBL' then
       "rtl_dbl2val(#{val})"

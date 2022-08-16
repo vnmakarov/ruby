@@ -12,6 +12,7 @@
 **********************************************************************/
 
 typedef long OFFSET;
+typedef long EPDISP;
 typedef unsigned long lindex_t;
 typedef double DBL;
 typedef VALUE GENTRY;

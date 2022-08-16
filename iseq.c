@@ -2010,6 +2010,10 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
 	ret = rb_sprintf("%*.e", DECIMAL_DIG, sir_val2dbl(op));
         break;
     }
+    case TS_EPDISP:
+        VM_ASSERT((EPDISP)op < 0);
+        ret = local_var_name(iseq, 0, -(EPDISP)op - VM_ENV_DATA_SIZE);
+	break;
     case TS_LINDEX:{
 	int level;
 	if (types[op_no+1] == TS_NUM && pnop) {
@@ -2869,6 +2873,7 @@ iseq_data_to_ary(const rb_iseq_t *iseq)
 		rb_ary_push(ary, register_label(labels_table, idx));
 		break;
 	      }
+	      case TS_EPDISP:
 	      case TS_LINDEX:
 	      case TS_NUM:
 		rb_ary_push(ary, INT2FIX(*seq));

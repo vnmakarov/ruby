@@ -2403,6 +2403,9 @@ iseq_set_sequence(rb_iseq_t *iseq, LINK_ANCHOR *const anchor)
                             FL_SET(iseqv, ISEQ_MARKABLE_ISEQ);
 			    break;
 			}
+                      case TS_EPDISP:	/* long */
+			generated_iseq[code_index + 1 + j] = FIX2INT(operands[j]);
+			break;
 		      case TS_LINDEX:
 		      case TS_NUM:	/* ulong */
 			generated_iseq[code_index + 1 + j] = FIX2INT(operands[j]);
@@ -9843,6 +9846,7 @@ insn_data_to_s_detail(INSN *iobj)
 		    rb_str_concat(str, opobj_inspect(val));
 		}
 		break;
+              case TS_EPDISP:     /* long */
 	      case TS_LINDEX:
 	      case TS_NUM:	/* ulong */
 	      case TS_VALUE:	/* VALUE */
@@ -10229,6 +10233,7 @@ iseq_build_from_ary_body(rb_iseq_t *iseq, LINK_ANCHOR *const anchor,
 			argv[j] = (VALUE)label;
 			break;
 		      }
+		      case TS_EPDISP:
 		      case TS_LINDEX:
 		      case TS_NUM:
 			(void)NUM2INT(op);
