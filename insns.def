@@ -1611,7 +1611,23 @@ sir_setlocal
 
 /* --- Type specialized insns: --- */
 DEFINE_INSN
-sir_iplussvv sir_iminussvv sir_imultsvv sir_idivsvv sir_imodsvv
+sir_iplussvv
+(EPDISP op1, EPDISP op2)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() + op1), v2 = *(GET_EP() + op2);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
+      safe_insn_restart:
+        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+        TC_DISPATCH0();
+    }
+}
+
+DEFINE_INSN
+sir_iminussvv sir_imultsvv sir_idivsvv sir_imodsvv
 sir_iorsvv sir_iandsvv sir_ieqsvv sir_ineqsvv
 sir_iltsvv sir_igtsvv sir_ilesvv sir_igesvv
 sir_fplussvv sir_fminussvv sir_fmultsvv sir_fdivsvv sir_fmodsvv
@@ -1623,12 +1639,7 @@ sir_feqsvv sir_fneqsvv sir_fltsvv sir_fgtsvv sir_flesvv sir_fgesvv
     VALUE v1 = *(GET_EP() + op1), v2 = *(GET_EP() + op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1644,12 +1655,7 @@ sir_feqsvi sir_fneqsvi sir_fltsvi sir_fgtsvi sir_flesvi sir_fgesvi
     VALUE v1 = *(GET_EP() + op1);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1665,12 +1671,7 @@ sir_feqsiv sir_fneqsiv sir_fltsiv sir_fgtsiv sir_flesiv sir_fgesiv
     VALUE v2 = *(GET_EP() + op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1686,12 +1687,7 @@ sir_feqsvs sir_fneqsvs sir_fltsvs sir_fgtsvs sir_flesvs sir_fgesvs
     VALUE v1 = *(GET_EP() + op1);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1707,12 +1703,7 @@ sir_feqssv sir_fneqssv sir_fltssv sir_fgtssv sir_flessv sir_fgessv
     VALUE v2 = *(GET_EP() + op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1727,12 +1718,7 @@ sir_feqssi sir_fneqssi sir_fltssi sir_fgtssi sir_flessi sir_fgessi
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1747,12 +1733,7 @@ sir_feqsis sir_fneqsis sir_fltsis sir_fgtsis sir_flesis sir_fgesis
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1767,12 +1748,7 @@ sir_feqsss sir_fneqsss sir_fltsss sir_fgtsss sir_flesss sir_fgesss
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1788,12 +1764,7 @@ sir_feqvvv sir_fneqvvv sir_fltvvv sir_fgtvvv sir_flevvv sir_fgevvv
     VALUE val, v1 = *(GET_EP() + op1), v2 = *(GET_EP() + op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -1810,12 +1781,7 @@ sir_feqvvi sir_fneqvvi sir_fltvvi sir_fgtvvi sir_flevvi sir_fgevvi
     VALUE v1 = *(GET_EP() + op1), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -1832,12 +1798,7 @@ sir_feqviv sir_fneqviv sir_fltviv sir_fgtviv sir_fleviv sir_fgeviv
     VALUE v2 = *(GET_EP() + op2), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -1854,12 +1815,7 @@ sir_feqvvs sir_fneqvvs sir_fltvvs sir_fgtvvs sir_flevvs sir_fgevvs
     VALUE v1 = *(GET_EP() + op1), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -1876,12 +1832,7 @@ sir_feqvsv sir_fneqvsv sir_fltvsv sir_fgtvsv sir_flevsv sir_fgevsv
     VALUE v2 = *(GET_EP() + op2), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -1898,12 +1849,7 @@ sir_feqvsi sir_fneqvsi sir_fltvsi sir_fgtvsi sir_flevsi sir_fgevsi
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -1920,12 +1866,7 @@ sir_feqvis sir_fneqvis sir_fltvis sir_fgtvis sir_flevis sir_fgevis
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -1941,12 +1882,7 @@ sir_feqvss sir_fneqvss sir_fltvss sir_fgtvss sir_flevss sir_fgevss
 {
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) {
-      SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN):
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-        goto SIR_SUBST_CONCAT(exit_, NAME_OF_CURRENT_INSN); /* To avoid unused label warning */
-    }
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -1958,10 +1894,7 @@ sir_iarefsvv
 {
     VALUE v1 = *(GET_EP() + op1), v2 = *(GET_EP() + op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1972,10 +1905,7 @@ sir_iarefsvi
 {
     VALUE v1 = *(GET_EP() + op1);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -1986,10 +1916,7 @@ sir_iarefsiv
 {
     VALUE v2 = *(GET_EP() + op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2000,10 +1927,7 @@ sir_iarefsvs
 {
     VALUE v1 = *(GET_EP() + op1);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2014,10 +1938,7 @@ sir_iarefssv
 {
     VALUE v2 = *(GET_EP() + op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2027,10 +1948,7 @@ sir_iarefssi
 (VALUE val)
 {
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2040,10 +1958,7 @@ sir_iarefsis
 (VALUE val)
 {
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2053,10 +1968,7 @@ sir_iarefsss
 (VALUE val)
 {
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2067,10 +1979,7 @@ sir_iarefvvv
 {
     VALUE val, v1 = *(GET_EP() + op1), v2 = *(GET_EP() + op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2082,10 +1991,7 @@ sir_iarefvvi
 {
     VALUE v1 = *(GET_EP() + op1), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2097,10 +2003,7 @@ sir_iarefviv
 {
     VALUE v2 = *(GET_EP() + op2), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2112,10 +2015,7 @@ sir_iarefvvs
 {
     VALUE v1 = *(GET_EP() + op1), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2127,10 +2027,7 @@ sir_iarefvsv
 {
     VALUE v2 = *(GET_EP() + op2), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2142,10 +2039,7 @@ sir_iarefvsi
 {
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2157,10 +2051,7 @@ sir_iarefvis
 {
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2172,10 +2063,7 @@ sir_iarefvss
 {
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2187,10 +2075,7 @@ sir_iasetsvv
 {
     VALUE ind = *(GET_EP() + ind_idx), set = *(GET_EP() + set_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2201,10 +2086,7 @@ sir_iasetsiv
 {
     VALUE set = *(GET_EP() + set_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2215,10 +2097,7 @@ sir_iasetsvs
 {
     VALUE ind = *(GET_EP() + ind_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2229,10 +2108,7 @@ sir_iasetssv
 {
     VALUE set = *(GET_EP() + set_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2242,10 +2118,7 @@ sir_iasetsis
 (VALUE val)
 {
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2255,10 +2128,7 @@ sir_iasetsss
 (VALUE val)
 {
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2269,10 +2139,7 @@ sir_iasetvvv
 {
     VALUE arr = *(GET_EP() + arr_idx), ind = *(GET_EP() + ind_idx), set = *(GET_EP() + set_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2283,10 +2150,7 @@ sir_iasetviv
 {
     VALUE arr = *(GET_EP() + arr_idx), set = *(GET_EP() + set_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2297,10 +2161,7 @@ sir_iasetvvs
 {
     VALUE arr = *(GET_EP() + arr_idx), ind = *(GET_EP() + ind_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2311,10 +2172,7 @@ sir_iasetvsv
 {
     VALUE arr = *(GET_EP() + arr_idx), set = *(GET_EP() + set_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2325,10 +2183,7 @@ sir_iasetvis
 {
     VALUE arr = *(GET_EP() + arr_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2339,10 +2194,7 @@ sir_iasetvss
 {
     VALUE arr = *(GET_EP() + arr_idx);
     val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2448,10 +2300,7 @@ check_fixtype
 ()
 {
     VALUE val = *(GET_EP() + n);
-    if (!FIXNUM_P(val)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (!FIXNUM_P(val)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2461,10 +2310,7 @@ check_stack_fixtype
 ()
 {
     VALUE val = TOPN(n);
-    if (!FIXNUM_P(val)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (!FIXNUM_P(val)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2474,10 +2320,7 @@ check_flotype
 ()
 {
     VALUE val = *(GET_EP() + n);
-    if (!FLONUM_P(val)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (!FLONUM_P(val)) goto safe_insn_restart;
 }
 
 DEFINE_INSN
@@ -2487,10 +2330,7 @@ check_stack_flotype
 ()
 {
     VALUE val = TOPN(n);
-    if (!FLONUM_P(val)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (!FLONUM_P(val)) goto safe_insn_restart;
 }
 
 /* --- general SIR insns: --- */
@@ -3230,10 +3070,7 @@ sir_iter_start
     VALUE arg = TOPN(0);
     int (*f)(VALUE, VALUE *) = (void *)func;
 
-    if (!f(arg, &index)) {
-        ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
-        ABNORMAL_END_INSN(NAME_OF_CURRENT_INSN);
-    }
+    if (!f(arg, &index)) goto safe_insn_restart;
     res = Qnil;
 }
 

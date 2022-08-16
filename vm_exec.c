@@ -70,7 +70,6 @@ static void vm_insns_counter_count_insn(int insn) {}
 static VALUE
 vm_exec_core(rb_execution_context_t *ec, VALUE initial)
 {
-
 #if OPT_STACK_CACHING
 #if 0
 #elif __GNUC__ && __x86_64__

@@ -136,19 +136,16 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
         if (RB_FIXABLE(r)) {                                     \
             *res = RB_LONG2FIX(r);                               \
         } else {                                                 \
-            *res = rb_int2big(r);                                \
-            goto SIR_CONCAT(exit_sir_, ov_label);                \
+            goto safe_insn_restart;		                 \
         }                                                        \
     }
 #else
 #define vm_sir_iplus(res, v1, v2, ov_label)                     			\
     {											\
-        long r;							\
-        if (__builtin_expect(__builtin_add_overflow((long)v1, (long)v2-1, &r), 0)) {	\
-            *res = rb_int2big(rb_overflowed_fix_to_int(r));     \
-            goto SIR_CONCAT(exit_sir_, ov_label);               \
-        }                                                       \
-        *res = r;						\
+        long r;										\
+        if (__builtin_expect(__builtin_add_overflow((long)v1, (long)v2-1, &r), 0))	\
+            goto safe_insn_restart;                             			\
+        *res = r;									\
     }
 #endif
 
@@ -176,18 +173,15 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
         if (RB_FIXABLE(r)) {                                     \
             *res = RB_LONG2FIX(r);                               \
         } else {                                                 \
-            *res = rb_int2big(r);                                \
-            goto SIR_CONCAT(exit_sir_, ov_label);                \
+            goto safe_insn_restart;		                 \
         }                                                        \
     }
 #else
 #define vm_sir_iminus(res, v1, v2, ov_label)                    \
     {								\
         long r;			                                \
-        if (__builtin_sub_overflow((long)v1, (long)v2-1, &r)) { \
-            *res = rb_int2big(rb_overflowed_fix_to_int(r));     \
-            goto SIR_CONCAT(exit_sir_, ov_label);               \
-        }                                                       \
+        if (__builtin_sub_overflow((long)v1, (long)v2-1, &r))	\
+            goto safe_insn_restart;                             \
         *res = r;						\
     }
 #endif

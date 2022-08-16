@@ -101,6 +101,8 @@ error !
   RB_GNUC_EXTENSION_BLOCK(goto *(void const *)GET_CURRENT_INSN()); \
   ;
 
+#define TC_DISPATCH0() RB_GNUC_EXTENSION_BLOCK(goto *(void const *)GET_CURRENT_INSN());
+
 #else
 /* token threaded code */
 
@@ -116,6 +118,11 @@ error !
 #define TC_DISPATCH(insn)  \
   DISPATCH_ARCH_DEPEND_WAY(insns_address_table[GET_CURRENT_INSN()]); \
   INSN_DISPATCH_SIG(insn); \
+  RB_GNUC_EXTENSION_BLOCK(goto *insns_address_table[GET_CURRENT_INSN()]); \
+  rb_bug("tc error");
+
+#define TC_DISPATCH0()  \
+  DISPATCH_ARCH_DEPEND_WAY(insns_address_table[GET_CURRENT_INSN()]); \
   RB_GNUC_EXTENSION_BLOCK(goto *insns_address_table[GET_CURRENT_INSN()]); \
   rb_bug("tc error");
 
