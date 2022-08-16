@@ -3044,7 +3044,8 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             add_call_elem(si->caller_bbv, vm_cc_cme(cd->cc));
         } else if (cme->def->type == VM_METHOD_TYPE_IVAR
                    && (vm_ci_flag(ci) & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT)) == 0
-                   && RB_TYPE_P(recv, T_OBJECT)) {
+                   && RB_TYPE_P(recv, T_OBJECT)
+                   && (ruby_vm_event_flags & (RUBY_EVENT_CALL | RUBY_EVENT_RETURN)) == 0) {
             rb_check_arity(argc, 0, 0);
             if (vm_cc_attr_index(cc) <= 0)
                 return TRUE; /* do nothing -- no attr index yet */
@@ -3056,7 +3057,8 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             call_pc[2] = (VALUE)vm_cc_attr_index(cc) - 1;
         } else if (cme->def->type == VM_METHOD_TYPE_ATTRSET
                    && (vm_ci_flag(ci) & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG)) == 0
-                   && RB_TYPE_P(recv, T_OBJECT)) {
+                   && RB_TYPE_P(recv, T_OBJECT)
+                   && (ruby_vm_event_flags & (RUBY_EVENT_CALL | RUBY_EVENT_RETURN)) == 0) {
             rb_check_arity(argc, 1, 1);
             if (vm_cc_attr_index(cc) <= 0)
                 return TRUE; /* do nothing -- no attr index yet */
