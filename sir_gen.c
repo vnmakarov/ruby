@@ -2731,7 +2731,7 @@ static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv, rb_callable_method_en
         next_call_elem = call_elem->next_bbv_call_elem;
         if (call_elem->cme == except_cme) continue;
         remove_call_elem_from_cme_list(call_elem);
-        rb_st_delete(call_elems_tab, (st_data_t)call_elem, NULL);
+        rb_st_delete(call_elems_tab, (st_data_t *)call_elem, NULL);
         ruby_xfree((void *)call_elem);
     }
     bbv->call_elems = NULL;

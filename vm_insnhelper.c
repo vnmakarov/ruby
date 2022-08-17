@@ -5456,7 +5456,7 @@ vm_trace_hook(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, const VAL
     rb_event_flag_t event = pc_events & target_event;
     VALUE self = GET_SELF();
     int sir_p = rb_sir_enabled_p();
-    VALUE *saved_pc = reg_cfp->pc;
+    const VALUE *saved_pc = reg_cfp->pc;
 
     VM_ASSERT(rb_popcount64((uint64_t)event) == 1);
 
