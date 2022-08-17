@@ -2914,9 +2914,9 @@ sir_iseq_send_without_block
     MIRJIT_CONST_PTR(VALUE *, start_pc, body->bbv_code + bbv_ref->bbv_start);
     MIRJIT_CONST(int, local_size, body->local_table_size - argc, "d");
     MIRJIT_CONST(int, stack_max, body->stack_max, "d");
-    vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
-                  VM_BLOCK_HANDLER_NONE, (VALUE)cme, start_pc,
-                  argv + argc, local_size, stack_max);
+    vm_push_frame_1(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
+                    VM_BLOCK_HANDLER_NONE, (VALUE)cme, start_pc,
+                    argv + argc, local_size, stack_max);
     RESTORE_REGS();
     NEXT_INSN();
   sir_iseq_send_without_block_exit:
@@ -3041,8 +3041,8 @@ sir_cfunc_send
         captured->code.iseq = blockiseq;
         bh = VM_BH_FROM_ISEQ_BLOCK(captured);
     }
-    vm_push_frame(ec, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
-                  bh, (VALUE)cme, 0, reg_cfp->sp, 0, 0);
+    vm_push_frame_1(ec, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
+                    bh, (VALUE)cme, 0, reg_cfp->sp, 0, 0);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
     MIRJIT_CONST_PTR(rb_cfunc_invoker_t, invoker, cfunc->invoker);
     MIRJIT_CONST_PTR(rb_cfunc_func_t, func, cfunc->func);
@@ -3130,9 +3130,9 @@ sir_iter_body
         MIRJIT_CONST(int, local_size, body->local_table_size - param_size, "d");
         MIRJIT_CONST(int, stack_max, body->stack_max, "d");
         MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, bbv_ref->cme);
-        vm_push_frame(ec, iseq, VM_FRAME_MAGIC_METHOD, GET_SELF(),
-                      (VALUE)GET_EP() | 1, (VALUE)cme, start_pc,
-                      reg_cfp->sp + 1 + param_size, local_size, stack_max);
+        vm_push_frame_1(ec, iseq, VM_FRAME_MAGIC_METHOD, GET_SELF(),
+                        (VALUE)GET_EP() | 1, (VALUE)cme, start_pc,
+                        reg_cfp->sp + 1 + param_size, local_size, stack_max);
         RESTORE_REGS();
         NEXT_INSN();
     }
