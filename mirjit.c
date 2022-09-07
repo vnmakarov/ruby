@@ -30,6 +30,18 @@ enum ruby_vminsn_type rb_mirjit_insn_decode(VALUE *slot) {
     return rb_vm_insn_addr2insn((void *)*slot);
 }
 
+void *rb_mirjit_get_pc_dispatch_addr(VALUE *pc) {
+    return NULL;
+}
+
+void
+rb_mirjit_mark_bbv_change(struct rb_iseq_bbv *bbv) {
+}
+
+void
+rb_rejit_bbv(struct rb_iseq_bbv *bbv) {
+}
+
 #else
 
 #include "mir.h"

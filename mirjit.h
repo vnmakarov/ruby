@@ -15,6 +15,10 @@
 #include "vm_core.h"
 
 int rb_mirjit_enabled_p(void);
+void *rb_mirjit_get_pc_dispatch_addr(VALUE *pc);
+enum ruby_vminsn_type rb_mirjit_insn_decode(VALUE *slot);
+void rb_mirjit_mark_bbv_change(struct rb_iseq_bbv *bbv);
+void rb_rejit_bbv(struct rb_iseq_bbv *bbv);
 
 #ifdef HAVE_LIBMIR
 
@@ -31,12 +35,8 @@ struct rb_mirjit_options {
 };
 
 int rb_mirjit_debug_p(void);
-void *rb_mirjit_get_pc_dispatch_addr(VALUE *pc);
 void rb_mirjit_set_pc_dispatch_addr(VALUE *pc, void *addr);
-enum ruby_vminsn_type rb_mirjit_insn_decode(VALUE *slot);
 void rb_jit_bbv(struct rb_iseq_bbv *bbv);
-void rb_rejit_bbv(struct rb_iseq_bbv *bbv);
-void rb_mirjit_mark_bbv_change(struct rb_iseq_bbv *bbv);
 void rb_mirjit_init(struct rb_mirjit_options *options);
 void rb_mirjit_finish(void);
 
