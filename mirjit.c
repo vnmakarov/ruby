@@ -23,9 +23,6 @@
 
 #ifndef HAVE_LIBMIR
 
-#include "mir.h"
-#include "mir-gen.h"
-
 int
 rb_mirjit_enabled_p(void) { return FALSE; }
 
@@ -34,6 +31,9 @@ enum ruby_vminsn_type rb_mirjit_insn_decode(VALUE *slot) {
 }
 
 #else
+
+#include "mir.h"
+#include "mir-gen.h"
 
 #include "c2mir.h"
 
