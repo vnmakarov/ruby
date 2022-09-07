@@ -3,7 +3,7 @@
 # OPTCARROT in comparison with the first Ruby.  It also prints peak
 # memory consumption scaled to the first Ruby.
 #
-# Usage: optcarrot-compare.rb "<optcarrot options and script>" <ruby name>:<path to the ruby> ... 
+# Usage: optcarrot-compare.rb "<optcarrot options and script>" <ruby name>:<path to the ruby> ...
 #
 
 def print_header(commands, mt, mc)

@@ -21,13 +21,17 @@
 
 #include "mirjit.h"
 
+#ifndef HAVE_LIBMIR
+
 #include "mir.h"
 #include "mir-gen.h"
 
-#ifndef HAVE_LIBMIR
-
 int
 rb_mirjit_enabled_p(void) { return FALSE; }
+
+enum ruby_vminsn_type rb_mirjit_insn_decode(VALUE *slot) {
+    return rb_vm_insn_addr2insn((void *)*slot);
+}
 
 #else
 
@@ -238,7 +242,7 @@ static void gen_write_barrier(VARR(char) *buff, const char *a, const char *b) {
 static void gen_array_aref_len(VARR(char) *buff, const char *aref, const char *len, const char *ary) {
     O("  flags = *((VALUE *)((char *)%s + %d));\n", ary, (int)offsetof(struct RBasic, flags));
     O("  if (flags & 0x%"PRIxVALUE ") {\n", (VALUE)RARRAY_EMBED_FLAG);
-    O("    %s = (flags & 0x%"PRIxVALUE ") >> 0x%"PRIxVALUE ";\n", len, 
+    O("    %s = (flags & 0x%"PRIxVALUE ") >> 0x%"PRIxVALUE ";\n", len,
       (VALUE)RARRAY_EMBED_LEN_MASK, (VALUE)RARRAY_EMBED_LEN_SHIFT);
     O("    %s = (VALUE *)((char *)%s + %d);\n", aref, ary, (int)offsetof(struct RArray, as.ary));
     O("  } else {\n");

@@ -3,7 +3,7 @@
 # comparison with the first Ruby.  It also prints peak memory
 # consumption scaled to the first Ruby.
 #
-# Usage: compare.rb "<tests separated by spaces>" <ruby name>:<path to the ruby> ... 
+# Usage: compare.rb "<tests separated by spaces>" <ruby name>:<path to the ruby> ...
 #
 
 def print_header(commands, mt, mc)
