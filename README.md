@@ -15,7 +15,7 @@
 * Specialized VM insns are generated dynamically in a lazy way and on VM insns BB level only.  They consist of
   * hybrid stack-RTL insns:
 ```
-        sir_{plus,minus,mult,div,mod,or,and,eq,neq,lt,gt,le,ge,aref,aset}{s,v}{s,v,i}{s,v,i}
+        sir_{plus,minus,mult,div,mod,or,and,eq,neq,lt,gt,le,ge,aref,aset}s{s,v,i}{s,v,i}
 ```
     where suffix 's' means value on stack, `v` means local variable value, `i` means immediate value.
     Some sufix combinations (like `vii`, `sii`, `sss`) are not permitted.
