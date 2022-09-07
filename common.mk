@@ -5771,6 +5771,7 @@ eval.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 eval.$(OBJEXT): {$(VPATH)}io.h
 eval.$(OBJEXT): {$(VPATH)}iseq.h
 eval.$(OBJEXT): {$(VPATH)}method.h
+eval.$(OBJEXT): {$(VPATH)}mirjit.h
 eval.$(OBJEXT): {$(VPATH)}missing.h
 eval.$(OBJEXT): {$(VPATH)}mjit.h
 eval.$(OBJEXT): {$(VPATH)}node.h
@@ -5783,6 +5784,7 @@ eval.$(OBJEXT): {$(VPATH)}ractor.h
 eval.$(OBJEXT): {$(VPATH)}ractor_core.h
 eval.$(OBJEXT): {$(VPATH)}ruby_assert.h
 eval.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+eval.$(OBJEXT): {$(VPATH)}sir.h
 eval.$(OBJEXT): {$(VPATH)}st.h
 eval.$(OBJEXT): {$(VPATH)}subst.h
 eval.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -7581,6 +7583,7 @@ iseq.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 iseq.$(OBJEXT): {$(VPATH)}iseq.c
 iseq.$(OBJEXT): {$(VPATH)}iseq.h
 iseq.$(OBJEXT): {$(VPATH)}method.h
+iseq.$(OBJEXT): {$(VPATH)}mirjit.h
 iseq.$(OBJEXT): {$(VPATH)}missing.h
 iseq.$(OBJEXT): {$(VPATH)}mjit.h
 iseq.$(OBJEXT): {$(VPATH)}node.h
@@ -9090,11 +9093,15 @@ mirjit.$(OBJEXT): $(CCAN_DIR)/list/list.h
 mirjit.$(OBJEXT): $(CCAN_DIR)/str/str.h
 mirjit.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/array.h
+mirjit.$(OBJEXT): $(top_srcdir)/internal/bignum.h
+mirjit.$(OBJEXT): $(top_srcdir)/internal/bits.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/class.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/compile.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/compilers.h
+mirjit.$(OBJEXT): $(top_srcdir)/internal/fixnum.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/gc.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/imemo.h
+mirjit.$(OBJEXT): $(top_srcdir)/internal/numeric.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/serial.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/static_assert.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/vm.h
@@ -17065,7 +17072,6 @@ vm.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 vm.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 vm.$(OBJEXT): {$(VPATH)}iseq.h
 vm.$(OBJEXT): {$(VPATH)}method.h
-vm.$(OBJEXT): {$(VPATH)}mir_resolver.inc
 vm.$(OBJEXT): {$(VPATH)}mirjit.h
 vm.$(OBJEXT): {$(VPATH)}missing.h
 vm.$(OBJEXT): {$(VPATH)}mjit.h
@@ -17890,6 +17896,7 @@ vm_trace.$(OBJEXT): {$(VPATH)}oniguruma.h
 vm_trace.$(OBJEXT): {$(VPATH)}ractor.h
 vm_trace.$(OBJEXT): {$(VPATH)}ruby_assert.h
 vm_trace.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+vm_trace.$(OBJEXT): {$(VPATH)}sir.h
 vm_trace.$(OBJEXT): {$(VPATH)}st.h
 vm_trace.$(OBJEXT): {$(VPATH)}subst.h
 vm_trace.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
