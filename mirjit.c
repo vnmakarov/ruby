@@ -1,3 +1,11 @@
+/**********************************************************************
+
+  mirjit.c - Code for generating C code for MIR from SIR
+
+  Copyright (C) 2022 Vladimir Makarov vmakarov@redhat.com
+
+**********************************************************************/
+
 #include <float.h>
 #include "sir.h"
 #include "internal/compile.h"
