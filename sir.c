@@ -1,3 +1,11 @@
+/**********************************************************************
+
+  sir.c - CLI of SIR (Specialized Internal Representation)
+
+  Copyright (C) 2022 Vladimir Makarov vmakarov@redhat.com
+
+**********************************************************************/
+
 #include "sir.h"
 
 static struct rb_sir_options sir_options;
