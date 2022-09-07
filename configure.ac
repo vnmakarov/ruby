@@ -1300,8 +1300,8 @@ RUBY_UNIVERSAL_CHECK_HEADER([x86_64, i386], x86intrin.h)
 AC_ARG_WITH([mir],
   [AS_HELP_STRING([--without-mir],
     [disable MIR used for MIRJIT])],
-  [],
-  [with_mir=yes])
+  [with_mir=no],
+  [with_mir=yes])a
 AS_IF([test "x$with_mir" != xno],
   [AC_CHECK_HEADERS(mir.h)
    AS_IF([test "x$ac_cv_header_mir_h" != xno],
