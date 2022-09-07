@@ -1,16 +1,16 @@
 name: Compilations
 
-on:
-  push:
-    paths-ignore:
-      - 'doc/**'
-      - '**.md'
-      - '**.rdoc'
-  pull_request:
-    paths-ignore:
-      - 'doc/**'
-      - '**.md'
-      - '**.rdoc'
+on: [workflow_dispatch] # switched off because of failure in download for MSP-Greg/ruby-setup-ruby/00-win-ucrt
+#  push:
+#    paths-ignore:
+#      - 'doc/**'
+#      - '**.md'
+#      - '**.rdoc'
+#  pull_request:
+#    paths-ignore:
+#      - 'doc/**'
+#      - '**.md'
+#      - '**.rdoc'
 
 # Github actions does not support YAML anchors.  This creative use of
 # environment variables (plus the "echo $GITHUB_ENV" hack) is to reroute that

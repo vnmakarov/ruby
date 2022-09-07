@@ -1,15 +1,15 @@
 name: MinGW
-on:
-  push:
-    paths-ignore:
-      - 'doc/**'
-      - '**.md'
-      - '**.rdoc'
-  pull_request:
-    paths-ignore:
-      - 'doc/**'
-      - '**.md'
-      - '**.rdoc'
+on: [workflow_dispatch] # switched off because of failure in download of zlib
+#  push:
+#    paths-ignore:
+#      - 'doc/**'
+#      - '**.md'
+#      - '**.rdoc'
+#  pull_request:
+#    paths-ignore:
+#      - 'doc/**'
+#      - '**.md'
+#      - '**.rdoc'
 
 # Notes:
 # Actions console encoding causes issues, see test-all & test-spec steps

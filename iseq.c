@@ -38,6 +38,7 @@
 #include "iseq.h"
 #include "mjit.h"
 #include "sir.h"
+#include "mirjit.h"
 #include "ruby/util.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
