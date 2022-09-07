@@ -17,7 +17,7 @@
 ```
         sir_{plus,minus,mult,div,mod,or,and,eq,neq,lt,gt,le,ge,aref,aset}s{s,v,i}{s,v,i}
 ```
-    where suffix 's' means value on stack, `v` means local variable value, `i` means immediate value.
+    where suffix `s` means value on stack, `v` means local variable value, `i` means immediate value.
     Some sufix combinations (like `vii`, `sii`, `sss`) are not permitted.
   * type-specialized insns:
 ```
