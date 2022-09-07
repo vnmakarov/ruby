@@ -1300,13 +1300,14 @@ RUBY_UNIVERSAL_CHECK_HEADER([x86_64, i386], x86intrin.h)
 AC_ARG_WITH([mir],
   [AS_HELP_STRING([--without-mir],
     [disable MIR used for MIRJIT])],
-  [with_mir=no],
-  [with_mir=yes])a
+  [],
+  [with_mir=yes])
 AS_IF([test "x$with_mir" != xno],
   [AC_CHECK_HEADERS(mir.h)
-   AS_IF([test "x$ac_cv_header_mir_h" != xno],
-     AC_SEARCH_LIBS([MIR_gen_init], [mir],
-       [AC_DEFINE(HAVE_LIBMIR, 1)], [], [-lpthread]))])
+   AS_IF([test "x$ac_cv_header_mir_h" != xno && test x"$enable_pthread" = xyes],
+     AC_CHECK_LIB([mir], [MIR_gen_init],
+       [AC_DEFINE(HAVE_LIBMIR, 1)
+        LIBS="$LIBS -lmir"], [], [-lpthread]))])
 
 AC_ARG_WITH([gmp],
   [AS_HELP_STRING([--without-gmp],
