@@ -5557,7 +5557,7 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
                               (int)rb_iseq_line_no(iseq, pos),
                               RSTRING_PTR(rb_iseq_label(iseq)));
         }
-        VM_ASSERT(rb_iseq_encoded_pc(reg_cfp) == pc);
+        VM_ASSERT(rb_iseq_encoded_pc(reg_cfp->iseq, reg_cfp->pc) == pc);
         VM_ASSERT(pc_events != 0);
         VM_ASSERT(enabled_flags & pc_events);
 
