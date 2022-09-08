@@ -3324,7 +3324,7 @@ encoded_iseq_trace_instrument(const struct rb_iseq_constant_body *const body, in
             turnon = 1;
         }
         *iseq_encoded_insn = (VALUE) (turnon ? e->trace_encoded_insn : e->notrace_encoded_insn);
-        body->iseq_encoded_trace_p[pos] = turnon;
+        if (body->iseq_encoded_trace_p != NULL) body->iseq_encoded_trace_p[pos] = turnon;
         return e->insn_len;
     }
 
