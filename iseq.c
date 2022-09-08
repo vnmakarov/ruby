@@ -3335,7 +3335,7 @@ void
 rb_iseq_trace_flag_cleared(const rb_iseq_t *iseq, size_t pos)
 {
     const struct rb_iseq_constant_body *const body = iseq->body;
-    encoded_iseq_trace_instrument(body, pos, 0, false);
+    encoded_iseq_trace_instrument(body, (int)pos, 0, false);
 }
 
 static int

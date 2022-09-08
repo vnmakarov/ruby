@@ -2136,7 +2136,7 @@ DEF_HTAB(resolver_el_t);
 static HTAB(resolver_el_t) *resolver_tab;
 
 static htab_hash_t resolver_hash(resolver_el_t el, void *arg) {
-    return st_hash(el.name, strlen(el.name), 42);
+    return (htab_hash_t)st_hash(el.name, strlen(el.name), 42);
 }
 
 static int resolver_eq_p(resolver_el_t el1, resolver_el_t el2, void *arg) {

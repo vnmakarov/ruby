@@ -928,7 +928,7 @@ rb_iseq_encoded_pc(const rb_iseq_t *iseq, const VALUE *pc) {
     const struct rb_iseq_constant_body *body = iseq->body;
 
     if (body->iseq_encoded <= pc && pc <= body->iseq_encoded + body->iseq_size) return pc;
-    pos = pc - body->bbv_code;
+    pos = (int)(pc - body->bbv_code);
     VM_ASSERT(pos < body->bbv_code_free);
     pos = body->bbv_pos_map[pos];
     if (pos < 0) {

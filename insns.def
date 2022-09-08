@@ -3199,7 +3199,7 @@ sir_gen_bbv
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 /* It occurs only in bbv_encoded and can change sir insn addresses */
 {
-    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, TRUE);
+    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (int)origin, TRUE);
     SET_PC(cont_pc);
     ABNORMAL_END_INSN(sir_gen_bbv); /* to skip pc increase */
 }
@@ -3213,7 +3213,7 @@ sir_gen_bbv2
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 /* It occurs only in bbv_encoded and can change sir insn addresses */
 {
-    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, FALSE);
+    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (int)origin, FALSE);
     SET_PC(cont_pc);
     ABNORMAL_END_INSN(sir_gen_bbv2); /* to skip pc increase */
 }
@@ -3227,7 +3227,7 @@ sir_gen_bbv_key
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 /* It occurs only in bbv_encoded and can change sir insn addresses */
 {
-    VALUE *cont_pc = rb_sir_gen_bbv_key(GET_CFP(), (struct rb_iseq_bbv *)bbv, origin, key);
+    VALUE *cont_pc = rb_sir_gen_bbv_key(GET_CFP(), (struct rb_iseq_bbv *)bbv, (int)origin, key);
     SET_PC(cont_pc);
     ABNORMAL_END_INSN(sir_gen_bbv_key); /* to skip pc increase */
 }
@@ -3254,7 +3254,7 @@ sir_make_bbv
 ()
 /* It occurs only in iseq_encoded */
 {
-    VALUE *start_pc = rb_sir_make_bbv(GET_CFP(), bbv_start);
+    VALUE *start_pc = rb_sir_make_bbv(GET_CFP(), (int)bbv_start);
 
     SET_PC(start_pc);
     ABNORMAL_END_INSN(sir_make_bbv); /* to skip pc increase */

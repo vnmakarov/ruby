@@ -35,7 +35,7 @@ insn_stack_increase(enum ruby_vminsn_type insn, const VALUE *opes)
 %   next unless i.has_attribute?('sp_inc')
 %   attr_function = "attr_sp_inc_#{i.name}"
     case <%= i.bin %>:
-        return <%= attr_function %>(<%=
+        return (int)<%= attr_function %>(<%=
           i.opes.map.with_index do |v, j|
             "(" + v[:type] + ")opes[#{j}]"
           end.join(", ")
