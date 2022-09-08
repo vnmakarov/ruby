@@ -59,6 +59,21 @@
 
 * The code is made public only for introducing CRuby developers to the project
 * The code is only good enough to run optcarrot and micro-benchmarks from directory `sir-bench`
+  * To run benchmarks:
+    * optional (for x86-64 mirjit): build and install [MIR](https://github.com/vnmakarov/mir) `bbv` branch with default install prefix (`/usr/local`)
+      * if you have already installed MIR in `/usr/local` and want build ruby w/o mirjit,
+        use option `--without-mir` for ruby `configure`
+    * build ruby from this branch
+    * run microbenchmarks:
+```
+      cd sir-bench
+      ruby compare.rb "<list ruby benchmarks from sir-bench>" base:../miniruby sir:'../miniruby --sir' yjit:'../miniruby --yjit-call-threshold=1' ...
+```
+    * clone [optcarrot](https://github.com/mame/optcarrot) from github and run it:
+```
+      cd sir-bench
+      ../miniruby [--sir|--yjit-call-threshold=1|...]  -v -Ilib -r<path-to-optcarrot>/tools/shim <path-to-optcarrot>/bin/optcarrot --benchmark [--opt] -f=3000 <path-to-optcarrot>/examples/Lan_Master.nes
+```
 * The status will be changed to reflect the project progress
 
 ## The current performance SIR interpreter and MIRJIT
