@@ -1,8 +1,8 @@
 name: bundled_gems
 
-on:
-  schedule:
-    - cron: '45 6 * * *'
+on: [workflow_dispatch]
+#  schedule:
+#    - cron: '45 6 * * *'
 
 jobs:
   update:

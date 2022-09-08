@@ -1,18 +1,18 @@
 name: "Code scanning - action"
 
-on:
-  push:
-    paths-ignore:
-      - 'doc/**'
-      - '**.md'
-      - '**.rdoc'
-  pull_request:
-    paths-ignore:
-      - 'doc/**'
-      - '**.md'
-      - '**.rdoc'
-  schedule:
-    - cron: '0 12 * * 4'
+on: [workflow_dispatch]
+#  push:
+#    paths-ignore:
+#      - 'doc/**'
+#      - '**.md'
+#      - '**.rdoc'
+#  pull_request:
+#    paths-ignore:
+#      - 'doc/**'
+#      - '**.md'
+#      - '**.rdoc'
+#  schedule:
+#    - cron: '0 12 * * 4'
 
 jobs:
   CodeQL-Build:

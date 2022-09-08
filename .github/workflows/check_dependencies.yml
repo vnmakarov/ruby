@@ -1,15 +1,15 @@
 name: Check Dependencies
-on:
-  push:
-    paths-ignore:
-      - 'doc/**'
-      - '**.md'
-      - '**.rdoc'
-  pull_request:
-    paths-ignore:
-      - 'doc/**'
-      - '**.md'
-      - '**.rdoc'
+on: [workflow_dispatch]
+#  push:
+#    paths-ignore:
+#      - 'doc/**'
+#      - '**.md'
+#      - '**.rdoc'
+#  pull_request:
+#    paths-ignore:
+#      - 'doc/**'
+#      - '**.md'
+#      - '**.rdoc'
 
 jobs:
   update-deps:
