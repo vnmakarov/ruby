@@ -747,8 +747,8 @@ sir_insn_trace_update(const rb_iseq_t *iseq, VALUE *pc) {
         *pc = (VALUE)e->notrace_encoded_insn;
         break;
     default:
-        stack_pos = stack_pc - body->iseq_encoded;
-        *pc = (VALUE)(body->iseq_encoded_trace_p[stack_pos]
+        stack_pos = (int)(stack_pc - body->iseq_encoded);
+        *pc = (VALUE)(body->iseq_encoded_trace_p != NULL && body->iseq_encoded_trace_p[stack_pos]
                       ? e->trace_encoded_insn : e->notrace_encoded_insn);
         break;
     }
