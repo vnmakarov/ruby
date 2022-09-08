@@ -495,6 +495,7 @@ create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bou
         memcpy(bbv->attrs, attrs, n_attrs);
     }
     memset(bbv->used_bops, 0, sizeof(bbv->used_bops));
+    bbv->num = (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs);
     VARR_PUSH(rb_iseq_bbv_t, all_bbvs, bbv);
     return bbv;
 }
@@ -2877,7 +2878,7 @@ rb_sir_bop_redefined(enum ruby_basic_operators bop, int klass_flag) { // ???
     rb_vm_barrier (); /* the change can be non-atomic */
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
         bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
-        if ((bbv->used_bops[bop] & klass_flag) != 0)
+        if (bbv != NULL && (bbv->used_bops[bop] & klass_flag) != 0)
             invalidate_bbv_code(bbv, NULL);
     }
     RB_VM_LOCK_LEAVE();
@@ -2908,7 +2909,7 @@ rb_sir_trace_invalidate(void) {
     rb_vm_barrier (); /* the change can be non-atomic */
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
         bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
-        if (bbv->head_bbv == NULL) continue;
+        if (bbv == NULL || bbv->head_bbv == NULL) continue;
         invalidate_bbv_code(bbv, NULL);
     }
     RB_VM_LOCK_LEAVE();
@@ -3201,14 +3202,16 @@ rb_sir_iseq_update_references(rb_iseq_t *iseq) {
 void
 rb_sir_iseq_free(struct rb_iseq_constant_body *body) {
     rb_iseq_bbv_t bbv, curr_bbv, next_bbv;
-    int i;
+    int i, bbv_num;
 
     for (i = 0; i < body->n_bbvs; i++) {
         bbv = body->bbvs[i];
         for (curr_bbv = bbv; curr_bbv != NULL; curr_bbv = next_bbv) {
             next_bbv = curr_bbv->next_bbv;
+            bbv_num = curr_bbv->num;
             /* ??? free attrs in sir_make_send */
             ruby_xfree((void *)curr_bbv);
+            VARR_SET(rb_iseq_bbv_t, all_bbvs, bbv_num, NULL);
         }
     }
     if (body->curr_param_opt_table != NULL && body->curr_param_opt_table != body->param.opt_table)

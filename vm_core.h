@@ -846,6 +846,7 @@ struct rb_iseq_bbv {
     struct rb_iseq_bbv *next_bbv;
     struct rb_iseq_bbv_edge *in_edges, *out_edges;
     struct rb_sir_call_elem *call_elems;
+    int num; /* index in all_bbvs */
     int bbv_start, bbv_bound; /* start / bound pos in bbv_code */
     int start_stack_size; /* stack size at bb start */
     short used_bops[BOP_LAST_];
