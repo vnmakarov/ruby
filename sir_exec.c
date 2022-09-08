@@ -475,7 +475,7 @@ sir_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *), int (**arg_f
     return TRUE;
 }
 
-static void
+static SIR_UNUSED void
 mirjit_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type, VALUE self, VALUE specval,
 	      VALUE cref_or_me, const VALUE *pc, VALUE *sp, int local_size, int stack_max)
 {

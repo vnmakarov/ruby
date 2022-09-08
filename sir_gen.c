@@ -310,7 +310,7 @@ static VARR(char) *arg_attrs;
 
 static void
 check_final_attrs(int n_attrs, char *attrs) {
-    static_assert(ATTR_END_MARKER == 0); /* to use strcmp/strlen functions */
+    static_assert(ATTR_END_MARKER == 0, "wrong value of ATTR_END_MARKER"); /* to use strcmp/strlen functions */
     SIR_GEN_ASSERT(attrs == NULL
                    || (n_attrs > 0 && attrs[n_attrs - 1] == ATTR_END_MARKER
                        && (n_attrs < 2 || attrs[n_attrs - 2] != ATTR_UNKNOWN) /* compact attrs */

@@ -15,10 +15,13 @@
 #if defined(__GNUC__)
 #define sir_inline inline __attribute__ ((__always_inline__))
 #define sir_noinline __attribute__ ((__noinline__))
+#define SIR_UNUSED __attribute__ ((__unused__))
 #else
 #define sir_inline inline
 #define sir_noinline
+#define SIR_UNUSED
 #endif
+
 
 /* SIR_STATS controls supporting runtime counters in generation and execution of SIR code.
    Switching this on slows down interpretation enormously. */
@@ -119,7 +122,7 @@ static inline void varr_assert_fail(const char *op, const char *var) {
 #define VARR_ASSERT(EXPR,OP,T) ((void)(EXPR))
 #endif
 
-static inline void
+static inline RBIMPL_ATTR_NORETURN() void
 varr_malloc_failure(void) {
     RUBY_LONGJMP(sir_gen_jump_buf, 1);
 }
@@ -145,7 +148,7 @@ typedef struct VARR(T) {                                                      \
 #define DEF_VARR(T)                                                            \
 VARR_T(T);								       \
 									       \
-static inline void VARR_OP(T, create)(VARR(T) **varr_, size_t size_) {         \
+static inline SIR_UNUSED void VARR_OP(T, create)(VARR(T) **varr_, size_t size_) {         \
     VARR(T) *va;						       	       \
     if (size_ == 0)							       \
         size_ = VARR_DEFAULT_SIZE;					       \
@@ -156,7 +159,7 @@ static inline void VARR_OP(T, create)(VARR(T) **varr_, size_t size_) {         \
     if (va->varr == NULL) varr_malloc_failure();			       \
 }                                                                              \
                                                                                \
-static inline void VARR_OP(T, destroy)(VARR(T) **varr_) {	               \
+static inline SIR_UNUSED void VARR_OP(T, destroy)(VARR(T) **varr_) {	               \
     VARR(T) *va = *varr_;						       \
     VARR_ASSERT(va && va->varr, "destroy", T);				       \
     free(va->varr);							       \
@@ -164,27 +167,27 @@ static inline void VARR_OP(T, destroy)(VARR(T) **varr_) {	               \
     *varr_ = NULL;							       \
 }									       \
                                                                                \
-static inline size_t VARR_OP(T, length)(const VARR(T) *varr_) {	               \
+static inline SIR_UNUSED size_t VARR_OP(T, length)(const VARR(T) *varr_) {	               \
     VARR_ASSERT(varr_, "length", T);					       \
     return varr_->els_num;						       \
 }                                                                              \
                                                                                \
-static inline T *VARR_OP(T, addr)(const VARR(T) *varr_) {	               \
+static inline SIR_UNUSED T *VARR_OP(T, addr)(const VARR(T) *varr_) {	               \
     VARR_ASSERT(varr_, "addr", T);					       \
     return &varr_->varr[0];						       \
 }                                                                              \
                                                                                \
-static inline T VARR_OP(T, last)(const VARR(T) *varr_) {                       \
+static inline SIR_UNUSED T VARR_OP(T, last)(const VARR(T) *varr_) {                       \
     VARR_ASSERT(varr_ && varr_->varr && varr_->els_num, "last", T);	       \
     return varr_->varr[varr_->els_num - 1];				       \
 }                                                                              \
                                                                                \
-static inline T VARR_OP(T, get)(const VARR(T) *varr_, size_t ix_) { 	       \
+static inline SIR_UNUSED T VARR_OP(T, get)(const VARR(T) *varr_, size_t ix_) { 	       \
     VARR_ASSERT(varr_ && varr_->varr && ix_ < varr_->els_num, "get", T);       \
     return varr_->varr[ix_];						       \
 }                                                                              \
                                                                                \
-static inline T VARR_OP(T, set)(const VARR(T) *varr_, size_t ix_, T obj_) {    \
+static inline SIR_UNUSED T VARR_OP(T, set)(const VARR(T) *varr_, size_t ix_, T obj_) {    \
     T old_obj_;								       \
     VARR_ASSERT(varr_ && varr_->varr && ix_ < varr_->els_num, "set", T);       \
     old_obj_ = varr_->varr[ix_];					       \
@@ -192,12 +195,12 @@ static inline T VARR_OP(T, set)(const VARR(T) *varr_, size_t ix_, T obj_) {    \
     return old_obj_;							       \
 }                                                                              \
                                                                                \
-static inline void VARR_OP(T,trunc)(VARR(T) *varr_, size_t size_) {            \
+static inline SIR_UNUSED void VARR_OP(T,trunc)(VARR(T) *varr_, size_t size_) {            \
     VARR_ASSERT(varr_ && varr_->varr && varr_->els_num >= size_, "trunc", T);  \
     varr_->els_num = size_;						       \
 }									       \
                                                                                \
-static inline void VARR_OP(T,expand)(VARR(T) *varr_, size_t size_) {	       \
+static inline SIR_UNUSED void VARR_OP(T,expand)(VARR(T) *varr_, size_t size_) {	       \
     VARR_ASSERT(varr_  && varr_->varr, "expand", T);			       \
     if (varr_->size < size_) {						       \
 	size_ += size_ / 2;						       \
@@ -207,14 +210,14 @@ static inline void VARR_OP(T,expand)(VARR(T) *varr_, size_t size_) {	       \
     }                                                                          \
 }									       \
 									       \
-static inline void VARR_OP(T, push)(VARR(T) *varr_, T obj_) {	               \
+static inline SIR_UNUSED void VARR_OP(T, push)(VARR(T) *varr_, T obj_) {	               \
     T *slot_;								       \
     VARR_OP(T, expand)(varr_, varr_->els_num + 1);			       \
     slot_ = &varr_->varr[varr_->els_num++];				       \
     *slot_ = obj_;							       \
 }                                                                              \
                                                                                \
-static inline T VARR_OP(T, pop)(VARR(T) *varr_) {			       \
+static inline SIR_UNUSED T VARR_OP(T, pop)(VARR(T) *varr_) {			       \
     T obj_;								       \
     VARR_ASSERT(varr_ && varr_->varr && varr_->els_num, "pop", T);	       \
     obj_ = varr_->varr[--varr_->els_num];				       \
