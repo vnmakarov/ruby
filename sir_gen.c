@@ -10,6 +10,7 @@
 #include "internal/hash.h"
 #include "internal/compile.h"
 #include "internal/variable.h"
+#include "internal/class.h"
 #include "vm_callinfo.h"
 #include "vm_sync.h"
 
@@ -2967,7 +2968,10 @@ rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic, VALUE val) {
         if (debug_p)
             fprintf(stderr, "--> Changing sir_make_getivar to %4ld %s\n",
                     insn_pc - cfp->iseq->body->bbv_code, fixnum_p ? "sir_igetivar" : "sir_getivar");
+        struct rb_iv_index_tbl_entry *entry = ((IVC)insn_pc[2])->entry;
         *insn_pc = (VALUE)sir_dispatch_table[fixnum_p ? BIN(sir_igetivar) : BIN(sir_getivar)];
+        insn_pc[1] = entry == NULL ? 0 : entry->index;
+        insn_pc[2] = entry == NULL ? 0 : entry->class_serial;
         RB_VM_LOCK_LEAVE();
         return;
     }
@@ -2988,7 +2992,10 @@ rb_sir_change_setivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
         RB_VM_LOCK_ENTER();
         if (debug_p)
             fprintf(stderr, "--> Changing sir_make_setivar to sir_setivar\n");
+        struct rb_iv_index_tbl_entry *entry = ((IVC)insn_pc[2])->entry;
         change_insn(cfp->iseq, insn_pc, BIN(sir_setivar));
+        insn_pc[1] = entry == NULL ? 0 : entry->index;
+        insn_pc[2] = entry == NULL ? 0 : entry->class_serial;
         RB_VM_LOCK_LEAVE();
         return;
     }

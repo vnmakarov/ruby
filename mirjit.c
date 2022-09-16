@@ -1818,10 +1818,8 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
 #if SIZEOF_SERIAL_T != SIZEOF_VALUE
         return FALSE;
 #else
-        IVC ic = (IVC)operands[1];
-        struct rb_iv_index_tbl_entry *entry = ic->entry;
-        rb_serial_t class_serial = entry == NULL ? 0 : entry->class_serial;
-        uint32_t index = entry->index;
+        rb_serial_t class_serial = (rb_serial_t)operands[1];
+        uint32_t index = (uint32_t)operands[0];
 
         O("  val = cfp->self;\n");
         O("  val2 = *(VALUE *)((char *)val + %d);\n", (int)offsetof(struct RBasic, klass)); /* self class */

@@ -2809,21 +2809,22 @@ sir_inspect_stack_type sir_inspect_stack_fixtype sir_inspect_stack_flotype
 /* Get value of instance variable id of self. */
 DEFINE_INSN
 sir_getivar
-(ID id, IVC ic)
+(lindex_t index, lindex_t class_serial)
 ()
 (VALUE val)
 // attr bool leaf = false; /* has IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() */
 {
     VALUE self = GET_SELF();
-    MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
-    MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
     if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto sir_getivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
-    MIRJIT_CONST(unsigned int, index, entry->index, "u");
-    if (LIKELY(index < ROBJECT_NUMIV(self))) {
-        val = ROBJECT_IVPTR(self)[index];
-        goto sir_getivar_end;
+    if (RB_FL_ANY_RAW(self, ROBJECT_EMBED)) {
+        if (UNLIKELY(index >= ROBJECT_EMBED_LEN_MAX)) goto sir_getivar_exit;
+        val = ROBJECT(self)->as.ary[index];
+    } else {
+        if (UNLIKELY(index >= ROBJECT(self)->as.heap.numiv)) goto sir_getivar_exit;
+        val = ROBJECT(self)->as.heap.ivptr[index];
     }
+    goto sir_getivar_end;
   sir_getivar_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
     ABNORMAL_END_INSN(sir_getivar);
@@ -2834,22 +2835,22 @@ sir_getivar
 /* Get value of instance variable id of self. */
 DEFINE_INSN
 sir_igetivar
-(ID id, IVC ic)
+(lindex_t index, lindex_t class_serial)
 ()
 (VALUE val)
 // attr bool leaf = false; /* has IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() */
 {
     VALUE self = GET_SELF();
-    MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
-    MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
-
     if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto sir_igetivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
-    MIRJIT_CONST(unsigned int, index, entry->index, "u");
-    if (LIKELY(index < ROBJECT_NUMIV(self))) {
-        val = ROBJECT_IVPTR(self)[index];
-        if (FIXNUM_P(val)) goto sir_igetivar_end;
+    if (RB_FL_ANY_RAW(self, ROBJECT_EMBED)) {
+        if (UNLIKELY(index >= ROBJECT_EMBED_LEN_MAX)) goto sir_igetivar_exit;
+        val = ROBJECT(self)->as.ary[index];
+    } else {
+        if (UNLIKELY(index >= ROBJECT(self)->as.heap.numiv)) goto sir_igetivar_exit;
+        val = ROBJECT(self)->as.heap.ivptr[index];
     }
+    if (FIXNUM_P(val)) goto sir_igetivar_end;
   sir_igetivar_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
     ABNORMAL_END_INSN(sir_getivar);
@@ -2860,27 +2861,32 @@ sir_igetivar
 /* Set value of instance variable id of self to val. */
 DEFINE_INSN
 sir_setivar
-(ID id, IVC ic)
+(lindex_t index, lindex_t class_serial)
 (VALUE val)
 ()
 // attr bool leaf = false; /* has rb_check_frozen_internal() */
 {
     VALUE self = GET_SELF();
-    MIRJIT_CONST_PTR(struct rb_iv_index_tbl_entry *, entry, ic->entry);
-    MIRJIT_CONST(unsigned long long, class_serial, entry == NULL ? 0 : entry->class_serial, "llu");
-
     if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto sir_setivar_exit;
     VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
-    if (LIKELY(!RB_OBJ_FROZEN_RAW(self))) { /* to exlude more of rb_check_frozen_internal */
-        VM_ASSERT(!rb_ractor_shareable_p(self));
-        MIRJIT_CONST(unsigned int, index, entry->index, "u");
-        if (UNLIKELY(index >= ROBJECT_NUMIV(self))) {
+    if (UNLIKELY(RB_OBJ_FROZEN_RAW(self))) goto sir_setivar_exit;
+    VM_ASSERT(!rb_ractor_shareable_p(self));
+    if (RB_FL_ANY_RAW(self, ROBJECT_EMBED)) {
+        if (UNLIKELY(index >= ROBJECT_EMBED_LEN_MAX)) {
+            rb_init_iv_list(self);
+            goto sir_setivar2;
+        }
+        RB_OBJ_WRITE(self, &ROBJECT(self)->as.ary[index], val);
+        goto sir_setivar_end;
+    } else {
+        if (UNLIKELY(index >= ROBJECT(self)->as.heap.numiv)) {
             rb_init_iv_list(self);
         }
-        VALUE *ptr = ROBJECT_IVPTR(self);
-        RB_OBJ_WRITE(self, &ptr[index], val);
-        goto sir_setivar_end;
+      sir_setivar2:
+        VM_ASSERT(!RB_FL_ANY_RAW(self, ROBJECT_EMBED));
+        RB_OBJ_WRITE(self, &ROBJECT(self)->as.heap.ivptr[index], val);
     }
+    goto sir_setivar_end;
   sir_setivar_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
     ABNORMAL_END_INSN(sir_setivar);
