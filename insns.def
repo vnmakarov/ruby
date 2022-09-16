@@ -2945,18 +2945,21 @@ sir_send_ivget
 {
     VALUE recv = TOPN(0);
 
-    if (klass != CLASS_OF(recv)) goto sir_send_ivget_exit;
+    if (UNLIKELY(RB_SPECIAL_CONST_P(recv) || klass != RBASIC_CLASS(recv))) goto sir_send_ivget_exit;
     VM_ASSERT(RB_TYPE_P(recv, T_OBJECT));
-    if (LIKELY(index < ROBJECT_NUMIV(recv))) {
-        reg_cfp->sp--; /* poping recv */
-        val = ROBJECT_IVPTR(recv)[index];
-        goto sir_send_ivget_end;
+    if (RB_FL_ANY_RAW(recv, ROBJECT_EMBED)) {
+        if (UNLIKELY(index >= ROBJECT_EMBED_LEN_MAX)) goto sir_send_ivget_exit;
+        val = ROBJECT(recv)->as.ary[index];
+    } else {
+        if (UNLIKELY(index >= ROBJECT(recv)->as.heap.numiv)) goto sir_send_ivget_exit;
+        val = ROBJECT(recv)->as.heap.ivptr[index];
     }
+    goto sir_send_ivget_end;
   sir_send_ivget_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
     ABNORMAL_END_INSN(sir_opt_ivget);
   sir_send_ivget_end:
-    ;
+    reg_cfp->sp--; /* poping recv */
 }
 
 /* Specialized call of method without block created from make_sir_send:
@@ -2972,24 +2975,31 @@ sir_send_ivset
 {
     VALUE recv = TOPN(1);
 
-    if (klass != CLASS_OF(recv)) goto sir_send_ivset_exit;
+    if (UNLIKELY(RB_SPECIAL_CONST_P(recv) || klass != RBASIC_CLASS(recv))) goto sir_send_ivset_exit;
     VM_ASSERT(RB_TYPE_P(recv, T_OBJECT));
     val = TOPN(0);
-    if (LIKELY(!RB_OBJ_FROZEN_RAW(recv))) { /* to exlude more of rb_check_frozen_internal */
-        VM_ASSERT(!rb_ractor_shareable_p(recv));
-        reg_cfp->sp -= 2; /* poping arg and recv */
-        if (UNLIKELY(index >= ROBJECT_NUMIV(recv))) {
+    if (UNLIKELY(RB_OBJ_FROZEN_RAW(recv))) goto sir_send_ivset_exit;
+    VM_ASSERT(!rb_ractor_shareable_p(recv));
+    if (RB_FL_ANY_RAW(recv, ROBJECT_EMBED)) {
+        if (UNLIKELY(index >= ROBJECT_EMBED_LEN_MAX)) {
+            rb_init_iv_list(recv);
+            goto sir_send_ivset2;
+        }
+        RB_OBJ_WRITE(recv, &ROBJECT(recv)->as.ary[index], val);
+    } else {
+        if (UNLIKELY(index >= ROBJECT(recv)->as.heap.numiv)) {
             rb_init_iv_list(recv);
         }
-        VALUE *ptr = ROBJECT_IVPTR(recv);
-        RB_OBJ_WRITE(recv, &ptr[index], val);
-        goto sir_send_ivset_end;
+      sir_send_ivset2:
+        VM_ASSERT(!RB_FL_ANY_RAW(recv, ROBJECT_EMBED));
+        RB_OBJ_WRITE(recv, &ROBJECT(recv)->as.heap.ivptr[index], val);
     }
+    goto sir_send_ivset_end;
   sir_send_ivset_exit:
     ABS_JUMP(rb_sir_get_safe_pc(reg_cfp, reg_pc - 3));
     ABNORMAL_END_INSN(sir_send_ivset);
   sir_send_ivset_end:
-    ;
+    reg_cfp->sp -= 2; /* poping arg and recv */
 }
 
 /* Non-specialized call of method without block created from sir_make_send */
