@@ -244,16 +244,58 @@ SIR_FUNCS(vm_sir_fgt)
 SIR_FUNCS(vm_sir_fle)
 SIR_FUNCS(vm_sir_fge)
 
+static sir_inline VALUE rb_sir_ary_entry(VALUE ary, long idx) {
+    long len;
+    const VALUE *ptr;
+    if (RB_FL_ANY_RAW(ary, RARRAY_EMBED_FLAG)) {
+        len = RARRAY_EMBED_LEN(ary);
+        ptr = RARRAY(ary)->as.ary;
+    } else {
+        len = RARRAY(ary)->as.heap.len;
+        ptr = RARRAY(ary)->as.heap.ptr;
+    }
+    if (idx < 0) {
+	idx += len;
+	if (RB_UNLIKELY(idx < 0)) return Qnil;
+    } else if (RB_UNLIKELY(idx >= len)) {
+        return Qnil;
+    }
+    return ptr[idx];
+}
+
 static sir_inline VALUE vm_sir_iaref(VALUE v1, VALUE v2) {
     if (SPECIAL_CONST_P(v1) || RBASIC_CLASS(v1) != rb_cArray) return Qundef;
-    return rb_ary_entry_internal(v1, FIX2LONG(v2));
+    return rb_sir_ary_entry(v1, FIX2LONG(v2));
 }
 SIR_FUNCS(vm_sir_iaref)
 
+static sir_inline VALUE rb_sir_ary_store(VALUE ary, long idx, VALUE val) {
+    if (RB_UNLIKELY(RB_OBJ_FROZEN(ary))) return Qundef;
+    if (RB_UNLIKELY(FL_TEST_RAW((ary), ELTS_SHARED) != 0)) {
+        rb_ary_cancel_sharing(ary);
+    }
+    long len;
+    VALUE *ptr;
+    if (RB_FL_ANY_RAW(ary, RARRAY_EMBED_FLAG)) {
+        len = RARRAY_EMBED_LEN(ary);
+        ptr = (VALUE *)RARRAY(ary)->as.ary;
+    } else {
+        len = RARRAY(ary)->as.heap.len;
+        ptr = (VALUE *)RARRAY(ary)->as.heap.ptr;
+    }
+    if (idx < 0) {
+	idx += len;
+	if (RB_UNLIKELY(idx < 0)) return Qundef;
+    } else if (RB_UNLIKELY(idx >= len)) {
+        return Qundef;
+    }
+    RB_OBJ_WRITE(ary, &ptr[idx], val);
+    return val;
+}
+
 static sir_inline VALUE vm_sir_iaset(VALUE arr, VALUE ind, VALUE set) {
     if (SPECIAL_CONST_P(arr) || RBASIC_CLASS(arr) != rb_cArray) return Qundef;
-    rb_ary_store(arr, FIX2LONG(ind), set);
-    return set;
+    return rb_sir_ary_store(arr, FIX2LONG(ind), set);
 }
 
 SIR_FUNCS3(vm_opt_aset)
