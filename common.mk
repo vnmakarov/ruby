@@ -14112,6 +14112,7 @@ sir_gen.$(OBJEXT): $(CCAN_DIR)/list/list.h
 sir_gen.$(OBJEXT): $(CCAN_DIR)/str/str.h
 sir_gen.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 sir_gen.$(OBJEXT): $(top_srcdir)/internal/array.h
+sir_gen.$(OBJEXT): $(top_srcdir)/internal/class.h
 sir_gen.$(OBJEXT): $(top_srcdir)/internal/compile.h
 sir_gen.$(OBJEXT): $(top_srcdir)/internal/compilers.h
 sir_gen.$(OBJEXT): $(top_srcdir)/internal/gc.h
