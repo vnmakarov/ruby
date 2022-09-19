@@ -2136,8 +2136,13 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
         SIR_INSN2_SPEC_LVAR_CASES(fmod):
             setup_attr(get_lvar_num(iseq, operands[0]), ATTR_FLONUM); /* attr of lvar */
             goto rest_cases;
-        case BIN(sir_jump):
         case BIN(sir_getinlinecache):
+            if (profile_p) {
+                struct iseq_inline_constant_cache_entry *ice = ((IC)operands[2])->entry;
+                if (ice && ice->ic_cref == NULL) insn_id = BIN(sir_spec_getinlinecache);
+            }
+        case BIN(sir_spec_getinlinecache):
+        case BIN(sir_jump):
         BRANCH_CASES(ibeq):
         BRANCH_CASES(ibneq):
         BRANCH_CASES(iblt):

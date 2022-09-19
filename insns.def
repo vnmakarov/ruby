@@ -1577,6 +1577,31 @@ sir_getinlinecache
     }
 }
 
+/* speculative push inline-cached value and go to dst if it is valid */
+DEFINE_INSN
+sir_spec_getinlinecache
+(OFFSET dst, OFFSET dst2, IC ic)
+()
+(VALUE val)
+// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
+{
+    struct iseq_inline_constant_cache_entry *ice = ic->entry;
+    static rb_thread_t *th;
+    if (ice && GET_IC_SERIAL(ice) == GET_GLOBAL_CONSTANT_STATE()
+        && ((ice->flags & IMEMO_CONST_CACHE_SHAREABLE)
+            || (th = rb_ec_thread_ptr(ec)) == NULL || th->ractor == th->vm->ractor.main_ractor)) {
+        if (ice->ic_cref != NULL) {
+            ABS_JUMP(rb_sir_get_safe_pc(GET_CFP(), reg_pc));
+            ABNORMAL_END_INSN(sir_spec_getinlinecache);
+        }
+        val = ice->value;
+        JUMP(dst);
+    } else {
+	val = Qnil;
+        JUMP(dst2);
+    }
+}
+
 DEFINE_INSN
 sir_mov
 (EPDISP res, EPDISP op)

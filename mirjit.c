@@ -1742,6 +1742,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* false label */
         break;
     case BIN(sir_getinlinecache):
+    case BIN(sir_spec_getinlinecache):
 #if SIZEOF_SERIAL_T > SIZEOF_VALUE
         return FALSE;
 #else
