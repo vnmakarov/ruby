@@ -1671,8 +1671,6 @@ DEFINE_INSN
 sir_iplussvi sir_iminussvi sir_imultsvi sir_idivsvi sir_imodsvi
 sir_iorsvi sir_iandsvi sir_ieqsvi sir_ineqsvi
 sir_iltsvi sir_igtsvi sir_ilesvi sir_igesvi
-sir_fplussvi sir_fminussvi sir_fmultsvi sir_fdivsvi sir_fmodsvi
-sir_feqsvi sir_fneqsvi sir_fltsvi sir_fgtsvi sir_flesvi sir_fgesvi
 (EPDISP op1, VALUE imm)
 ()
 (VALUE val)
@@ -1684,17 +1682,39 @@ sir_feqsvi sir_fneqsvi sir_fltsvi sir_fgtsvi sir_flesvi sir_fgesvi
 }
 
 DEFINE_INSN
+sir_fplussvi sir_fminussvi sir_fmultsvi sir_fdivsvi sir_fmodsvi
+sir_feqsvi sir_fneqsvi sir_fltsvi sir_fgtsvi sir_flesvi sir_fgesvi
+(EPDISP op1, DBL imm)
+()
+(VALUE val)
+{
+    VALUE v1 = *(GET_EP() + op1);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
+}
+
+DEFINE_INSN
 sir_iplussiv sir_iminussiv sir_imultsiv sir_idivsiv sir_imodsiv
 sir_iorsiv sir_iandsiv sir_ieqsiv sir_ineqsiv
 sir_iltsiv sir_igtsiv sir_ilesiv sir_igesiv
-sir_fplussiv sir_fminussiv sir_fmultsiv sir_fdivsiv sir_fmodsiv
-sir_feqsiv sir_fneqsiv sir_fltsiv sir_fgtsiv sir_flesiv sir_fgesiv
 (VALUE imm, EPDISP op2)
 ()
 (VALUE val)
 {
     VALUE v2 = *(GET_EP() + op2);
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
+}
+
+DEFINE_INSN
+sir_fplussiv sir_fminussiv sir_fmultsiv sir_fdivsiv sir_fmodsiv
+sir_feqsiv sir_fneqsiv sir_fltsiv sir_fgtsiv sir_flesiv sir_fgesiv
+(DBL imm, EPDISP op2)
+()
+(VALUE val)
+{
+    VALUE v2 = *(GET_EP() + op2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
@@ -1735,8 +1755,6 @@ DEFINE_INSN
 sir_iplusssi sir_iminusssi sir_imultssi sir_idivssi sir_imodssi
 sir_iorssi sir_iandssi sir_ieqssi sir_ineqssi
 sir_iltssi sir_igtssi sir_ilessi sir_igessi
-sir_fplusssi sir_fminusssi sir_fmultssi sir_fdivssi sir_fmodssi
-sir_feqssi sir_fneqssi sir_fltssi sir_fgtssi sir_flessi sir_fgessi
 (VALUE imm)
 (VALUE v1)
 (VALUE val)
@@ -1747,16 +1765,36 @@ sir_feqssi sir_fneqssi sir_fltssi sir_fgtssi sir_flessi sir_fgessi
 }
 
 DEFINE_INSN
+sir_fplusssi sir_fminusssi sir_fmultssi sir_fdivssi sir_fmodssi
+sir_feqssi sir_fneqssi sir_fltssi sir_fgtssi sir_flessi sir_fgessi
+(DBL imm)
+(VALUE v1)
+(VALUE val)
+{
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
+}
+
+DEFINE_INSN
 sir_iplussis sir_iminussis sir_imultsis sir_idivsis sir_imodsis
 sir_iorsis sir_iandsis sir_ieqsis sir_ineqsis
 sir_iltsis sir_igtsis sir_ilesis sir_igesis
-sir_fplussis sir_fminussis sir_fmultsis sir_fdivsis sir_fmodsis
-sir_feqsis sir_fneqsis sir_fltsis sir_fgtsis sir_flesis sir_fgesis
 (VALUE imm)
 (VALUE v2)
 (VALUE val)
 {
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
+}
+
+DEFINE_INSN
+sir_fplussis sir_fminussis sir_fmultsis sir_fdivsis sir_fmodsis
+sir_feqsis sir_fneqsis sir_fltsis sir_fgtsis sir_flesis sir_fgesis
+(DBL imm)
+(VALUE v2)
+(VALUE val)
+{
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
 }
@@ -1797,8 +1835,6 @@ DEFINE_INSN
 sir_iplusvvi sir_iminusvvi sir_imultvvi sir_idivvvi sir_imodvvi
 sir_iorvvi sir_iandvvi sir_ieqvvi sir_ineqvvi
 sir_iltvvi sir_igtvvi sir_ilevvi sir_igevvi
-sir_fplusvvi sir_fminusvvi sir_fmultvvi sir_fdivvvi sir_fmodvvi
-sir_feqvvi sir_fneqvvi sir_fltvvi sir_fgtvvi sir_flevvi sir_fgevvi
 (EPDISP res, EPDISP op1, VALUE imm)
 ()
 ()
@@ -1811,17 +1847,41 @@ sir_feqvvi sir_fneqvvi sir_fltvvi sir_fgtvvi sir_flevvi sir_fgevvi
 }
 
 DEFINE_INSN
+sir_fplusvvi sir_fminusvvi sir_fmultvvi sir_fdivvvi sir_fmodvvi
+sir_feqvvi sir_fneqvvi sir_fltvvi sir_fgtvvi sir_flevvi sir_fgevvi
+(EPDISP res, EPDISP op1, DBL imm)
+()
+()
+{
+    VALUE v1 = *(GET_EP() + op1), val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
+    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+}
+
+DEFINE_INSN
 sir_iplusviv sir_iminusviv sir_imultviv sir_idivviv sir_imodviv
 sir_iorviv sir_iandviv sir_ieqviv sir_ineqviv
 sir_iltviv sir_igtviv sir_ileviv sir_igeviv
-sir_fplusviv sir_fminusviv sir_fmultviv sir_fdivviv sir_fmodviv
-sir_feqviv sir_fneqviv sir_fltviv sir_fgtviv sir_fleviv sir_fgeviv
 (EPDISP res, VALUE imm, EPDISP op2)
 ()
 ()
 {
     VALUE v2 = *(GET_EP() + op2), val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
+    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+}
+
+DEFINE_INSN
+sir_fplusviv sir_fminusviv sir_fmultviv sir_fdivviv sir_fmodviv
+sir_feqviv sir_fneqviv sir_fltviv sir_fgtviv sir_fleviv sir_fgeviv
+(EPDISP res, DBL imm, EPDISP op2)
+()
+()
+{
+    VALUE v2 = *(GET_EP() + op2), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
@@ -1865,8 +1925,6 @@ DEFINE_INSN
 sir_iplusvsi sir_iminusvsi sir_imultvsi sir_idivvsi sir_imodvsi
 sir_iorvsi sir_iandvsi sir_ieqvsi sir_ineqvsi
 sir_iltvsi sir_igtvsi sir_ilevsi sir_igevsi
-sir_fplusvsi sir_fminusvsi sir_fmultvsi sir_fdivvsi sir_fmodvsi
-sir_feqvsi sir_fneqvsi sir_fltvsi sir_fgtvsi sir_flevsi sir_fgevsi
 (EPDISP res, VALUE imm)
 (VALUE v1)
 ()
@@ -1879,17 +1937,41 @@ sir_feqvsi sir_fneqvsi sir_fltvsi sir_fgtvsi sir_flevsi sir_fgevsi
 }
 
 DEFINE_INSN
+sir_fplusvsi sir_fminusvsi sir_fmultvsi sir_fdivvsi sir_fmodvsi
+sir_feqvsi sir_fneqvsi sir_fltvsi sir_fgtvsi sir_flevsi sir_fgevsi
+(EPDISP res, DBL imm)
+(VALUE v1)
+()
+{
+    VALUE val;
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
+    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+}
+
+DEFINE_INSN
 sir_iplusvis sir_iminusvis sir_imultvis sir_idivvis sir_imodvis
 sir_iorvis sir_iandvis sir_ieqvis sir_ineqvis
 sir_iltvis sir_igtvis sir_ilevis sir_igevis
-sir_fplusvis sir_fminusvis sir_fmultvis sir_fdivvis sir_fmodvis
-sir_feqvis sir_fneqvis sir_fltvis sir_fgtvis sir_flevis sir_fgevis
 (EPDISP res, VALUE imm)
 (VALUE v2)
 ()
 {
     VALUE val;
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
+    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
+    if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
+    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+}
+
+DEFINE_INSN
+sir_fplusvis sir_fminusvis sir_fmultvis sir_fdivvis sir_fmodvis
+sir_feqvis sir_fneqvis sir_fltvis sir_fgtvis sir_flevis sir_fgevis
+(EPDISP res, DBL imm)
+(VALUE v2)
+()
+{
+    VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);

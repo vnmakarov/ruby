@@ -966,7 +966,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  val2 = ep[%d];\n", (int)(EPDISP)operands[v1_p || imm1_p ? start + 1 : start]);
         } else if (imm2_p) {
             if (fop_p)
-                O("  d = %.*e;\n", DECIMAL_DIG, RFLOAT_VALUE(operands[v1_p || imm1_p ? start + 1 : start]));
+                O("  d = %.*e;\n", DECIMAL_DIG, ((double *)operands)[v1_p || imm1_p ? start + 1 : start]);
             else
                 O("  val2 = 0x%"PRIxVALUE ";\n", operands[v1_p || imm1_p ? start + 1 : start]);
         } else {
@@ -977,7 +977,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  val = ep[%d];\n", (int)(EPDISP)operands[start]);
         } else if (imm1_p) {
             if (fop_p)
-                O("  d = %.*e;\n", DECIMAL_DIG, RFLOAT_VALUE(operands[start]));
+                O("  d = %.*e;\n", DECIMAL_DIG, ((double *)operands)[start]);
             else
                 O("  val = 0x%"PRIxVALUE ";\n", operands[start]);
         } else {
