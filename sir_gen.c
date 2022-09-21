@@ -1769,13 +1769,6 @@ update_attrs(rb_iseq_t *block_iseq) {
         }
 }
 
-static inline VALUE
-dbl_as_val(double d) {
-    union {double d; VALUE v;} u;
-    u.d = d;
-    return u.v;
-}
-
 /* Make type-specialized SIR from general SIR or make speculative
    type-specialized SIR based on profile (when inspect_types_num < 0)
    caused by specialize_bbv execution.  Add inspect_type insn for 1st
@@ -2046,15 +2039,15 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int inspect_types_num) {
                 new_operands[1] = operands[0];
                 add_spec_insn_arr(orig_pos, new_insn_id, 2, new_operands);
             } else if (attr == ATTR_FLONUM && imm_p) {
-                new_operands[0] = dbl_as_val(FIXNUM_P(operands[0])
-                                             ? (double)FIX2LONG(operands[0]) : RFLOAT_VALUE(operands[0]));
+                new_operands[0] = sir_dbl2val(FIXNUM_P(operands[0])
+                                              ? (double)FIX2LONG(operands[0]) : RFLOAT_VALUE(operands[0]));
                 if (nops == 2) new_operands[1] = operands[1];
                 add_spec_insn_arr(orig_pos, new_insn_id, nops, new_operands);
             } else if (attr == ATTR_FLONUM && imm2_p) {
                 if (nops == 2) new_operands[0] = operands[0];
-                new_operands[nops - 1] = dbl_as_val(FIXNUM_P(operands[nops - 1])
-                                                    ? (double)FIX2LONG(operands[nops - 1])
-                                                    : RFLOAT_VALUE(operands[nops - 1]));
+                new_operands[nops - 1] = sir_dbl2val(FIXNUM_P(operands[nops - 1])
+                                                     ? (double)FIX2LONG(operands[nops - 1])
+                                                     : RFLOAT_VALUE(operands[nops - 1]));
                 add_spec_insn_arr(orig_pos, new_insn_id, nops, new_operands);
             } else {
                 add_spec_insn_arr(orig_pos, new_insn_id, nops, operands);
