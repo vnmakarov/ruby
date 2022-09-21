@@ -235,16 +235,29 @@ static void gen_rb_ractor_main_p(VARR(char) *buff, const char *t) {
       t, (int)offsetof(rb_thread_t, vm), (int)offsetof(rb_vm_t, ractor.main_ractor));
 }
 
+static void gen_special_const_p(VARR(char) *buff, const char *v) { /* RB_SPECIAL_CONST_P */
+    O("((%s & 0x%x) || (%s & ~(VALUE)0x%x) == 0)", v, (int)RUBY_IMMEDIATE_MASK, v, (int)Qnil);
+}
+
+static void gen_float_guard(VARR(char) *buff, const char *v) {
+    /* if (!FLONUM_P(v) && (RB_SPECIAL_CONST_P(v) || RBASIC_CLASS(v) != rb_rcFloat)) goro restart; */
+    O("  if ((%s & 0x%x) != 0x%x && (", v, (int)RUBY_FLONUM_MASK, (int)RUBY_FLONUM_FLAG);
+    gen_special_const_p(buff, v);
+    O(" || *(VALUE *)((char *)%s + %d) != 0x%"PRIxVALUE ")) goto restart;\n",
+      v, (int)offsetof(struct RBasic, klass), rb_cFloat);
+}
 static void gen_class_of(VARR(char) *buff, const char *klass, const char *recv) {
-    O("    if ((%s & 0x%x) || (%s & ~(VALUE)0x%x) == 0) goto restart;\n", /* RB_SPECIAL_CONST_P */
-      recv, (int)RUBY_IMMEDIATE_MASK, recv, (int)Qnil);
-    O("    %s = *(VALUE *)((char *)%s + %d);\n", klass, recv, (int)offsetof(struct RBasic, klass)); /* RBASIC_CLASS(recv) */
+    O("    if (");
+    gen_special_const_p(buff, recv);
+    /* if (SPECIAL_CONST_P(recv)) goto restart; klass = RBASIC_CLASS(recv) */
+    O(") goto restart;\n    %s = *(VALUE *)((char *)%s + %d);\n", klass, recv, (int)offsetof(struct RBasic, klass));
 }
 
 static void gen_write_barrier(VARR(char) *buff, const char *a, const char *b) {
     /* if (!RB_SPECIAL_CONST_P(b)) { rb_gc_writebarrier(a,b); goto exit; } */
-    O("  if (!((%s & 0x%x) || (%s & ~(VALUE)0x%x) == 0)) {\n", b, (int)RUBY_IMMEDIATE_MASK, b, (int)Qnil);
-    O("    rb_gc_writebarrier(%s, %s);\n", a, b);
+    O("  if (!");
+    gen_special_const_p(buff, b);
+    O(") {\n    rb_gc_writebarrier(%s, %s);\n", a, b);
 #if 0
     O("    goto exit;\n"); /* to keep better optimization of the fast path */
 #endif
@@ -473,12 +486,12 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     case BIN(check_flotype):
         O("  val = ep[%d];\n", (int)(EPDISP)operands[0]);
-        O("  if ((val & 0x%x) != 0x%x) goto restart;\n", (int)RUBY_FLONUM_MASK, (int)RUBY_FLONUM_FLAG);
+        gen_float_guard(buff, "val");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(check_stack_flotype):
-        O("  if ((sp[-%d] & 0x%x) != 0x%x) goto restart;\n",
-          (int)(lindex_t)operands[0] + 1, (int)RUBY_FLONUM_MASK, (int)RUBY_FLONUM_FLAG);
+        O("  val = sp[-%d];\n", (int)(lindex_t)operands[0] + 1);
+        gen_float_guard(buff, "val");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_fminussvv):
@@ -966,7 +979,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  val2 = ep[%d];\n", (int)(EPDISP)operands[v1_p || imm1_p ? start + 1 : start]);
         } else if (imm2_p) {
             if (fop_p)
-                O("  d = %.*e;\n", DECIMAL_DIG, RFLOAT_VALUE(operands[v1_p || imm1_p ? start + 1 : start]));
+                O("  d = %.*e;\n", DECIMAL_DIG, ((double *)operands)[v1_p || imm1_p ? start + 1 : start]);
             else
                 O("  val2 = 0x%"PRIxVALUE ";\n", operands[v1_p || imm1_p ? start + 1 : start]);
         } else {
@@ -977,7 +990,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  val = ep[%d];\n", (int)(EPDISP)operands[start]);
         } else if (imm1_p) {
             if (fop_p)
-                O("  d = %.*e;\n", DECIMAL_DIG, RFLOAT_VALUE(operands[start]));
+                O("  d = %.*e;\n", DECIMAL_DIG, ((double *)operands)[start]);
             else
                 O("  val = 0x%"PRIxVALUE ";\n", operands[start]);
         } else {
@@ -2016,6 +2029,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  }\n");
         break;
     }
+    case BIN(specialize_bbv): abort();
     case BIN(sir_send_without_block):
     default: return FALSE;
     }
@@ -2041,42 +2055,45 @@ static int t_getc(void *data) {
 }
 
 #ifdef FLONUM_INSNS
-static VALUE mirjit_dbl2num(DBL d) {return DBL2NUM(d);}
-static DBL mirjit_rfloat_value(VALUE v) {return RFLOAT_VALUE(v);}
+static sir_inline DBL mirjit_float(VALUE v) {
+    if (RB_LIKELY(FLONUM_P(v))) return RFLOAT_VALUE(v);
+    assert(!SPECIAL_CONST_P(v) && RBASIC_CLASS(v) == rb_cFloat);
+    return RFLOAT(v)->float_value;
+}
 
-static VALUE mirjit_fplus(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) + RFLOAT_VALUE(v2)); }
-static VALUE mirjit_fplusf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) + d); }
-static VALUE mirjit_frplusf(DBL d, VALUE v){ return DBL2NUM(d + RFLOAT_VALUE(v)); }
-static VALUE mirjit_fminus(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) - RFLOAT_VALUE(v2)); }
-static VALUE mirjit_fminusf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) - d); }
-static VALUE mirjit_frminusf(DBL d, VALUE v){ return DBL2NUM(d - RFLOAT_VALUE(v)); }
-static VALUE mirjit_fmult(VALUE v1, VALUE v2){ return DBL2NUM(RFLOAT_VALUE(v1) * RFLOAT_VALUE(v2)); }
-static VALUE mirjit_fmultf(VALUE v, DBL d){ return DBL2NUM(RFLOAT_VALUE(v) * d); }
-static VALUE mirjit_frmultf(DBL d, VALUE v){ return DBL2NUM(d * RFLOAT_VALUE(v)); }
-static VALUE mirjit_fdiv(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_div(RFLOAT_VALUE(v1), RFLOAT_VALUE(v2))); }
-static VALUE mirjit_fdivf(VALUE v, DBL d){ return DBL2NUM(ruby_float_div(RFLOAT_VALUE(v), d)); }
-static VALUE mirjit_frdivf(DBL d, VALUE v){ return DBL2NUM(ruby_float_div(d, RFLOAT_VALUE(v))); }
-static VALUE mirjit_fmod(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_mod(RFLOAT_VALUE(v1), RFLOAT_VALUE(v2))); }
-static VALUE mirjit_fmodf(VALUE v, DBL d){ return DBL2NUM(ruby_float_mod(RFLOAT_VALUE(v), d)); }
-static VALUE mirjit_frmodf(DBL d, VALUE v){ return DBL2NUM(ruby_float_mod(d, RFLOAT_VALUE(v))); }
-static VALUE mirjit_feq(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) == RFLOAT_VALUE(v2)); }
-static VALUE mirjit_feqf(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) == d); }
-static VALUE mirjit_freqf(DBL d, VALUE v){ return RBOOL(d == RFLOAT_VALUE(v)); }
-static VALUE mirjit_fneq(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) != RFLOAT_VALUE(v2)); }
-static VALUE mirjit_fneqf(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) != d); }
-static VALUE mirjit_frneqf(DBL d, VALUE v){ return RBOOL(d != RFLOAT_VALUE(v)); }
-static VALUE mirjit_flt(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) < RFLOAT_VALUE(v2)); }
-static VALUE mirjit_fltf(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) < d); }
-static VALUE mirjit_frltf(DBL d, VALUE v){ return RBOOL(d < RFLOAT_VALUE(v)); }
-static VALUE mirjit_fgt(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) > RFLOAT_VALUE(v2)); }
-static VALUE mirjit_fgtf(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) > d); }
-static VALUE mirjit_frgtf(DBL d, VALUE v){ return RBOOL(d < RFLOAT_VALUE(v)); }
-static VALUE mirjit_fle(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) <= RFLOAT_VALUE(v2)); }
-static VALUE mirjit_flef(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) <= d); }
-static VALUE mirjit_frlef(DBL d, VALUE v){ return RBOOL(d <= RFLOAT_VALUE(v)); }
-static VALUE mirjit_fge(VALUE v1, VALUE v2){ return RBOOL(RFLOAT_VALUE(v1) >= RFLOAT_VALUE(v2)); }
-static VALUE mirjit_fgef(VALUE v, DBL d){ return RBOOL(RFLOAT_VALUE(v) >= d); }
-static VALUE mirjit_frgef(DBL d, VALUE v){ return RBOOL(d >= RFLOAT_VALUE(v)); }
+static VALUE mirjit_fplus(VALUE v1, VALUE v2){ return DBL2NUM(mirjit_float(v1) + mirjit_float(v2)); }
+static VALUE mirjit_fplusf(VALUE v, DBL d){ return DBL2NUM(mirjit_float(v) + d); }
+static VALUE mirjit_frplusf(DBL d, VALUE v){ return DBL2NUM(d + mirjit_float(v)); }
+static VALUE mirjit_fminus(VALUE v1, VALUE v2){ return DBL2NUM(mirjit_float(v1) - mirjit_float(v2)); }
+static VALUE mirjit_fminusf(VALUE v, DBL d){ return DBL2NUM(mirjit_float(v) - d); }
+static VALUE mirjit_frminusf(DBL d, VALUE v){ return DBL2NUM(d - mirjit_float(v)); }
+static VALUE mirjit_fmult(VALUE v1, VALUE v2){ return DBL2NUM(mirjit_float(v1) * mirjit_float(v2)); }
+static VALUE mirjit_fmultf(VALUE v, DBL d){ return DBL2NUM(mirjit_float(v) * d); }
+static VALUE mirjit_frmultf(DBL d, VALUE v){ return DBL2NUM(d * mirjit_float(v)); }
+static VALUE mirjit_fdiv(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_div(mirjit_float(v1), mirjit_float(v2))); }
+static VALUE mirjit_fdivf(VALUE v, DBL d){ return DBL2NUM(ruby_float_div(mirjit_float(v), d)); }
+static VALUE mirjit_frdivf(DBL d, VALUE v){ return DBL2NUM(ruby_float_div(d, mirjit_float(v))); }
+static VALUE mirjit_fmod(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_mod(mirjit_float(v1), mirjit_float(v2))); }
+static VALUE mirjit_fmodf(VALUE v, DBL d){ return DBL2NUM(ruby_float_mod(mirjit_float(v), d)); }
+static VALUE mirjit_frmodf(DBL d, VALUE v){ return DBL2NUM(ruby_float_mod(d, mirjit_float(v))); }
+static VALUE mirjit_feq(VALUE v1, VALUE v2){ return RBOOL(mirjit_float(v1) == mirjit_float(v2)); }
+static VALUE mirjit_feqf(VALUE v, DBL d){ return RBOOL(mirjit_float(v) == d); }
+static VALUE mirjit_freqf(DBL d, VALUE v){ return RBOOL(d == mirjit_float(v)); }
+static VALUE mirjit_fneq(VALUE v1, VALUE v2){ return RBOOL(mirjit_float(v1) != mirjit_float(v2)); }
+static VALUE mirjit_fneqf(VALUE v, DBL d){ return RBOOL(mirjit_float(v) != d); }
+static VALUE mirjit_frneqf(DBL d, VALUE v){ return RBOOL(d != mirjit_float(v)); }
+static VALUE mirjit_flt(VALUE v1, VALUE v2){ return RBOOL(mirjit_float(v1) < mirjit_float(v2)); }
+static VALUE mirjit_fltf(VALUE v, DBL d){ return RBOOL(mirjit_float(v) < d); }
+static VALUE mirjit_frltf(DBL d, VALUE v){ return RBOOL(d < mirjit_float(v)); }
+static VALUE mirjit_fgt(VALUE v1, VALUE v2){ return RBOOL(mirjit_float(v1) > mirjit_float(v2)); }
+static VALUE mirjit_fgtf(VALUE v, DBL d){ return RBOOL(mirjit_float(v) > d); }
+static VALUE mirjit_frgtf(DBL d, VALUE v){ return RBOOL(d < mirjit_float(v)); }
+static VALUE mirjit_fle(VALUE v1, VALUE v2){ return RBOOL(mirjit_float(v1) <= mirjit_float(v2)); }
+static VALUE mirjit_flef(VALUE v, DBL d){ return RBOOL(mirjit_float(v) <= d); }
+static VALUE mirjit_frlef(DBL d, VALUE v){ return RBOOL(d <= mirjit_float(v)); }
+static VALUE mirjit_fge(VALUE v1, VALUE v2){ return RBOOL(mirjit_float(v1) >= mirjit_float(v2)); }
+static VALUE mirjit_fgef(VALUE v, DBL d){ return RBOOL(mirjit_float(v) >= d); }
+static VALUE mirjit_frgef(DBL d, VALUE v){ return RBOOL(d >= mirjit_float(v)); }
 #endif
 
 #ifdef MIRJIT_RESTART_STAT
@@ -2089,8 +2106,6 @@ static resolver_el_t resolver_els[] = {
     {"rb_check_array_type", rb_check_array_type},
     {"rb_check_cfp_consistency", rb_check_cfp_consistency},
 #ifdef FLONUM_INSNS
-    {"mirjit_rfloat_value", mirjit_rfloat_value},
-    {"mirjit_dbl2num", mirjit_dbl2num},
     {"mirjit_fplus", mirjit_fplus},
     {"mirjit_fplusf", mirjit_fplusf},
     {"mirjit_frplusf", mirjit_frplusf},

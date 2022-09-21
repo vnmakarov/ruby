@@ -74,6 +74,7 @@ void rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *ca
 void rb_sir_change_bbv(struct rb_iseq_bbv *bbv);
 const VALUE *rb_sir_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp);
 const VALUE *rb_sir_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);
+const VALUE *rb_sir_get_exit_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);
 void rb_sir_iseq_update_references(rb_iseq_t *iseq);
 
 void rb_sir_iseq_free(struct rb_iseq_constant_body *body);

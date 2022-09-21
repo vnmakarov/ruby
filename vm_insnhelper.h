@@ -86,7 +86,11 @@ enum vm_regan_acttype {
 #define GET_OPERAND(n)     (GET_PC()[(n)])
 #define ADD_PC(n)          (SET_PC(VM_REG_PC + (n)))
 #define JUMP(dst)          (SET_PC(VM_REG_PC + (dst)))
-#define ABS_JUMP(dst)      (SET_PC((VALUE *)(dst)))
+#if 1
+#define ABS_SAFE_JUMP(cfp, pc)      (SET_PC((VALUE *)rb_sir_get_safe_pc(cfp, pc)))
+#else
+#define ABS_SAFE_JUMP(cfp, pc)      (SET_PC((VALUE *)rb_sir_get_exit_safe_pc(cfp, pc)))
+#endif
 
 /* frame pointer, environment pointer */
 #define GET_CFP()  (COLLECT_USAGE_REGISTER_HELPER(CFP, GET, VM_REG_CFP))
