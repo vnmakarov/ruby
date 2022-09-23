@@ -3170,7 +3170,7 @@ sir_cfunc_send
     MIRJIT_CONST_PTR(rb_cfunc_func_t, func, cfunc->func);
     val = (*invoker)(recv, argc, reg_cfp->sp + 1, func); // can be improved by calling cfunc->func(arg ... )
     CHECK_CFP_CONSISTENCY("sir_cfunc_send");
-    rb_vm_pop_frame(ec);
+    ec->cfp = reg_cfp; // w/o checking interuption
     EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_RETURN, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, val);
     RUBY_DTRACE_CMETHOD_RETURN_HOOK(ec, cme->owner, cme->def->original_id);
     goto sir_cfunc_send_end;
