@@ -3215,8 +3215,8 @@ rb_sir_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_c
     return NULL;
 }
 
-const VALUE *
-rb_sir_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
+static sir_inline const VALUE *
+get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
     const struct rb_iseq_constant_body *body = cfp->iseq->body;
     SIR_GEN_ASSERT(body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_free);
     int pos = (int)(pc - body->bbv_code);
@@ -3227,12 +3227,19 @@ rb_sir_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
 }
 
 const VALUE *
-rb_sir_get_exit_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
-    if (rb_sir_debug_p()) {
-        enum ruby_vminsn_type insn_id = rb_vm_insn_addr2insn((void *)*pc);
+rb_sir_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
+    return get_safe_pc(cfp, pc);
+}
+
+const VALUE *
+rb_sir_get_jump_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
+#ifdef SIR_PROFILE
+    enum ruby_vminsn_type insn_id = rb_vm_insn_addr2insn((void *)*pc);
+    rb_sir_cancel[insn_id]++;
+    if (rb_sir_debug_p())
         fprintf (stderr, "canceling %04ld: %s\n", (long)(pc - cfp->iseq->body->bbv_code), insn_name(insn_id));
-    }
-    return rb_sir_get_safe_pc(cfp, pc);
+#endif
+    return get_safe_pc(cfp, pc);
 }
 
 void
@@ -3291,9 +3298,36 @@ rb_sir_gen_init(void) {
     return TRUE;
 }
 
+long rb_sir_profile[VM_INSTRUCTION_SIZE];
+long rb_sir_cancel[VM_INSTRUCTION_SIZE];
+struct profile {int insn; long count;};
+
+static int profile_cmp(const void *e1, const void *e2) {
+    const struct profile *p1 = e1, *p2 = e2;
+    if (p1->count < p2->count) return 1;
+    if (p1->count > p2->count) return -1;
+    return 0;
+}
+
 /* Finish stack insns to SIR generator.  */
 void
 rb_sir_gen_finish(void) {
+    if (rb_sir_enabled_p()) {
+        struct profile profile[VM_INSTRUCTION_SIZE];
+        for (int i = 0; i < VM_INSTRUCTION_SIZE; i++) {
+            profile[i].insn = i;
+            profile[i].count = rb_sir_profile[i];
+        }
+        qsort(profile, VM_INSTRUCTION_SIZE, sizeof(struct profile), profile_cmp);
+        for (int i = 0; i < VM_INSTRUCTION_SIZE; i++) {
+            if (profile[i].count == 0) break;
+            if (rb_sir_cancel[profile[i].insn] == 0)
+                fprintf(stderr, "%-25ld:%s\n", profile[i].count, insn_name(profile[i].insn));
+            else
+                fprintf(stderr, "%-12ld !%-11ld:%s\n",
+                        profile[i].count, rb_sir_cancel[profile[i].insn], insn_name(profile[i].insn));
+        }
+    }
     VARR_DESTROY(int, stack);
     VARR_DESTROY(char, operands_changed_p);
     VARR_DESTROY(char, attrs);

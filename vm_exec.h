@@ -171,7 +171,12 @@ default:                        \
 #define ABNORMAL_END_INSN(insn) END_INSN(insn)
 
 #ifndef START_OF_ORIGINAL_INSN
-#define START_OF_ORIGINAL_INSN(x) if (0) goto start_of_##x; start_of_##x:
+#ifdef SIR_PROFILE
+#define INSN_PROFILE(x) rb_sir_profile[BIN(x)]++;
+#else
+#define INSN_PROFILE(x)
+#endif
+#define START_OF_ORIGINAL_INSN(x) INSN_PROFILE(x); if (0) goto start_of_##x; start_of_##x:
 #define DISPATCH_ORIGINAL_INSN(x) goto  start_of_##x;
 #endif
 
