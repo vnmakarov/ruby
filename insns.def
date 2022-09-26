@@ -3020,10 +3020,10 @@ sir_iseq_send_without_block
     VM_ASSERT(callable_method_entry_p(cme));
     MIRJIT_CONST_PTR(struct rb_iseq_bbv *, bbv_ref, (struct rb_iseq_bbv *)bbv);
     MIRJIT_CONST_PTR(rb_iseq_t *, iseq, bbv_ref->iseq);
-    MIRJIT_CONST_PTR(struct rb_iseq_constant_body *, body, iseq->body);
     VALUE *argv = reg_cfp->sp - argc;
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
-    MIRJIT_CONST_PTR(VALUE *, start_pc, body->bbv_code + bbv_ref->bbv_start);
+    MIRJIT_CONST_PTR(struct rb_iseq_constant_body *, body, iseq->body);
+    VALUE *start_pc = body->bbv_code + bbv_ref->bbv_start; /* it is const only after profile specialization */
     MIRJIT_CONST(int, local_size, body->local_table_size - argc, "d");
     MIRJIT_CONST(int, stack_max, body->stack_max, "d");
     vm_push_frame_1(ec, iseq, VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL, recv,
@@ -3153,7 +3153,6 @@ sir_cfunc_send
     if (klass != CLASS_OF(recv)) goto sir_cfunc_send_exit;
     MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
     VM_ASSERT(callable_method_entry_p(cme));
-    MIRJIT_CONST_PTR(const rb_method_cfunc_t *, cfunc, vm_method_cfunc_entry(cme));
     RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, cme->owner, cme->def->original_id);
     EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, Qundef);
     if (blockiseq == NULL) {
@@ -3166,6 +3165,7 @@ sir_cfunc_send
     vm_push_frame_1(ec, NULL, VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL, recv,
                     bh, (VALUE)cme, 0, reg_cfp->sp, 0, 0);
     reg_cfp->sp = argv - 1; /* poping args including recv (sp before leave) */
+    MIRJIT_CONST_PTR(const rb_method_cfunc_t *, cfunc, vm_method_cfunc_entry(cme));
     MIRJIT_CONST_PTR(rb_cfunc_invoker_t, invoker, cfunc->invoker);
     MIRJIT_CONST_PTR(rb_cfunc_func_t, func, cfunc->func);
     val = (*invoker)(recv, argc, reg_cfp->sp + 1, func); // can be improved by calling cfunc->func(arg ... )

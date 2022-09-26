@@ -172,8 +172,10 @@ static const char *header = "typedef void *CALL_DATA;\n"
 #endif
     "extern void printf(const char *, ...);\n"
     "extern void *memcpy(void *, const void *, VALUE);\n"
-#ifdef MIRJIT_RESTART_STAT
+#ifdef MIRJIT_STAT
     "extern long mirjit_run_nums, mirjit_restart_nums;\n"
+    "extern long mirjit_profile[], mirjit_cancel[];\n"
+    "extern int rb_vm_insn_addr2insn(const void *);\n"
 #endif
     "\n";
 
@@ -219,6 +221,12 @@ fmt_output(VARR(char) *buff, const char *fmt, ...) {
 
 #define vm_method_cfunc_entry mirjit_method_cfunc_entry
 #define O(...) fmt_output(buff, __VA_ARGS__)
+
+static void gen_insn_stat(VARR(char) *buff, enum ruby_vminsn_type insn_id) {
+#ifdef MIRJIT_STAT
+    O("  mirjit_profile[%d]++;\n", (int)insn_id);
+#endif
+}
 
 static void gen_obj_frozen(VARR(char) *buff, const char *obj) {
     /* if (RB_OBJ_FROZEN_RAW(self)) goto restart; */
@@ -284,7 +292,7 @@ static void gen_check_overflow0(VARR(char) *buff, const char *cfp, const char *s
 
 /* Used var names: ec, cfp, pc, argv, recv, specval */
 static void gen_push_frame(VARR(char) *buff, int local_size, int stack_max, int send_insn_len,
-                           VALUE cme, VALUE type, VALUE iseq, VALUE start_pc) {
+                           VALUE cme, VALUE type, VALUE iseq, const char *start_pc) {
     O("    void *new_sp = argv - 1;\n"); /* poping args including recv (sp before leave) */
     /* new_cfp = RUBY_VM_NEXT_CONTROL_FRAME(ec->cfp): */
     O("    void *new_cfp = (char *)cfp - %d;\n", (int)sizeof(rb_control_frame_t));
@@ -293,7 +301,7 @@ static void gen_push_frame(VARR(char) *buff, int local_size, int stack_max, int 
     O("    pc += %d;\n", send_insn_len);
     O("    cfp->pc = pc;\n");
     O("    cfp->sp = new_sp;\n"); /* cfp->sp */
-    O("    cfp = new_cfp; pc = 0x%"PRIxVALUE ";\n", start_pc);
+    O("    cfp = new_cfp; pc = %s;\n", start_pc);
     if (local_size <= 6) {
         for (int i = 0; i < local_size; i++)
             O("    *sp++ = 0x%x;\n", (int)Qnil);
@@ -340,18 +348,22 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     switch (insn_id) {
     case BIN(nop):
     case BIN(nop2):
+        gen_insn_stat(buff, insn_id);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(pop):
+        gen_insn_stat(buff, insn_id);
         O("  *sp--;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(dup):
+        gen_insn_stat(buff, insn_id);
         O("  val = sp[-1];\n");
         O("  *sp++ = val;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(dupn): {
+        gen_insn_stat(buff, insn_id);
         rb_num_t n = (rb_num_t)operands[0];
         O("  pv = &sp[-%ld];\n", (long)n);
         O("  pv2 = sp; sp += %ld;\n", (long)n);
@@ -360,12 +372,14 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     }
     case BIN(swap):
+        gen_insn_stat(buff, insn_id);
         O("  val = sp[-1];\n");
         O("  sp[-1] = sp[-2];\n");
         O("  sp[-2] = val;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(topn): {
+        gen_insn_stat(buff, insn_id);
         rb_num_t n = (rb_num_t)operands[0];
         O("  val = sp[-%ld];\n", (long)n + 1);
         O("  *sp++ = val;\n");
@@ -373,6 +387,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     }
     case BIN(setn): {
+        gen_insn_stat(buff, insn_id);
         rb_num_t n = (rb_num_t)operands[0];
         O("  val = sp[- 1];\n");
         O("  sp[-%ld] = val;\n", (long)n + 1);
@@ -380,34 +395,41 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     }
     case BIN(adjuststack): {
+        gen_insn_stat(buff, insn_id);
         rb_num_t n = (rb_num_t)operands[0];
         O("  sp -= %ld;\n", (long)n);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     }
     case BIN(putnil):
+        gen_insn_stat(buff, insn_id);
         O("  *sp++ = (VALUE)0x%x;\n", (int)Qnil);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putself):
+        gen_insn_stat(buff, insn_id);
         O("  *sp++ = cfp->self;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putobject):
+        gen_insn_stat(buff, insn_id);
         O("  *sp++ = 0x%"PRIxVALUE ";\n", operands[0]);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putobject_INT2FIX_0_):
+        gen_insn_stat(buff, insn_id);
         O("  *sp++ = 1;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putobject_INT2FIX_1_):
+        gen_insn_stat(buff, insn_id);
         O("  *sp++ = 3;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(getlocal): {
         int level = (int)(rb_num_t)operands[1];
         if (level != 0) {
+            gen_insn_stat(buff, insn_id);
             O("  {\n");
             O("    VALUE *vp = ep;\n");
             if (level <= 3) {
@@ -425,6 +447,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     }
         /* fall through */
     case BIN(getlocal_WC_0):
+        gen_insn_stat(buff, insn_id);
         O("  val = ep[-%d];\n", (int)(lindex_t)operands[0]);
         O("  *sp++ = val;\n");
         O("  pc += %d;\n", insn_len(insn_id));
@@ -432,6 +455,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(setlocal): {
         int level = (int)(rb_num_t)operands[1];
         if (level != 0) {
+            gen_insn_stat(buff, insn_id);
             O("  {\n");
             O("    VALUE *vp = ep;");
             if (level <= 3) {
@@ -451,6 +475,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     }
         /* fall through */
     case BIN(setlocal_WC_0):
+        gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
         O("  if (__builtin_expect((flags & 0x%lx) != 0, 0)) goto restart;\n", (long)VM_ENV_FLAG_WB_REQUIRED);
         O("  val = *--sp;\n");
@@ -458,6 +483,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_mov):
+        gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
         O("  if (__builtin_expect((flags & 0x%lx) != 0, 0)) goto restart;\n", (long)VM_ENV_FLAG_WB_REQUIRED);
         O("  val = ep[%d];\n", (int)(EPDISP)operands[1]);
@@ -465,31 +491,37 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_movi):
+        gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
         O("  if (__builtin_expect((flags & 0x%lx) != 0, 0)) goto restart;\n", (long)VM_ENV_FLAG_WB_REQUIRED);
         O("  ep[%d] = 0x%"PRIxVALUE ";\n", (int)(EPDISP)operands[0], operands[1]);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_setlocal): /* setlocal w/o write barrier check */
+        gen_insn_stat(buff, insn_id);
         O("  val = *--sp;\n");
         O("  ep[%d] = val;\n", (int)(EPDISP)operands[0]);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(check_fixtype):
+        gen_insn_stat(buff, insn_id);
         O("  val = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  if (!(val & 0x%x)) goto restart;\n", (int)RUBY_FIXNUM_FLAG);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(check_stack_fixtype):
+        gen_insn_stat(buff, insn_id);
         O("  if (!(sp[-%d] & 0x%x)) goto restart;\n", (int)(lindex_t)operands[0] + 1, (int)RUBY_FIXNUM_FLAG);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(check_flotype):
+        gen_insn_stat(buff, insn_id);
         O("  val = ep[%d];\n", (int)(EPDISP)operands[0]);
         gen_float_guard(buff, "val");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(check_stack_flotype):
+        gen_insn_stat(buff, insn_id);
         O("  val = sp[-%d];\n", (int)(lindex_t)operands[0] + 1);
         gen_float_guard(buff, "val");
         O("  pc += %d;\n", insn_len(insn_id));
@@ -973,6 +1005,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = TRUE;
         v1_p = v2_p = imm1_p = imm2_p = FALSE;
     op2:
+        gen_insn_stat(buff, insn_id);
         start = rv_p ? 1 : 0;
         stack_ops_num = 0;
         if (v2_p) {
@@ -1505,66 +1538,78 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_iasetsis):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val2 = sp[-1];\n");
         O("  val = 0x%"PRIxVALUE ";\n", operands[0]);
         goto iaset;
     case BIN(sir_iasetsiv):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = sp[-1];\n");
         O("  val = 0x%"PRIxVALUE ";\n", operands[0]);
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[1]);
         goto iaset;
     case BIN(sir_iasetviv):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 0;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val = 0x%"PRIxVALUE ";\n", operands[1]);
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[2]);
         goto iaset;
     case BIN(sir_iasetvis):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val = 0x%"PRIxVALUE ";\n", operands[1]);
         O("  val2 = sp[-1];\n");
         goto iaset;
     case BIN(sir_iasetsss):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 3;
         O("  r = sp[-3]; val = sp[-2]; val2 = sp[-1];\n");
         goto iaset;
     case BIN(sir_iasetsvv):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = sp[-1];\n");
         O("  val = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[1]);
         goto iaset;
     case BIN(sir_iasetsvs):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val2 = sp[-1];\n");
         O("  val = ep[%d];\n", (int)(EPDISP)operands[0]);
         goto iaset;
     case BIN(sir_iasetssv):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val = sp[-1];\n");
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[0]);
         goto iaset;
     case BIN(sir_iasetvss):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val = sp[-2]; val2 = sp[-1];\n");
         goto iaset;
     case BIN(sir_iasetvvv):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 0;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val = ep[%d];\n", (int)(EPDISP)operands[1]);
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[2]);
         goto iaset;
     case BIN(sir_iasetvvs):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val = ep[%d];\n", (int)(EPDISP)operands[1]);
         O("  val2 = sp[-1];\n");
         goto iaset;
     case BIN(sir_iasetvsv):
+        gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val = sp[-1];\n");
@@ -1715,6 +1760,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         v1_p = v2_p = FALSE;
         imm2_p = TRUE;
     ib:
+        gen_insn_stat(buff, insn_id);
         O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
           (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
         if (v2_p)
@@ -1733,6 +1779,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* false label */
         break;
     case BIN(sir_jump): // ??? test only for backward jumps/branches
+        gen_insn_stat(buff, insn_id);
         O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
           (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
         O("  pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[0]); /* label */
@@ -1743,6 +1790,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_branch):
         nil_p = FALSE;
     branch:
+        gen_insn_stat(buff, insn_id);
         O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
           (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
         O("  val = *--sp;\n");
@@ -1771,6 +1819,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
              *sp++ = Qnil;
              JUMP(dst2);
           } */
+        gen_insn_stat(buff, insn_id);
         O("  pv = *(VALUE **)((char *)0x%"PRIxVALUE " + %d);\n", /* pv is ice */
           operands[2], (int)offsetof(struct iseq_inline_constant_cache, entry));
         O("  if (pv && *(VALUE **)((char *)pv + %d) == *(VALUE *)0x%"PRIxVALUE
@@ -1793,6 +1842,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
 #endif
     case BIN(leave):
+        gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
         O("  if (flags & 0x%"PRIxVALUE ") goto restart;\n", (VALUE)VM_FRAME_FLAG_FINISH);
         if (OPT_CHECKED_RUN)
@@ -1807,11 +1857,11 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         const struct rb_callcache *cc = cd->cc;
         int argc = vm_ci_argc(cd->ci);
         const struct rb_callable_method_entry_struct *cme = vm_cc_cme(cc);
-        VALUE *start_pc = body->bbv_code + bbv_ref->bbv_start;
         int local_size = body->local_table_size - argc;
         int stack_max = body->stack_max;
 
         assert(callable_method_entry_p(cme) && argc == param_size);
+        gen_insn_stat(buff, insn_id);
         O("  {\n");
         O("    void *cc = 0x%"PRIxVALUE ";\n", (VALUE)cc);
         O("    VALUE klass, *argv, recv = sp[-%d];\n", argc + 1);
@@ -1820,9 +1870,10 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
           (int)offsetof(struct rb_callcache, klass));
         O("    argv = (VALUE *)sp - %d;\n", argc);
         O("    VALUE specval = 0x%"PRIxVALUE ";\n", (VALUE)VM_BLOCK_HANDLER_NONE);
+        O("    VALUE *start_pc = (VALUE *)0x%"PRIxVALUE ";\n", (VALUE)(body->bbv_code + bbv_ref->bbv_start));
         gen_push_frame(buff, local_size, stack_max, (int)insn_len(insn_id), (VALUE)cme,
                        (VALUE)(VM_FRAME_MAGIC_METHOD | VM_ENV_FLAG_LOCAL),
-                       (VALUE)iseq, (VALUE)start_pc);
+                       (VALUE)iseq, "start_pc");
         O("  }\n");
         break;
     }
@@ -1836,6 +1887,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rb_serial_t class_serial = (rb_serial_t)operands[1];
         uint32_t index = (uint32_t)operands[0];
 
+        gen_insn_stat(buff, insn_id);
         O("  val = cfp->self;\n");
         O("  val2 = *(VALUE *)((char *)val + %d);\n", (int)offsetof(struct RBasic, klass)); /* self class */
         O("  if (*(VALUE *)((char *)val2 + %d) != 0x%"PRIxVALUE ") goto restart;\n",
@@ -1877,6 +1929,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
 #else
         VALUE klass = operands[0];
         unsigned index = (unsigned)(lindex_t)operands[1];
+        gen_insn_stat(buff, insn_id);
         O("  val = sp[%d];\n", insn_id == BIN(sir_send_ivset) ? -2 : -1); /* recv */
         gen_class_of(buff, "val2", "val");
         O("  if (__builtin_expect(val2 != 0x%"PRIxVALUE ", 0)) goto restart;\n", klass);
@@ -1912,6 +1965,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     }
 #ifdef MIRJIT_ITER_INSNS
     case BIN(sir_iter_start): {
+        gen_insn_stat(buff, insn_id);
         int (*f)(VALUE, VALUE *) = (void *)operands[0];
         O("  val = sp[-1];\n");
         O("  if (!((int (*)(VALUE, VALUE *))0x%"PRIxVALUE ")(val, &val2)) goto restart;\n", (VALUE)f); /* f(arg, index)*/
@@ -1926,13 +1980,14 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         struct rb_iseq_constant_body * body = iseq->body;
         int param_size = body->param.size;
         int lead_num = body->param.lead_num;
-        VALUE *start_pc = body->bbv_code + bbv_ref->bbv_start;
+        //VALUE *start_pc = body->bbv_code + bbv_ref->bbv_start;
         int local_size = body->local_table_size - param_size;
         int stack_max = body->stack_max;
         const struct rb_callable_method_entry_struct *cme = bbv_ref->cme;
         int (*f)(VALUE, VALUE, VALUE *) = (void *)operands[2];
         long argc = 1;
 
+        gen_insn_stat(buff, insn_id);
         O("  {\n");
         O("    VALUE self, recv, index, arg, ary;\n");
         O("    recv = sp[-3];\n");
@@ -1967,8 +2022,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("    VALUE *argv = sp + 1;\n");
         O("    VALUE specval = cfp->ep | 1;\n");
         O("    recv = self;\n"); /* self */
+        O("    VALUE *start_pc = (VALUE *)0x%"PRIxVALUE ";\n", (VALUE)(body->bbv_code + bbv_ref->bbv_start));
         gen_push_frame(buff, local_size, stack_max, (int)insn_len(insn_id), (VALUE)cme,
-                       (VALUE)VM_FRAME_MAGIC_METHOD, (VALUE)iseq, (VALUE)start_pc);
+                       (VALUE)VM_FRAME_MAGIC_METHOD, (VALUE)iseq, "start_pc");
         O("  }\n");
         break;
     }
@@ -2000,6 +2056,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         if (__builtin_expect(reg_cfp != ec->cfp + 1, 0)) rb_check_cfp_consistency(ec, reg_cfp, "sir_cfunc_send");
         rb_vm_pop_frame(ec); */
 
+        gen_insn_stat(buff, insn_id);
         O("  {\n");
         O("    void *cc = 0x%"PRIxVALUE ";\n", (VALUE)cc);
         O("    VALUE klass, *argv = sp - %d, recv = sp[-%d];\n", argc, argc + 1);
@@ -2018,7 +2075,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("    VALUE *old_cfp = cfp;\n");
         gen_push_frame(buff, 0, 0, (int)insn_len(insn_id), (VALUE)cme,
                        (VALUE)(VM_FRAME_MAGIC_CFUNC | VM_FRAME_FLAG_CFRAME | VM_ENV_FLAG_LOCAL),
-                       (VALUE)0, (VALUE)0);
+                       (VALUE)0, "(VALUE *)0");
         O("    sp = argv - 1;\n"); /* poping args including recv (sp before leave) */
         O("    VALUE (*invoker)(VALUE, int, VALUE, VALUE) = (void *)0x%"PRIxVALUE ";\n", (VALUE)invoker);
         O("    val = invoker(recv, %d, sp + 1, 0x%"PRIxVALUE ");\n", argc, (VALUE)func);
@@ -2096,8 +2153,10 @@ static VALUE mirjit_fgef(VALUE v, DBL d){ return RBOOL(mirjit_float(v) >= d); }
 static VALUE mirjit_frgef(DBL d, VALUE v){ return RBOOL(d >= mirjit_float(v)); }
 #endif
 
-#ifdef MIRJIT_RESTART_STAT
+#ifdef MIRJIT_STAT
 long mirjit_run_nums, mirjit_restart_nums;
+long mirjit_profile[VM_INSTRUCTION_SIZE];
+long mirjit_cancel[VM_INSTRUCTION_SIZE];
 #endif
 
 typedef struct resolver_el {const char *name; void *addr;} resolver_el_t;
@@ -2141,9 +2200,12 @@ static resolver_el_t resolver_els[] = {
     {"mirjit_frgef", mirjit_frgef},
 #endif
     {"memcpy", memcpy},
-#ifdef MIRJIT_RESTART_STAT
+#ifdef MIRJIT_STAT
     {"mirjit_run_nums", &mirjit_run_nums},
     {"mirjit_restart_nums", &mirjit_restart_nums},
+    {"mirjit_profile", &mirjit_profile},
+    {"mirjit_cancel", &mirjit_cancel},
+    {"rb_vm_insn_addr2insn", rb_vm_insn_addr2insn},
 #endif
 };
 
@@ -2247,7 +2309,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
             /* skip sir_bbv_{start, cont} */
             O("  pc += %d;\n", insn_len(BIN(sir_bbv_start)));
 #endif
-#ifdef MIRJIT_RESTART_STAT
+#ifdef MIRJIT_STAT
             O("  mirjit_run_nums++;\n");
 #endif
             break;
@@ -2285,11 +2347,12 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
         }
         if (!finish_jit_code_p) continue;
         if (bbv_pc >= 0 && insns_num > 0) {
-#ifdef MIRJIT_RESTART_STAT
+#ifdef MIRJIT_STAT
             O("  goto exit;\n");
 #endif
             O(" restart:\n");
-#ifdef MIRJIT_RESTART_STAT
+#ifdef MIRJIT_STAT
+            O("  mirjit_cancel[rb_vm_insn_addr2insn((void*)*pc)]++;\n");
             O("  mirjit_restart_nums++;\n");
 #endif
             O(" exit:\n");
@@ -2398,10 +2461,35 @@ rb_mirjit_init(struct rb_mirjit_options *options) {
     pc_dispatch_addr_map = rb_st_init_numtable();
 }
 
+struct profile {int insn; long count;};
+
+static int
+profile_cmp(const void *e1, const void *e2) {
+    const struct profile *p1 = e1, *p2 = e2;
+    if (p1->count < p2->count) return 1;
+    if (p1->count > p2->count) return -1;
+    return 0;
+}
+
 void
 rb_mirjit_finish(void) {
     if (ctx == NULL) return; /* not initialized */
-#ifdef MIRJIT_RESTART_STAT
+#ifdef MIRJIT_STAT
+    fprintf(stderr, "+++++++++++MIRJIT INSN PROFILE++++++++++\n");
+    struct profile profile[VM_INSTRUCTION_SIZE];
+    for (int i = 0; i < VM_INSTRUCTION_SIZE; i++) {
+        profile[i].insn = i;
+        profile[i].count = mirjit_profile[i];
+    }
+    qsort(profile, VM_INSTRUCTION_SIZE, sizeof(struct profile), profile_cmp);
+    for (int i = 0; i < VM_INSTRUCTION_SIZE; i++) {
+        if (profile[i].count == 0) break;
+        if (mirjit_cancel[profile[i].insn] == 0)
+            fprintf(stderr, "%-25ld:%s\n", profile[i].count, insn_name(profile[i].insn));
+        else
+            fprintf(stderr, "%-12ld !%-11ld:%s\n",
+                    profile[i].count, mirjit_cancel[profile[i].insn], insn_name(profile[i].insn));
+    }
     fprintf(stderr, "MIRJIT CODE RUNS=%ld, RESTARTS=%ld\n", mirjit_run_nums, mirjit_restart_nums);
 #endif
     resolver_finish();

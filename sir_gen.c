@@ -3058,7 +3058,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             && (iseq = (rb_iseq_t *)def_iseq_ptr(cme->def)) != NULL
             && (rb_simple_iseq_p(iseq) || rb_iseq_only_optparam_p(iseq))) {
             struct rb_iseq_constant_body *body = iseq->body;
-            const int lead_num = iseq->body->param.lead_num;
+            const int lead_num = body->param.lead_num;
             const int opt = argc - lead_num;
 
             SIR_GEN_ASSERT(0 <= opt && opt <= body->param.opt_num);
@@ -3077,7 +3077,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             if (bbv->bbv_start < 0)
                 gen_sir_bbv_code(iseq, bbv, 0, argc);
             SIR_GEN_ASSERT(bbv->iseq == iseq);
-            ec->cfp->pc = &iseq->body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
+            ec->cfp->pc = &body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
             /* Change sir_make_send(cd,send_info) to sir_iseq_send_without_block(cd, bbv) */
             change_insn(caller_cfp->iseq, call_pc, BIN(sir_iseq_send_without_block));
             call_pc[2] = (VALUE)bbv;
@@ -3302,7 +3302,8 @@ long rb_sir_profile[VM_INSTRUCTION_SIZE];
 long rb_sir_cancel[VM_INSTRUCTION_SIZE];
 struct profile {int insn; long count;};
 
-static int profile_cmp(const void *e1, const void *e2) {
+static int
+profile_cmp(const void *e1, const void *e2) {
     const struct profile *p1 = e1, *p2 = e2;
     if (p1->count < p2->count) return 1;
     if (p1->count > p2->count) return -1;
@@ -3319,6 +3320,8 @@ rb_sir_gen_finish(void) {
             profile[i].count = rb_sir_profile[i];
         }
         qsort(profile, VM_INSTRUCTION_SIZE, sizeof(struct profile), profile_cmp);
+        if (profile[0].count != 0)
+            fprintf(stderr, "+++++++++++SIR INSN PROFILE++++++++++\n");
         for (int i = 0; i < VM_INSTRUCTION_SIZE; i++) {
             if (profile[i].count == 0) break;
             if (rb_sir_cancel[profile[i].insn] == 0)

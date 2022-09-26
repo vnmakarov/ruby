@@ -23,6 +23,7 @@
 #endif
 
 //#define SIR_PROFILE
+//#define MIRJIT_STAT
 
 extern long rb_sir_profile[];
 extern long rb_sir_cancel[];
