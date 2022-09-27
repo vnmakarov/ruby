@@ -59,9 +59,9 @@ SIR_FUNCS0(lt, vm_opt_lt)
 SIR_FUNCS0(gt, vm_opt_gt)
 SIR_FUNCS0(le, vm_opt_le)
 SIR_FUNCS0(ge, vm_opt_ge)
-SIR_FUNCS0(aref,vm_opt_aref)
+SIR_FUNCS0(aref, vm_opt_aref)
 
-#define SIR_FUNCS(iname)										   \
+#define SIR_SFUNCS(iname)										   \
     static sir_inline void SIR_CONCAT(iname, svv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
     static sir_inline void SIR_CONCAT(iname, svi)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
     static sir_inline void SIR_CONCAT(iname, siv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
@@ -69,6 +69,9 @@ SIR_FUNCS0(aref,vm_opt_aref)
     static sir_inline void SIR_CONCAT(iname, ssv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
     static sir_inline void SIR_CONCAT(iname, ssi)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
     static sir_inline void SIR_CONCAT(iname, sis)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
+    static sir_inline void SIR_CONCAT(iname, sss)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }
+
+#define SIR_FUNCS(iname) SIR_SFUNCS(iname)								   \
     static sir_inline void SIR_CONCAT(iname, vvv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
     static sir_inline void SIR_CONCAT(iname, vvi)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
     static sir_inline void SIR_CONCAT(iname, viv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
@@ -76,8 +79,7 @@ SIR_FUNCS0(aref,vm_opt_aref)
     static sir_inline void SIR_CONCAT(iname, vsv)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
     static sir_inline void SIR_CONCAT(iname, vsi)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
     static sir_inline void SIR_CONCAT(iname, vis)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
-    static sir_inline void SIR_CONCAT(iname, vss)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }\
-    static sir_inline void SIR_CONCAT(iname, sss)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }
+    static sir_inline void SIR_CONCAT(iname, vss)(VALUE *res, VALUE v1, VALUE v2) { *res = iname(v1, v2); }
 
 #define pushvv(v1, v2) do {INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;} while (0)
 #define pushvi(v1, v2) do {INC_SP(2); TOPN(1) = v1; TOPN(0) = v2;} while (0)
@@ -128,8 +130,20 @@ static sir_inline VALUE vm_sir_igt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
 static sir_inline VALUE vm_sir_ile(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2); }
 static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 >= (SIGNED_VALUE)v2); }
 
+static sir_inline VALUE vm_sir_simult(VALUE v1, VALUE v2) { return rb_fix_mul_fix(v1, v2); }
+static sir_inline VALUE vm_sir_sidiv(VALUE v1, VALUE v2) { return rb_fix_div_fix(v1, v2); }
+static sir_inline VALUE vm_sir_simod(VALUE v1, VALUE v2) { return rb_fix_mod_fix(v1, v2); }
+static sir_inline VALUE vm_sir_sior(VALUE v1, VALUE v2) { return v1 | v2; }
+static sir_inline VALUE vm_sir_siand(VALUE v1, VALUE v2) { return (v1 & v2) | 1; }
+static sir_inline VALUE vm_sir_sieq(VALUE v1, VALUE v2) { return RBOOL(v1 == v2); }
+static sir_inline VALUE vm_sir_sineq(VALUE v1, VALUE v2) { return RBOOL(v1 != v2); }
+static sir_inline VALUE vm_sir_silt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 < (SIGNED_VALUE)v2); }
+static sir_inline VALUE vm_sir_sigt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 > (SIGNED_VALUE)v2); }
+static sir_inline VALUE vm_sir_sile(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2); }
+static sir_inline VALUE vm_sir_sige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 >= (SIGNED_VALUE)v2); }
+
 #if !__has_builtin(__builtin_add_overflow)
-#define vm_sir_iplus(res, v1, v2, ov_label)                      \
+#define vm_sir_iplus(res, v1, v2)                                \
     {                                                            \
         long r = FIX2LONG(v1) + FIX2LONG(v2);                    \
         if (RB_FIXABLE(r)) {                                     \
@@ -139,7 +153,7 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
         }                                                        \
     }
 #else
-#define vm_sir_iplus(res, v1, v2, ov_label)                     			\
+#define vm_sir_iplus(res, v1, v2)                     			                \
     {											\
         long r;										\
         if (__builtin_expect(__builtin_add_overflow((long)v1, (long)v2-1, &r), 0))	\
@@ -148,25 +162,34 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
     }
 #endif
 
-#define vm_sir_iplussss(res, v1, v2) vm_sir_iplus(res, v1, v2, iplussss)
-#define vm_sir_iplusssv(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusssv)
-#define vm_sir_iplussvs(res, v1, v2) vm_sir_iplus(res, v1, v2, iplussvs)
-#define vm_sir_iplussvv(res, v1, v2) vm_sir_iplus(res, v1, v2, iplussvv)
-#define vm_sir_iplusssi(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusssi)
-#define vm_sir_iplussis(res, v1, v2) vm_sir_iplus(res, v1, v2, iplussis)
-#define vm_sir_iplussvi(res, v1, v2) vm_sir_iplus(res, v1, v2, iplussvi)
-#define vm_sir_iplussiv(res, v1, v2) vm_sir_iplus(res, v1, v2, iplussiv)
-#define vm_sir_iplusvss(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusvss)
-#define vm_sir_iplusvsv(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusvsv)
-#define vm_sir_iplusvvs(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusvvs)
-#define vm_sir_iplusvvv(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusvvv)
-#define vm_sir_iplusvsi(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusvsi)
-#define vm_sir_iplusvis(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusvis)
-#define vm_sir_iplusvvi(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusvvi)
-#define vm_sir_iplusviv(res, v1, v2) vm_sir_iplus(res, v1, v2, iplusviv)
+#define vm_sir_iplussss vm_sir_iplus
+#define vm_sir_iplusssv vm_sir_iplus
+#define vm_sir_iplussvs vm_sir_iplus
+#define vm_sir_iplussvv vm_sir_iplus
+#define vm_sir_iplusssi vm_sir_iplus
+#define vm_sir_iplussis vm_sir_iplus
+#define vm_sir_iplussvi vm_sir_iplus
+#define vm_sir_iplussiv vm_sir_iplus
+#define vm_sir_iplusvss vm_sir_iplus
+#define vm_sir_iplusvsv vm_sir_iplus
+#define vm_sir_iplusvvs vm_sir_iplus
+#define vm_sir_iplusvvv vm_sir_iplus
+#define vm_sir_iplusvsi vm_sir_iplus
+#define vm_sir_iplusvis vm_sir_iplus
+#define vm_sir_iplusvvi vm_sir_iplus
+#define vm_sir_iplusviv vm_sir_iplus
+
+#define vm_sir_siplussss vm_sir_iplus
+#define vm_sir_siplusssv vm_sir_iplus
+#define vm_sir_siplussvs vm_sir_iplus
+#define vm_sir_siplussvv vm_sir_iplus
+#define vm_sir_siplusssi vm_sir_iplus
+#define vm_sir_siplussis vm_sir_iplus
+#define vm_sir_siplussvi vm_sir_iplus
+#define vm_sir_siplussiv vm_sir_iplus
 
 #if !__has_builtin(__builtin_sub_overflow) || defined(MIRJIT)
-#define vm_sir_iminus(res, v1, v2, ov_label)                     \
+#define vm_sir_iminus(res, v1, v2)                               \
     {                                                            \
         long r = FIX2LONG(v1) - FIX2LONG(v2);                    \
         if (RB_FIXABLE(r)) {                                     \
@@ -176,7 +199,7 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
         }                                                        \
     }
 #else
-#define vm_sir_iminus(res, v1, v2, ov_label)                    \
+#define vm_sir_iminus(res, v1, v2)                              \
     {								\
         long r;			                                \
         if (__builtin_sub_overflow((long)v1, (long)v2-1, &r))	\
@@ -185,22 +208,31 @@ static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VA
     }
 #endif
 
-#define vm_sir_iminussss(res, v1, v2) vm_sir_iminus(res, v1, v2, iminussss)
-#define vm_sir_iminusssv(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusssv)
-#define vm_sir_iminussvs(res, v1, v2) vm_sir_iminus(res, v1, v2, iminussvs)
-#define vm_sir_iminussvv(res, v1, v2) vm_sir_iminus(res, v1, v2, iminussvv)
-#define vm_sir_iminusssi(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusssi)
-#define vm_sir_iminussis(res, v1, v2) vm_sir_iminus(res, v1, v2, iminussis)
-#define vm_sir_iminussvi(res, v1, v2) vm_sir_iminus(res, v1, v2, iminussvi)
-#define vm_sir_iminussiv(res, v1, v2) vm_sir_iminus(res, v1, v2, iminussiv)
-#define vm_sir_iminusvss(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusvss)
-#define vm_sir_iminusvsv(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusvsv)
-#define vm_sir_iminusvvs(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusvvs)
-#define vm_sir_iminusvvv(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusvvv)
-#define vm_sir_iminusvsi(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusvsi)
-#define vm_sir_iminusvis(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusvis)
-#define vm_sir_iminusvvi(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusvvi)
-#define vm_sir_iminusviv(res, v1, v2) vm_sir_iminus(res, v1, v2, iminusviv)
+#define vm_sir_iminussss vm_sir_iminus
+#define vm_sir_iminusssv vm_sir_iminus
+#define vm_sir_iminussvs vm_sir_iminus
+#define vm_sir_iminussvv vm_sir_iminus
+#define vm_sir_iminusssi vm_sir_iminus
+#define vm_sir_iminussis vm_sir_iminus
+#define vm_sir_iminussvi vm_sir_iminus
+#define vm_sir_iminussiv vm_sir_iminus
+#define vm_sir_iminusvss vm_sir_iminus
+#define vm_sir_iminusvsv vm_sir_iminus
+#define vm_sir_iminusvvs vm_sir_iminus
+#define vm_sir_iminusvvv vm_sir_iminus
+#define vm_sir_iminusvsi vm_sir_iminus
+#define vm_sir_iminusvis vm_sir_iminus
+#define vm_sir_iminusvvi vm_sir_iminus
+#define vm_sir_iminusviv vm_sir_iminus
+
+#define vm_sir_siminussss vm_sir_iminus
+#define vm_sir_siminusssv vm_sir_iminus
+#define vm_sir_siminussvs vm_sir_iminus
+#define vm_sir_siminussvv vm_sir_iminus
+#define vm_sir_siminusssi vm_sir_iminus
+#define vm_sir_siminussis vm_sir_iminus
+#define vm_sir_siminussvi vm_sir_iminus
+#define vm_sir_siminussiv vm_sir_iminus
 
 SIR_FUNCS(vm_sir_imult)
 SIR_FUNCS(vm_sir_idiv)
@@ -213,6 +245,18 @@ SIR_FUNCS(vm_sir_ilt)
 SIR_FUNCS(vm_sir_igt)
 SIR_FUNCS(vm_sir_ile)
 SIR_FUNCS(vm_sir_ige)
+
+SIR_FUNCS(vm_sir_simult)
+SIR_FUNCS(vm_sir_sidiv)
+SIR_FUNCS(vm_sir_simod)
+SIR_FUNCS(vm_sir_sior)
+SIR_FUNCS(vm_sir_siand)
+SIR_FUNCS(vm_sir_sieq)
+SIR_FUNCS(vm_sir_sineq)
+SIR_FUNCS(vm_sir_silt)
+SIR_FUNCS(vm_sir_sigt)
+SIR_FUNCS(vm_sir_sile)
+SIR_FUNCS(vm_sir_sige)
 
 static sir_inline double vm_sir_float(VALUE v) {
     if (RB_LIKELY(FLONUM_P(v))) return RFLOAT_VALUE(v);
@@ -260,14 +304,17 @@ static sir_inline VALUE vm_sir_fgtri(DBL imm, VALUE v2) { return RBOOL(imm > vm_
 static sir_inline VALUE vm_sir_fleri(DBL imm, VALUE v2) { return RBOOL(imm <= vm_sir_float(v2)); }
 static sir_inline VALUE vm_sir_fgeri(DBL imm, VALUE v2) { return RBOOL(imm >= vm_sir_float(v2)); }
 
-#define SIR_FUNCSF(name, namei, nameri)                                        \
-    static sir_inline void SIR_CONCAT(name, svv)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }  \
-    static sir_inline void SIR_CONCAT(name, svi)(VALUE *res, VALUE v1, DBL imm) { *res = namei(v1, imm); } \
-    static sir_inline void SIR_CONCAT(name, siv)(VALUE *res, DBL imm, VALUE v2) { *res = nameri(imm, v2); }\
-    static sir_inline void SIR_CONCAT(name, svs)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }  \
-    static sir_inline void SIR_CONCAT(name, ssv)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }  \
-    static sir_inline void SIR_CONCAT(name, ssi)(VALUE *res, VALUE v1, DBL imm) { *res = namei(v1, imm); } \
-    static sir_inline void SIR_CONCAT(name, sis)(VALUE *res, DBL imm, VALUE v2) { *res = nameri(imm, v2); }\
+#define SIR_SFUNCSF(iname, name, namei, nameri)                                        			   \
+    static sir_inline void SIR_CONCAT(iname, svv)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }  \
+    static sir_inline void SIR_CONCAT(iname, svi)(VALUE *res, VALUE v1, DBL imm) { *res = namei(v1, imm); } \
+    static sir_inline void SIR_CONCAT(iname, siv)(VALUE *res, DBL imm, VALUE v2) { *res = nameri(imm, v2); }\
+    static sir_inline void SIR_CONCAT(iname, svs)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }  \
+    static sir_inline void SIR_CONCAT(iname, ssv)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }  \
+    static sir_inline void SIR_CONCAT(iname, ssi)(VALUE *res, VALUE v1, DBL imm) { *res = namei(v1, imm); } \
+    static sir_inline void SIR_CONCAT(iname, sis)(VALUE *res, DBL imm, VALUE v2) { *res = nameri(imm, v2); }\
+    static sir_inline void SIR_CONCAT(iname, sss)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }
+
+#define SIR_FUNCSF(name, namei, nameri) SIR_SFUNCSF(name, name, namei, nameri) \
     static sir_inline void SIR_CONCAT(name, vvv)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }  \
     static sir_inline void SIR_CONCAT(name, vvi)(VALUE *res, VALUE v1, DBL imm) { *res = namei(v1, imm); } \
     static sir_inline void SIR_CONCAT(name, viv)(VALUE *res, DBL imm, VALUE v2) { *res = nameri(imm, v2); }\
@@ -275,8 +322,7 @@ static sir_inline VALUE vm_sir_fgeri(DBL imm, VALUE v2) { return RBOOL(imm >= vm
     static sir_inline void SIR_CONCAT(name, vsv)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }  \
     static sir_inline void SIR_CONCAT(name, vsi)(VALUE *res, VALUE v1, DBL imm) { *res = namei(v1, imm); } \
     static sir_inline void SIR_CONCAT(name, vis)(VALUE *res, DBL imm, VALUE v2) { *res = nameri(imm, v2); } \
-    static sir_inline void SIR_CONCAT(name, vss)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }   \
-    static sir_inline void SIR_CONCAT(name, sss)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }
+    static sir_inline void SIR_CONCAT(name, vss)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }
 
 SIR_FUNCSF(vm_sir_fplus, vm_sir_fplusi, vm_sir_fplusri)
 SIR_FUNCSF(vm_sir_fminus, vm_sir_fminusi, vm_sir_fminusri)
@@ -289,6 +335,18 @@ SIR_FUNCSF(vm_sir_flt, vm_sir_flti, vm_sir_fltri)
 SIR_FUNCSF(vm_sir_fgt, vm_sir_fgti, vm_sir_fgtri)
 SIR_FUNCSF(vm_sir_fle, vm_sir_flei, vm_sir_fleri)
 SIR_FUNCSF(vm_sir_fge, vm_sir_fgei, vm_sir_fgeri)
+
+SIR_SFUNCSF(vm_sir_sfplus, vm_sir_fplus, vm_sir_fplusi, vm_sir_fplusri)
+SIR_SFUNCSF(vm_sir_sfminus, vm_sir_fminus, vm_sir_fminusi, vm_sir_fminusri)
+SIR_SFUNCSF(vm_sir_sfmult, vm_sir_fmult, vm_sir_fmulti, vm_sir_fmultri)
+SIR_SFUNCSF(vm_sir_sfdiv, vm_sir_fdiv, vm_sir_fdivi, vm_sir_fdivri)
+SIR_SFUNCSF(vm_sir_sfmod, vm_sir_fmod, vm_sir_fmodi, vm_sir_fmodri)
+SIR_SFUNCSF(vm_sir_sfeq, vm_sir_feq, vm_sir_feqi, vm_sir_feqri)
+SIR_SFUNCSF(vm_sir_sfneq, vm_sir_fneq, vm_sir_fneqi, vm_sir_fneqri)
+SIR_SFUNCSF(vm_sir_sflt, vm_sir_flt, vm_sir_flti, vm_sir_fltri)
+SIR_SFUNCSF(vm_sir_sfgt, vm_sir_fgt, vm_sir_fgti, vm_sir_fgtri)
+SIR_SFUNCSF(vm_sir_sfle, vm_sir_fle, vm_sir_flei, vm_sir_fleri)
+SIR_SFUNCSF(vm_sir_sfge, vm_sir_fge, vm_sir_fgei, vm_sir_fgeri)
 
 static sir_inline VALUE rb_sir_ary_entry(VALUE ary, long idx) {
     long len;
@@ -419,6 +477,31 @@ SIR_RES_CHECK_FUNCS2(sir_fle, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_fge, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_iaref, sir_check_res_undef)
 
+SIR_RES_CHECK_FUNCS2(sir_siplus, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_siminus, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_simult, sir_check_res_fixnum)
+SIR_RES_CHECK_FUNCS2(sir_sidiv, sir_check_res_fixnum)
+SIR_RES_CHECK_FUNCS2(sir_simod, sir_check_res_fixnum)
+SIR_RES_CHECK_FUNCS2(sir_sior, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_siand, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sieq, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sineq, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_silt, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sigt, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sile, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sige, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfplus, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfminus, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfmult, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfdiv, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfmod, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfeq, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfneq, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sflt, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfgt, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfle, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_sfge, sir_check_res_nothing)
+
 #define CHECK_FUNC_NAME(insn_name) SIR_CONCAT(sir_input_check_, insn_name)
 
 #define SIR_CHECK_VFUNCS2(iname, fname)			                                        		\
@@ -441,8 +524,36 @@ SIR_RES_CHECK_FUNCS2(sir_iaref, sir_check_res_undef)
     static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
     static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(VALUE v1, VALUE v2) { return fname(v1, v2); }
 
+#define SIR_CHECK_IFUNCS2(iname, fname, fname1, fname2) SIR_CHECK_VFUNCS2(iname, fname) \
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svi))(VALUE v1, VALUE v2) { return fname1(v1); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, siv))(VALUE v1, VALUE v2) { return fname2(v2); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssi))(VALUE v1, VALUE v2) { return fname1(v1); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sis))(VALUE v1, VALUE v2) { return fname2(v2); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvi))(VALUE v1, VALUE v2) { return fname1(v1); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, viv))(VALUE v1, VALUE v2) { return fname2(v2); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, VALUE v2) { return fname1(v1); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(VALUE v1, VALUE v2) { return fname2(v2); }
+
+#define SIR_CHECK_DFUNCS2(iname, fname, fname1, fname2) SIR_CHECK_VFUNCS2(iname, fname) \
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svi))(VALUE v1, DBL v2) { return fname1(v1); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, siv))(DBL v1, VALUE v2) { return fname2(v2); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssi))(VALUE v1, DBL v2) { return fname1(v1); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sis))(DBL v1, VALUE v2) { return fname2(v2); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvi))(VALUE v1, DBL v2) { return fname1(v1); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, viv))(DBL v1, VALUE v2) { return fname2(v2); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, DBL v2) { return fname1(v1); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(DBL v1, VALUE v2) { return fname2(v2); }
+
 static sir_inline int sir_check_zero(VALUE v1, VALUE v2) { return v2 == LONG2FIX(0); }
 static sir_inline int sir_check_nothing(VALUE v1, VALUE v2) { return FALSE; }
+static sir_inline int sir_check_nothing1(VALUE v) { return FALSE; }
+static sir_inline int sir_check_fix(VALUE v1, VALUE v2) { return !FIXNUM_2_P(v1, v2) || v2 == LONG2FIX(0); }
+static sir_inline int sir_check_fix1(VALUE v) { return !FIXNUM_P(v); }
+static sir_inline int sir_check_nonzero_fix(VALUE v1, VALUE v2) { return !FIXNUM_2_P(v1, v2) || v2 == LONG2FIX(0); }
+static sir_inline int sir_check_nonzero_fix1(VALUE v) { return !FIXNUM_P(v) || v == LONG2FIX(0); }
+static sir_inline int sir_fp_p(VALUE v) { return FLONUM_P(v) || (!SPECIAL_CONST_P(v) && RBASIC_CLASS(v) == rb_cFloat);}
+static sir_inline int sir_check_fp(VALUE v1, VALUE v2) { return !sir_fp_p(v1) || !sir_fp_p(v2); }
+static sir_inline int sir_check_fp1(VALUE v) { return !sir_fp_p(v); }
 
 SIR_CHECK_FUNCS2(sir_iplus, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_iminus, sir_check_nothing)
@@ -457,17 +568,43 @@ SIR_CHECK_FUNCS2(sir_ilt, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_igt, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_ile, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_ige, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fplus, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fminus, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fmult, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fdiv, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fmod, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_feq, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fneq, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_flt, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fgt, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fle, sir_check_nothing)
-SIR_CHECK_VFUNCS2(sir_fge, sir_check_nothing)
+SIR_CHECK_DFUNCS2(sir_fplus, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_fminus, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_fmult, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_fdiv, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_fmod, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_feq, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_fneq, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_flt, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_fgt, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_fle, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_DFUNCS2(sir_fge, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+
+SIR_CHECK_IFUNCS2(sir_siplus, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_siminus, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_simult, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_sidiv, sir_check_nonzero_fix, sir_check_fix1, sir_check_nonzero_fix1)
+SIR_CHECK_IFUNCS2(sir_simod, sir_check_nonzero_fix, sir_check_fix1, sir_check_nonzero_fix1)
+SIR_CHECK_IFUNCS2(sir_sior, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_siand, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_sieq, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_sineq, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_silt, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_sigt, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_sile, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_sige, sir_check_fix, sir_check_fix1, sir_check_fix1)
+
+SIR_CHECK_DFUNCS2(sir_sfplus, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfminus, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfmult, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfdiv, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfmod, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfeq, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfneq, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sflt, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfgt, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfle, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfge, sir_check_fp, sir_check_fp1, sir_check_fp1)
 
 #define CHECK_INPUTS(iname, v1, v2)		                \
     if (UNLIKELY(CHECK_FUNC_NAME(iname)(v1, v2))) {             \
