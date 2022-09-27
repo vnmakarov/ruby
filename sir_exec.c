@@ -126,7 +126,7 @@ static sir_inline VALUE vm_sir_ineq(VALUE v1, VALUE v2) { return RBOOL(v1 != v2)
 static sir_inline VALUE vm_sir_ilt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 < (SIGNED_VALUE)v2); }
 static sir_inline VALUE vm_sir_igt(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 > (SIGNED_VALUE)v2); }
 static sir_inline VALUE vm_sir_ile(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2); }
-static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 > (SIGNED_VALUE)v2); }
+static sir_inline VALUE vm_sir_ige(VALUE v1, VALUE v2) { return RBOOL((SIGNED_VALUE)v1 >= (SIGNED_VALUE)v2); }
 
 #if !__has_builtin(__builtin_add_overflow)
 #define vm_sir_iplus(res, v1, v2, ov_label)                      \
@@ -351,7 +351,7 @@ static sir_inline int vm_sir_ibneq(VALUE v1, VALUE v2) { return v1 != v2; }
 static sir_inline int vm_sir_iblt(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 < (SIGNED_VALUE)v2; }
 static sir_inline int vm_sir_ibgt(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 > (SIGNED_VALUE)v2; }
 static sir_inline int vm_sir_ible(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 <= (SIGNED_VALUE)v2; }
-static sir_inline int vm_sir_ibge(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 > (SIGNED_VALUE)v2; }
+static sir_inline int vm_sir_ibge(VALUE v1, VALUE v2) { return (SIGNED_VALUE)v1 >= (SIGNED_VALUE)v2; }
 
 #define SIR_BR_FUNCS(iname)                                  \
     static sir_inline int SIR_CONCAT(iname, ss)(VALUE v1, VALUE v2) { return iname(v1, v2); }\
