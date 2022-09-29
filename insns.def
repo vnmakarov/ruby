@@ -1651,11 +1651,11 @@ sir_iplussvv
 }
 
 DEFINE_INSN
-sir_iminussvv sir_imultsvv sir_idivsvv sir_imodsvv sir_iorsvv sir_iandsvv
+sir_iminussvv sir_imultsvv sir_idivsvv sir_imodsvv sir_iorsvv sir_iandsvv sir_iarefsvv
 sir_ieqsvv sir_ineqsvv sir_iltsvv sir_igtsvv sir_ilesvv sir_igesvv
 sir_fplussvv sir_fminussvv sir_fmultsvv sir_fdivsvv sir_fmodsvv
 sir_feqsvv sir_fneqsvv sir_fltsvv sir_fgtsvv sir_flesvv sir_fgesvv
-sir_siplussvv sir_siminussvv sir_simultsvv sir_sidivsvv sir_simodsvv sir_siorsvv sir_siandsvv
+sir_siplussvv sir_siminussvv sir_simultsvv sir_sidivsvv sir_simodsvv sir_siorsvv sir_siandsvv sir_siarefsvv
 sir_sfplussvv sir_sfminussvv sir_sfmultsvv sir_sfdivsvv sir_sfmodsvv
 sir_sieqsvv sir_sineqsvv sir_siltsvv sir_sigtsvv sir_silesvv sir_sigesvv
 sir_sfeqsvv sir_sfneqsvv sir_sfltsvv sir_sfgtsvv sir_sflesvv sir_sfgesvv
@@ -1670,9 +1670,9 @@ sir_sfeqsvv sir_sfneqsvv sir_sfltsvv sir_sfgtsvv sir_sflesvv sir_sfgesvv
 }
 
 DEFINE_INSN
-sir_iplussvi sir_iminussvi sir_imultsvi sir_idivsvi sir_imodsvi sir_iorsvi sir_iandsvi
+sir_iplussvi sir_iminussvi sir_imultsvi sir_idivsvi sir_imodsvi sir_iorsvi sir_iandsvi sir_iarefsvi
 sir_ieqsvi sir_ineqsvi sir_iltsvi sir_igtsvi sir_ilesvi sir_igesvi
-sir_siplussvi sir_siminussvi sir_simultsvi sir_sidivsvi sir_simodsvi sir_siorsvi sir_siandsvi
+sir_siplussvi sir_siminussvi sir_simultsvi sir_sidivsvi sir_simodsvi sir_siorsvi sir_siandsvi sir_siarefsvi
 sir_sieqsvi sir_sineqsvi sir_siltsvi sir_sigtsvi sir_silesvi sir_sigesvi
 (EPDISP op1, VALUE imm)
 ()
@@ -1700,9 +1700,9 @@ sir_sfeqsvi sir_sfneqsvi sir_sfltsvi sir_sfgtsvi sir_sflesvi sir_sfgesvi
 }
 
 DEFINE_INSN
-sir_iplussiv sir_iminussiv sir_imultsiv sir_idivsiv sir_imodsiv sir_iorsiv sir_iandsiv
+sir_iplussiv sir_iminussiv sir_imultsiv sir_idivsiv sir_imodsiv sir_iorsiv sir_iandsiv sir_iarefsiv
 sir_ieqsiv sir_ineqsiv sir_iltsiv sir_igtsiv sir_ilesiv sir_igesiv
-sir_siplussiv sir_siminussiv sir_simultsiv sir_sidivsiv sir_simodsiv sir_siorsiv sir_siandsiv
+sir_siplussiv sir_siminussiv sir_simultsiv sir_sidivsiv sir_simodsiv sir_siorsiv sir_siandsiv sir_siarefsiv
 sir_sieqsiv sir_sineqsiv sir_siltsiv sir_sigtsiv sir_silesiv sir_sigesiv
 (VALUE imm, EPDISP op2)
 ()
@@ -1730,11 +1730,11 @@ sir_sfeqsiv sir_sfneqsiv sir_sfltsiv sir_sfgtsiv sir_sflesiv sir_sfgesiv
 }
 
 DEFINE_INSN
-sir_iplussvs sir_iminussvs sir_imultsvs sir_idivsvs sir_imodsvs sir_iorsvs sir_iandsvs
+sir_iplussvs sir_iminussvs sir_imultsvs sir_idivsvs sir_imodsvs sir_iorsvs sir_iandsvs sir_iarefsvs
 sir_ieqsvs sir_ineqsvs sir_iltsvs sir_igtsvs sir_ilesvs sir_igesvs
 sir_fplussvs sir_fminussvs sir_fmultsvs sir_fdivsvs sir_fmodsvs
 sir_feqsvs sir_fneqsvs sir_fltsvs sir_fgtsvs sir_flesvs sir_fgesvs
-sir_siplussvs sir_siminussvs sir_simultsvs sir_sidivsvs sir_simodsvs sir_siorsvs sir_siandsvs
+sir_siplussvs sir_siminussvs sir_simultsvs sir_sidivsvs sir_simodsvs sir_siorsvs sir_siandsvs sir_siarefsvs
 sir_sfplussvs sir_sfminussvs sir_sfmultsvs sir_sfdivsvs sir_sfmodsvs
 sir_sieqsvs sir_sineqsvs sir_siltsvs sir_sigtsvs sir_silesvs sir_sigesvs
 sir_sfeqsvs sir_sfneqsvs sir_sfltsvs sir_sfgtsvs sir_sflesvs sir_sfgesvs
@@ -1749,11 +1749,11 @@ sir_sfeqsvs sir_sfneqsvs sir_sfltsvs sir_sfgtsvs sir_sflesvs sir_sfgesvs
 }
 
 DEFINE_INSN
-sir_iplusssv sir_iminusssv sir_imultssv sir_idivssv sir_imodssv sir_iorssv sir_iandssv
+sir_iplusssv sir_iminusssv sir_imultssv sir_idivssv sir_imodssv sir_iorssv sir_iandssv sir_iarefssv
 sir_ieqssv sir_ineqssv sir_iltssv sir_igtssv sir_ilessv sir_igessv
 sir_fplusssv sir_fminusssv sir_fmultssv sir_fdivssv sir_fmodssv
 sir_feqssv sir_fneqssv sir_fltssv sir_fgtssv sir_flessv sir_fgessv
-sir_siplusssv sir_siminusssv sir_simultssv sir_sidivssv sir_simodssv sir_siorssv sir_siandssv
+sir_siplusssv sir_siminusssv sir_simultssv sir_sidivssv sir_simodssv sir_siorssv sir_siandssv sir_siarefssv
 sir_sfplusssv sir_sfminusssv sir_sfmultssv sir_sfdivssv sir_sfmodssv
 sir_sieqssv sir_sineqssv sir_siltssv sir_sigtssv sir_silessv sir_sigessv
 sir_sfeqssv sir_sfneqssv sir_sfltssv sir_sfgtssv sir_sflessv sir_sfgessv
@@ -1768,9 +1768,9 @@ sir_sfeqssv sir_sfneqssv sir_sfltssv sir_sfgtssv sir_sflessv sir_sfgessv
 }
 
 DEFINE_INSN
-sir_iplusssi sir_iminusssi sir_imultssi sir_idivssi sir_imodssi sir_iorssi sir_iandssi
+sir_iplusssi sir_iminusssi sir_imultssi sir_idivssi sir_imodssi sir_iorssi sir_iandssi sir_iarefssi
 sir_ieqssi sir_ineqssi sir_iltssi sir_igtssi sir_ilessi sir_igessi
-sir_siplusssi sir_siminusssi sir_simultssi sir_sidivssi sir_simodssi sir_siorssi sir_siandssi
+sir_siplusssi sir_siminusssi sir_simultssi sir_sidivssi sir_simodssi sir_siorssi sir_siandssi sir_siarefssi
 sir_sieqssi sir_sineqssi sir_siltssi sir_sigtssi sir_silessi sir_sigessi
 (VALUE imm)
 (VALUE v1)
@@ -1796,9 +1796,9 @@ sir_sfeqssi sir_sfneqssi sir_sfltssi sir_sfgtssi sir_sflessi sir_sfgessi
 }
 
 DEFINE_INSN
-sir_iplussis sir_iminussis sir_imultsis sir_idivsis sir_imodsis sir_iorsis sir_iandsis
+sir_iplussis sir_iminussis sir_imultsis sir_idivsis sir_imodsis sir_iorsis sir_iandsis sir_iarefsis
 sir_ieqsis sir_ineqsis sir_iltsis sir_igtsis sir_ilesis sir_igesis
-sir_siplussis sir_siminussis sir_simultsis sir_sidivsis sir_simodsis sir_siorsis sir_siandsis
+sir_siplussis sir_siminussis sir_simultsis sir_sidivsis sir_simodsis sir_siorsis sir_siandsis sir_siarefsis
 sir_sieqsis sir_sineqsis sir_siltsis sir_sigtsis sir_silesis sir_sigesis
 (VALUE imm)
 (VALUE v2)
@@ -1824,11 +1824,11 @@ sir_sfeqsis sir_sfneqsis sir_sfltsis sir_sfgtsis sir_sflesis sir_sfgesis
 }
 
 DEFINE_INSN
-sir_iplussss sir_iminussss sir_imultsss sir_idivsss sir_imodsss sir_iorsss sir_iandsss
+sir_iplussss sir_iminussss sir_imultsss sir_idivsss sir_imodsss sir_iorsss sir_iandsss sir_iarefsss
 sir_ieqsss sir_ineqsss sir_iltsss sir_igtsss sir_ilesss sir_igesss
 sir_fplussss sir_fminussss sir_fmultsss sir_fdivsss sir_fmodsss
 sir_feqsss sir_fneqsss sir_fltsss sir_fgtsss sir_flesss sir_fgesss
-sir_siplussss sir_siminussss sir_simultsss sir_sidivsss sir_simodsss sir_siorsss sir_siandsss
+sir_siplussss sir_siminussss sir_simultsss sir_sidivsss sir_simodsss sir_siorsss sir_siandsss sir_siarefsss
 sir_sfplussss sir_sfminussss sir_sfmultsss sir_sfdivsss sir_sfmodsss
 sir_sieqsss sir_sineqsss sir_siltsss sir_sigtsss sir_silesss sir_sigesss
 sir_sfeqsss sir_sfneqsss sir_sfltsss sir_sfgtsss sir_sflesss sir_sfgesss
@@ -2009,187 +2009,6 @@ sir_feqvss sir_fneqvss sir_fltvss sir_fgtvss sir_flevss sir_fgevss
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
-}
-
-DEFINE_INSN
-sir_iarefsvv
-(EPDISP op1, EPDISP op2)
-()
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() + op1), v2 = *(GET_EP() + op2);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iarefsvi
-(EPDISP op1, VALUE imm)
-()
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() + op1);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (val == Qundef) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iarefsiv
-(VALUE imm, EPDISP op2)
-()
-(VALUE val)
-{
-    VALUE v2 = *(GET_EP() + op2);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (val == Qundef) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iarefsvs
-(EPDISP op1)
-(VALUE v2)
-(VALUE val)
-{
-    VALUE v1 = *(GET_EP() + op1);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iarefssv
-(EPDISP op2)
-(VALUE v1)
-(VALUE val)
-{
-    VALUE v2 = *(GET_EP() + op2);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iarefssi
-(VALUE imm)
-(VALUE v1)
-(VALUE val)
-{
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (val == Qundef) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iarefsis
-(VALUE imm)
-(VALUE v2)
-(VALUE val)
-{
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (val == Qundef) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iarefsss
-()
-(VALUE v1, VALUE v2)
-(VALUE val)
-{
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iarefvvv
-(EPDISP res, EPDISP op1, EPDISP op2)
-()
-()
-{
-    VALUE val, v1 = *(GET_EP() + op1), v2 = *(GET_EP() + op2);
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
-}
-
-DEFINE_INSN
-sir_iarefvvi
-(EPDISP res, EPDISP op1, VALUE imm)
-()
-()
-{
-    VALUE v1 = *(GET_EP() + op1), val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (val == Qundef) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
-}
-
-DEFINE_INSN
-sir_iarefviv
-(EPDISP res, VALUE imm, EPDISP op2)
-()
-()
-{
-    VALUE v2 = *(GET_EP() + op2), val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (val == Qundef) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
-}
-
-DEFINE_INSN
-sir_iarefvvs
-(EPDISP res, EPDISP op1)
-(VALUE v2)
-()
-{
-    VALUE v1 = *(GET_EP() + op1), val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
-}
-
-DEFINE_INSN
-sir_iarefvsv
-(EPDISP res, EPDISP op2)
-(VALUE v1)
-()
-{
-    VALUE v2 = *(GET_EP() + op2), val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
-}
-
-DEFINE_INSN
-sir_iarefvsi
-(EPDISP res, VALUE imm)
-(VALUE v1)
-()
-{
-    VALUE val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
-    if (val == Qundef) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
-}
-
-DEFINE_INSN
-sir_iarefvis
-(EPDISP res, VALUE imm)
-(VALUE v2)
-()
-{
-    VALUE val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
-    if (val == Qundef) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
-}
-
-DEFINE_INSN
-sir_iarefvss
-(EPDISP res)
-(VALUE v1, VALUE v2)
-()
-{
-    VALUE val;
-    SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
-    if (val == Qundef) goto safe_insn_restart;
     VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
 }
 
@@ -2872,7 +2691,7 @@ sir_asetvss
 /* --- end of general SIR insns --- */
 
 DEFINE_INSN
-sir_inspect_type sir_inspect_fixtype sir_inspect_flotype
+sir_inspect_type sir_inspect_fixtype sir_inspect_flotype sir_inspect_array
 (EPDISP n)
 ()
 ()
@@ -2883,7 +2702,7 @@ sir_inspect_type sir_inspect_fixtype sir_inspect_flotype
 }
 
 DEFINE_INSN
-sir_inspect_stack_type sir_inspect_stack_fixtype sir_inspect_stack_flotype
+sir_inspect_stack_type sir_inspect_stack_fixtype sir_inspect_stack_flotype sir_inspect_stack_array
 (lindex_t n)
 ()
 ()

@@ -367,11 +367,10 @@ static sir_inline VALUE rb_sir_ary_entry(VALUE ary, long idx) {
     return ptr[idx];
 }
 
-static sir_inline VALUE vm_sir_iaref(VALUE v1, VALUE v2) {
-    if (SPECIAL_CONST_P(v1) || RBASIC_CLASS(v1) != rb_cArray) return Qundef;
-    return rb_sir_ary_entry(v1, FIX2LONG(v2));
-}
-SIR_FUNCS(vm_sir_iaref)
+static sir_inline VALUE vm_sir_iaref(VALUE v1, VALUE v2) { return rb_sir_ary_entry(v1, FIX2LONG(v2)); }
+static sir_inline VALUE vm_sir_siaref(VALUE v1, VALUE v2) { return rb_sir_ary_entry(v1, FIX2LONG(v2)); }
+SIR_SFUNCS(vm_sir_iaref)
+SIR_SFUNCS(vm_sir_siaref)
 
 static sir_inline VALUE rb_sir_ary_store(VALUE ary, long idx, VALUE val) {
     if (RB_UNLIKELY(RB_OBJ_FROZEN(ary))) return Qundef;
@@ -448,7 +447,6 @@ SIR_BR_FUNCS(vm_sir_ibge)
 
 static sir_inline int sir_check_res_fixnum(VALUE res) { return !FIXNUM_P(res); }
 static sir_inline int sir_check_res_flonum(VALUE res) { return !FLONUM_P(res); }
-static sir_inline int sir_check_res_undef(VALUE res) { return res == Qundef; }
 static sir_inline int sir_check_res_nothing(VALUE res) { return FALSE; }
 
 SIR_RES_CHECK_FUNCS2(sir_iplus, sir_check_res_nothing)
@@ -458,6 +456,7 @@ SIR_RES_CHECK_FUNCS2(sir_idiv, sir_check_res_fixnum)
 SIR_RES_CHECK_FUNCS2(sir_imod, sir_check_res_fixnum)
 SIR_RES_CHECK_FUNCS2(sir_ior, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_iand, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_iaref, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_ieq, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_ineq, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_ilt, sir_check_res_nothing)
@@ -475,7 +474,6 @@ SIR_RES_CHECK_FUNCS2(sir_flt, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_fgt, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_fle, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_fge, sir_check_res_nothing)
-SIR_RES_CHECK_FUNCS2(sir_iaref, sir_check_res_undef)
 
 SIR_RES_CHECK_FUNCS2(sir_siplus, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_siminus, sir_check_res_nothing)
@@ -484,6 +482,7 @@ SIR_RES_CHECK_FUNCS2(sir_sidiv, sir_check_res_fixnum)
 SIR_RES_CHECK_FUNCS2(sir_simod, sir_check_res_fixnum)
 SIR_RES_CHECK_FUNCS2(sir_sior, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_siand, sir_check_res_nothing)
+SIR_RES_CHECK_FUNCS2(sir_siaref, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_sieq, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_sineq, sir_check_res_nothing)
 SIR_RES_CHECK_FUNCS2(sir_silt, sir_check_res_nothing)
@@ -554,6 +553,8 @@ static sir_inline int sir_check_nonzero_fix1(VALUE v) { return !FIXNUM_P(v) || v
 static sir_inline int sir_fp_p(VALUE v) { return FLONUM_P(v) || (!SPECIAL_CONST_P(v) && RBASIC_CLASS(v) == rb_cFloat);}
 static sir_inline int sir_check_fp(VALUE v1, VALUE v2) { return !sir_fp_p(v1) || !sir_fp_p(v2); }
 static sir_inline int sir_check_fp1(VALUE v) { return !sir_fp_p(v); }
+static sir_inline int sir_check_aref1(VALUE v) { return SPECIAL_CONST_P(v) || RBASIC_CLASS(v) != rb_cArray; }
+static sir_inline int sir_check_aref(VALUE v1, VALUE v2) { return  !FIXNUM_P(v2) || sir_check_aref1(v1); }
 
 SIR_CHECK_FUNCS2(sir_iplus, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_iminus, sir_check_nothing)
@@ -562,6 +563,7 @@ SIR_CHECK_FUNCS2(sir_idiv, sir_check_zero)
 SIR_CHECK_FUNCS2(sir_imod, sir_check_zero)
 SIR_CHECK_FUNCS2(sir_ior, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_iand, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_iaref, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_ieq, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_ineq, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_ilt, sir_check_nothing)
@@ -587,6 +589,7 @@ SIR_CHECK_IFUNCS2(sir_sidiv, sir_check_nonzero_fix, sir_check_fix1, sir_check_no
 SIR_CHECK_IFUNCS2(sir_simod, sir_check_nonzero_fix, sir_check_fix1, sir_check_nonzero_fix1)
 SIR_CHECK_IFUNCS2(sir_sior, sir_check_fix, sir_check_fix1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_siand, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_siaref, sir_check_aref, sir_check_aref1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_sieq, sir_check_fix, sir_check_fix1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_sineq, sir_check_fix, sir_check_fix1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_silt, sir_check_fix, sir_check_fix1, sir_check_fix1)

@@ -558,6 +558,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_ilesvv):
     case BIN(sir_igesvv):
     case BIN(sir_iarefsvv):
+    case BIN(sir_siarefsvv):
     svv:
         rv_p = imm1_p = imm2_p = FALSE;
         v1_p = v2_p = TRUE;
@@ -617,6 +618,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_ilesvi):
     case BIN(sir_igesvi):
     case BIN(sir_iarefsvi):
+    case BIN(sir_siarefsvi):
     svi:
         rv_p = v2_p = imm1_p = FALSE;
         v1_p = imm2_p = TRUE;
@@ -676,6 +678,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_ilesiv):
     case BIN(sir_igesiv):
     case BIN(sir_iarefsiv):
+    case BIN(sir_siarefsiv):
     siv:
         rv_p = v1_p = imm2_p = FALSE;
         v2_p = imm1_p = TRUE;
@@ -735,6 +738,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_ilesvs):
     case BIN(sir_igesvs):
     case BIN(sir_iarefsvs):
+    case BIN(sir_siarefsvs):
     svs:
         rv_p = v2_p = imm1_p = imm2_p = FALSE;
         v1_p = TRUE;
@@ -794,6 +798,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_ilessv):
     case BIN(sir_igessv):
     case BIN(sir_iarefssv):
+    case BIN(sir_siarefssv):
     ssv:
         rv_p = v1_p = imm1_p = imm2_p = FALSE;
         v2_p = TRUE;
@@ -853,6 +858,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_ilessi):
     case BIN(sir_igessi):
     case BIN(sir_iarefssi):
+    case BIN(sir_siarefssi):
     ssi:
         rv_p = v1_p = v2_p = imm1_p = FALSE;
         imm2_p = TRUE;
@@ -912,6 +918,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_ilesis):
     case BIN(sir_igesis):
     case BIN(sir_iarefsis):
+    case BIN(sir_siarefsis):
     sis:
         rv_p = v1_p = v2_p = imm2_p = FALSE;
         imm1_p = TRUE;
@@ -971,6 +978,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_ilesss):
     case BIN(sir_igesss):
     case BIN(sir_iarefsss):
+    case BIN(sir_siarefsss):
     sss:
         rv_p = v1_p = v2_p = imm1_p = imm2_p = FALSE;
         goto op2;
@@ -1000,7 +1008,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvvv):
     case BIN(sir_ilevvv):
     case BIN(sir_igevvv):
-    case BIN(sir_iarefvvv):
         rv_p = v1_p = v2_p = TRUE;
         imm1_p = imm2_p = FALSE;
         goto op2;
@@ -1030,7 +1037,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvvi):
     case BIN(sir_ilevvi):
     case BIN(sir_igevvi):
-    case BIN(sir_iarefvvi):
         rv_p = v1_p = imm2_p = TRUE;
         v2_p = imm1_p = FALSE;
         goto op2;
@@ -1060,7 +1066,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtviv):
     case BIN(sir_ileviv):
     case BIN(sir_igeviv):
-    case BIN(sir_iarefviv):
         rv_p = v2_p = imm1_p = TRUE;
         v1_p = imm2_p = FALSE;
         goto op2;
@@ -1090,7 +1095,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvvs):
     case BIN(sir_ilevvs):
     case BIN(sir_igevvs):
-    case BIN(sir_iarefvvs):
         rv_p = v1_p = TRUE;
         v2_p = imm1_p = imm2_p = FALSE;
         goto op2;
@@ -1120,7 +1124,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvsv):
     case BIN(sir_ilevsv):
     case BIN(sir_igevsv):
-    case BIN(sir_iarefvsv):
         rv_p = v2_p = TRUE;
         v1_p = imm1_p = imm2_p = FALSE;
         goto op2;
@@ -1150,7 +1153,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvsi):
     case BIN(sir_ilevsi):
     case BIN(sir_igevsi):
-    case BIN(sir_iarefvsi):
         rv_p = imm2_p = TRUE;
         v1_p = v2_p = imm1_p = FALSE;
         goto op2;
@@ -1180,7 +1182,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvis):
     case BIN(sir_ilevis):
     case BIN(sir_igevis):
-    case BIN(sir_iarefvis):
         rv_p = imm1_p = TRUE;
         v1_p = v2_p = imm2_p = FALSE;
         goto op2;
@@ -1210,7 +1211,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvss):
     case BIN(sir_ilevss):
     case BIN(sir_igevss):
-    case BIN(sir_iarefvss):
         rv_p = TRUE;
         v1_p = v2_p = imm1_p = imm2_p = FALSE;
     op2:
@@ -1904,6 +1904,17 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
                 O("  r = mirjit_f%s(val, val2);\n", fn);
             break;
 #endif
+        case BIN(sir_siarefsss):
+        case BIN(sir_siarefsvv):
+        case BIN(sir_siarefsvi):
+        case BIN(sir_siarefsiv):
+        case BIN(sir_siarefsvs):
+        case BIN(sir_siarefssv):
+        case BIN(sir_siarefssi):
+        case BIN(sir_siarefsis):
+            gen_class_of(buff, "r", "val");
+            O("  if (!(val2 & 0x%x) || r != 0x%"PRIxVALUE ") goto restart;\n", (int)RUBY_FIXNUM_FLAG, rb_cArray);
+            /* fall through */
         case BIN(sir_iarefsss):
         case BIN(sir_iarefsvv):
         case BIN(sir_iarefsvi):
@@ -1912,16 +1923,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_iarefssv):
         case BIN(sir_iarefssi):
         case BIN(sir_iarefsis):
-        case BIN(sir_iarefvvv):
-        case BIN(sir_iarefvvi):
-        case BIN(sir_iarefviv):
-        case BIN(sir_iarefvvs):
-        case BIN(sir_iarefvsv):
-        case BIN(sir_iarefvsi):
-        case BIN(sir_iarefvis):
-        case BIN(sir_iarefvss):
-            gen_class_of(buff, "r", "val");
-            O("  if (r != 0x%"PRIxVALUE ") goto restart;\n", rb_cArray);
             gen_array_aref_len(buff, "pv", "r", "val"); /* r is len */
             /* r = rb_ary_entry_internal(val, FIX2LONG(val2)); */
             O("  val2 = (SIGNED_VALUE)val2 >> 1;\n"); /* offset = FIX2LONG(val2) */
@@ -1941,6 +1942,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  }\n");
             break;
         default:
+            abort();
             assert(FALSE);
         }
         if (stack_ops_num != 0) O("  sp -= %d;\n", stack_ops_num);

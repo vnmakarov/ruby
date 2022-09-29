@@ -357,6 +357,7 @@ enum rb_attr_val {
     ATTR_UNKNOWN,
     ATTR_FIXNUM,
     ATTR_FLONUM,
+    ATTR_ARRAY,
 };
 
 struct rb_iseq_bbv;
