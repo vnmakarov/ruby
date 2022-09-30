@@ -342,9 +342,9 @@ static int
 gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn_id) {
     const VALUE *operands = &insn_pc[1];
     const char *op, *fn;
-    int rv_p, v1_p, v2_p, imm1_p, imm2_p, fop_p, check_p, nil_p, start, stack_ops_num;
+    int rv_p, v1_p, v2_p, imm1_p, imm2_p, fop_p, check_p, siaset_p, nil_p, start, stack_ops_num;
 
-    fop_p = check_p = FALSE;
+    fop_p = check_p = siaset_p = FALSE;
     switch (insn_id) {
     case BIN(nop):
     case BIN(nop2):
@@ -1952,12 +1952,18 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  *sp++ = r;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
+    case BIN(sir_siasetsis):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetsis):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val2 = sp[-1];\n");
         O("  val = 0x%"PRIxVALUE ";\n", operands[0]);
         goto iaset;
+    case BIN(sir_siasetsiv):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetsiv):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
@@ -1965,6 +1971,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val = 0x%"PRIxVALUE ";\n", operands[0]);
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[1]);
         goto iaset;
+    case BIN(sir_siasetviv):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetviv):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 0;
@@ -1972,6 +1981,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val = 0x%"PRIxVALUE ";\n", operands[1]);
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[2]);
         goto iaset;
+    case BIN(sir_siasetvis):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetvis):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
@@ -1979,11 +1991,17 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val = 0x%"PRIxVALUE ";\n", operands[1]);
         O("  val2 = sp[-1];\n");
         goto iaset;
+    case BIN(sir_siasetsss):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetsss):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 3;
         O("  r = sp[-3]; val = sp[-2]; val2 = sp[-1];\n");
         goto iaset;
+    case BIN(sir_siasetsvv):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetsvv):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
@@ -1991,24 +2009,36 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[1]);
         goto iaset;
+    case BIN(sir_siasetsvs):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetsvs):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val2 = sp[-1];\n");
         O("  val = ep[%d];\n", (int)(EPDISP)operands[0]);
         goto iaset;
+    case BIN(sir_siasetssv):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetssv):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val = sp[-1];\n");
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[0]);
         goto iaset;
+    case BIN(sir_siasetvss):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetvss):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val = sp[-2]; val2 = sp[-1];\n");
         goto iaset;
+    case BIN(sir_siasetvvv):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetvvv):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 0;
@@ -2016,6 +2046,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val = ep[%d];\n", (int)(EPDISP)operands[1]);
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[2]);
         goto iaset;
+    case BIN(sir_siasetvvs):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetvvs):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
@@ -2023,6 +2056,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val = ep[%d];\n", (int)(EPDISP)operands[1]);
         O("  val2 = sp[-1];\n");
         goto iaset;
+    case BIN(sir_siasetvsv):
+        siaset_p = TRUE;
+        /* fall through */
     case BIN(sir_iasetvsv):
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
@@ -2030,8 +2066,10 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val = sp[-1];\n");
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[1]);
     iaset: /* r[val] = val2; */
-        gen_class_of(buff, "t", "r");
-        O("  if (t != 0x%"PRIxVALUE ") goto restart;\n", rb_cArray);
+        if (siaset_p) {
+            gen_class_of(buff, "t", "r");
+            O("  if (!(val & 0x%x) || t != 0x%"PRIxVALUE ") goto restart;\n", (int)RUBY_FIXNUM_FLAG, rb_cArray);
+        }
         /* It is not worth to cancel sharing here as most probably it is done in the interpreter: */
         O("  if (__builtin_expect(*((VALUE *)((char *)r + %d)) & 0x%"PRIxVALUE ", 0)) goto restart;\n",
           (int)offsetof(struct RBasic, flags), (VALUE)ELTS_SHARED); /* check shared array */

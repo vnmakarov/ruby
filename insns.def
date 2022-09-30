@@ -2013,133 +2013,137 @@ sir_feqvss sir_fneqvss sir_fltvss sir_fgtvss sir_flevss sir_fgevss
 }
 
 DEFINE_INSN
-sir_iasetsvv
+sir_iasetsvv sir_siasetsvv
 (EPDISP ind_idx, EPDISP set_idx)
 (VALUE arr)
-(VALUE val)
-{
-    VALUE ind = *(GET_EP() + ind_idx), set = *(GET_EP() + set_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iasetsiv
-(VALUE ind, EPDISP set_idx)
-(VALUE arr)
-(VALUE val)
-{
-    VALUE set = *(GET_EP() + set_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iasetsvs
-(EPDISP ind_idx)
-(VALUE arr, VALUE set)
-(VALUE val)
+(VALUE set)
 {
     VALUE ind = *(GET_EP() + ind_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    set = *(GET_EP() + set_idx);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
-sir_iasetssv
+sir_iasetsiv sir_siasetsiv
+(VALUE ind, EPDISP set_idx)
+(VALUE arr)
+(VALUE set)
+{
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    set = *(GET_EP() + set_idx);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
+}
+
+DEFINE_INSN
+sir_iasetsvs sir_siasetsvs
+(EPDISP ind_idx)
+(VALUE arr, VALUE set)
+(VALUE set)
+{
+    VALUE ind = *(GET_EP() + ind_idx);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
+}
+
+DEFINE_INSN
+sir_iasetssv sir_siasetssv
 (EPDISP set_idx)
 (VALUE arr, VALUE ind)
-(VALUE val)
+(VALUE set)
 {
-    VALUE set = *(GET_EP() + set_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    set = *(GET_EP() + set_idx);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
-sir_iasetsis
+sir_iasetsis sir_siasetsis
 (VALUE ind)
 (VALUE arr, VALUE set)
-(VALUE val)
+(VALUE set)
 {
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
-sir_iasetsss
+sir_iasetsss sir_siasetsss
 ()
 (VALUE arr, VALUE ind, VALUE set)
-(VALUE val)
+(VALUE set)
 {
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
-sir_iasetvvv
+sir_iasetvvv sir_siasetvvv
 (EPDISP arr_idx, EPDISP ind_idx, EPDISP set_idx)
 ()
-(VALUE val)
-{
-    VALUE arr = *(GET_EP() + arr_idx), ind = *(GET_EP() + ind_idx), set = *(GET_EP() + set_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iasetviv
-(EPDISP arr_idx, VALUE ind, EPDISP set_idx)
-()
-(VALUE val)
-{
-    VALUE arr = *(GET_EP() + arr_idx), set = *(GET_EP() + set_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
-}
-
-DEFINE_INSN
-sir_iasetvvs
-(EPDISP arr_idx, EPDISP ind_idx)
 (VALUE set)
-(VALUE val)
 {
     VALUE arr = *(GET_EP() + arr_idx), ind = *(GET_EP() + ind_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    set = *(GET_EP() + set_idx);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
-sir_iasetvsv
+sir_iasetviv sir_siasetviv
+(EPDISP arr_idx, VALUE ind, EPDISP set_idx)
+()
+(VALUE set)
+{
+    VALUE arr = *(GET_EP() + arr_idx);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    set = *(GET_EP() + set_idx);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
+}
+
+DEFINE_INSN
+sir_iasetvvs sir_siasetvvs
+(EPDISP arr_idx, EPDISP ind_idx)
+(VALUE set)
+(VALUE set)
+{
+    VALUE arr = *(GET_EP() + arr_idx), ind = *(GET_EP() + ind_idx);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
+}
+
+DEFINE_INSN
+sir_iasetvsv sir_siasetvsv
 (EPDISP arr_idx, EPDISP set_idx)
 (VALUE ind)
-(VALUE val)
+(VALUE set)
 {
-    VALUE arr = *(GET_EP() + arr_idx), set = *(GET_EP() + set_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
+    VALUE arr = *(GET_EP() + arr_idx);
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    set = *(GET_EP() + set_idx);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
-sir_iasetvis
+sir_iasetvis sir_siasetvis
 (EPDISP arr_idx, VALUE ind)
 (VALUE set)
-(VALUE val)
+(VALUE set)
 {
     VALUE arr = *(GET_EP() + arr_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
 }
 
 DEFINE_INSN
-sir_iasetvss
+sir_iasetvss sir_siasetvss
 (EPDISP arr_idx)
 (VALUE ind, VALUE set)
-(VALUE val)
+(VALUE set)
 {
     VALUE arr = *(GET_EP() + arr_idx);
-    val = vm_sir_iaset(arr, ind, set);
-    if (UNLIKELY(val == Qundef)) goto safe_insn_restart;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, arr, ind);
+    if (UNLIKELY(vm_sir_iaset(arr, ind, set))) goto safe_insn_restart;
 }
 
 DEFINE_INSN

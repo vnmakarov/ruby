@@ -372,8 +372,7 @@ static sir_inline VALUE vm_sir_siaref(VALUE v1, VALUE v2) { return rb_sir_ary_en
 SIR_SFUNCS(vm_sir_iaref)
 SIR_SFUNCS(vm_sir_siaref)
 
-static sir_inline VALUE rb_sir_ary_store(VALUE ary, long idx, VALUE val) {
-    if (RB_UNLIKELY(RB_OBJ_FROZEN(ary))) return Qundef;
+static sir_inline int rb_sir_ary_store(VALUE ary, long idx, VALUE val) {
     if (RB_UNLIKELY(FL_TEST_RAW((ary), ELTS_SHARED) != 0)) {
         rb_ary_cancel_sharing(ary);
     }
@@ -388,12 +387,12 @@ static sir_inline VALUE rb_sir_ary_store(VALUE ary, long idx, VALUE val) {
     }
     if (idx < 0) {
 	idx += len;
-	if (RB_UNLIKELY(idx < 0)) return Qundef;
+	if (RB_UNLIKELY(idx < 0)) return TRUE;
     } else if (RB_UNLIKELY(idx >= len)) {
-        return Qundef;
+        return TRUE;
     }
     RB_OBJ_WRITE(ary, &ptr[idx], val);
-    return val;
+    return FALSE;
 }
 
 static sir_inline VALUE vm_sir_iaset(VALUE arr, VALUE ind, VALUE set) {
@@ -554,7 +553,13 @@ static sir_inline int sir_fp_p(VALUE v) { return FLONUM_P(v) || (!SPECIAL_CONST_
 static sir_inline int sir_check_fp(VALUE v1, VALUE v2) { return !sir_fp_p(v1) || !sir_fp_p(v2); }
 static sir_inline int sir_check_fp1(VALUE v) { return !sir_fp_p(v); }
 static sir_inline int sir_check_aref1(VALUE v) { return SPECIAL_CONST_P(v) || RBASIC_CLASS(v) != rb_cArray; }
-static sir_inline int sir_check_aref(VALUE v1, VALUE v2) { return  !FIXNUM_P(v2) || sir_check_aref1(v1); }
+static sir_inline int sir_check_aref(VALUE v1, VALUE v2) { return !FIXNUM_P(v2) || sir_check_aref1(v1); }
+static sir_inline int sir_check_ary_frozen(VALUE ary) { return RB_OBJ_FROZEN(ary); }
+static sir_inline int sir_check_ary_frozen2(VALUE ary, VALUE ind) { return RB_OBJ_FROZEN(ary); }
+static sir_inline int sir_check_aset1(VALUE v) {
+    return SPECIAL_CONST_P(v) || RBASIC_CLASS(v) != rb_cArray || sir_check_ary_frozen(v);
+}
+static sir_inline int sir_check_aset(VALUE v1, VALUE v2) { return !FIXNUM_P(v2) || sir_check_aset1(v1); }
 
 SIR_CHECK_FUNCS2(sir_iplus, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_iminus, sir_check_nothing)
@@ -564,6 +569,7 @@ SIR_CHECK_FUNCS2(sir_imod, sir_check_zero)
 SIR_CHECK_FUNCS2(sir_ior, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_iand, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_iaref, sir_check_nothing)
+SIR_CHECK_FUNCS2(sir_iaset, sir_check_ary_frozen2)
 SIR_CHECK_FUNCS2(sir_ieq, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_ineq, sir_check_nothing)
 SIR_CHECK_FUNCS2(sir_ilt, sir_check_nothing)
@@ -590,6 +596,7 @@ SIR_CHECK_IFUNCS2(sir_simod, sir_check_nonzero_fix, sir_check_fix1, sir_check_no
 SIR_CHECK_IFUNCS2(sir_sior, sir_check_fix, sir_check_fix1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_siand, sir_check_fix, sir_check_fix1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_siaref, sir_check_aref, sir_check_aref1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_siaset, sir_check_aset, sir_check_aset1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_sieq, sir_check_fix, sir_check_fix1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_sineq, sir_check_fix, sir_check_fix1, sir_check_fix1)
 SIR_CHECK_IFUNCS2(sir_silt, sir_check_fix, sir_check_fix1, sir_check_fix1)
