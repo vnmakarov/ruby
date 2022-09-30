@@ -1906,9 +1906,13 @@ static void get_insn2_attrs(rb_iseq_t *iseq, int nops, int imm_p, int imm2_p, VA
 
 static int get_res_attr(int aref_p, int imm_p, int imm2_p, int op1_attr, int op2_attr, int *flag) {
     int attr;
-    if (aref_p && op1_attr == ATTR_ARRAY && op2_attr == ATTR_FIXNUM) {
-        attr = ATTR_ARRAY;
-        *flag = ARRAY_REDEFINED_OP_FLAG;
+    *flag = INTEGER_REDEFINED_OP_FLAG;
+    attr = ATTR_UNKNOWN;
+    if (aref_p) {
+        if (op1_attr == ATTR_ARRAY && op2_attr == ATTR_FIXNUM) {
+            attr = ATTR_ARRAY;
+            *flag = ARRAY_REDEFINED_OP_FLAG;
+        }
     } else if (imm_p && op1_attr == ATTR_FIXNUM && op2_attr == ATTR_FLONUM) {
         attr = ATTR_FLONUM;
         *flag = INTEGER_REDEFINED_OP_FLAG;
@@ -1918,9 +1922,6 @@ static int get_res_attr(int aref_p, int imm_p, int imm2_p, int op1_attr, int op2
     } else if (op1_attr == op2_attr) {
         attr = op1_attr;
         *flag = op1_attr == ATTR_FLONUM ? FLOAT_REDEFINED_OP_FLAG : INTEGER_REDEFINED_OP_FLAG;
-    } else {
-        *flag = INTEGER_REDEFINED_OP_FLAG;
-        attr = ATTR_UNKNOWN;
     }
     return attr;
 }
