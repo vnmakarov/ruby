@@ -899,8 +899,8 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound, const char *prefix)
 	insn_id = rb_mirjit_insn_decode(&code[i]);
         if (insn_id == BIN(sir_gen_bbv) || insn_id == BIN(sir_gen_bbv2)) {
             rb_iseq_bbv_t bbv = (rb_iseq_bbv_t)code[i + 1];
-            fprintf(stderr, "%s  # %04d: %s(BBV 0x%llx, %s)", prefix,
-                    i, insn_name(insn_id), (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
+            fprintf(stderr, "%s  # %04d: %s(BBV%d 0x%llx, %s)", prefix,
+                    i, insn_name(insn_id), bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
             print_attrs(bbv->attrs);
         }
         print_insn(iseq, insn_id, code, i, prefix);
@@ -1318,8 +1318,8 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
 
     SIR_GEN_ASSERT(bbv->head_bbv == NULL && bbv->attrs[0] == ATTR_END_MARKER && init_stack_size >= 0);
     if (debug_p) {
-        fprintf(stderr, "\n## Generation of General SIR BBV 0x%llx (%s):",
-                (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
+        fprintf(stderr, "\n## Generation of General SIR BBV%d 0x%llx (%s):",
+                bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_attrs(bbv->attrs);
         fprintf(stderr, "Original BB of ");
         print_iseq_title(iseq);
@@ -2035,10 +2035,10 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     SIR_GEN_ASSERT(init_stack_size >= 0 && head_bbv->start_stack_size == init_stack_size);
     orig_bbv = profile_p ? bbv : head_bbv;
     if (debug_p) {
-        fprintf(stderr, "\n## Making %s Specialized BBV 0x%llx (%s):",
-                profile_p ? "Profile" : "Type", (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
+        fprintf(stderr, "\n## Making %s Specialized BBV%d 0x%llx (%s):",
+                profile_p ? "Profile" : "Type", bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_attrs(bbv->attrs);
-        fprintf(stderr, "Original SIR BBV of ");
+        fprintf(stderr, "Original SIR BBV%d of ", orig_bbv->num);
         print_iseq_title(iseq);
         fprintf(stderr, "\n");
         print_bb(iseq, body->bbv_code, orig_bbv->bbv_start, orig_bbv->bbv_bound, "  ");
@@ -3004,8 +3004,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i) - nops_num);
     sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
     if (debug_p) {
-        fprintf(stderr, "## %s specialized BBV 0x%llx (%s):", profile_p ? "Profile" : "Type",
-                (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
+        fprintf(stderr, "## %s specialized BBV%d 0x%llx (%s):", profile_p ? "Profile" : "Type",
+                bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_attrs(bbv->attrs);
         print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
         print_pos_map(iseq, bbv->bbv_start, bbv->bbv_bound, TRUE);
@@ -3336,8 +3336,8 @@ invalidate_bbv_code(rb_iseq_bbv_t bbv, rb_callable_method_entry_t *except_cme) {
 
     if (bbv->bbv_start < 0) return; /* already invalidated */
     if (rb_sir_debug_p()) {
-        fprintf (stderr, "## Invalidating BBV 0x%llx (%s) of ",
-                 (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
+        fprintf (stderr, "## Invalidating BBV%d 0x%llx (%s) of ",
+                 bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_iseq_title(bbv->iseq);
         fprintf(stderr, "\n");
         print_bb(bbv->iseq, bbv->iseq->body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
@@ -3648,7 +3648,7 @@ rb_sir_change_bbv(rb_iseq_bbv_t bbv)
     struct rb_iseq_constant_body *body = iseq->body;
 
     if (rb_mirjit_debug_p()) {
-        fprintf(stderr, "\n## JITting BBV 0x%llx:", (unsigned long long)bbv);
+        fprintf(stderr, "\n## JITting BBV%d 0x%llx:", bbv->num, (unsigned long long)bbv);
         print_attrs(bbv->attrs);
         print_iseq_title(iseq);
         fprintf(stderr, "\n");
@@ -3779,10 +3779,27 @@ profile_cmp(const void *e1, const void *e2) {
     return 0;
 }
 
+static void print_bb_at_end(rb_iseq_bbv_t bbv) {
+    print_iseq_title(bbv->iseq);
+    fprintf(stderr, "SIR BBV%d 0x%llx (%s):",
+            bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
+    print_attrs(bbv->attrs);
+    fprintf (stderr, "  in:");
+    for (struct rb_iseq_bbv_edge *in_e = bbv->in_edges; in_e != NULL; in_e = in_e->next_in_edge) {
+        fprintf(stderr, "%4d(0x%-16llx)", in_e->in->num, (unsigned long long)in_e->in);
+    }
+    fprintf (stderr, "\n  out:");
+    for (struct rb_iseq_bbv_edge *out_e = bbv->out_edges; out_e != NULL; out_e = out_e->next_out_edge) {
+        fprintf(stderr, "%4d(0x%-16llx)", out_e->out->num, (unsigned long long)out_e->out);
+    }
+    fprintf (stderr, "\n");
+}
+
 /* Finish stack insns to SIR generator.  */
 void
 rb_sir_gen_finish(void) {
     if (rb_sir_enabled_p()) {
+#ifdef SIR_PROFILE
         struct profile profile[VM_INSTRUCTION_SIZE];
         for (int i = 0; i < VM_INSTRUCTION_SIZE; i++) {
             profile[i].insn = i;
@@ -3798,6 +3815,14 @@ rb_sir_gen_finish(void) {
             else
                 fprintf(stderr, "%-12ld !%-11ld:%s\n",
                         profile[i].count, rb_sir_cancel[profile[i].insn], insn_name(profile[i].insn));
+        }
+#endif
+        if (rb_sir_debug_p()) {
+            for (size_t i = 0; i < VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
+                rb_iseq_bbv_t bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
+                if (bbv == NULL || (bbv->in_edges == NULL && bbv->out_edges == NULL)) continue;
+                print_bb_at_end(bbv);
+            }
         }
     }
     VARR_DESTROY(int, stack);
