@@ -254,11 +254,6 @@ get_var_res_sir_insn_id(enum ruby_vminsn_type id) {
     VAR_RES_SIR_INSN_ID_CASE0(igt)
     VAR_RES_SIR_INSN_ID_CASE0(ile)
     VAR_RES_SIR_INSN_ID_CASE0(ige)
-    VAR_RES_SIR_INSN_ID_CASE(fplus)
-    VAR_RES_SIR_INSN_ID_CASE(fminus)
-    VAR_RES_SIR_INSN_ID_CASE(fmult)
-    VAR_RES_SIR_INSN_ID_CASE(fdiv)
-    VAR_RES_SIR_INSN_ID_CASE(fmod)
     VAR_RES_SIR_INSN_ID_CASE(feq)
     VAR_RES_SIR_INSN_ID_CASE(fneq)
     VAR_RES_SIR_INSN_ID_CASE(flt)
@@ -480,7 +475,9 @@ print_attrs(const char *attrs) {
         fprintf (stderr, " attrs =");
         for (i = 0; attrs[i] != ATTR_END_MARKER; i++)
             if (attrs[i] != ATTR_UNKNOWN)
-                fprintf (stderr, " %d:%s", i, attrs[i] == ATTR_FIXNUM ? "fix" : attrs[i] == ATTR_FLONUM ? "flo" : "arr");
+                fprintf (stderr, " %d:%s", i,
+                         (attrs[i] == ATTR_FIXNUM ? "fix" : attrs[i] == ATTR_FLONUM
+                          ? "flo" : attrs[i] == ATTR_BOOL ? "bool" : "arr"));
     }
     fprintf(stderr, "\n");
 }
@@ -1216,6 +1213,8 @@ contains_input_lvar_p(int insn_pos, int lvar) {
     case SIR_NAME2(insn_name, ssv):								\
     case SIR_NAME2(insn_name, siv): return abs_op(operands[1]) == (VALUE)lvar;
 
+#define SIR_SPEC_FP_RES_INSN_LVAR_CASE(insn_name) SIR_INSN_LVAR_CASE(insn_name)
+
     switch (insn_id) {
     SIR_SPEC_INSN_LVAR_CASE(iplus)
     SIR_SPEC_INSN_LVAR_CASE(iminus)
@@ -1230,11 +1229,11 @@ contains_input_lvar_p(int insn_pos, int lvar) {
     SIR_SPEC_INSN_LVAR_CASE0(igt)
     SIR_SPEC_INSN_LVAR_CASE0(ile)
     SIR_SPEC_INSN_LVAR_CASE0(ige)
-    SIR_SPEC_INSN_LVAR_CASE(fplus)
-    SIR_SPEC_INSN_LVAR_CASE(fminus)
-    SIR_SPEC_INSN_LVAR_CASE(fmult)
-    SIR_SPEC_INSN_LVAR_CASE(fdiv)
-    SIR_SPEC_INSN_LVAR_CASE(fmod)
+    SIR_SPEC_FP_RES_INSN_LVAR_CASE(fplus)
+    SIR_SPEC_FP_RES_INSN_LVAR_CASE(fminus)
+    SIR_SPEC_FP_RES_INSN_LVAR_CASE(fmult)
+    SIR_SPEC_FP_RES_INSN_LVAR_CASE(fdiv)
+    SIR_SPEC_FP_RES_INSN_LVAR_CASE(fmod)
     SIR_SPEC_INSN_LVAR_CASE(feq)
     SIR_SPEC_INSN_LVAR_CASE(fneq)
     SIR_SPEC_INSN_LVAR_CASE(flt)
@@ -1875,6 +1874,7 @@ static void get_insn2_attrs(rb_iseq_t *iseq, int nops, int imm_p, int imm2_p, VA
         if (imm_p || imm2_p) {
             *op1_attr = (FIXNUM_P(operands[0]) ? ATTR_FIXNUM
                          : FLONUM_P(operands[0]) ? ATTR_FLONUM
+                         : operands[0] == Qtrue || operands[0] == Qfalse ? ATTR_BOOL
                          : !SPECIAL_CONST_P(operands[0]) && RBASIC_CLASS(operands[0]) == rb_cArray
                          ? ATTR_ARRAY : ATTR_UNKNOWN);
             *op2_attr = get_attr(get_temp_num(iseq, stack_size - 1));
@@ -1886,6 +1886,7 @@ static void get_insn2_attrs(rb_iseq_t *iseq, int nops, int imm_p, int imm2_p, VA
         if (imm_p) {
             *op1_attr = (FIXNUM_P(operands[0]) ? ATTR_FIXNUM
                          : FLONUM_P(operands[0]) ? ATTR_FLONUM
+                         : operands[0] == Qtrue || operands[0] == Qfalse ? ATTR_BOOL
                          : !SPECIAL_CONST_P(operands[0]) && RBASIC_CLASS(operands[0]) == rb_cArray
                          ? ATTR_ARRAY : ATTR_UNKNOWN);
         } else {
@@ -1894,6 +1895,7 @@ static void get_insn2_attrs(rb_iseq_t *iseq, int nops, int imm_p, int imm2_p, VA
         if (imm2_p) {
             *op2_attr = (FIXNUM_P(operands[1]) ? ATTR_FIXNUM
                          : FLONUM_P(operands[1]) ? ATTR_FLONUM
+                         : operands[1] == Qtrue || operands[1] == Qfalse ? ATTR_BOOL
                          : !SPECIAL_CONST_P(operands[1]) && RBASIC_CLASS(operands[1]) == rb_cArray
                          ? ATTR_ARRAY : ATTR_UNKNOWN);
         } else {
@@ -2018,7 +2020,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     int i, n, curr_sir_insn_pos, len, nops, inc, retn, stack_size;
     int orig_pos, new_insn_pos, prev_new_insn_pos, branch_pos, prev_new_insn_nops;
     int sir_branch_offset_add, attr, inspect_attr1, inspect_attr2, op1_attr, op2_attr, op3_attr;
-    int flag, imm_p, imm2_p, vs_p, v_p, v2_p, exch_p, exch2_p, div_p, unknown_p, aref_p, neq_p;
+    int flag, imm_p, imm2_p, vs_p, v_p, v2_p, exch_p, exch2_p, div_p, bool_p, aref_p, aset_p, neq_p;
     int debug_p = rb_sir_debug_p(), compacted_attrs_p = FALSE;
     int disp, nops_num;
     VALUE val, *operands, new_operands[10];
@@ -2065,7 +2067,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
 	insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[curr_sir_insn_pos]);
         len = insn_len(insn_id);
         operands = &body->bbv_code[curr_sir_insn_pos + 1];
-        aref_p = neq_p = imm_p = imm2_p = vs_p = unknown_p = FALSE; /* immediate operand and unknown result */
+        aref_p = aset_p = neq_p = imm_p = imm2_p = vs_p = bool_p = FALSE; /* immediate operand and unknown result */
         orig_pos = curr_sir_insn_pos;
         if (profile_p) {
             orig_pos = body->bbv_pos_map[curr_sir_insn_pos];
@@ -2137,14 +2139,14 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_INSN2_IMM_CASES(gt):
             SIR_INSN2_IMM_CASES(le):
             SIR_INSN2_IMM_CASES(ge):
-                unknown_p = TRUE;
+                bool_p = TRUE;
                 goto imm;
             SIR_INSN2_IMM_CASES(aref): /* imm is array */
                 if (inspect_attr1 != ATTR_FIXNUM || SPECIAL_CONST_P(operands[0]) || RBASIC_CLASS(operands[0]) != rb_cArray)
                     goto again;
                 inspect_attr1 = ATTR_ARRAY;
                 inspect_attr2 = ATTR_FIXNUM;
-                imm_p = aref_p = unknown_p = TRUE;
+                imm_p = aref_p = TRUE;
                 break;
             SIR_INSN2_IMM_CASES(or):
             SIR_INSN2_IMM_CASES(and):
@@ -2174,13 +2176,13 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_INSN2_IMM2_CASES(gt):
             SIR_INSN2_IMM2_CASES(le):
             SIR_INSN2_IMM2_CASES(ge):
-                unknown_p = TRUE;
+                bool_p = TRUE;
                 goto imm2;
             SIR_INSN2_IMM2_CASES(aref): /* imm is index */
                 if (inspect_attr1 != ATTR_ARRAY) goto again;
                 if (!FIXNUM_P(operands[nops == 1 ? 0 : 1])) goto again;
                 inspect_attr2 = ATTR_FIXNUM;
-                imm2_p = aref_p = unknown_p = TRUE;
+                imm2_p = aref_p = TRUE;
                 break;
             SIR_INSN2_IMM2_CASES(or):
             SIR_INSN2_IMM2_CASES(and):
@@ -2202,7 +2204,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 /* fall through */
             SIR_INSN2_NON_IMM_NON_VS_CASES(neq):
                 nops--;
-                unknown_p = TRUE;
+                bool_p = TRUE;
                 goto non_imm;
             SIR_INSN2_NON_IMM_VS_CASE(eq):
             SIR_INSN2_NON_IMM_VS_CASE(lt):
@@ -2216,14 +2218,14 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_INSN2_NON_IMM_NON_VS_CASES(gt):
             SIR_INSN2_NON_IMM_NON_VS_CASES(le):
             SIR_INSN2_NON_IMM_NON_VS_CASES(ge):
-                unknown_p = TRUE;
+                bool_p = TRUE;
                 goto non_imm;
             SIR_INSN2_NON_IMM_VS_CASE(aref):
                 vs_p = TRUE;
                 /* fall through */
             SIR_INSN2_NON_IMM_NON_VS_CASES(aref):
                 if (inspect_attr1 != ATTR_ARRAY || inspect_attr2 != ATTR_FIXNUM) goto again;
-                aref_p = unknown_p = TRUE;
+                aref_p = TRUE;
                 break;
             SIR_INSN2_NON_IMM_VS_CASE(or):
             SIR_INSN2_NON_IMM_VS_CASE(and):
@@ -2267,7 +2269,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             case SIR_NAME2(aset, vvs):
             case SIR_NAME2(aset, vsv):
                 if (inspect_attr1 != ATTR_ARRAY || inspect_attr2 != ATTR_FIXNUM) goto again;
-                unknown_p = TRUE;
+                aset_p = TRUE;
                 new_insn_id = get_sir_speculative_insn3_id(insn_id, inspect_attr1, inspect_attr2, bbv->used_bops);
                 SIR_GEN_ASSERT(new_insn_id != BIN(nop));
                 get_insn3_attrs(iseq, insn_id, nops, operands, stack_size,
@@ -2324,7 +2326,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             add_spec_insn_arr(orig_pos, new_insn_id, nops, new_operands); /* excluding cd */
             inc = insn_stack_increase(new_insn_id, new_operands);
             stack_size += inc - 1;
-            if (unknown_p) attr = ATTR_UNKNOWN;
+            if (aref_p || aset_p) attr = ATTR_UNKNOWN;
+            if (bool_p) attr = ATTR_BOOL;
             goto push;
         case BIN(swap):
             attr = get_attr(get_temp_num(iseq, stack_size - 1));
@@ -2358,7 +2361,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             vs_p = TRUE;
             /* fall through */
         SIR_INSN2_NON_IMM_NON_VS_CASES(neq):
-            neq_p = unknown_p = TRUE;
+            neq_p = bool_p = TRUE;
             goto insn_op2;
         SIR_INSN2_IMM_CASES(neq):
             neq_p = TRUE;
@@ -2368,10 +2371,10 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         SIR_INSN2_IMM_CASES(gt):
         SIR_INSN2_IMM_CASES(le):
         SIR_INSN2_IMM_CASES(ge):
-            unknown_p = imm_p = TRUE;
+            bool_p = imm_p = TRUE;
             goto insn_op2;
         SIR_INSN2_IMM_CASES(aref):
-            aref_p = unknown_p = imm_p = TRUE;
+            aref_p = imm_p = TRUE;
             goto insn_op2;
         SIR_INSN2_IMM2_CASES(neq):
             neq_p = TRUE;
@@ -2381,10 +2384,10 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         SIR_INSN2_IMM2_CASES(gt):
         SIR_INSN2_IMM2_CASES(le):
         SIR_INSN2_IMM2_CASES(ge):
-            unknown_p = imm2_p = TRUE;
+            bool_p = imm2_p = TRUE;
             goto insn_op2;
         SIR_INSN2_IMM2_CASES(aref):
-            aref_p = unknown_p = imm2_p = TRUE;
+            aref_p = imm2_p = TRUE;
             goto insn_op2;
         SIR_INSN2_NON_IMM_VS_CASE(eq):
         SIR_INSN2_NON_IMM_VS_CASE(lt):
@@ -2398,13 +2401,13 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         SIR_INSN2_NON_IMM_NON_VS_CASES(gt):
         SIR_INSN2_NON_IMM_NON_VS_CASES(le):
         SIR_INSN2_NON_IMM_NON_VS_CASES(ge):
-            unknown_p = TRUE;
+            bool_p = TRUE;
             goto insn_op2;
         SIR_INSN2_NON_IMM_VS_CASE(aref):
             vs_p = TRUE;
             /* fall through */
         SIR_INSN2_NON_IMM_NON_VS_CASES(aref):
-            aref_p = unknown_p = TRUE;
+            aref_p = TRUE;
             goto insn_op2;
         SIR_INSN2_IMM_CASES(plus):
         SIR_INSN2_IMM_CASES(minus):
@@ -2504,7 +2507,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             } else {
                 add_spec_insn_arr(orig_pos, new_insn_id, nops, operands);
             }
-            if (unknown_p) attr = ATTR_UNKNOWN;
+            if (aref_p) attr = ATTR_UNKNOWN;
+            if (bool_p) attr = ATTR_BOOL;
             goto push;
         case SIR_NAME2(aset, sis):
         case SIR_NAME2(aset, siv):
@@ -2604,12 +2608,23 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             stack_size += inc - 1;
             attr = ATTR_FLONUM; /* attr of temp */
             goto add_and_push;
-        SIR_INSN2_SPEC_LVAR_CASES(fplus):
-        SIR_INSN2_SPEC_LVAR_CASES(fminus):
-        SIR_INSN2_SPEC_LVAR_CASES(fmult):
-        SIR_INSN2_SPEC_LVAR_CASES(fdiv):
-        SIR_INSN2_SPEC_LVAR_CASES(fmod):
-            setup_attr(get_lvar_num(iseq, operands[0]), ATTR_FLONUM); /* attr of lvar */
+        SIR_INSN2_SPEC_STACK_CASES(feq):
+        SIR_INSN2_SPEC_STACK_CASES(fneq):
+        SIR_INSN2_SPEC_STACK_CASES(flt):
+        SIR_INSN2_SPEC_STACK_CASES(fgt):
+        SIR_INSN2_SPEC_STACK_CASES(fle):
+        SIR_INSN2_SPEC_STACK_CASES(fge):
+            inc = insn_stack_increase(insn_id, operands);
+            stack_size += inc - 1;
+            attr = ATTR_BOOL; /* attr of temp */
+            goto add_and_push;
+        SIR_INSN2_SPEC_LVAR_CASES(feq):
+        SIR_INSN2_SPEC_LVAR_CASES(fneq):
+        SIR_INSN2_SPEC_LVAR_CASES(flt):
+        SIR_INSN2_SPEC_LVAR_CASES(fgt):
+        SIR_INSN2_SPEC_LVAR_CASES(fle):
+        SIR_INSN2_SPEC_LVAR_CASES(fge):
+            setup_attr(get_lvar_num(iseq, operands[0]), ATTR_BOOL); /* attr of lvar */
             goto rest_cases;
         case BIN(sir_getinlinecache):
             if (profile_p) {
@@ -2658,7 +2673,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         case BIN(sir_setlocal):
             SIR_GEN_ASSERT(stack_size > 0);
             attr = get_attr(get_temp_num(iseq, stack_size - 1));
-            if (bbv->env_p && attr != ATTR_FIXNUM) {
+            if (bbv->env_p && attr != ATTR_FIXNUM && attr != ATTR_BOOL) {
                 SIR_GEN_ASSERT(insn_id != BIN(sir_setlocal));
                 setup_attr(get_lvar_num(iseq, operands[0]), attr); /* attr of temp */
                 goto rest_cases;

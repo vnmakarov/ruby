@@ -357,6 +357,7 @@ enum rb_attr_val {
     ATTR_UNKNOWN,
     ATTR_FIXNUM,
     ATTR_FLONUM,
+    ATTR_BOOL,
     ATTR_ARRAY,
 };
 

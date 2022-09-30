@@ -324,11 +324,11 @@ static sir_inline VALUE vm_sir_fgeri(DBL imm, VALUE v2) { return RBOOL(imm >= vm
     static sir_inline void SIR_CONCAT(name, vis)(VALUE *res, DBL imm, VALUE v2) { *res = nameri(imm, v2); } \
     static sir_inline void SIR_CONCAT(name, vss)(VALUE *res, VALUE v1, VALUE v2) { *res = name(v1, v2); }
 
-SIR_FUNCSF(vm_sir_fplus, vm_sir_fplusi, vm_sir_fplusri)
-SIR_FUNCSF(vm_sir_fminus, vm_sir_fminusi, vm_sir_fminusri)
-SIR_FUNCSF(vm_sir_fmult, vm_sir_fmulti, vm_sir_fmultri)
-SIR_FUNCSF(vm_sir_fdiv, vm_sir_fdivi, vm_sir_fdivri)
-SIR_FUNCSF(vm_sir_fmod, vm_sir_fmodi, vm_sir_fmodri)
+SIR_SFUNCSF(vm_sir_fplus, vm_sir_fplus, vm_sir_fplusi, vm_sir_fplusri)
+SIR_SFUNCSF(vm_sir_fminus, vm_sir_fminus, vm_sir_fminusi, vm_sir_fminusri)
+SIR_SFUNCSF(vm_sir_fmult, vm_sir_fmult, vm_sir_fmulti, vm_sir_fmultri)
+SIR_SFUNCSF(vm_sir_fdiv, vm_sir_fdiv, vm_sir_fdivi, vm_sir_fdivri)
+SIR_SFUNCSF(vm_sir_fmod, vm_sir_fmod, vm_sir_fmodi, vm_sir_fmodri)
 SIR_FUNCSF(vm_sir_feq, vm_sir_feqi, vm_sir_feqri)
 SIR_FUNCSF(vm_sir_fneq, vm_sir_fneqi, vm_sir_fneqri)
 SIR_FUNCSF(vm_sir_flt, vm_sir_flti, vm_sir_fltri)

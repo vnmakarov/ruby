@@ -982,11 +982,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     sss:
         rv_p = v1_p = v2_p = imm1_p = imm2_p = FALSE;
         goto op2;
-    case BIN(sir_fminusvvv):
-    case BIN(sir_fplusvvv):
-    case BIN(sir_fmultvvv):
-    case BIN(sir_fdivvvv):
-    case BIN(sir_fmodvvv):
     case BIN(sir_feqvvv):
     case BIN(sir_fneqvvv):
     case BIN(sir_fltvvv):
@@ -1011,11 +1006,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = v2_p = TRUE;
         imm1_p = imm2_p = FALSE;
         goto op2;
-    case BIN(sir_fminusvvi):
-    case BIN(sir_fplusvvi):
-    case BIN(sir_fmultvvi):
-    case BIN(sir_fdivvvi):
-    case BIN(sir_fmodvvi):
     case BIN(sir_feqvvi):
     case BIN(sir_fneqvvi):
     case BIN(sir_fltvvi):
@@ -1040,11 +1030,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = imm2_p = TRUE;
         v2_p = imm1_p = FALSE;
         goto op2;
-    case BIN(sir_fminusviv):
-    case BIN(sir_fplusviv):
-    case BIN(sir_fmultviv):
-    case BIN(sir_fdivviv):
-    case BIN(sir_fmodviv):
     case BIN(sir_feqviv):
     case BIN(sir_fneqviv):
     case BIN(sir_fltviv):
@@ -1069,11 +1054,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v2_p = imm1_p = TRUE;
         v1_p = imm2_p = FALSE;
         goto op2;
-    case BIN(sir_fminusvvs):
-    case BIN(sir_fplusvvs):
-    case BIN(sir_fmultvvs):
-    case BIN(sir_fdivvvs):
-    case BIN(sir_fmodvvs):
     case BIN(sir_feqvvs):
     case BIN(sir_fneqvvs):
     case BIN(sir_fltvvs):
@@ -1098,11 +1078,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v1_p = TRUE;
         v2_p = imm1_p = imm2_p = FALSE;
         goto op2;
-    case BIN(sir_fminusvsv):
-    case BIN(sir_fplusvsv):
-    case BIN(sir_fmultvsv):
-    case BIN(sir_fdivvsv):
-    case BIN(sir_fmodvsv):
     case BIN(sir_feqvsv):
     case BIN(sir_fneqvsv):
     case BIN(sir_fltvsv):
@@ -1127,11 +1102,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = v2_p = TRUE;
         v1_p = imm1_p = imm2_p = FALSE;
         goto op2;
-    case BIN(sir_fminusvsi):
-    case BIN(sir_fplusvsi):
-    case BIN(sir_fmultvsi):
-    case BIN(sir_fdivvsi):
-    case BIN(sir_fmodvsi):
     case BIN(sir_feqvsi):
     case BIN(sir_fneqvsi):
     case BIN(sir_fltvsi):
@@ -1156,11 +1126,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = imm2_p = TRUE;
         v1_p = v2_p = imm1_p = FALSE;
         goto op2;
-    case BIN(sir_fminusvis):
-    case BIN(sir_fplusvis):
-    case BIN(sir_fmultvis):
-    case BIN(sir_fdivvis):
-    case BIN(sir_fmodvis):
     case BIN(sir_feqvis):
     case BIN(sir_fneqvis):
     case BIN(sir_fltvis):
@@ -1185,11 +1150,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         rv_p = imm1_p = TRUE;
         v1_p = v2_p = imm2_p = FALSE;
         goto op2;
-    case BIN(sir_fminusvss):
-    case BIN(sir_fplusvss):
-    case BIN(sir_fmultvss):
-    case BIN(sir_fdivvss):
-    case BIN(sir_fmodvss):
     case BIN(sir_feqvss):
     case BIN(sir_fneqvss):
     case BIN(sir_fltvss):
@@ -1618,14 +1578,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_fplusssv):
         case BIN(sir_fplusssi):
         case BIN(sir_fplussis):
-        case BIN(sir_fplusvvv):
-        case BIN(sir_fplusvvi):
-        case BIN(sir_fplusviv):
-        case BIN(sir_fplusvvs):
-        case BIN(sir_fplusvsv):
-        case BIN(sir_fplusvsi):
-        case BIN(sir_fplusvis):
-        case BIN(sir_fplusvss):
         case BIN(sir_sfplussss):
         case BIN(sir_sfplussvv):
         case BIN(sir_sfplussvi):
@@ -1644,14 +1596,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_fminusssv):
         case BIN(sir_fminusssi):
         case BIN(sir_fminussis):
-        case BIN(sir_fminusvvv):
-        case BIN(sir_fminusvvi):
-        case BIN(sir_fminusviv):
-        case BIN(sir_fminusvvs):
-        case BIN(sir_fminusvsv):
-        case BIN(sir_fminusvsi):
-        case BIN(sir_fminusvis):
-        case BIN(sir_fminusvss):
         case BIN(sir_sfminussss):
         case BIN(sir_sfminussvv):
         case BIN(sir_sfminussvi):
@@ -1670,14 +1614,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_fmultssv):
         case BIN(sir_fmultssi):
         case BIN(sir_fmultsis):
-        case BIN(sir_fmultvvv):
-        case BIN(sir_fmultvvi):
-        case BIN(sir_fmultviv):
-        case BIN(sir_fmultvvs):
-        case BIN(sir_fmultvsv):
-        case BIN(sir_fmultvsi):
-        case BIN(sir_fmultvis):
-        case BIN(sir_fmultvss):
         case BIN(sir_sfmultsss):
         case BIN(sir_sfmultsvv):
         case BIN(sir_sfmultsvi):
@@ -1696,14 +1632,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_fdivssv):
         case BIN(sir_fdivssi):
         case BIN(sir_fdivsis):
-        case BIN(sir_fdivvvv):
-        case BIN(sir_fdivvvi):
-        case BIN(sir_fdivviv):
-        case BIN(sir_fdivvvs):
-        case BIN(sir_fdivvsv):
-        case BIN(sir_fdivvsi):
-        case BIN(sir_fdivvis):
-        case BIN(sir_fdivvss):
         case BIN(sir_sfdivsss):
         case BIN(sir_sfdivsvv):
         case BIN(sir_sfdivsvi):
@@ -1722,14 +1650,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_fmodssv):
         case BIN(sir_fmodssi):
         case BIN(sir_fmodsis):
-        case BIN(sir_fmodvvv):
-        case BIN(sir_fmodvvi):
-        case BIN(sir_fmodviv):
-        case BIN(sir_fmodvvs):
-        case BIN(sir_fmodvsv):
-        case BIN(sir_fmodvsi):
-        case BIN(sir_fmodvis):
-        case BIN(sir_fmodvss):
         case BIN(sir_sfmodsss):
         case BIN(sir_sfmodsvv):
         case BIN(sir_sfmodsvi):
