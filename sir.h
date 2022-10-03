@@ -69,6 +69,7 @@ void rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p);
 VALUE *rb_sir_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int branch_offset, int first_p);
 VALUE *rb_sir_gen_bbv_key(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int case_offset, VALUE key);
 void rb_sir_bop_redefined(enum ruby_basic_operators bop, int klass_flag);
+int rb_sir_singleton_method_defined(VALUE old_class, ID id);
 void rb_sir_cme_invalidate(rb_callable_method_entry_t *cme);
 void rb_sir_trace_invalidate(void);
 VALUE *rb_sir_specialize_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv);

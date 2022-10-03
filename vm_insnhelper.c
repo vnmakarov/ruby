@@ -4571,20 +4571,23 @@ vm_scope_module_func_check(const rb_execution_context_t *ec)
     }
 }
 
-static void
+static int
 vm_define_method(const rb_execution_context_t *ec, VALUE obj, ID id, VALUE iseqval, int is_singleton)
 {
-    VALUE klass;
+    VALUE klass, old_class;
     rb_method_visibility_t visi;
     rb_cref_t *cref = vm_ec_cref(ec);
+    int res = FALSE;
 
     if (!is_singleton) {
         klass = CREF_CLASS(cref);
         visi = vm_scope_visibility_get(ec);
     }
     else { /* singleton */
+        old_class = CLASS_OF(obj);
         klass = rb_singleton_class(obj); /* class and frozen checked in this API */
         visi = METHOD_VISI_PUBLIC;
+        res = rb_sir_singleton_method_defined(old_class, id);
     }
 
     if (NIL_P(klass)) {
@@ -4597,6 +4600,7 @@ vm_define_method(const rb_execution_context_t *ec, VALUE obj, ID id, VALUE iseqv
         klass = rb_singleton_class(klass);
         rb_add_method_iseq(klass, id, (const rb_iseq_t *)iseqval, cref, METHOD_VISI_PUBLIC);
     }
+    return res;
 }
 
 static VALUE

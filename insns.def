@@ -742,7 +742,10 @@ definesmethod
 (VALUE obj)
 ()
 {
-    vm_define_method(ec, obj, id, (VALUE)iseq, TRUE);
+    if (vm_define_method(ec, obj, id, (VALUE)iseq, TRUE)) {
+        RESTORE_REGS();
+        NEXT_INSN();
+    }
 }
 
 /**********************************************************/

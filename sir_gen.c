@@ -3401,6 +3401,24 @@ rb_sir_bop_redefined(enum ruby_basic_operators bop, int klass_flag) { // ???
     RB_VM_LOCK_LEAVE();
 }
 
+int
+rb_sir_singleton_method_defined(VALUE old_class, ID id) {
+    const rb_execution_context_t *ec;
+    rb_control_frame_t *cfp;
+
+    if (!rb_sir_enabled_p() || old_class != rb_cArray || (id != idAREF && id != idASET)) return FALSE;
+    RB_VM_LOCK_ENTER();
+    rb_vm_barrier (); /* the change can be non-atomic */
+    ec = GET_EC();
+    for (cfp = ec->cfp; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
+        if (cfp->iseq != NULL && cfp->iseq->body->bbv_code != NULL) { /* switch given bbv pc to safe code one */
+            cfp->pc = rb_sir_get_safe_pc(cfp, cfp->pc);
+        }
+    }
+    RB_VM_LOCK_LEAVE();
+    return TRUE;
+}
+
 void
 rb_sir_cme_invalidate(rb_callable_method_entry_t *cme) {
     struct rb_sir_call_elem *call_elem, *next_call_elem;
@@ -3783,6 +3801,7 @@ rb_sir_gen_init(void) {
     return TRUE;
 }
 
+#ifdef SIR_PROFILE
 long rb_sir_profile[VM_INSTRUCTION_SIZE];
 long rb_sir_cancel[VM_INSTRUCTION_SIZE];
 struct profile {int insn; long count;};
@@ -3794,6 +3813,7 @@ profile_cmp(const void *e1, const void *e2) {
     if (p1->count > p2->count) return -1;
     return 0;
 }
+#endif
 
 static void print_bb_at_end(rb_iseq_bbv_t bbv) {
     print_iseq_title(bbv->iseq);
