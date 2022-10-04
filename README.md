@@ -22,11 +22,17 @@
   * type-specialized insns:
 ```
         sir_i{plus,minus,mult,div,mod,or,and,eq,neq,lt,gt,le,ge,aref,aset}{s,v}{s,v,i}{s,v,i}
-        sir_f{plus,minus,mult,div,mod,eq,neq,lt,gt,le,ge}{s,v}{s,v,i}{s,v,i}
+        sir_f{plus,minus,mult,div,mod,eq,neq,lt,gt,le,ge}s{s,v,i}{s,v,i}
+        sir_ib{eq,neq,lt,gt,le,ge}{s,v,i}{s,v,i}
 ```
     where `i` after prefix `sir_` means fixnum insns, and `f` means flonum insns
-  * insns for profiling (e.g. `sir_inspect_type`)
-  * type guards (e.g. `sir_check_fixtype`)
+  * speculatively type-specialized insns (with guards):
+```
+        sir_si{plus,minus,mult,div,mod,or,and,eq,neq,lt,gt,le,ge,aref,aset}s{s,v,i}{s,v,i}
+        sir_sf{plus,minus,mult,div,mod,eq,neq,lt,gt,le,ge}s{s,v,i}{s,v,i}
+```
+    where `i` after prefix `sir_` means fixnum insns, and `f` means flonum insns
+  * insns for profiling (e.g. `sir_inspect_type` or `sir_inspect_fixnum`)
   * different specialized insns for calls (e.g. `sir_iseq_send_without_block` or `sir_cfunc_send`)
   * attribute manipulation (e.g. `sir_send_ivget` or `sir_send_ivset`)
   * iterators (`sir_iter_{start,body,cont}`)
