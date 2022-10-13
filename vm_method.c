@@ -2034,7 +2034,7 @@ rb_alias(VALUE klass, ID alias_name, ID original_name)
     else {
 	rb_method_entry_t *alias_me;
 
-        if (rb_mirjit_enabled_p())
+        if (rb_sir_enabled_p())
             rb_sir_cme_invalidate(rb_callable_method_entry(target_klass, alias_name));
 	alias_me = method_entry_set(target_klass, alias_name, orig_me, visi, orig_me->owner);
 	RB_OBJ_WRITE(alias_me, &alias_me->owner, target_klass);
