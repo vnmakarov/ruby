@@ -407,6 +407,8 @@ struct rb_iseq_constant_body {
         variable is changed in given iseq or nested iseqs.  If all
         flags are false, the member value is NULL.  */
     char *parent_var_changed_p;
+    /* send info used by bbv of the iseq */
+    void *send_info;
 
     /**
      * parameter information
@@ -835,6 +837,7 @@ struct rb_sir_call_elem {
 struct rb_iseq_bbv {
     int spec_count, jit_count;
     rb_iseq_t *iseq;
+    /* cme of cfunc iterating on RUBY block whose start bbv is given bbv, or NULL */
     const struct rb_callable_method_entry_struct *cme;
     /* start/bound position in iseq_encoded; if bound < 0, the bb finish is a branch/leave/throw */
     int iseq_start, iseq_bound;
@@ -1317,6 +1320,7 @@ typedef union iseq_inline_storage_entry *ISE;
 typedef const struct rb_callinfo *CALL_INFO;
 typedef const struct rb_callcache *CALL_CACHE;
 typedef struct rb_call_data *CALL_DATA;
+typedef struct rb_sir_send_info *SEND_INFO;
 
 typedef VALUE CDHASH;
 

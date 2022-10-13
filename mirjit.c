@@ -2223,24 +2223,21 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         gen_pop_frame(buff, TRUE);
         break;
     case BIN(sir_iseq_send_without_block): { // ??? visibility
-        CALL_DATA cd = (CALL_DATA)operands[0];
+        SEND_INFO si = (SEND_INFO)operands[0];
         struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)operands[1];
         rb_iseq_t *iseq = bbv_ref->iseq;
         struct rb_iseq_constant_body *body = iseq->body;
-        const struct rb_callcache *cc = cd->cc;
-        int argc = vm_ci_argc(cd->ci);
-        const struct rb_callable_method_entry_struct *cme = vm_cc_cme(cc);
+        int argc = si->argc;
+        const struct rb_callable_method_entry_struct *cme = si->cme;
         int local_size = body->local_table_size - argc;
         int stack_max = body->stack_max;
 
         assert(callable_method_entry_p(cme) && argc == param_size);
         gen_insn_stat(buff, insn_id);
         O("  {\n");
-        O("    void *cc = 0x%"PRIxVALUE ";\n", (VALUE)cc);
         O("    VALUE klass, *argv, recv = sp[-%d];\n", argc + 1);
         gen_class_of(buff, "klass", "recv");
-        O("    if (__builtin_expect(*(VALUE *)((char *)cc + %d) != klass, 0)) goto restart;\n",
-          (int)offsetof(struct rb_callcache, klass));
+        O("    if (__builtin_expect(0x%"PRIxVALUE " != klass, 0)) goto restart;\n", si->klass);
         O("    argv = (VALUE *)sp - %d;\n", argc);
         O("    VALUE specval = 0x%"PRIxVALUE ";\n", (VALUE)VM_BLOCK_HANDLER_NONE);
         O("    VALUE *start_pc = (VALUE *)0x%"PRIxVALUE ";\n", (VALUE)(body->bbv_code + bbv_ref->bbv_start));
@@ -2403,18 +2400,17 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     }
 #endif
     case BIN(sir_cfunc_send): {
-        CALL_DATA cd = (CALL_DATA)operands[0];
+        SEND_INFO si = (SEND_INFO)operands[0];
         rb_iseq_t *block_iseq = (rb_iseq_t *)operands[1];
-        const struct rb_callcache *cc = cd->cc;
-        int argc = vm_ci_argc(cd->ci);
-        const struct rb_callable_method_entry_struct *cme = vm_cc_cme(cc);
+        int argc = si->argc;
+        const struct rb_callable_method_entry_struct *cme = si->cme;
         const rb_method_cfunc_t *cfunc = vm_method_cfunc_entry(cme);
         rb_cfunc_invoker_t invoker = cfunc->invoker;
         rb_cfunc_func_t func = cfunc->func;
 
     /*  if (klass != CLASS_OF(recv)) goto sir_cfunc_send_exit;
         ???RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, cme->owner, cme->def->original_id);
-        ???EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, Qundef);
+        ???EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, cme->def->original_id, si->mid, cme->owner, Qundef);
         if (blockiseq == NULL) {
           bh = VM_BLOCK_HANDLER_NONE;
         } else {
@@ -2431,11 +2427,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
 
         gen_insn_stat(buff, insn_id);
         O("  {\n");
-        O("    void *cc = 0x%"PRIxVALUE ";\n", (VALUE)cc);
         O("    VALUE klass, *argv = sp - %d, recv = sp[-%d];\n", argc, argc + 1);
         gen_class_of(buff, "klass", "recv");
-        O("    if (__builtin_expect(*(VALUE *)((char *)cc + %d) != klass, 0)) goto restart;\n",
-          (int)offsetof(struct rb_callcache, klass));
+        O("    if (__builtin_expect(0x%"PRIxVALUE " != klass, 0)) goto restart;\n", si->klass);
         O("    argv = (VALUE *)sp - %d;\n", argc);
         if (block_iseq == NULL) {
             O("    VALUE specval = 0x%"PRIxVALUE ";\n", (VALUE)VM_BLOCK_HANDLER_NONE);

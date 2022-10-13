@@ -146,7 +146,7 @@ class RubyVM::BareInstructions
 
   def use_call_data?
     @use_call_data ||=
-      @variables.find { |_, var_info| var_info[:type] == 'CALL_DATA' }
+      @variables.find { |_, var_info| var_info[:type] == 'CALL_DATA' || var_info[:type] == 'SEND_INFO' }
   end
 
   private

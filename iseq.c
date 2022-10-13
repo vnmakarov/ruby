@@ -2120,6 +2120,22 @@ rb_insn_operand_intern(const rb_iseq_t *iseq,
         }
 	break;
 
+      case TS_SENDINFO:
+	{
+            struct rb_sir_send_info *si = (struct rb_sir_send_info *)op;
+	    VALUE ary = rb_ary_new();
+            ID mid = si->mid;
+
+            if (mid) {
+		rb_ary_push(ary, rb_sprintf("mid:%"PRIsVALUE, rb_id2str(mid)));
+	    }
+
+	    rb_ary_push(ary, rb_sprintf("argc:%d", si->argc));
+
+            ret = rb_sprintf("<sendinfo!%"PRIsVALUE">", rb_ary_join(ary, rb_str_new2(", ")));
+        }
+	break;
+
       case TS_CDHASH:
 	ret = rb_str_new2("<cdhash>");
 	break;

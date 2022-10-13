@@ -45,12 +45,6 @@ struct rb_sir_options {
     int exec_stats_p; /* print SIR execution stats if collecting stats is enabled */
 };
 
-struct rb_sir_send_info {
-    struct rb_iseq_bbv *caller_bbv;
-    rb_iseq_t *block_iseq;
-    char *attrs;
-};
-
 extern const void * const *sir_dispatch_table;
 
 MJIT_FUNC_EXPORTED int rb_sir_enabled_p(void);
@@ -109,6 +103,10 @@ int sir_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *),
                        VALUE (**cont_func)(VALUE, VALUE),
                        char *);
 
+#define SIR_ALLOC_N(type, n) malloc(sizeof(type) * (n))
+#define SIR_ZALLOC_N(type, n) calloc((n), sizeof(type))
+#define SIR_REALLOC_N(ptr, type, n) (ptr = realloc(ptr, sizeof(type) * (n)))
+#define SIR_FREE(ptr) free(ptr)
 /*---------- Variable length arrays (VARR) --------------------------*/
 /*------- This implementaion supports static type checking. -------- */
 

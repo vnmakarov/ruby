@@ -34,4 +34,10 @@ sp_inc_of_invokeblock(const struct rb_callinfo *ci)
      * instructions, except that it does not pop receiver. */
     return sp_inc_of_sendish(ci) + 1;
 }
+
+static rb_snum_t sp_inc_of_sendinfo(struct rb_sir_send_info *si) {
+    /* we use sendinfo only for (vm_ci_flag(ci) & VM_CALL_ARGS_BLOCKARG) == 0 */
+    return -si->argc;
+}
+
 #pragma RubyVM reset source

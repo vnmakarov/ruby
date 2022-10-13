@@ -472,6 +472,17 @@ vm_cc_check_cme(const struct rb_callcache *cc, const rb_callable_method_entry_t 
 
 #endif
 
+struct rb_sir_send_info {
+    struct rb_iseq_bbv *caller_bbv;
+    rb_iseq_t *block_iseq;
+    char *attrs;
+    /* disjoint from cd as it can be changed in safe code */
+    VALUE klass; /* analog of cc->klass */
+    const rb_callable_method_entry_t *cme;  /* analog of cc->cme_ */
+    int argc;
+    ID mid;
+};
+
 // gc.c
 void rb_vm_ccs_free(struct rb_class_cc_entries *ccs);
 

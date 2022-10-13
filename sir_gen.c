@@ -680,28 +680,31 @@ get_bbv_code_space(rb_iseq_t *iseq, int len) {
 
 typedef struct rb_sir_send_info *send_info_t;
 DEF_VARR(send_info_t);
-static VARR(send_info_t) *all_send_info;
+static VARR(send_info_t) *iseq_send_info;
 
 static struct rb_sir_send_info *
-get_send_info(rb_iseq_bbv_t caller_bbv, rb_iseq_t *block_iseq, char *attrs) {
-    struct rb_sir_send_info *si = ALLOC_N(struct rb_sir_send_info, 1);
+get_send_info(rb_iseq_bbv_t caller_bbv, rb_iseq_t *block_iseq, char *attrs,
+              VALUE klass, rb_callable_method_entry_t *cme, int argc, ID mid) {
+    struct rb_sir_send_info *si = SIR_ALLOC_N(struct rb_sir_send_info, 1);
     si->caller_bbv = caller_bbv;
     si->block_iseq = block_iseq;
     si->attrs = attrs;
-    VARR_PUSH(send_info_t, all_send_info, si);
+    si->klass = klass;
+    si->cme = cme;
+    si->argc = argc;
+    si->mid = mid;
+    VARR_PUSH(send_info_t, iseq_send_info, si);
     return si;
 }
 
 static void
 init_send_info(void) {
-    VARR_CREATE(send_info_t, all_send_info, 512);
+    VARR_CREATE(send_info_t, iseq_send_info, 512);
 }
 
 static void
 finish_send_info(void) {
-    while (VARR_LENGTH(send_info_t, all_send_info) != 0)
-        ruby_xfree((void *)VARR_POP(send_info_t, all_send_info));
-    VARR_DESTROY(send_info_t, all_send_info);
+    VARR_DESTROY(send_info_t, iseq_send_info);
 }
 
 DEF_VARR(VALUE);
@@ -2047,6 +2050,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         print_bb(iseq, body->bbv_code, orig_bbv->bbv_start, orig_bbv->bbv_bound, "  ");
     }
     VARR_TRUNC(VALUE, bbv_encoded, 0);
+    VARR_TRUNC(send_info_t, iseq_send_info, 0);
     copy_attrs(bbv->attrs);
     VARR_TRUNC(int, pos_map, 0);
     VARR_TRUNC(char, labeled_p, 0);
@@ -2717,7 +2721,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             if (profile_p || IS_ARGS_SPLAT(cd->ci) || IS_ARGS_KW_OR_KW_SPLAT(cd->ci)
                 || (flags & VM_CALL_TAILCALL) != 0) goto rest_cases;
             new_operands[0] = operands[0];
-            new_operands[1] = (VALUE)get_send_info(bbv, NULL, get_call_attrs(iseq, argc, stack_size));
+            new_operands[1] = (VALUE)get_send_info(bbv, NULL, get_call_attrs(iseq, argc, stack_size),
+                                                   Qundef, NULL, argc, vm_ci_mid(cd->ci));
             add_spec_insn_arr(orig_pos, BIN(sir_make_send), 2, new_operands);
             goto stack_update;
         }
@@ -2731,7 +2736,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             if (profile_p || IS_ARGS_SPLAT(cd->ci) || IS_ARGS_KW_OR_KW_SPLAT(cd->ci)
                 || (flags & VM_CALL_TAILCALL) != 0 || (flags & VM_CALL_ARGS_BLOCKARG) != 0) goto rest_cases;
             new_operands[0] = operands[0];
-            new_operands[1] = (VALUE)get_send_info(bbv, (rb_iseq_t *)operands[1], get_call_attrs(iseq, argc, stack_size));
+            new_operands[1] = (VALUE)get_send_info(bbv, (rb_iseq_t *)operands[1], get_call_attrs(iseq, argc, stack_size),
+                                                   Qundef, NULL, argc, vm_ci_mid(cd->ci));
             add_spec_insn_arr(orig_pos, BIN(sir_make_send), 2, new_operands);
             goto stack_update;
         }
@@ -2765,10 +2771,9 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             goto rest_cases;
         }
         case BIN(sir_cfunc_send): {
-            CALL_DATA cd = (CALL_DATA)operands[0];
+            SEND_INFO si = (SEND_INFO)operands[0];
             rb_iseq_t *block_iseq = (rb_iseq_t *)operands[1];
-            const struct rb_callcache *cc = cd->cc;
-            const struct rb_callable_method_entry_struct *cme;
+            const struct rb_callable_method_entry_struct *cme = si->cme;
             const rb_method_cfunc_t *cfunc;
             rb_iseq_bbv_t block_bbv;
             char temp_attrs[3];
@@ -2779,7 +2784,6 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
 
             if (block_iseq == NULL) goto rest_cases;
             update_attrs(block_iseq);
-            cme = vm_cc_cme(cc);
             SIR_GEN_ASSERT(cme != NULL && cme->def->type == VM_METHOD_TYPE_CFUNC && profile_p);
             if (!rb_simple_iseq_p(block_iseq)) goto rest_cases;
             cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
@@ -2827,7 +2831,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         }
         case BIN(sir_iseq_send_without_block): {
             /* attrs can be changed so the target bbv can */
-            int argc = vm_ci_argc(((CALL_DATA)operands[0])->ci);
+            int argc = ((SEND_INFO)operands[0])->argc;
 
             if (mirjit_enabled_p) add_bbv_cont_p = TRUE;
             SIR_GEN_ASSERT(profile_p);
@@ -2972,10 +2976,10 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
         stack_update:
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)
-                || insn_id == BIN(sir_iseq_send_without_block)
-                || insn_id == BIN(sir_cfunc_send)
                 || insn_id == BIN(sir_send_without_block)) {
                 inc = (int)sp_inc_of_sendish(((CALL_DATA)operands[0])->ci);
+            } else if (insn_id == BIN(sir_iseq_send_without_block) || insn_id == BIN(sir_cfunc_send)) {
+                inc = (int)sp_inc_of_sendinfo((struct rb_sir_send_info *)operands[0]);
             } else {
                 inc = insn_stack_increase(insn_id, operands);
             }
@@ -3008,6 +3012,13 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
     memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map),
            VARR_LENGTH(int, pos_map) * sizeof(int));
+    if (body->send_info == NULL && VARR_LENGTH(send_info_t, iseq_send_info) != 0) {
+        SIR_GEN_ASSERT(!profile_p);
+        VARR_PUSH(send_info_t, iseq_send_info, NULL); /* end marker */
+        body->send_info = SIR_ALLOC_N(struct rb_sir_send_info, VARR_LENGTH(send_info_t, iseq_send_info));
+        memcpy(body->send_info, VARR_ADDR(send_info_t, iseq_send_info),
+               VARR_LENGTH(send_info_t, iseq_send_info) * sizeof(struct rb_sir_send_info *));
+    }
     if (!compacted_attrs_p)
         compact_attrs(attrs);
     if (profile_p) { /* attrs can change -- remove targets and change source bbv destinations: */
@@ -3581,8 +3592,11 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
                 gen_sir_bbv_code(iseq, bbv, 0);
             SIR_GEN_ASSERT(bbv->iseq == iseq);
             ec->cfp->pc = &body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
-            /* Change sir_make_send(cd,send_info) to sir_iseq_send_without_block(cd, bbv) */
+            /* Change sir_make_send(cd,send_info) to sir_iseq_send_without_block(si, bbv) */
             change_insn(caller_cfp->iseq, call_pc, BIN(sir_iseq_send_without_block));
+            si->klass = vm_cc_class(cc);
+            si->cme = cme;
+            call_pc[1] = (VALUE)si;
             call_pc[2] = (VALUE)bbv;
             add_call_elem(si->caller_bbv, vm_cc_cme(cd->cc));
         } else if (cme->def->type == VM_METHOD_TYPE_IVAR
@@ -3640,10 +3654,13 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
     if (debug_p) {
         fprintf(stderr, "--> Changing sir_make_send to sir_cfunc_send: argc=%d\n", argc);
     }
-    /* Change sir_make_send(cd,send_info) to sir_cfunc_send(cd, iseq) */
+    /* Change sir_make_send(cd,send_info) to sir_cfunc_send(si, iseq) */
     change_insn(caller_iseq, call_pc, BIN(sir_cfunc_send));
+    si->klass = vm_cc_class(cc);
+    si->cme = cme;
+    call_pc[1] = (VALUE)si;
     call_pc[2] = (VALUE)si->block_iseq;
-    add_call_elem(si->caller_bbv, vm_cc_cme(cd->cc));
+    add_call_elem(si->caller_bbv, cme);
     return TRUE;
 }
 

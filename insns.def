@@ -2802,19 +2802,19 @@ sir_setivar
    it should be iseq, not-tail call, no splat args, all leading args */
 DEFINE_INSN
 sir_iseq_send_without_block
-(CALL_DATA cd, lindex_t bbv)
+(SEND_INFO si, lindex_t bbv)
 (...)
 (VALUE val)
 // attr bool handles_sp = true;
-// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
-// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+// attr rb_snum_t sp_inc = sp_inc_of_sendinfo(si);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendinfo(si);
 {
-    MIRJIT_CONST_PTR(const struct rb_callcache *, cc, cd->cc);
-    MIRJIT_CONST(int, argc, vm_ci_argc(cd->ci), "d");
+    MIRJIT_CONST(int, argc, si->argc, "d");
+    MIRJIT_CONST(VALUE, klass, si->klass, PRIxVALUE);
     VALUE recv = TOPN(argc);
 
-    if (UNLIKELY(!vm_cc_class_check(cc, CLASS_OF(recv)))) goto sir_iseq_send_without_block_exit;
-    MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
+    if (UNLIKELY(klass != CLASS_OF(recv))) goto sir_iseq_send_without_block_exit;
+    MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, si->cme);
     VM_ASSERT(callable_method_entry_p(cme));
     MIRJIT_CONST_PTR(struct rb_iseq_bbv *, bbv_ref, (struct rb_iseq_bbv *)bbv);
     MIRJIT_CONST_PTR(rb_iseq_t *, iseq, bbv_ref->iseq);
@@ -2830,8 +2830,6 @@ sir_iseq_send_without_block
     RESTORE_REGS();
     NEXT_INSN();
   sir_iseq_send_without_block_exit:
-    /* invalidate the current cc as we use cc from safe SIR: */
-    if (cc != vm_cc_empty()) vm_cc_invalidate(cc);
     ABS_SAFE_JUMP(reg_cfp, reg_pc - 3);
     ABNORMAL_END_INSN(sir_iseq_send_without_block);
 }
@@ -2933,26 +2931,25 @@ sir_send_without_block
    it should be iseq, not-tail call, no splat args, all leading args */
 DEFINE_INSN
 sir_cfunc_send
-(CALL_DATA cd, ISEQ blockiseq)
+(SEND_INFO si, ISEQ blockiseq)
 (...)
 (VALUE val)
 // attr bool handles_sp = true;
-// attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
-// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
+// attr rb_snum_t sp_inc = sp_inc_of_sendinfo(si);
+// attr rb_snum_t comptime_sp_inc = sp_inc_of_sendinfo(si);
 {
-    MIRJIT_CONST_PTR(const struct rb_callcache *, cc, cd->cc);
-    MIRJIT_CONST(int, argc, vm_ci_argc(cd->ci), "d");
+    MIRJIT_CONST(int, argc, si->argc, "d");
     VALUE *argv = reg_cfp->sp - argc;
     VALUE recv = TOPN(argc);
     VALUE bh;
     struct rb_captured_block *captured;
-    MIRJIT_CONST(VALUE, klass, vm_cc_class(cc), PRIxVALUE);
+    MIRJIT_CONST(VALUE, klass, si->klass, PRIxVALUE);
 
     if (klass != CLASS_OF(recv)) goto sir_cfunc_send_exit;
-    MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, vm_cc_cme(cc));
+    MIRJIT_CONST_PTR(const struct rb_callable_method_entry_struct *, cme, si->cme);
     VM_ASSERT(callable_method_entry_p(cme));
     RUBY_DTRACE_CMETHOD_ENTRY_HOOK(ec, cme->owner, cme->def->original_id);
-    EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, Qundef);
+    EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_CALL, recv, cme->def->original_id, si->mid, cme->owner, Qundef);
     if (blockiseq == NULL) {
         bh = VM_BLOCK_HANDLER_NONE;
     } else {
@@ -2969,12 +2966,11 @@ sir_cfunc_send
     val = (*invoker)(recv, argc, reg_cfp->sp + 1, func); // can be improved by calling cfunc->func(arg ... )
     CHECK_CFP_CONSISTENCY("sir_cfunc_send");
     ec->cfp = reg_cfp; // w/o checking interuption
-    EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_RETURN, recv, cme->def->original_id, vm_ci_mid(cd->ci), cme->owner, val);
+    reg_pc = reg_cfp->pc; // can be changed by block invalidation
+    EXEC_EVENT_HOOK(ec, RUBY_EVENT_C_RETURN, recv, cme->def->original_id, si->mid, cme->owner, val);
     RUBY_DTRACE_CMETHOD_RETURN_HOOK(ec, cme->owner, cme->def->original_id);
     goto sir_cfunc_send_end;
   sir_cfunc_send_exit:
-    /* invalidate the current cc as we use cc from safe SIR: */
-    if (cc != vm_cc_empty()) vm_cc_invalidate(cc);
     ABS_SAFE_JUMP(reg_cfp, reg_pc - 3);
     ABNORMAL_END_INSN(sir_iseq_send_without_block);
   sir_cfunc_send_end:
@@ -3233,14 +3229,13 @@ sir_make_setivar
 
 DEFINE_INSN
 sir_make_send
-(CALL_DATA cd, lindex_t send_info)
+(CALL_DATA cd, SEND_INFO si)
 (...)
 (VALUE val)
 // attr bool handles_sp = true;
 // attr rb_snum_t sp_inc = sp_inc_of_sendish(cd->ci);
 // attr rb_snum_t comptime_sp_inc = sp_inc_of_sendish(ci);
 {
-    struct rb_sir_send_info *si = (void*)send_info;
     rb_control_frame_t *caller_cfp = GET_CFP();
     VALUE bh = (si->block_iseq == NULL ? VM_BLOCK_HANDLER_NONE
                 : vm_caller_setup_arg_block(ec, GET_CFP(), cd->ci, si->block_iseq, false));
