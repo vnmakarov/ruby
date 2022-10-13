@@ -45,7 +45,7 @@ struct rb_sir_options {
     int exec_stats_p; /* print SIR execution stats if collecting stats is enabled */
 };
 
-extern const void * const *sir_dispatch_table;
+MJIT_FUNC_EXPORTED const void * const *sir_dispatch_table;
 
 MJIT_FUNC_EXPORTED int rb_sir_enabled_p(void);
 int rb_sir_debug_p(void);
