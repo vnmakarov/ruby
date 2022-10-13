@@ -1107,12 +1107,24 @@ remove_nops(int *nops_num) {
     return last_sir_ind;
 }
 
+static int
+catch_between_p(rb_iseq_t *iseq, int sir_producer_pos, int orig_consumer_pos) {
+    int orig_producer_pos = VARR_GET(int, pos_map, sir_producer_pos);
+    const struct rb_iseq_constant_body *const body = iseq->body;
+    if (body->catch_table == NULL) return FALSE;
+    for (int i = 0; i < (int)body->catch_table->size; i++) { /* mark exception continuation pc */
+        const struct iseq_catch_table_entry *entry = UNALIGNED_MEMBER_PTR(body->catch_table, entries[i]);
+        if (orig_producer_pos <= (int)entry->cont && (int)entry->cont <= orig_consumer_pos) return TRUE;
+    }
+    return FALSE;
+}
+
 static void
-get_op(int op_insn_pos, int *local_p, VALUE *local, VALUE *val) {
+get_op(rb_iseq_t *iseq, int orig_insn_pos, int op_insn_pos, int *local_p, VALUE *local, VALUE *val) {
     *local_p = FALSE;
     *local = Qnil;
     if (val != NULL) *val = Qnil;
-    if (op_insn_pos >= 0) {
+    if (op_insn_pos >= 0 && !catch_between_p(iseq, op_insn_pos, orig_insn_pos)) {
         enum ruby_vminsn_type op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
         if ((op_insn_id == BIN(getlocal) && VARR_GET(VALUE, bbv_encoded, op_insn_pos + 2) == 0)
             || op_insn_id == BIN(getlocal_WC_0)) {
@@ -1130,7 +1142,7 @@ get_op(int op_insn_pos, int *local_p, VALUE *local, VALUE *val) {
 }
 
 static int
-pos_in_catch_table_p(rb_iseq_t *iseq, int pos) {
+pos_in_catch_table_p(rb_iseq_t *iseq, int pos, int cont_only_p) {
     int i;
     const struct rb_iseq_constant_body *const body = iseq->body;
 
@@ -1138,8 +1150,10 @@ pos_in_catch_table_p(rb_iseq_t *iseq, int pos) {
         for (i = 0; i < (int)body->catch_table->size; i++) {
             const struct iseq_catch_table_entry *entry =
                 UNALIGNED_MEMBER_PTR(body->catch_table, entries[i]);
-            if (pos == (int)entry->start) return TRUE;
-            if (pos == (int)entry->end) return TRUE;
+            if (!cont_only_p) {
+                if (pos == (int)entry->start) return TRUE;
+                if (pos == (int)entry->end) return TRUE;
+            }
             if (pos == (int)entry->cont) return TRUE;
         }
     }
@@ -1377,7 +1391,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         case BIN(nop):
         case BIN(sir_make_bbv): // ???
         case BIN(sir_jump): /* nops not labeled by catch table will be removed */
-            if (pos_in_catch_table_p(iseq, curr_orig_insn_pos)) {
+            if (pos_in_catch_table_p(iseq, curr_orig_insn_pos, FALSE)) {
                 last_sir_ind = add_insn(curr_orig_insn_pos, BIN(nop), 0);
                 update_labeled(last_sir_ind);
             }
@@ -1400,8 +1414,8 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             SIR_GEN_ASSERT(stack_size >= 2);
             op3_insn_pos = VARR_LAST(int, stack);
             op2_insn_pos = VARR_GET(int, stack, stack_size - 2);
-            get_op(op3_insn_pos, &local3_p, &local3, &val3);
-            get_op(op2_insn_pos, &local2_p, &local2, &val2);
+            get_op(iseq, curr_orig_insn_pos, op3_insn_pos, &local3_p, &local3, &val3);
+            get_op(iseq, curr_orig_insn_pos, op2_insn_pos, &local2_p, &local2, &val2);
             new_insn_id = get_sir_insn2_id(insn_id, local2_p, &val2, local3_p, val3);
             SIR_GEN_ASSERT(val2 == Qnil || val3 == Qnil);
             if (new_insn_id == BIN(nop)) goto rest_cases;
@@ -1439,9 +1453,9 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             op_insn_pos = VARR_GET(int, stack, stack_size - 3);
             op2_insn_pos = VARR_GET(int, stack, stack_size - 2);
             op3_insn_pos = VARR_GET(int, stack, stack_size - 1);
-            get_op(op_insn_pos, &local_p, &local, NULL);
-            get_op(op2_insn_pos, &local2_p, &local2, &val2);
-            get_op(op3_insn_pos, &local3_p, &local3, NULL);
+            get_op(iseq, curr_orig_insn_pos, op_insn_pos, &local_p, &local, NULL);
+            get_op(iseq, curr_orig_insn_pos, op2_insn_pos, &local2_p, &local2, &val2);
+            get_op(iseq, curr_orig_insn_pos, op3_insn_pos, &local3_p, &local3, NULL);
             new_insn_id = get_sir_insn3_id(insn_id, local_p, local2_p, local3_p, val2);
             if (new_insn_id == BIN(nop)) goto rest_cases;
             nops = (local_p ? 1 : 0) + (local2_p || val2 != Qnil ? 1 : 0) + (local3_p ? 1 : 0);
@@ -1489,7 +1503,8 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         case BIN(branchif):
         case BIN(branchunless):
             stack_size = (int)VARR_LENGTH(int, stack);
-            if (stack_size != 0 && (op_insn_pos = VARR_LAST(int, stack)) >= 0) {
+            if (stack_size != 0 && (op_insn_pos = VARR_LAST(int, stack)) >= 0
+                && !catch_between_p(iseq, op_insn_pos, curr_orig_insn_pos)) {
                 /* put compare producer adjacent to the branch for specialized insns: */
                 op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
                 switch (op_insn_id) {
@@ -1534,7 +1549,8 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         case BIN(setlocal_WC_0):
             stack_size = (int)VARR_LENGTH(int, stack);
             SIR_GEN_ASSERT(stack_size > 0);
-            if ((op_insn_pos = VARR_LAST(int, stack)) < 0) goto change_setlocal0;
+            if ((op_insn_pos = VARR_LAST(int, stack)) < 0 || catch_between_p(iseq, op_insn_pos, curr_orig_insn_pos))
+                goto change_setlocal0;
             if (VARR_LAST(char, operands_changed_p)) goto change_setlocal0;
             op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
             new_insn_id = get_var_res_sir_insn_id(op_insn_id);
@@ -2022,7 +2038,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     enum ruby_vminsn_type insn_id = BIN(nop), new_insn_id, prev_new_insn_id, branch_id;
     int init_stack_size = bbv->start_stack_size;
     int i, n, curr_sir_insn_pos, len, nops, inc, retn, stack_size;
-    int orig_pos, new_insn_pos, prev_new_insn_pos, branch_pos, prev_new_insn_nops;
+    int stack_insn_pos, orig_pos, new_insn_pos, prev_new_insn_pos, branch_pos, prev_new_insn_nops;
     int sir_branch_offset_add, attr, inspect_attr1, inspect_attr2, op1_attr, op2_attr, op3_attr;
     int flag, imm_p, imm2_p, vs_p, v_p, v2_p, exch_p, exch2_p, div_p, bool_p, aref_p, aset_p, neq_p;
     int debug_p = rb_sir_debug_p();
@@ -2079,6 +2095,18 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             if (orig_pos < 0)
                 orig_pos = -orig_pos - 1;
         }
+        stack_insn_pos = body->bbv_pos_map[curr_sir_insn_pos];
+        if (profile_p) {
+            SIR_GEN_ASSERT(stack_insn_pos < 0);
+            stack_insn_pos = body->bbv_pos_map[-stack_insn_pos - 1];
+        }
+        SIR_GEN_ASSERT(stack_insn_pos >= 0);
+        if (pos_in_catch_table_p(iseq, stack_insn_pos, TRUE)) /* clear all attrs: ??? improve */
+            for (int i = 0; i < stack_size; i++) {
+                int attr_num = get_temp_num(iseq, i);
+                if (attr_num < (int)VARR_LENGTH(char, attrs))
+                    VARR_SET(char, attrs, attr_num, ATTR_UNKNOWN);
+            }
         add_bbv_cont_p = FALSE;
         switch (insn_id) {
         case BIN(sir_inspect_type):
@@ -2655,6 +2683,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
             }
             if (prev_new_insn_pos < 0 || specialize_bbv_pos >= 0) goto rest_cases;
+            if (pos_in_catch_table_p(iseq, stack_insn_pos, TRUE)) goto rest_cases;
             prev_new_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos);
             new_insn_id = get_branch_sir_insn_id(prev_new_insn_id);
             if (new_insn_id == BIN(nop)) goto rest_cases;
@@ -2678,7 +2707,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         case BIN(sir_setlocal):
             SIR_GEN_ASSERT(stack_size > 0);
             attr = get_attr(get_temp_num(iseq, stack_size - 1));
-            if (bbv->env_p && attr != ATTR_FIXNUM && attr != ATTR_BOOL) {
+            if ((bbv->env_p && attr != ATTR_FIXNUM && attr != ATTR_BOOL)
+                || pos_in_catch_table_p(iseq, stack_insn_pos, TRUE)) {
                 SIR_GEN_ASSERT(insn_id != BIN(sir_setlocal));
                 setup_attr(get_lvar_num(iseq, operands[0]), attr); /* attr of temp */
                 goto rest_cases;
