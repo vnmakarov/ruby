@@ -259,10 +259,12 @@ rb_iseq_each_value(const rb_iseq_t *iseq, iseq_value_itr_t * func, void *data)
 	n += iseq_extract_values(code, n, func, data, translator);
     }
 
-    size = body->bbv_code_free;
-    code = body->bbv_code;
-    for (n = 0; n < size;) {
-	n += iseq_extract_insn_values(code, n, func, data, (VALUE)rb_mirjit_insn_decode(&code[n]));
+    if (rb_sir_enabled_p()) {
+        size = body->bbv_code_free;
+        code = body->bbv_code;
+        for (n = 0; n < size;) {
+            n += iseq_extract_insn_values(code, n, func, data, (VALUE)rb_mirjit_insn_decode(&code[n]));
+        }
     }
 }
 
