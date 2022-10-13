@@ -76,9 +76,10 @@ void rb_sir_change_bbv(struct rb_iseq_bbv *bbv);
 MJIT_FUNC_EXPORTED const VALUE *rb_sir_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp);
 const VALUE *rb_sir_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);
 const VALUE *rb_sir_get_jump_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);
-void rb_sir_iseq_update_references(rb_iseq_t *iseq);
 
 void rb_sir_iseq_free(struct rb_iseq_constant_body *body);
+void rb_sir_iseq_update_references(const struct rb_iseq_constant_body *body);
+void rb_sir_iseq_data_mark(const struct rb_iseq_constant_body *body);
 
 static sir_inline VALUE sir_dbl2val(double d) {
     union {

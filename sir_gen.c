@@ -3763,17 +3763,6 @@ rb_sir_get_jump_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
 }
 
 void
-rb_sir_iseq_update_references(rb_iseq_t *iseq) {
-    const struct rb_iseq_constant_body *body = iseq->body;
-
-    SIR_GEN_ASSERT(body != NULL);
-    for (int n = 0; n < body->n_bbvs; n++) {
-        for (rb_iseq_bbv_t curr = body->bbvs[n]; curr != NULL; curr = curr->next_bbv)
-            curr->iseq = iseq;
-    }
-}
-
-void
 rb_sir_iseq_free(struct rb_iseq_constant_body *body) {
     rb_iseq_bbv_t bbv, curr_bbv, next_bbv;
     int i, bbv_num;
@@ -3784,15 +3773,70 @@ rb_sir_iseq_free(struct rb_iseq_constant_body *body) {
             next_bbv = curr_bbv->next_bbv;
             bbv_num = curr_bbv->num;
             /* ??? free attrs in sir_make_send */
-            ruby_xfree((void *)curr_bbv);
+            delete_bbv_call_elems(curr_bbv, NULL);
+            SIR_FREE((void *)curr_bbv);
             VARR_SET(rb_iseq_bbv_t, all_bbvs, bbv_num, NULL);
         }
     }
     if (body->curr_param_opt_table != NULL && body->curr_param_opt_table != body->param.opt_table)
-        ruby_xfree((void *)body->curr_param_opt_table);
-    ruby_xfree((void *)body->bbvs);
-    ruby_xfree((void *)body->bbv_code);
-    ruby_xfree((void *)body->bbv_pos_map);
+        SIR_FREE((void *)body->curr_param_opt_table);
+    SIR_FREE((void *)body->bbvs);
+    SIR_FREE((void *)body->bbv_code);
+    SIR_FREE((void *)body->bbv_pos_map);
+    if (body->send_info != NULL) {
+        for (size_t i = 0; ((void **)body->send_info)[i] != NULL; i++)
+            SIR_FREE(((void **)body->send_info)[i]);
+        SIR_FREE(body->send_info);
+    }
+}
+
+void
+rb_sir_iseq_update_references(const struct rb_iseq_constant_body *body) { /* process bbv specific data but bbv_code */
+    struct rb_sir_call_elem *call_elem;
+
+    SIR_GEN_ASSERT(body != NULL);
+    for (int n = 0; n < body->n_bbvs; n++) {
+        for (rb_iseq_bbv_t curr = body->bbvs[n]; curr != NULL; curr = curr->next_bbv) {
+            curr->iseq = (struct rb_iseq_struct *)rb_gc_location((VALUE)curr->iseq);
+            for (call_elem = curr->call_elems; call_elem != NULL; call_elem = call_elem->next_bbv_call_elem) {
+                rb_callable_method_entry_t *new_cme = (rb_callable_method_entry_t *)rb_gc_location((VALUE)call_elem->cme);
+                if (call_elem->cme != new_cme) {
+                    remove_call_elem_from_cme_set(call_elem);
+                    remove_call_elem_from_bbv_set(call_elem);
+                    call_elem->cme = new_cme;
+                    add_new_call_elem(call_elem);
+                }
+            }
+        }
+    }
+    send_info_t si, *send_info = body->send_info;
+    if (send_info == NULL) return;
+    for (size_t i = 0; (si = send_info[i]) != NULL; i++) {
+        if (si->block_iseq) si->block_iseq = (struct rb_iseq_struct *)rb_gc_location((VALUE)si->block_iseq);
+        if (si->klass != Qundef) si->klass = rb_gc_location(si->klass);
+        if (si->cme) si->cme = (rb_callable_method_entry_t *)rb_gc_location((VALUE)si->cme);
+    }
+}
+
+void
+rb_sir_iseq_data_mark(const struct rb_iseq_constant_body *body) { /* process bbv specific data but bbv_code */
+    struct rb_sir_call_elem *call_elem;
+
+    SIR_GEN_ASSERT(body != NULL);
+    for (int n = 0; n < body->n_bbvs; n++) {
+        for (rb_iseq_bbv_t curr = body->bbvs[n]; curr != NULL; curr = curr->next_bbv) {
+            for (call_elem = curr->call_elems; call_elem != NULL; call_elem = call_elem->next_bbv_call_elem) {
+                rb_gc_mark_movable((VALUE)call_elem->cme);
+            }
+        }
+    }
+    send_info_t si, *send_info = body->send_info;
+    if (send_info == NULL) return;
+    for (size_t i = 0; (si = send_info[i]) != NULL; i++) {
+        if (RTEST((VALUE)si->block_iseq)) rb_gc_mark_movable((VALUE)si->block_iseq);
+        if (si->klass != Qundef) rb_gc_mark_movable(si->klass);
+        if (si->cme) rb_gc_mark_movable((VALUE)si->cme);
+    }
 }
 
 /* Initiate stack insns to SIR generator.  Return FALSE if we failed
