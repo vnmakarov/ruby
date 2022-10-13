@@ -394,7 +394,7 @@ static VARR(char) *arg_attrs;
 
 static void
 check_final_attrs(int n_attrs, char *attrs) {
-    static_assert(ATTR_END_MARKER == 0, "wrong value of ATTR_END_MARKER"); /* to use strcmp/strlen functions */
+    assert(ATTR_END_MARKER == 0); /* to use strcmp/strlen functions */
     SIR_GEN_ASSERT(attrs == NULL
                    || (n_attrs > 0 && attrs[n_attrs - 1] == ATTR_END_MARKER
                        && (n_attrs < 2 || attrs[n_attrs - 2] != ATTR_UNKNOWN) /* compact attrs */
@@ -460,7 +460,7 @@ get_call_attrs(rb_iseq_t *iseq, int argc, int stack_size) {
         if (VARR_GET(char, attrs, i + start) != ATTR_UNKNOWN)
             last_i = i;
     if (last_i < 0) return NULL;
-    call_attrs = ALLOC_N(char, last_i + 2);
+    call_attrs = SIR_ALLOC_N(char, last_i + 2);
     for (i = 0; i <= last_i; i++)
         call_attrs[i] = VARR_GET(char, attrs, i + start);
     call_attrs[last_i + 1] = ATTR_END_MARKER;
@@ -557,7 +557,7 @@ create_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int bou
     rb_iseq_bbv_t bbv;
 
     check_final_attrs(n_attrs, attrs);
-    bbv = (rb_iseq_bbv_t)ALLOC_N(char, sizeof(struct rb_iseq_bbv) + (attrs == NULL ? 0 : n_attrs - 1));
+    bbv = (rb_iseq_bbv_t)SIR_ALLOC_N(char, sizeof(struct rb_iseq_bbv) + (attrs == NULL ? 0 : n_attrs - 1));
     bbv->spec_count = BBV_COUNT_TO_PROFILE_SPECIALIZE;
     bbv->jit_count = BBV_COUNT_TO_JIT;
     SIR_GEN_ASSERT(BBV_COUNT_TO_PROFILE_SPECIALIZE + 1 < BBV_COUNT_TO_JIT);
@@ -639,7 +639,7 @@ non_sir_bb_end_p(enum ruby_vminsn_type insn_id) {
 
 static void
 add_bbv_edge(rb_iseq_bbv_t in, rb_iseq_bbv_t out, int gen_bbv_disp) {
-    struct rb_iseq_bbv_edge *e = (struct rb_iseq_bbv_edge *)ALLOC_N(struct rb_iseq_bbv_edge, 1);
+    struct rb_iseq_bbv_edge *e = (struct rb_iseq_bbv_edge *)SIR_ALLOC_N(struct rb_iseq_bbv_edge, 1);
 
     e->in = in;
     e->out = out;
@@ -660,13 +660,13 @@ get_bbv_code_space(rb_iseq_t *iseq, int len) {
 
     if (bbv_start + len > body->bbv_code_bound) {
         add_len = body->bbv_code == NULL ? (int)body->iseq_size : len;
-        body->bbv_code_bound = (bbv_start + add_len) * 40 / 2;
+        body->bbv_code_bound = (bbv_start + add_len) * 100 / 2;
         old_bbv_code = body->bbv_code;
-        RB_REALLOC_N(body->bbv_code, VALUE, body->bbv_code_bound);
-        RB_REALLOC_N(body->bbv_pos_map, int, body->bbv_code_bound);
+        SIR_REALLOC_N(body->bbv_code, VALUE, body->bbv_code_bound);
+        SIR_REALLOC_N(body->bbv_pos_map, int, body->bbv_code_bound);
         if (old_bbv_code != NULL && body->bbv_code != old_bbv_code) {
-            abort();
             fprintf(stderr, "==> Repositioning bbv_code\n");
+            abort();
             ec = GET_EC();
             for (cfp = ec->cfp + 1; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
                 if (cfp->iseq == iseq)
@@ -959,7 +959,7 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
                  n++, parent_iseq = (rb_iseq_t *)parent_iseq->body->parent_iseq)
                 last_iseq = parent_iseq;
             if (last_iseq->body->parent_var_changed_p == NULL)
-                last_iseq->body->parent_var_changed_p = ZALLOC_N(char, parent_iseq->body->local_table_size);
+                last_iseq->body->parent_var_changed_p = SIR_ZALLOC_N(char, parent_iseq->body->local_table_size);
             SIR_GEN_ASSERT(encoded[i + 1] >= VM_ENV_DATA_SIZE);
             last_iseq->body->parent_var_changed_p[encoded[i + 1] - VM_ENV_DATA_SIZE] = TRUE;
             break;
@@ -1025,7 +1025,7 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
     if (body->param.opt_num == 0) {
         body->curr_param_opt_table = NULL;
     } else {
-        body->curr_param_opt_table = ALLOC_N(VALUE, body->param.opt_num + 1);
+        body->curr_param_opt_table = SIR_ALLOC_N(VALUE, body->param.opt_num + 1);
         for (i = 0; i <= body->param.opt_num; i++) { /* optional parameter pc */
             pos = (int)body->param.opt_table[i];
             bbv = create_bbv(iseq, RB_BBV_OPT, i, pos, -1, TRUE, 0, NULL);
@@ -1043,8 +1043,8 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
             add_insn(pos, BIN(sir_make_catch_bbv), 1, i);
         }
     }
+    body->bbvs = SIR_ALLOC_N(rb_iseq_bbv_t, VARR_LENGTH(rb_iseq_bbv_t, bbvs));
     body->n_bbvs = (int)VARR_LENGTH(rb_iseq_bbv_t, bbvs);
-    body->bbvs = ALLOC_N(rb_iseq_bbv_t, body->n_bbvs);
     memcpy(body->bbvs, VARR_ADDR(rb_iseq_bbv_t, bbvs), body->n_bbvs * sizeof(rb_iseq_bbv_t));
     qsort(body->bbvs, body->n_bbvs, sizeof(rb_iseq_bbv_t), compare_bbvs);
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
@@ -1765,7 +1765,7 @@ remove_out_edges(rb_iseq_bbv_t src_bbv) {
                     prev_in_e->next_in_edge = next_in_e;
             }
         }
-        ruby_xfree((void *)out_e);
+        SIR_FREE((void *)out_e);
     }
     src_bbv->out_edges = NULL;
 }
@@ -2025,7 +2025,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     int orig_pos, new_insn_pos, prev_new_insn_pos, branch_pos, prev_new_insn_nops;
     int sir_branch_offset_add, attr, inspect_attr1, inspect_attr2, op1_attr, op2_attr, op3_attr;
     int flag, imm_p, imm2_p, vs_p, v_p, v2_p, exch_p, exch2_p, div_p, bool_p, aref_p, aset_p, neq_p;
-    int debug_p = rb_sir_debug_p(), compacted_attrs_p = FALSE;
+    int debug_p = rb_sir_debug_p();
     int disp, nops_num;
     VALUE val, *operands, new_operands[10];
     lindex_t op;
@@ -2930,10 +2930,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         case BIN(sir_gen_bbv):
         case BIN(sir_gen_bbv2):
         case BIN(sir_gen_bbv_key):
-            if (!compacted_attrs_p) {
-                compact_attrs(attrs);
-                compacted_attrs_p = TRUE;
-            }
+            compact_attrs(attrs);
             old_dst_bbv = (rb_iseq_bbv_t)operands[0];
             dst_bbv = get_bbv_by_head(iseq, old_dst_bbv->head_bbv == NULL ? old_dst_bbv : old_dst_bbv->head_bbv,
                                       bbv->env_p, (int)VARR_LENGTH(char, attrs), VARR_ADDR(char, attrs));
@@ -3019,8 +3016,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         memcpy(body->send_info, VARR_ADDR(send_info_t, iseq_send_info),
                VARR_LENGTH(send_info_t, iseq_send_info) * sizeof(struct rb_sir_send_info *));
     }
-    if (!compacted_attrs_p)
-        compact_attrs(attrs);
+    compact_attrs(attrs);
     if (profile_p) { /* attrs can change -- remove targets and change source bbv destinations: */
         remove_out_edges(bbv);
         redirect_src_bbv_dests(bbv, FALSE);
@@ -3237,16 +3233,40 @@ rb_sir_gen_bbv_key(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int case_offset, 
 
 static st_table *call_elems_tab, *cme_call_elems_tab;
 
-static void remove_call_elem_from_cme_list(struct rb_sir_call_elem *elem) {
+static void remove_call_elem_from_bbv_set(struct rb_sir_call_elem *elem) {
     if (0)
-        fprintf (stderr, "deleting 0x%lx (bbv=0x%lx, cme=0x%lx)\n",
+        fprintf (stderr, "deleting 0x%lx (bbv=0x%lx, cme=0x%lx) from bbv set\n",
+                 (long)elem, (long)elem->bbv, (long)elem->cme);
+    if (elem->next_bbv_call_elem != NULL)
+        elem->next_bbv_call_elem->prev_bbv_call_elem = elem->prev_bbv_call_elem;
+    if (elem->prev_bbv_call_elem != NULL) {
+        elem->prev_bbv_call_elem->next_bbv_call_elem = elem->next_bbv_call_elem;
+    } else { /* it is a head */
+        elem->bbv->call_elems = elem->next_bbv_call_elem;
+    }
+    st_data_t key = (st_data_t)elem;
+    int exist_p = rb_st_delete(call_elems_tab, &key, NULL);
+    SIR_GEN_ASSERT(exist_p);
+}
+
+static int
+replace_call_elem(st_data_t *key, st_data_t *value, st_data_t arg, int existing) {
+    SIR_GEN_ASSERT(existing);
+    *value = arg;
+    return ST_CONTINUE;
+}
+
+static void remove_call_elem_from_cme_set(struct rb_sir_call_elem *elem) {
+    if (0)
+        fprintf (stderr, "deleting 0x%lx (bbv=0x%lx, cme=0x%lx) from cme set\n",
                  (long)elem, (long)elem->bbv, (long)elem->cme);
     if (elem->next_cme_call_elem != NULL)
         elem->next_cme_call_elem->prev_cme_call_elem = elem->prev_cme_call_elem;
     if (elem->prev_cme_call_elem != NULL) {
         elem->prev_cme_call_elem->next_cme_call_elem = elem->next_cme_call_elem;
     } else if (elem->next_cme_call_elem != NULL) { /* it is a head */
-        int exist_p = rb_st_insert(cme_call_elems_tab, (st_data_t)elem->cme, (st_data_t)elem->next_cme_call_elem);
+        int exist_p = rb_st_update(cme_call_elems_tab, (st_data_t)elem->cme,
+                                   replace_call_elem, (st_data_t)elem->next_cme_call_elem);
         SIR_GEN_ASSERT(exist_p);
     } else { /* head of one element list */
         st_data_t cme = (st_data_t)elem->cme;
@@ -3260,9 +3280,9 @@ static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv, rb_callable_method_en
     for (call_elem = bbv->call_elems; call_elem != NULL; call_elem = next_call_elem) {
         next_call_elem = call_elem->next_bbv_call_elem;
         if (call_elem->cme == except_cme) continue;
-        remove_call_elem_from_cme_list(call_elem);
-        rb_st_delete(call_elems_tab, (st_data_t *)call_elem, NULL);
-        ruby_xfree((void *)call_elem);
+        remove_call_elem_from_cme_set(call_elem);
+        remove_call_elem_from_bbv_set(call_elem);
+        SIR_FREE((void *)call_elem);
     }
     bbv->call_elems = NULL;
 }
@@ -3275,17 +3295,13 @@ find_cme_call_elem_list_head(rb_callable_method_entry_t *cme) {
 }
 
 static void
-add_call_elem(struct rb_iseq_bbv *bbv, const rb_callable_method_entry_t *cme) {
+add_new_call_elem(struct rb_sir_call_elem *call_elem) {
     int found_p;
-    struct rb_sir_call_elem call_elem_s, *call_elem, *found_elem;
+    struct rb_sir_call_elem *found_elem;
+    struct rb_iseq_bbv *bbv = call_elem->bbv;
+    const rb_callable_method_entry_t *cme = call_elem->cme;
     st_data_t value;
 
-    call_elem_s.cme = cme;
-    call_elem_s.bbv = bbv;
-    if (rb_st_lookup(call_elems_tab, (st_data_t)&call_elem_s, NULL)) return;
-    call_elem = ALLOC_N(struct rb_sir_call_elem, 1);
-    call_elem->bbv = bbv;
-    call_elem->cme = cme;
     call_elem->prev_cme_call_elem = call_elem->prev_bbv_call_elem = NULL;
     if (0)
         fprintf (stderr, "inserting 0x%lx (bbv=0x%lx, cme=0x%lx)\n",
@@ -3301,6 +3317,19 @@ add_call_elem(struct rb_iseq_bbv *bbv, const rb_callable_method_entry_t *cme) {
         bbv->call_elems->prev_bbv_call_elem = call_elem;
     bbv->call_elems = call_elem;
     rb_st_insert(call_elems_tab, (st_data_t)call_elem, (st_data_t)call_elem);
+}
+
+static void
+add_call_elem(struct rb_iseq_bbv *bbv, const rb_callable_method_entry_t *cme) {
+    struct rb_sir_call_elem call_elem_s, *call_elem;
+
+    call_elem_s.cme = cme;
+    call_elem_s.bbv = bbv;
+    if (rb_st_lookup(call_elems_tab, (st_data_t)&call_elem_s, NULL)) return;
+    call_elem = SIR_ALLOC_N(struct rb_sir_call_elem, 1);
+    call_elem->bbv = bbv;
+    call_elem->cme = cme;
+    add_new_call_elem(call_elem);
 }
 
 static int
