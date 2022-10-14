@@ -41,7 +41,9 @@ struct rb_sir_options {
     int sir_enabled_p; /* true means generation and execution of SIR BBV */
     /* maximal versions for SIR BB, one version is always reserved for unknown incoming attrs: */
     unsigned max_bb_versions;
-    int debug_level; /* 0 - no debugging */
+     /* 0 - no debugging, 1 - print SIR code changes and BB headers, 2 (default) - print SIR BB code,
+        3 - print info for buitins and prelude, make bbv area insns, final BBV CFG */
+    int debug_level;
     int exec_stats_p; /* print SIR execution stats if collecting stats is enabled */
 };
 
