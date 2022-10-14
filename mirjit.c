@@ -2627,7 +2627,7 @@ static void resolver_finish(void) {
 
 static void
 gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
-    int len, pc, next_pc, mirjit_debug_p = rb_mirjit_debug_p(), insns_num = 0, bbv_pc = -1;
+    int len, pc, next_pc, mirjit_debug_level = rb_mirjit_debug_level(), insns_num = 0, bbv_pc = -1;
     int finish_jit_code_p;
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
@@ -2638,7 +2638,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
     if (rejit_p) {
         assert(BIN(sir_rejit_bbv) == rb_mirjit_insn_decode(&body->bbv_code[bbv->bbv_start]));
         body->bbv_code[bbv->bbv_start] = (VALUE)sir_dispatch_table[BIN(sir_bbv_start)];
-        if (mirjit_debug_p) {
+        if (mirjit_debug_level > 0) {
             fprintf (stderr, "## Rejitting BBV 0x%llx\n", (unsigned long long)bbv);
             rb_sir_print_bbv(bbv);
         }
@@ -2734,7 +2734,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
 #else
             O("  return pc;\n}\n");
 #endif
-            if (mirjit_debug_p) {
+            if (mirjit_debug_level > 0) {
                 fprintf(stderr, "C code for BBV 0x%llx @ %d:\n%s",
                         (unsigned long long)bbv, bbv_pc - bbv->bbv_start, VARR_ADDR(char, buff));
             }
@@ -2743,16 +2743,16 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
             curr_input.curr_char = 0;
             double start_time = real_usec_time();
             if (!c2mir_compile(ctx, &curr_input.options, t_getc, &curr_input, "jit_c_code.c", NULL)) {
-                if (mirjit_debug_p) {
+                if (mirjit_debug_level > 0) {
                     fprintf(stderr, "Failure in compilation of C code for BBV 0x%llx @ %d\n",
                             (unsigned long long)bbv, bbv_pc - bbv->bbv_start);
                 }
             } else {
-                if (mirjit_debug_p) {
+                if (mirjit_debug_level > 0) {
                     fprintf(stderr, "Finish C to MIR compilation -- compilation time %.0f usec\n",
                             real_usec_time() - start_time);
                     MIR_gen_set_debug_file(ctx, 0, stderr);
-                    MIR_gen_set_debug_level(ctx, 0, 3);
+                    MIR_gen_set_debug_level(ctx, 0, mirjit_debug_level - 1);
                 }
                 MIR_module_t module = DLIST_TAIL(MIR_module_t, *MIR_get_module_list(ctx));
                 MIR_load_module(ctx, module);
@@ -2798,7 +2798,7 @@ rb_mirjit_mark_bbv_change(struct rb_iseq_bbv *bbv) {
     if (insn_id == BIN(sir_rejit_bbv)) return;
     assert(insn_id == BIN(sir_bbv_start));
     body->bbv_code[bbv->bbv_start] = (VALUE)sir_dispatch_table[BIN(sir_rejit_bbv)];
-    if (rb_mirjit_debug_p())
+    if (rb_mirjit_debug_level() > 0)
         fprintf(stderr, "## Mark BBV 0x%llx for rejitting\n", (unsigned long long)bbv);
 }
 
@@ -2808,7 +2808,7 @@ int
 rb_mirjit_enabled_p(void) { return mirjit_options.mirjit_enabled_p; }
 
 int
-rb_mirjit_debug_p(void) { return mirjit_options.debug_p; }
+rb_mirjit_debug_level(void) { return mirjit_options.debug_level; }
 
 void
 rb_mirjit_init(struct rb_mirjit_options *options) {

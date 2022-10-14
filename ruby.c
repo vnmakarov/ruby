@@ -1098,11 +1098,15 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
     opt_match(s, l, name) && (*(s) ? (rb_warn("argument to --sir-" name " is ignored"), 1) : 1)
 #define sir_opt_match_arg(s, l, name) \
     opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (rb_raise(rb_eRuntimeError, "--sir-" name " needs an argument"), 0))
+#define sir_opt_match_optional_arg(s, l, name) \
+    opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (s -= rb_strlen_lit(name), 0))
 
 #define mirjit_opt_match_noarg(s, l, name) \
     opt_match(s, l, name) && (*(s) ? (rb_warn("argument to --mirjit-" name " is ignored"), 1) : 1)
 #define mirjit_opt_match_arg(s, l, name) \
     opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (rb_raise(rb_eRuntimeError, "--mirjit-" name " needs an argument"), 0))
+#define mirjit_opt_match_optional_arg(s, l, name) \
+    opt_match(s, l, name) && (*(s) && *(s+1) ? 1 : (s -= rb_strlen_lit(name), 0))
 
 static bool
 setup_yjit_options(const char *s, struct rb_yjit_options *yjit_opt)
@@ -1189,12 +1193,14 @@ setup_sir_options(const char *s, struct rb_sir_options *sir_opt)
     if (l == 0) {
         return FALSE;
     }
-
     if (sir_opt_match_arg(s, l, "max-bb-versions")) {
         sir_opt->max_bb_versions = atoi(s + 1);
     }
+    else if (sir_opt_match_optional_arg(s, l, "debug")) {
+        sir_opt->debug_level = atoi(s + 1);
+    }
     else if (sir_opt_match_noarg(s, l, "debug")) {
-        sir_opt->debug_p = TRUE;
+        sir_opt->debug_level = 2;
     }
     else if (sir_opt_match_noarg(s, l, "stats")) {
         sir_opt->exec_stats_p = TRUE;
@@ -1220,8 +1226,11 @@ setup_mirjit_options(const char *s, struct rb_mirjit_options *mirjit_opt)
         return FALSE;
     }
 
-    if (mirjit_opt_match_noarg(s, l, "debug")) {
-        mirjit_opt->debug_p = TRUE;
+    if (mirjit_opt_match_optional_arg(s, l, "debug")) {
+        mirjit_opt->debug_level = atoi(s + 1);
+    }
+    else if (mirjit_opt_match_noarg(s, l, "debug")) {
+        mirjit_opt->debug_level = 2;
     }
     else if (mirjit_opt_match_noarg(s, l, "stats")) {
         mirjit_opt->exec_stats_p = TRUE;

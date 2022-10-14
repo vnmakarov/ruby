@@ -1056,12 +1056,15 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
            VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
     body->iseq_code = body->iseq_start_pc = &body->bbv_code[make_bbv_area_start];
     bbv_encode(&body->bbv_code[make_bbv_area_start], len);
-    if (rb_sir_debug_p()) {
+    int debug_level = rb_sir_debug_level();
+    if (debug_level > 0) {
         fprintf(stderr, "## Make BBV area of ");
         print_iseq_title(iseq);
         fprintf(stderr, "\n");
-        print_bb(iseq, body->bbv_code, make_bbv_area_start, make_bbv_area_start + len, "  ");
-        print_pos_map(iseq, make_bbv_area_start, make_bbv_area_start + len, FALSE);
+        if (debug_level > 2) {
+            print_bb(iseq, body->bbv_code, make_bbv_area_start, make_bbv_area_start + len, "  ");
+            print_pos_map(iseq, make_bbv_area_start, make_bbv_area_start + len, FALSE);
+        }
     }
     RB_VM_LOCK_LEAVE();
 }
@@ -1324,7 +1327,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     int i, n, last_pos, curr_orig_insn_pos, len, nops, inc, retn, br_p, dst2_p, stack_size;
     int op_insn_pos, op3_insn_pos, op2_insn_pos, local_p, local2_p, local3_p;
     int last_sir_ind, nops_num;
-    int debug_p = rb_sir_debug_p();
+    int debug_level = rb_sir_debug_level();
     int disp = 0, disp2 = 0, else_disp = 0; /* for removing uninitialized warning */
     OFFSET dst = 0, dst2 = 0, else_dst = 0; /* for removing uninitialized warning */
     VALUE val, val2, val3, local, local2, local3, *operands, new_operands[10];
@@ -1333,14 +1336,15 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     rb_iseq_bbv_t dst_bbv, else_dst_bbv;
 
     SIR_GEN_ASSERT(bbv->head_bbv == NULL && bbv->attrs[0] == ATTR_END_MARKER && init_stack_size >= 0);
-    if (debug_p) {
+    if (debug_level > 0) {
         fprintf(stderr, "\n## Generation of General SIR BBV%d 0x%llx (%s):",
                 bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_attrs(bbv->attrs);
         fprintf(stderr, "Original BB of ");
         print_iseq_title(iseq);
         fprintf(stderr, "\n");
-        print_bb(iseq, body->iseq_encoded, bbv->iseq_start, bbv->iseq_bound, "  ");
+        if (debug_level > 1)
+            print_bb(iseq, body->iseq_encoded, bbv->iseq_start, bbv->iseq_bound, "  ");
     }
     SIR_GEN_ASSERT(bbv->bbv_start < 0);
     br_p = dst2_p = FALSE;
@@ -1730,7 +1734,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, out_bbvs); i++)
         add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i));
     sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
-    if (debug_p) {
+    if (debug_level > 1) {
         fprintf(stderr, "## SIR BBV:\n");
         print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
         print_pos_map(iseq, bbv->bbv_start, bbv->bbv_bound, FALSE);
@@ -1795,7 +1799,7 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv, int gen_p) {
     int bbv_gen_pos, branch_pos, new_dest_pos;
     OFFSET branch_offset, offset;
     enum ruby_vminsn_type branch_id;
-    int debug_p = rb_sir_debug_p();
+    int debug_level = rb_sir_debug_level();
 
     SIR_GEN_ASSERT(dst_bbv->bbv_start >= 0);
     for (in_e = dst_bbv->in_edges; in_e != NULL; in_e = in_e->next_in_edge) {
@@ -1814,7 +1818,7 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv, int gen_p) {
         branch_id = rb_vm_insn_decode(body->bbv_code[branch_pos]);
         new_dest_pos = (gen_p ? bbv_gen_pos : dst_bbv->bbv_start);
         offset = new_dest_pos - (branch_pos + insn_len(branch_id));
-        if (debug_p) {
+        if (debug_level > 0) {
             fprintf(stderr, "--> Redirect dest in %04d %s to %d\n",
                     (int)branch_pos, insn_name(branch_id), new_dest_pos);
         }
@@ -1873,7 +1877,7 @@ update_attrs(rb_iseq_t *block_iseq) {
     for (size_t i = 0; i < VARR_LENGTH(char, attrs); i++)
         if (VARR_GET(char, attrs, i) != ATTR_UNKNOWN && block_iseq->body->parent_var_changed_p[i]) {
             VARR_SET(char, attrs, i, ATTR_UNKNOWN);
-            if (rb_sir_debug_p())
+            if (rb_sir_debug_level() > 0)
                 fprintf(stderr, "--> making unknown attr for local %lu as changed in nested block\n",
                         (long unsigned)i);
         }
@@ -2046,7 +2050,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     int stack_insn_pos, orig_pos, new_insn_pos, prev_new_insn_pos, branch_pos, prev_new_insn_nops;
     int sir_branch_offset_add, attr, inspect_attr1, inspect_attr2, op1_attr, op2_attr, op3_attr;
     int flag, imm_p, imm2_p, vs_p, v_p, v2_p, exch_p, exch2_p, div_p, bool_p, aref_p, aset_p, neq_p;
-    int debug_p = rb_sir_debug_p();
+    int debug_level = rb_sir_debug_level();
     int disp, nops_num;
     VALUE val, *operands, new_operands[10];
     lindex_t op;
@@ -2061,14 +2065,15 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         head_bbv = bbv;
     SIR_GEN_ASSERT(init_stack_size >= 0 && head_bbv->start_stack_size == init_stack_size);
     orig_bbv = profile_p ? bbv : head_bbv;
-    if (debug_p) {
+    if (debug_level > 0) {
         fprintf(stderr, "\n## Making %s Specialized BBV%d 0x%llx (%s):",
                 profile_p ? "Profile" : "Type", bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_attrs(bbv->attrs);
         fprintf(stderr, "Original SIR BBV%d of ", orig_bbv->num);
         print_iseq_title(iseq);
         fprintf(stderr, "\n");
-        print_bb(iseq, body->bbv_code, orig_bbv->bbv_start, orig_bbv->bbv_bound, "  ");
+        if (debug_level > 1)
+            print_bb(iseq, body->bbv_code, orig_bbv->bbv_start, orig_bbv->bbv_bound, "  ");
     }
     VARR_TRUNC(VALUE, bbv_encoded, 0);
     VARR_TRUNC(send_info_t, iseq_send_info, 0);
@@ -2879,7 +2884,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                               old_dst_bbv->env_p, (int)VARR_LENGTH(char, arg_attrs), VARR_ADDR(char, arg_attrs));
             SIR_GEN_ASSERT(len == 3);
             if (dst_bbv != old_dst_bbv) {
-                if (debug_p)
+                if (debug_level > 0)
                     fprintf(stderr, "--> Changing sir_iseq_send_without_block from BBVx%llx to BBVx%llx\n",
                             (unsigned long long)old_dst_bbv, (unsigned long long)dst_bbv);
                 if (dst_bbv->bbv_start < 0)
@@ -3061,7 +3066,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, out_bbvs); i++)
         add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i) - nops_num);
     sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
-    if (debug_p) {
+    if (debug_level > 1) {
         fprintf(stderr, "## %s specialized BBV%d 0x%llx (%s):", profile_p ? "Profile" : "Type",
                 bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_attrs(bbv->attrs);
@@ -3099,8 +3104,8 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
         /* check that it was not already changed, e.g. in another Ractor */
         if ((insn_id = rb_vm_insn_decode(*cfp->pc)) != BIN(nop2)) {
             VALUE *insn_pc = (VALUE *)cfp->pc;
-            int debug_p = rb_sir_debug_p();
-            if (debug_p)
+            int debug_level = rb_sir_debug_level();
+            if (debug_level > 0)
                 fprintf(stderr, "--> Changing %s to %4ld nop2\n",
                         insn_name(insn_id), insn_pc - cfp->iseq->body->bbv_code);
             change_insn(cfp->iseq, insn_pc, BIN(nop2));
@@ -3110,14 +3115,14 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
         if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)
             || rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type)) {
             VALUE *insn_pc = (VALUE *)cfp->pc;
-            int debug_p = rb_sir_debug_p();
+            int debug_level = rb_sir_debug_level();
             RB_VM_LOCK_ENTER();
             if (stack_p) {
                 new_insn_id = (fixtype_p ? BIN(sir_inspect_stack_fixtype)
                                : array_p ? BIN(sir_inspect_stack_array) : BIN(sir_inspect_stack_flotype));
                 /* check that it was not already changed, e.g. in another Ractor */
                 if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_type)) {
-                    if (debug_p)
+                    if (debug_level > 0)
                         fprintf(stderr, "--> Changing sir_inspect_stack_type to %4ld %s\n",
                                 insn_pc - cfp->iseq->body->bbv_code, insn_name(new_insn_id));
                     change_insn(cfp->iseq, insn_pc, new_insn_id);
@@ -3125,7 +3130,7 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
             } else if (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_type)) {
                 new_insn_id = (fixtype_p ? BIN(sir_inspect_fixtype)
                                : array_p ? BIN(sir_inspect_array) : BIN(sir_inspect_flotype));
-                if (debug_p)
+                if (debug_level > 0)
                     fprintf(stderr, "--> Changing sir_inspect_type to %4ld %s\n",
                             insn_pc - cfp->iseq->body->bbv_code, insn_name(new_insn_id));
                 change_insn(cfp->iseq, insn_pc, new_insn_id);
@@ -3310,7 +3315,7 @@ static void remove_call_elem_from_cme_set(struct rb_sir_call_elem *elem) {
     }
 }
 
-static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv, rb_callable_method_entry_t *except_cme) {
+static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv, const rb_callable_method_entry_t *except_cme) {
     struct rb_sir_call_elem *call_elem, *next_call_elem;
     for (call_elem = bbv->call_elems; call_elem != NULL; call_elem = next_call_elem) {
         next_call_elem = call_elem->next_bbv_call_elem;
@@ -3323,7 +3328,7 @@ static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv, rb_callable_method_en
 }
 
 static struct rb_sir_call_elem *
-find_cme_call_elem_list_head(rb_callable_method_entry_t *cme) {
+find_cme_call_elem_list_head(const rb_callable_method_entry_t *cme) {
     st_data_t call_elem;
     if (!rb_st_lookup(cme_call_elems_tab, (st_data_t)cme, &call_elem)) return NULL;
     return (struct rb_sir_call_elem *)call_elem;
@@ -3418,20 +3423,22 @@ set_iseq_start(rb_iseq_bbv_t bbv) {
 }
 
 static void
-invalidate_bbv_code(rb_iseq_bbv_t bbv, rb_callable_method_entry_t *except_cme) {
+invalidate_bbv_code(rb_iseq_bbv_t bbv, const rb_callable_method_entry_t *except_cme) {
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
     int enter_bbv_p;
     const rb_execution_context_t *ec;
     rb_control_frame_t *cfp;
+    int debug_level = rb_sir_debug_level();
 
     if (bbv->bbv_start < 0) return; /* already invalidated */
-    if (rb_sir_debug_p()) {
+    if (debug_level > 0) {
         fprintf (stderr, "## Invalidating BBV%d 0x%llx (%s) of ",
                  bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
         print_iseq_title(bbv->iseq);
         fprintf(stderr, "\n");
-        print_bb(bbv->iseq, bbv->iseq->body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
+        if (debug_level > 1)
+            print_bb(bbv->iseq, bbv->iseq->body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
     }
     ec = GET_EC();
     for (cfp = ec->cfp; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
@@ -3495,7 +3502,7 @@ rb_sir_singleton_method_defined(VALUE old_class, ID id) {
 }
 
 void
-rb_sir_cme_invalidate(rb_callable_method_entry_t *cme) {
+rb_sir_cme_invalidate(const rb_callable_method_entry_t *cme) {
     struct rb_sir_call_elem *call_elem, *next_call_elem;
     if (cme_call_elems_tab == NULL)
         return; /* we did not initialize it yet */
@@ -3543,8 +3550,8 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
     } else {
         assert(rb_vm_insn_decode(*cfp->pc) == BIN(specialize_bbv));
         if (VARR_LENGTH(rb_iseq_bbv_t, bbvs) != 0) {
-            int debug_p = rb_sir_debug_p();
-            if (debug_p)
+            int debug_level = rb_sir_debug_level();
+            if (debug_level > 0)
                 fprintf(stderr, "<<< Start of further type specialization of called BBVs\n");
             /* Here we can reuse globals.  Remember bbvs is updated only for
                profile_p and sir_gen_bbv_code never means profile_p. */
@@ -3553,7 +3560,7 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
                 if (called_bbv->bbv_start < 0) /* bbv can occur more one time in bbvs */
                     gen_sir_bbv_code(called_bbv->iseq, called_bbv, 0);
             }
-            if (debug_p)
+            if (debug_level > 0)
                 fprintf(stderr, ">>> End of further type specialization of called BBVs\n");
         }
         set_iseq_start(bbv);
@@ -3570,11 +3577,11 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
 void
 rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic, VALUE val) {
     VALUE *insn_pc = (VALUE *)cfp->pc - insn_len(BIN(sir_make_getivar));
-    int debug_p = rb_sir_debug_p(), fixnum_p = FIXNUM_P(val);
+    int debug_level = rb_sir_debug_level(), fixnum_p = FIXNUM_P(val);
 
     if (RB_TYPE_P(self, T_OBJECT)) {
         RB_VM_LOCK_ENTER();
-        if (debug_p)
+        if (debug_level > 0)
             fprintf(stderr, "--> Changing sir_make_getivar to %4ld %s\n",
                     insn_pc - cfp->iseq->body->bbv_code, fixnum_p ? "sir_igetivar" : "sir_getivar");
         struct rb_iv_index_tbl_entry *entry = ((IVC)insn_pc[2])->entry;
@@ -3585,7 +3592,7 @@ rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic, VALUE val) {
         return;
     }
     RB_VM_LOCK_ENTER();
-    if (debug_p)
+    if (debug_level > 0)
         fprintf(stderr, "--> Changing sir_make_getivar to getinstancevariable\n");
     change_insn(cfp->iseq, insn_pc, BIN(getinstancevariable));
     RB_VM_LOCK_LEAVE();
@@ -3594,12 +3601,12 @@ rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic, VALUE val) {
 void
 rb_sir_change_setivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
     VALUE *insn_pc = (VALUE *)cfp->pc - insn_len(BIN(sir_make_setivar));
-    int debug_p = rb_sir_debug_p();
+    int debug_level = rb_sir_debug_level();
 
     SIR_GEN_ASSERT(ic->entry != NULL);
     if (RB_TYPE_P(self, T_OBJECT)) {
         RB_VM_LOCK_ENTER();
-        if (debug_p)
+        if (debug_level > 0)
             fprintf(stderr, "--> Changing sir_make_setivar to sir_setivar\n");
         struct rb_iv_index_tbl_entry *entry = ((IVC)insn_pc[2])->entry;
         change_insn(cfp->iseq, insn_pc, BIN(sir_setivar));
@@ -3609,7 +3616,7 @@ rb_sir_change_setivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
         return;
     }
     RB_VM_LOCK_ENTER();
-    if (debug_p)
+    if (debug_level > 0)
         fprintf(stderr, "--> Changing sir_make_set_ivar to setinstancevariable\n");
     change_insn(cfp->iseq, insn_pc, BIN(setinstancevariable));
     RB_VM_LOCK_LEAVE();
@@ -3628,7 +3635,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
     rb_iseq_bbv_t bbv;
     rb_iseq_t *iseq;
-    int debug_p = rb_sir_debug_p();
+    int debug_level = rb_sir_debug_level();
 
     if (cme != NULL) {
         recv = *caller_cfp->sp;
@@ -3640,7 +3647,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             const int opt = argc - lead_num;
 
             SIR_GEN_ASSERT(0 <= opt && opt <= body->param.opt_num);
-            if (debug_p) {
+            if (debug_level > 0) {
                 fprintf(stderr,
                         "--> Changing sir_make_send to sir_iseq_send_without_block: argc=%d",
                         argc);
@@ -3671,7 +3678,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             if (vm_cc_attr_index(cc) <= 0)
                 return TRUE; /* do nothing -- no attr index yet */
             SIR_GEN_ASSERT(vm_cc_attr_index(cc) > 0);
-            if (debug_p)
+            if (debug_level > 0)
                 fprintf(stderr, "--> Changing sir_make_send to sir_send_ivget\n");
             change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_ivget));
             call_pc[1] = (VALUE)cc->klass;
@@ -3683,7 +3690,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             rb_check_arity(argc, 1, 1);
             if (vm_cc_attr_index(cc) <= 0)
                 return TRUE; /* do nothing -- no attr index yet */
-            if (debug_p)
+            if (debug_level > 0)
                 fprintf(stderr, "--> Changing sir_make_send to sir_send_ivset\n");
             change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_ivset));
             call_pc[1] = (VALUE)cc->klass;
@@ -3707,7 +3714,7 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
     int argc = vm_ci_argc(ci);
     const struct rb_callcache *cc = cd->cc;
     const rb_callable_method_entry_t *cme = vm_cc_cme(cc);
-    int debug_p = rb_sir_debug_p();
+    int debug_level = rb_sir_debug_level();
     MAYBE_UNUSED (const rb_method_cfunc_t *cfunc);
 
     if (cme == NULL || cme->def->type != VM_METHOD_TYPE_CFUNC) return FALSE;
@@ -3715,7 +3722,7 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
 #if 0
     if (argc != cfunc->argc) return FALSE;
 #endif
-    if (debug_p) {
+    if (debug_level > 0) {
         fprintf(stderr, "--> Changing sir_make_send to sir_cfunc_send: argc=%d\n", argc);
     }
     /* Change sir_make_send(cd,send_info) to sir_cfunc_send(si, iseq) */
@@ -3739,7 +3746,7 @@ rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_
     if (si->block_iseq == NULL) no_opt_p = !change_send_without_block(ec, caller_cfp, cd, si);
     if (no_opt_p) no_opt_p = !change_to_cfunc_send(call_pc, (rb_iseq_t *)caller_cfp->iseq);
     if (no_opt_p) {
-        if (rb_sir_debug_p()) {
+        if (rb_sir_debug_level() > 0) {
             fprintf(stderr,
                     "--> Changing sir_make_send to sir_send_without_block: argc=%d",
                     vm_ci_argc(cd->ci));
@@ -3761,13 +3768,14 @@ rb_sir_change_bbv(rb_iseq_bbv_t bbv)
 #ifdef HAVE_LIBMIR
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
-
-    if (rb_mirjit_debug_p()) {
+    int debug_level = rb_mirjit_debug_level();
+    if (debug_level > 0) {
         fprintf(stderr, "\n## JITting BBV%d 0x%llx:", bbv->num, (unsigned long long)bbv);
         print_attrs(bbv->attrs);
         print_iseq_title(iseq);
         fprintf(stderr, "\n");
-        print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
+        if (debug_level > 1)
+            print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
     }
     RB_VM_LOCK_ENTER();
     rb_jit_bbv(bbv);
@@ -3789,7 +3797,7 @@ rb_sir_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_c
     insn_id = rb_vm_insn_addr2opcode(pc);
     if (insn_id >= VM_INSTRUCTION_SIZE / 2) { /* can be become non-trace in another ractor */
         new_insn_id = insn_id - VM_INSTRUCTION_SIZE / 2;
-        if (rb_sir_debug_p()) {
+        if (rb_sir_debug_level() > 0) {
             fprintf(stderr, "--> Changing %04d %s to %s\n", (int)(reg_cfp->pc - body->bbv_code),
                     insn_name(insn_id), insn_name(new_insn_id));
         }
@@ -3978,7 +3986,7 @@ rb_sir_gen_finish(void) {
                         profile[i].count, rb_sir_cancel[profile[i].insn], insn_name(profile[i].insn));
         }
 #endif
-        if (rb_sir_debug_p()) {
+        if (rb_sir_debug_level() > 2) {
             for (size_t i = 0; i < VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
                 rb_iseq_bbv_t bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
                 if (bbv == NULL || (bbv->in_edges == NULL && bbv->out_edges == NULL)) continue;

@@ -15,7 +15,7 @@ int
 rb_sir_enabled_p(void) { return sir_options.sir_enabled_p; }
 
 int
-rb_sir_debug_p(void) { return sir_options.debug_p; }
+rb_sir_debug_level(void) { return sir_options.debug_level; }
 
 void
 rb_sir_init(struct rb_sir_options *options) {

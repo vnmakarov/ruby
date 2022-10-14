@@ -41,14 +41,14 @@ struct rb_sir_options {
     int sir_enabled_p; /* true means generation and execution of SIR BBV */
     /* maximal versions for SIR BB, one version is always reserved for unknown incoming attrs: */
     unsigned max_bb_versions;
-    int debug_p;
+    int debug_level; /* 0 - no debugging */
     int exec_stats_p; /* print SIR execution stats if collecting stats is enabled */
 };
 
 MJIT_FUNC_EXPORTED const void * const *sir_dispatch_table;
 
 MJIT_FUNC_EXPORTED int rb_sir_enabled_p(void);
-int rb_sir_debug_p(void);
+int rb_sir_debug_level(void);
 void rb_sir_init(struct rb_sir_options *options);
 void rb_sir_finish(void);
 /* sir_gen.c: */
@@ -65,7 +65,7 @@ VALUE *rb_sir_gen_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int bran
 VALUE *rb_sir_gen_bbv_key(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv, int case_offset, VALUE key);
 void rb_sir_bop_redefined(enum ruby_basic_operators bop, int klass_flag);
 MJIT_FUNC_EXPORTED int rb_sir_singleton_method_defined(VALUE old_class, ID id);
-void rb_sir_cme_invalidate(rb_callable_method_entry_t *cme);
+void rb_sir_cme_invalidate(const rb_callable_method_entry_t *cme);
 void rb_sir_trace_invalidate(void);
 VALUE *rb_sir_specialize_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv);
 void rb_sir_change_getivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic, VALUE val);

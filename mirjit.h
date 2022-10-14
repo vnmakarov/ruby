@@ -30,11 +30,11 @@ void rb_rejit_bbv(struct rb_iseq_bbv *bbv);
 
 struct rb_mirjit_options {
     int mirjit_enabled_p; /* true means generation and execution of MIRJIT BBV */
-    int debug_p;
+    int debug_level; /* 0 - no debugging */
     int exec_stats_p; /* print MIRJIT execution stats if collecting stats is enabled */
 };
 
-int rb_mirjit_debug_p(void);
+int rb_mirjit_debug_level(void);
 void rb_mirjit_set_pc_dispatch_addr(VALUE *pc, void *addr);
 void rb_jit_bbv(struct rb_iseq_bbv *bbv);
 void rb_mirjit_init(struct rb_mirjit_options *options);
