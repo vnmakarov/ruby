@@ -1884,8 +1884,8 @@ fp_num_p(VALUE val) {
     return FLONUM_P(val) || (!RB_SPECIAL_CONST_P(val) && RBASIC_CLASS(val) == rb_cFloat);
 }
 
-static void get_insn2_attrs(rb_iseq_t *iseq, int nops, int imm_p, int imm2_p, VALUE *operands,
-                            int stack_size, int *op1_attr, int *op2_attr) {
+static void get_insn2_attrs(rb_iseq_t *iseq, int nops, int imm_p, int imm2_p, int vs_p,
+                            VALUE *operands, int stack_size, int *op1_attr, int *op2_attr) {
     if (nops == 0) {
         *op1_attr = get_attr(get_temp_num(iseq, stack_size - 1));
         *op2_attr = get_attr(get_temp_num(iseq, stack_size - 2));
@@ -1897,14 +1897,14 @@ static void get_insn2_attrs(rb_iseq_t *iseq, int nops, int imm_p, int imm2_p, VA
                          : !SPECIAL_CONST_P(operands[0]) && RBASIC_CLASS(operands[0]) == rb_cArray
                          ? ATTR_ARRAY : ATTR_UNKNOWN);
             *op2_attr = get_attr(get_temp_num(iseq, stack_size - 1));
-            if (imm2_p) {
-                int temp = *op1_attr;
-                *op1_attr = *op2_attr;
-                *op2_attr = temp;
-            }
         } else { /* op attrs are interchangable here for result type calculation */
             *op1_attr = get_attr(get_lvar_num(iseq, operands[0]));
             *op2_attr = get_attr(get_temp_num(iseq, stack_size - 1));
+        }
+        if (imm2_p || (!imm_p && !vs_p)) {
+            int temp = *op1_attr;
+            *op1_attr = *op2_attr;
+            *op2_attr = temp;
         }
     } else {
         if (imm_p) {
@@ -2325,7 +2325,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             attr = inspect_attr1;
             new_insn_id = get_sir_speculative_insn2_id(insn_id, attr, bbv->used_bops, &exch_p);
             if (new_insn_id == BIN(nop)) goto again;
-            get_insn2_attrs(iseq, nops, imm_p, imm2_p, operands, stack_size, &op1_attr, &op2_attr);
+            get_insn2_attrs(iseq, nops, imm_p, imm2_p, vs_p, operands, stack_size, &op1_attr, &op2_attr);
             op1_attr = get_res_attr(FALSE, imm_p, imm2_p, op1_attr, op2_attr, &flag);
             if (get_sir_spec_insn2_id(insn_id, op1_attr, bbv->used_bops, flag, &exch2_p) != BIN(nop))
                 goto again; /* process for non-speculative type specialization */
@@ -2483,7 +2483,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_GEN_ASSERT(!imm_p || !imm2_p);
             nops = len - (neq_p ? 3 : 2); /* insn operands w/o cd(s) */
             SIR_GEN_ASSERT(nops <= 2 && stack_size + nops >= 2);
-            get_insn2_attrs(iseq, nops, imm_p, imm2_p, operands, stack_size, &op1_attr, &op2_attr);
+            get_insn2_attrs(iseq, nops, imm_p, imm2_p, vs_p, operands, stack_size, &op1_attr, &op2_attr);
             attr = get_res_attr(aref_p, imm_p, imm2_p, op1_attr, op2_attr, &flag);
             new_insn_id = get_sir_spec_insn2_id(insn_id, attr, bbv->used_bops, flag, &exch_p);
             if (new_insn_id == BIN(nop)) {
