@@ -1897,6 +1897,11 @@ static void get_insn2_attrs(rb_iseq_t *iseq, int nops, int imm_p, int imm2_p, VA
                          : !SPECIAL_CONST_P(operands[0]) && RBASIC_CLASS(operands[0]) == rb_cArray
                          ? ATTR_ARRAY : ATTR_UNKNOWN);
             *op2_attr = get_attr(get_temp_num(iseq, stack_size - 1));
+            if (imm2_p) {
+                int temp = *op1_attr;
+                *op1_attr = *op2_attr;
+                *op2_attr = temp;
+            }
         } else { /* op attrs are interchangable here for result type calculation */
             *op1_attr = get_attr(get_lvar_num(iseq, operands[0]));
             *op2_attr = get_attr(get_temp_num(iseq, stack_size - 1));
