@@ -49,6 +49,7 @@ MJIT_FUNC_EXPORTED const void * const *sir_dispatch_table;
 
 MJIT_FUNC_EXPORTED int rb_sir_enabled_p(void);
 int rb_sir_debug_level(void);
+void rb_sir_set_debug_level(int level);
 void rb_sir_init(struct rb_sir_options *options);
 void rb_sir_finish(void);
 /* sir_gen.c: */

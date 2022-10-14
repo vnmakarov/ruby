@@ -18,6 +18,9 @@ int
 rb_sir_debug_level(void) { return sir_options.debug_level; }
 
 void
+rb_sir_set_debug_level(int level) { sir_options.debug_level = level; }
+
+void
 rb_sir_init(struct rb_sir_options *options) {
     sir_options = *options;
     rb_sir_gen_init();

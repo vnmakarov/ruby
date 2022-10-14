@@ -1727,8 +1727,11 @@ ruby_opt_init(ruby_cmdline_options_t *opt)
     rb_warning_category_update(opt->warn.mask, opt->warn.set);
 
     Init_ext(); /* load statically linked extensions before rubygems */
+    int debug_level = rb_sir_debug_level();
+    if (debug_level <= 3) rb_sir_set_debug_level(0);
     rb_call_builtin_inits();
     ruby_init_prelude();
+    rb_sir_set_debug_level(debug_level);
 
     ruby_set_script_name(opt->script_name);
     require_libraries(&opt->req_list);
