@@ -1381,6 +1381,17 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 VARR_SET(int, stack, stack_size - i - 1, -1); /* flag of unknown insn */
             add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
             break;
+        case BIN(topn):
+            n = (int)operands[0];
+            stack_size = (int)VARR_LENGTH(int, stack);
+            SIR_GEN_ASSERT(stack_size > n);
+            for (i = 0; i < n; i++) {
+                VARR_SET(int, stack, stack_size - 1 - i, -1); /* flag of unknown insn */
+            }
+            VARR_PUSH(int, stack, -1); /* flag of unknown insn */
+            VARR_PUSH(char, operands_changed_p, FALSE);
+            add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
+            break;
         case BIN(dup):
             n = 1;
             goto dup;
