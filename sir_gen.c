@@ -901,7 +901,7 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound, const char *prefix)
 
     for (i = start;;) {
 	insn_id = rb_mirjit_insn_decode(&code[i]);
-        if (insn_id == BIN(sir_gen_bbv) || insn_id == BIN(sir_gen_bbv2)) {
+        if (insn_id == BIN(sir_gen_bbv) || insn_id == BIN(sir_gen_bbv2) || insn_id == BIN(sir_gen_bbv_key)) {
             rb_iseq_bbv_t bbv = (rb_iseq_bbv_t)code[i + 1];
             fprintf(stderr, "%s  # %04d: %s(BBV%d 0x%llx, %s)", prefix,
                     i, insn_name(insn_id), bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
