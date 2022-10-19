@@ -162,10 +162,10 @@ static inline SIR_UNUSED void VARR_OP(T, create)(VARR(T) **varr_, size_t size_) 
     VARR(T) *va;						       	       \
     if (size_ == 0)							       \
         size_ = VARR_DEFAULT_SIZE;					       \
-    *varr_ = va = (VARR(T) *) xmalloc(sizeof(VARR(T)));			       \
+    *varr_ = va = (VARR(T) *)SIR_ALLOC_N(VARR(T), 1);                  	       \
     if (va == NULL) varr_malloc_failure();				       \
     va->els_num = 0; va->size = size_;					       \
-    va->varr = (T *) xmalloc(size_ * sizeof(T));			       \
+    va->varr = (T *)SIR_ALLOC_N(T, size_);                    	       	       \
     if (va->varr == NULL) varr_malloc_failure();			       \
 }                                                                              \
                                                                                \
@@ -214,7 +214,7 @@ static inline SIR_UNUSED void VARR_OP(T,expand)(VARR(T) *varr_, size_t size_) {	
     VARR_ASSERT(varr_  && varr_->varr, "expand", T);			       \
     if (varr_->size < size_) {						       \
 	size_ += size_ / 2;						       \
-	varr_->varr = (T *) xrealloc(varr_->varr, sizeof(T) * size_);	       \
+	SIR_REALLOC_N(varr_->varr, T, size_);                 	       	       \
         if (varr_->varr == NULL) varr_malloc_failure();			       \
 	varr_->size = size_;						       \
     }                                                                          \
