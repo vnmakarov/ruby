@@ -696,6 +696,8 @@ get_send_info(rb_iseq_bbv_t caller_bbv, rb_iseq_t *block_iseq, char *attrs,
     si->argc = argc;
     si->mid = mid;
     VARR_PUSH(send_info_t, iseq_send_info, si);
+    RB_OBJ_WRITTEN(caller_bbv->iseq, Qundef, klass);
+    RB_OBJ_WRITTEN(caller_bbv->iseq, Qundef, cme);
     return si;
 }
 
@@ -1705,11 +1707,11 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         data.iseq = iseq;
         data.map = rb_hash_new();
         RHASH_TBL_RAW(data.map)->type = &cdhash_type;
+        RB_OBJ_WRITTEN(iseq, Qundef, data.map);
         data.env_p = bbv->env_p;
         data.case_start = last_sir_ind;
         data.origin_case_start = curr_orig_insn_pos - insn_len(BIN(opt_case_dispatch));
         rb_hash_foreach(operands[0], set_case_hash_el, (VALUE)&data);
-        RB_OBJ_WRITTEN(iseq, Qundef, data.map);
         VARR_SET(VALUE, bbv_encoded, last_sir_ind + 1, data.map);
     }
     add_insn(last_pos, BIN(nop), 0); /* to get position right after the last insn */
@@ -2966,6 +2968,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             }
             SIR_GEN_ASSERT(len == 3);
             new_operands[0] = rb_hash_new(); /* to duplicate */
+            RHASH_TBL_RAW(new_operands[0])->type = &cdhash_type;
+            RB_OBJ_WRITTEN(iseq, Qundef, new_operands[0]);
             new_operands[1] = operands[1];
             add_spec_insn_arr(orig_pos, insn_id, 2, new_operands);
             goto stack_update;
@@ -3672,6 +3676,8 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             call_pc[1] = (VALUE)si;
             call_pc[2] = (VALUE)bbv;
             add_call_elem(si->caller_bbv, vm_cc_cme(cd->cc));
+            RB_OBJ_WRITTEN(caller_cfp->iseq, Qundef, cme);
+            RB_OBJ_WRITTEN(caller_cfp->iseq, Qundef, si->klass);
         } else if (cme->def->type == VM_METHOD_TYPE_IVAR
                    && (vm_ci_flag(ci) & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT)) == 0
                    && RB_TYPE_P(recv, T_OBJECT)
@@ -3685,6 +3691,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_ivget));
             call_pc[1] = (VALUE)cc->klass;
             call_pc[2] = (VALUE)vm_cc_attr_index(cc) - 1;
+            RB_OBJ_WRITTEN(caller_cfp->iseq, Qundef, cc->klass);
         } else if (cme->def->type == VM_METHOD_TYPE_ATTRSET
                    && (vm_ci_flag(ci) & (VM_CALL_ARGS_SPLAT | VM_CALL_KW_SPLAT | VM_CALL_KWARG)) == 0
                    && RB_TYPE_P(recv, T_OBJECT)
@@ -3697,6 +3704,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             change_insn(caller_cfp->iseq, call_pc, BIN(sir_send_ivset));
             call_pc[1] = (VALUE)cc->klass;
             call_pc[2] = (VALUE)vm_cc_attr_index(cc) - 1;
+            RB_OBJ_WRITTEN(caller_cfp->iseq, Qundef, cc->klass);
         } else {
             return FALSE;
         }
@@ -3734,6 +3742,8 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
     call_pc[1] = (VALUE)si;
     call_pc[2] = (VALUE)si->block_iseq;
     add_call_elem(si->caller_bbv, cme);
+    RB_OBJ_WRITTEN(caller_iseq, Qundef, cme);
+    RB_OBJ_WRITTEN(caller_iseq, Qundef, si->klass);
     return TRUE;
 }
 
