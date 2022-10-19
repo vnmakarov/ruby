@@ -1056,8 +1056,10 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
     SIR_GEN_ASSERT(make_bbv_area_start == 0);
     SIR_GEN_ASSERT(len == (int)VARR_LENGTH(int, pos_map));
     memcpy(&body->bbv_code[make_bbv_area_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
+    VARR_TRUNC(VALUE, bbv_encoded, 0);
     memcpy(&body->bbv_pos_map[make_bbv_area_start],
            VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
+    VARR_TRUNC(int, pos_map, 0);
     body->iseq_code = body->iseq_start_pc = &body->bbv_code[make_bbv_area_start];
     bbv_encode(&body->bbv_code[make_bbv_area_start], len);
     int debug_level = rb_sir_debug_level();
@@ -1720,7 +1722,9 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     bbv->bbv_bound = bbv->bbv_start + len;
     SIR_GEN_ASSERT(len == (int)VARR_LENGTH(int, pos_map));
     memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
+    VARR_TRUNC(VALUE, bbv_encoded, 0);
     memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
+    VARR_TRUNC(int, pos_map, 0);
     if (insn_id != BIN(leave) && insn_id != BIN(throw) && insn_id != BIN(opt_case_dispatch)) {
         insn_id = (enum ruby_vminsn_type)body->bbv_code[bbv->bbv_start + last_sir_ind];
         offset = last_sir_ind + insn_len(insn_id); /* offset of the branch end from zero */
@@ -3053,8 +3057,10 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     bbv->bbv_bound = bbv->bbv_start + len;
     bbv_encode(VARR_ADDR(VALUE, bbv_encoded), len);
     memcpy(&body->bbv_code[bbv->bbv_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
+    VARR_TRUNC(VALUE, bbv_encoded, 0);
     memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map),
            VARR_LENGTH(int, pos_map) * sizeof(int));
+    VARR_TRUNC(int, pos_map, 0);
     if (body->send_info == NULL && VARR_LENGTH(send_info_t, iseq_send_info) != 0) {
         SIR_GEN_ASSERT(!profile_p);
         VARR_PUSH(send_info_t, iseq_send_info, NULL); /* end marker */
@@ -3906,6 +3912,7 @@ void
 rb_sir_iseq_data_mark(const struct rb_iseq_constant_body *body) { /* process bbv specific data but bbv_code */
     struct rb_sir_call_elem *call_elem;
 
+    SIR_GEN_ASSERT(VARR_LENGTH(VALUE, bbv_encoded) == 0);
     SIR_GEN_ASSERT(body != NULL);
     for (int n = 0; n < body->n_bbvs; n++) {
         for (rb_iseq_bbv_t curr = body->bbvs[n]; curr != NULL; curr = curr->next_bbv) {
