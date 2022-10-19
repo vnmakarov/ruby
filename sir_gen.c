@@ -2412,7 +2412,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         dup:
             SIR_GEN_ASSERT(stack_size >= n);
             for (i = 0; i < n; i++)
-                setup_attr(get_temp_num(iseq, stack_size + i), get_attr(get_temp_num(iseq, stack_size - 1 - i)));
+                setup_attr(get_temp_num(iseq, stack_size + i), get_attr(get_temp_num(iseq, stack_size - n + i)));
             stack_size += n;
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
             break;
