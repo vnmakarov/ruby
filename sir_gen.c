@@ -94,6 +94,8 @@ get_sir_insn2_id(enum ruby_vminsn_type id, int local2_p, VALUE *val2, int local3
     SIR_INSN_ID_CASE(gt)
     SIR_INSN_ID_CASE(le)
     SIR_INSN_ID_CASE(ge)
+    SIR_INSN_ID_CASE(or)
+    SIR_INSN_ID_CASE(and)
     SIR_INSN_ID_CASE(aref)
     default: return BIN(nop);
     }
