@@ -2411,6 +2411,13 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             setup_attr(get_temp_num(iseq, stack_size - n - 1), get_attr(get_temp_num(iseq, stack_size - 1)));
             add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
             break;
+        case BIN(topn):
+            n = (int)operands[0];
+            SIR_GEN_ASSERT(stack_size > n);
+            setup_attr(get_temp_num(iseq, stack_size), get_attr(get_temp_num(iseq, stack_size - n - 1)));
+            stack_size++;
+            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            break;
         case BIN(dup):
             n = 1;
             goto dup;
