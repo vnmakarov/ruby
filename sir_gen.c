@@ -799,11 +799,11 @@ update_labeled(int pos) {
 static int
 mark_case_hash_el(VALUE key, VALUE val, VALUE ptr)
 {
-    int *pos = (int *)ptr;
+    int pos = *(int *)ptr;
 
-    *pos += (OFFSET)val;
-    SIR_GEN_ASSERT(*pos >= 0);
-    update_labeled(*pos);
+    pos += (OFFSET)val;
+    SIR_GEN_ASSERT(pos >= 0);
+    update_labeled(pos);
     return ST_CONTINUE;
 }
 
