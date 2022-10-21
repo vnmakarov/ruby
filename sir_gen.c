@@ -1656,8 +1656,11 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             if (insn_id != BIN(sir_gen_bbv) && insn_id != BIN(sir_gen_bbv2))
                 add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
         stack_update:
-            if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)) {
+            if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block)
+                || insn_id == BIN(invokesuper)) {
                 inc = (int)sp_inc_of_sendish(((CALL_DATA)operands[0])->ci);
+            } else if (insn_id == BIN(invokeblock)) {
+                inc = (int)sp_inc_of_invokeblock(((CALL_DATA)operands[0])->ci);
             } else {
                 inc = insn_stack_increase(insn_id, operands);
             }
@@ -3049,6 +3052,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)
                 || insn_id == BIN(sir_send_without_block)) {
                 inc = (int)sp_inc_of_sendish(((CALL_DATA)operands[0])->ci);
+            } else if (insn_id == BIN(invokeblock)) {
+                inc = (int)sp_inc_of_invokeblock(((CALL_DATA)operands[0])->ci);
             } else if (insn_id == BIN(sir_iseq_send_without_block) || insn_id == BIN(sir_cfunc_send)) {
                 inc = (int)sp_inc_of_sendinfo((struct rb_sir_send_info *)operands[0]);
             } else {
