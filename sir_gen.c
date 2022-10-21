@@ -3361,7 +3361,6 @@ static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv, const rb_callable_met
         remove_call_elem_from_bbv_set(call_elem);
         SIR_FREE((void *)call_elem);
     }
-    bbv->call_elems = NULL;
 }
 
 static struct rb_sir_call_elem *
@@ -3432,6 +3431,7 @@ static const struct st_hash_type call_elem_hashtype = {
 
 static void
 init_call_elems(void) {
+    SIR_GEN_ASSERT(sizeof(struct rb_sir_call_elem *) == sizeof(st_data_t));
     cme_call_elems_tab = rb_st_init_numtable();
     call_elems_tab = rb_st_init_table(&call_elem_hashtype);
 }
