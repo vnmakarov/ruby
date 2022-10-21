@@ -3360,11 +3360,10 @@ static void remove_call_elem_from_cme_set(struct rb_sir_call_elem *elem) {
     }
 }
 
-static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv, const rb_callable_method_entry_t *except_cme) {
+static void delete_bbv_call_elems(struct rb_iseq_bbv *bbv) {
     struct rb_sir_call_elem *call_elem, *next_call_elem;
     for (call_elem = bbv->call_elems; call_elem != NULL; call_elem = next_call_elem) {
         next_call_elem = call_elem->next_bbv_call_elem;
-        if (call_elem->cme == except_cme) continue;
         remove_call_elem_from_cme_set(call_elem);
         remove_call_elem_from_bbv_set(call_elem);
         SIR_FREE((void *)call_elem);
@@ -3468,7 +3467,7 @@ set_iseq_start(rb_iseq_bbv_t bbv) {
 }
 
 static void
-invalidate_bbv_code(rb_iseq_bbv_t bbv, const rb_callable_method_entry_t *except_cme) {
+invalidate_bbv_code(rb_iseq_bbv_t bbv) {
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
     int enter_bbv_p;
@@ -3499,7 +3498,7 @@ invalidate_bbv_code(rb_iseq_bbv_t bbv, const rb_callable_method_entry_t *except_
     remove_out_edges(bbv);
     redirect_src_bbv_dests(bbv, TRUE); /* redirect branches in src bbvs to corresponding sir_gen_bbvxxx */
     bbv->bbv_start = -1; /* mark bbv as needed for new code */
-    delete_bbv_call_elems(bbv, except_cme);
+    delete_bbv_call_elems(bbv);
     if (!enter_bbv_p) {
         memset(bbv->used_bops, 0, sizeof(bbv->used_bops));
     } else {
@@ -3523,7 +3522,7 @@ rb_sir_bop_redefined(enum ruby_basic_operators bop, int klass_flag) { // ???
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
         bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
         if (bbv != NULL && (bbv->used_bops[bop] & klass_flag) != 0)
-            invalidate_bbv_code(bbv, NULL);
+            invalidate_bbv_code(bbv);
     }
     RB_VM_LOCK_LEAVE();
 }
@@ -3556,7 +3555,7 @@ rb_sir_cme_invalidate(const rb_callable_method_entry_t *cme) {
     rb_vm_barrier (); /* the change can be non-atomic */
     for (call_elem = find_cme_call_elem_list_head(cme); call_elem != NULL; call_elem = next_call_elem) {
         next_call_elem = call_elem->next_cme_call_elem;
-        invalidate_bbv_code(call_elem->bbv, cme);
+        invalidate_bbv_code(call_elem->bbv);
     }
     RB_VM_LOCK_LEAVE();
 }
@@ -3572,7 +3571,7 @@ rb_sir_trace_invalidate(void) {
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
         bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
         if (bbv == NULL || bbv->head_bbv == NULL) continue;
-        invalidate_bbv_code(bbv, NULL);
+        invalidate_bbv_code(bbv);
     }
     RB_VM_LOCK_LEAVE();
 }
@@ -3899,7 +3898,7 @@ rb_sir_iseq_free(struct rb_iseq_constant_body *body) {
             next_bbv = curr_bbv->next_bbv;
             bbv_num = curr_bbv->num;
             /* ??? free attrs in sir_make_send */
-            delete_bbv_call_elems(curr_bbv, NULL);
+            delete_bbv_call_elems(curr_bbv);
             SIR_FREE((void *)curr_bbv);
             VARR_SET(rb_iseq_bbv_t, all_bbvs, bbv_num, NULL);
         }
