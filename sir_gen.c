@@ -1897,10 +1897,10 @@ VALUE (*sir_range_each_func)(VALUE);
 extern bool rb_simple_iseq_p(const rb_iseq_t *iseq);
 
 static void
-update_attrs(rb_iseq_t *block_iseq) {
+update_attrs(rb_iseq_t *iseq, rb_iseq_t *block_iseq) {
     if (block_iseq == NULL || block_iseq->body->parent_var_changed_p == NULL)
         return;
-    for (size_t i = 0; i < VARR_LENGTH(char, attrs); i++)
+    for (size_t i = 0; i < VARR_LENGTH(char, attrs) && i < iseq->body->local_table_size; i++)
         if (VARR_GET(char, attrs, i) != ATTR_UNKNOWN && block_iseq->body->parent_var_changed_p[i]) {
             VARR_SET(char, attrs, i, ATTR_UNKNOWN);
             if (rb_sir_debug_level() >= 1)
@@ -2805,7 +2805,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             unsigned int flags = vm_ci_flag(cd->ci);
 
             SIR_GEN_ASSERT(len == 3);
-            update_attrs((rb_iseq_t *)operands[1]);
+            update_attrs(iseq, (rb_iseq_t *)operands[1]);
             if (profile_p || IS_ARGS_SPLAT(cd->ci) || IS_ARGS_KW_OR_KW_SPLAT(cd->ci)
                 || (flags & VM_CALL_TAILCALL) != 0 || (flags & VM_CALL_ARGS_BLOCKARG) != 0) goto rest_cases;
             new_operands[0] = operands[0];
@@ -2815,7 +2815,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             goto stack_update;
         }
         case BIN(invokesuper): {
-            update_attrs((rb_iseq_t *)operands[1]);
+            update_attrs(iseq, (rb_iseq_t *)operands[1]);
             goto rest_cases;
         }
         case BIN(sir_igetivar):
@@ -2837,7 +2837,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             struct rb_sir_send_info *si = (struct rb_sir_send_info *)operands[1];
 
             SIR_GEN_ASSERT(profile_p);
-            update_attrs(si->block_iseq);
+            update_attrs(iseq, si->block_iseq);
             /* sir_make_send is not changed if we call cfunc and leave it by a throw
                (e.g. by break in a nested block) -- specialize it here: */
             if (change_to_cfunc_send(&body->bbv_code[curr_sir_insn_pos], iseq)) goto again;
@@ -2856,7 +2856,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             VALUE (*cont_func)(VALUE, VALUE);
 
             if (block_iseq == NULL) goto rest_cases;
-            update_attrs(block_iseq);
+            update_attrs(iseq, block_iseq);
             SIR_GEN_ASSERT(cme != NULL && cme->def->type == VM_METHOD_TYPE_CFUNC && profile_p);
             if (!rb_simple_iseq_p(block_iseq)) goto rest_cases;
             cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
@@ -2899,7 +2899,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         case BIN(sir_iter_body): {
             SIR_GEN_ASSERT(profile_p);
             body_bbv = (rb_iseq_bbv_t)operands[1];
-            update_attrs(body_bbv->iseq);
+            update_attrs(iseq, body_bbv->iseq);
             goto rest_cases;
         }
         case BIN(sir_iseq_send_without_block): {
