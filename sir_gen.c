@@ -3949,7 +3949,9 @@ rb_sir_iseq_data_mark(const struct rb_iseq_constant_body *body) { /* process bbv
     struct rb_sir_call_elem *call_elem;
 
     if (!rb_sir_enabled_p()) return;
+#if 0
     SIR_GEN_ASSERT(VARR_LENGTH(VALUE, bbv_encoded) == 0);
+#endif
     SIR_GEN_ASSERT(body != NULL);
     for (int n = 0; n < body->n_bbvs; n++) {
         for (rb_iseq_bbv_t curr = body->bbvs[n]; curr != NULL; curr = curr->next_bbv) {
