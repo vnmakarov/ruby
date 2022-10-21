@@ -14,6 +14,8 @@
 #include "vm_callinfo.h"
 #include "vm_sync.h"
 
+//#define RTL_ONLY
+
 #define YJIT_STATS 0 /* used in vm_insnhelper.h */
 #include "vm_insnhelper.h"
 
@@ -601,12 +603,17 @@ add_new_bbv(rb_iseq_t *iseq, rb_iseq_bbv_t head, int start, int bound, int env_p
 
 static rb_iseq_bbv_t
 get_bbv(rb_iseq_t *iseq, enum rb_bbv_type type, int index, int start, int env_p, int n_attrs, char *attrs) {
-    rb_iseq_bbv_t bbv, head_bbv = get_bbv_list_head(iseq, type, index, start);
+    rb_iseq_bbv_t head_bbv = get_bbv_list_head(iseq, type, index, start);
 
-    if ((bbv = find_bbv(head_bbv, env_p, n_attrs, attrs)) != NULL) return bbv;
+#ifdef RTL_ONLY
+    return head_bbv;
+#else
+    rb_iseq_bbv_t bbv = find_bbv(head_bbv, env_p, n_attrs, attrs);
+    if (bbv != NULL) return bbv;
     if (get_bbv_nums(head_bbv) >= MAX_BBV_NUM) return head_bbv;
     bbv = add_new_bbv(iseq, head_bbv, start, head_bbv->iseq_bound, env_p, n_attrs, attrs);
     return bbv;
+#endif
 }
 
 static rb_iseq_bbv_t
@@ -3842,6 +3849,9 @@ get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
     SIR_GEN_ASSERT(body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_free);
     int pos = (int)(pc - body->bbv_code);
     SIR_GEN_ASSERT(pos < body->bbv_code_free);
+#ifdef RTL_ONLY
+    if (body->bbv_pos_map[pos] >= 0) return pc;
+#endif
     int safe_pos = -body->bbv_pos_map[pos] - 1;
     SIR_GEN_ASSERT(safe_pos >= 0 && safe_pos < body->bbv_code_free);
     return body->bbv_code + safe_pos;
