@@ -93,7 +93,7 @@ SIR_FUNCS0(aref, vm_opt_aref)
 #define pushsvv(v1, v2, v3) do {INC_SP(2); TOPN(1) = v2; TOPN(0) = v3;} while (0)
 #define pushsiv(v1, v2, v3) do {INC_SP(2); TOPN(1) = v2; TOPN(0) = v3;} while (0)
 #define pushsvs(v1, v2, v3) do {INC_SP(1); TOPN(1) = v2; TOPN(0) = v3;} while (0)
-#define pushssv(v1, v2, v3) do {INC_SP(1); TOPN(0) = v2;} while (0)
+#define pushssv(v1, v2, v3) do {INC_SP(1); TOPN(0) = v3;} while (0)
 #define pushsis(v1, v2, v3) do {INC_SP(1); TOPN(1) = v2; TOPN(0) = v3;} while (0)
 #define pushsss(v1, v2, v3)
 
