@@ -1856,6 +1856,7 @@ redirect_src_bbv_dests(rb_iseq_bbv_t dst_bbv, int gen_p) {
             rb_hash_aset(body->bbv_code[branch_pos + 1] /* hash */,
                          body->bbv_code[bbv_gen_pos + 3], /* key */
                          INT2FIX(offset));
+            RB_OBJ_WRITTEN(iseq, Qundef, body->bbv_code[branch_pos + 1]);
         }
     }
 }
@@ -3021,6 +3022,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 new_operands[2] = operands[2];
                 rb_hash_aset(VARR_GET(VALUE, bbv_encoded, branch_pos + 1) /*hash*/,
                              operands[2] /*key*/, INT2FIX(offset));
+                RB_OBJ_WRITTEN(iseq, Qundef, VARR_GET(VALUE, bbv_encoded, branch_pos + 1));
             }
             disp = add_spec_insn_arr(orig_pos, insn_id, len - 1, new_operands);
             VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
