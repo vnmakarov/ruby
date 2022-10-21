@@ -1606,6 +1606,22 @@ sir_spec_getinlinecache
 }
 
 DEFINE_INSN
+sir_case_dispatch
+(CDHASH hash, OFFSET else_offset, OFFSET fallthrough_offset)
+(..., VALUE key)
+()
+// attr rb_snum_t sp_inc = -1;
+{
+    OFFSET dst = vm_case_dispatch(hash, else_offset, key);
+
+    if (dst) {
+	JUMP(dst);
+    } else {
+	JUMP(fallthrough_offset);
+    }
+}
+
+DEFINE_INSN
 sir_mov
 (EPDISP res, EPDISP op)
 ()
@@ -3108,30 +3124,16 @@ sir_rejit_bbv
 
 DEFINE_INSN
 sir_gen_bbv
-(lindex_t bbv, OFFSET origin)
+(lindex_t bbv, OFFSET origin, rb_num_t num)
 ()
 ()
 /* Same discussion as leave. */
 // attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
 /* It occurs only in bbv_encoded and can change sir insn addresses */
 {
-    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (int)origin, TRUE);
+    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (int)origin, (int)num);
     SET_PC(cont_pc);
     ABNORMAL_END_INSN(sir_gen_bbv); /* to skip pc increase */
-}
-
-DEFINE_INSN
-sir_gen_bbv2
-(lindex_t bbv, OFFSET origin)
-()
-()
-/* Same discussion as leave. */
-// attr bool leaf = leafness_of_check_ints; /* has rb_threadptr_execute_interrupts() */
-/* It occurs only in bbv_encoded and can change sir insn addresses */
-{
-    VALUE *cont_pc = rb_sir_gen_bbv(GET_CFP(), (struct rb_iseq_bbv *)bbv, (int)origin, FALSE);
-    SET_PC(cont_pc);
-    ABNORMAL_END_INSN(sir_gen_bbv2); /* to skip pc increase */
 }
 
 DEFINE_INSN

@@ -64,7 +64,7 @@
 %   when /\A\s+JUMP\((?<dest>[^)]+)\);\s+\z/
 %     dest = Regexp.last_match[:dest]
 %
-%     if insn.name == 'opt_case_dispatch' # special case... TODO: use another macro to avoid checking name
+%     if insn.name == 'opt_case_dispatch' || insn.name == 'sir_case_dispatch' # special case... TODO: use another macro to avoid checking name
         {
             struct case_dispatch_var arg;
             arg.f = f;
