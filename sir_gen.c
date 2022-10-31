@@ -138,9 +138,9 @@ get_sir_spec_insn2_id(enum ruby_vminsn_type id, int attr, short *bop_mask, int r
         }
     } else if (attr == ATTR_FIXNUM) {
         switch (id) {
-        SIR_SPEC_INSN_ID_CASE1(BOP_PLUS, redefined_flag, plus, iplus)
+        SIR_SPEC_INSN_ID_CASE2(BOP_PLUS, redefined_flag, plus, iplus, iplus)
         SIR_SPEC_INSN_ID_CASE1(BOP_MINUS, redefined_flag, minus, iminus)
-        SIR_SPEC_INSN_ID_CASE1(BOP_MULT, redefined_flag, mult, imult)
+        SIR_SPEC_INSN_ID_CASE2(BOP_MULT, redefined_flag, mult, imult, imult)
         SIR_SPEC_INSN_ID_CASE1(BOP_DIV, redefined_flag, div, idiv)
         SIR_SPEC_INSN_ID_CASE1(BOP_MOD, redefined_flag, mod, imod)
         SIR_SPEC_INSN_ID_CASE2(BOP_OR, redefined_flag, or, ior, ior)
