@@ -147,10 +147,10 @@ get_sir_spec_insn2_id(enum ruby_vminsn_type id, int attr, short *bop_mask, int r
         SIR_SPEC_INSN_ID_CASE2(BOP_AND, redefined_flag, and, iand, iand)
         SIR_SPEC_INSN_ID_CASE2(BOP_EQ, redefined_flag, eq, ieq, ieq)
         SIR_SPEC_INSN_ID_CASE2(BOP_NEQ, redefined_flag, neq, ineq, ineq)
-        SIR_SPEC_INSN_ID_CASE2(BOP_LT, redefined_flag, lt, ilt, ige)
-        SIR_SPEC_INSN_ID_CASE2(BOP_GT, redefined_flag, gt, igt, ile)
-        SIR_SPEC_INSN_ID_CASE2(BOP_LE, redefined_flag, le, ile, igt)
-        SIR_SPEC_INSN_ID_CASE2(BOP_GE, redefined_flag, ge, ige, ilt)
+        SIR_SPEC_INSN_ID_CASE2(BOP_LT, redefined_flag, lt, ilt, igt)
+        SIR_SPEC_INSN_ID_CASE2(BOP_GT, redefined_flag, gt, igt, ilt)
+        SIR_SPEC_INSN_ID_CASE2(BOP_LE, redefined_flag, le, ile, ige)
+        SIR_SPEC_INSN_ID_CASE2(BOP_GE, redefined_flag, ge, ige, ile)
         SIR_SPEC_INSN_ID_CASE0(BOP_AREF, ARRAY_REDEFINED_OP_FLAG, aref, iaref)
         default: return BIN(nop);
         }
