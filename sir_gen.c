@@ -2738,7 +2738,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         case BIN(sir_setlocal):
             SIR_GEN_ASSERT(stack_size > 0);
             attr = get_attr(get_temp_num(iseq, stack_size - 1));
-            if ((bbv->env_p && attr != ATTR_FIXNUM && attr != ATTR_BOOL)
+            if (bbv->env_p || (attr != ATTR_FIXNUM && attr != ATTR_BOOL)
                 || pos_in_catch_table_p(iseq, stack_insn_pos, TRUE)) {
                 SIR_GEN_ASSERT(insn_id != BIN(sir_setlocal));
                 setup_attr(get_lvar_num(iseq, operands[0]), attr); /* attr of temp */
