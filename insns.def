@@ -2757,32 +2757,6 @@ sir_getivar
     ;
 }
 
-/* Get value of instance variable id of self. */
-DEFINE_INSN
-sir_igetivar
-(lindex_t index, lindex_t class_serial)
-()
-(VALUE val)
-// attr bool leaf = false; /* has IVAR_ACCESSOR_SHOULD_BE_MAIN_RACTOR() */
-{
-    VALUE self = GET_SELF();
-    if (class_serial != RCLASS_SERIAL(RBASIC(self)->klass)) goto sir_igetivar_exit;
-    VM_ASSERT(RB_TYPE_P(self, T_OBJECT));
-    if (RB_FL_ANY_RAW(self, ROBJECT_EMBED)) {
-        if (UNLIKELY(index >= ROBJECT_EMBED_LEN_MAX)) goto sir_igetivar_exit;
-        val = ROBJECT(self)->as.ary[index];
-    } else {
-        if (UNLIKELY(index >= ROBJECT(self)->as.heap.numiv)) goto sir_igetivar_exit;
-        val = ROBJECT(self)->as.heap.ivptr[index];
-    }
-    if (FIXNUM_P(val)) goto sir_igetivar_end;
-  sir_igetivar_exit:
-    ABS_SAFE_JUMP(reg_cfp, reg_pc - 3);
-    ABNORMAL_END_INSN(sir_getivar);
-  sir_igetivar_end:
-    ;
-}
-
 /* Set value of instance variable id of self to val. */
 DEFINE_INSN
 sir_setivar
@@ -3218,7 +3192,7 @@ sir_make_getivar
 {
     VALUE self = GET_SELF();
     val = vm_getinstancevariable(GET_ISEQ(), self, id, ic);
-    rb_sir_change_getivar(self, GET_CFP(), ic, val);
+    rb_sir_change_getivar(self, GET_CFP(), ic);
 }
 
 /* Set value of instance variable id of self to val. */

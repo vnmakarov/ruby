@@ -2249,7 +2249,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     }
         // ??? general rtl insns
     case BIN(sir_getivar):
-    case BIN(sir_igetivar):
     case BIN(sir_setivar): {
 #if SIZEOF_SERIAL_T != SIZEOF_VALUE
         return FALSE;
@@ -2283,9 +2282,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             gen_write_barrier(buff, "val", "r");
         } else {
             O("  r = *pv;\n");
-            if (insn_id == BIN(sir_igetivar)) {
-                O("  if (!(r & 0x%x)) goto restart;\n", (int)RUBY_FIXNUM_FLAG); /* if (!FIXNUM_P(r)) goto restart */
-            }
             O("  *sp++= r;\n");
             O("  pc += %d;\n", insn_len(insn_id));
         }

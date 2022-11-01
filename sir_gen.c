@@ -2806,10 +2806,6 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             update_attrs(iseq, (rb_iseq_t *)operands[1]);
             goto rest_cases;
         }
-        case BIN(sir_igetivar):
-            SIR_GEN_ASSERT(profile_p);
-            attr = ATTR_FIXNUM;
-            goto add_and_push;
         case BIN(sir_send_without_block):
             SIR_GEN_ASSERT(profile_p);
             new_operands[0] = operands[0];
@@ -3603,17 +3599,15 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
 }
 
 void
-rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic, VALUE val) {
+rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
     VALUE *insn_pc = (VALUE *)cfp->pc - insn_len(BIN(sir_make_getivar));
-    int debug_level = rb_sir_debug_level(), fixnum_p = FIXNUM_P(val);
+    int debug_level = rb_sir_debug_level();
 
     if (RB_TYPE_P(self, T_OBJECT)) {
         RB_VM_LOCK_ENTER();
-        if (debug_level >= 1)
-            fprintf(stderr, "--> Changing sir_make_getivar to %4ld %s\n",
-                    insn_pc - cfp->iseq->body->bbv_code, fixnum_p ? "sir_igetivar" : "sir_getivar");
+        if (debug_level >= 1) fprintf(stderr, "--> Changing sir_make_getivar to %4ld sir_getivar\n");
         struct rb_iv_index_tbl_entry *entry = ((IVC)insn_pc[2])->entry;
-        *insn_pc = (VALUE)sir_dispatch_table[fixnum_p ? BIN(sir_igetivar) : BIN(sir_getivar)];
+        *insn_pc = (VALUE)sir_dispatch_table[BIN(sir_getivar)];
         insn_pc[1] = entry == NULL ? 0 : entry->index;
         insn_pc[2] = entry == NULL ? 0 : entry->class_serial;
         RB_VM_LOCK_LEAVE();

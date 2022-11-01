@@ -72,7 +72,7 @@ MJIT_FUNC_EXPORTED int rb_sir_singleton_method_defined(VALUE old_class, ID id);
 void rb_sir_cme_invalidate(const rb_callable_method_entry_t *cme);
 void rb_sir_trace_invalidate(void);
 VALUE *rb_sir_specialize_bbv(rb_control_frame_t *cfp, struct rb_iseq_bbv *bbv);
-void rb_sir_change_getivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic, VALUE val);
+void rb_sir_change_getivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic);
 void rb_sir_change_setivar(VALUE self, rb_control_frame_t *caller_cfp, IVC ic);
 void rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_cfp,
                         CALL_DATA cd, struct rb_sir_send_info *si);
