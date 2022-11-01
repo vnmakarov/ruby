@@ -3687,8 +3687,12 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
             else
                 bbv = get_bbv(iseq, RB_BBV_OPT, opt, (int)body->param.opt_table[opt], FALSE,
                               si->attrs == NULL ? 0 : (int)strlen(si->attrs) + 1, si->attrs);
-            if (bbv->bbv_start < 0)
-                gen_sir_bbv_code(iseq, bbv, 0);
+            if (bbv->bbv_start < 0) {
+                RB_VM_LOCK_ENTER();
+                if (bbv->bbv_start < 0)
+                    gen_sir_bbv_code(iseq, bbv, 0);
+                RB_VM_LOCK_LEAVE();
+            }
             SIR_GEN_ASSERT(bbv->iseq == iseq);
             ec->cfp->pc = &body->bbv_code[bbv->bbv_start]; /* to start with BBV code */
             /* Change sir_make_send(cd,send_info) to sir_iseq_send_without_block(si, bbv) */
