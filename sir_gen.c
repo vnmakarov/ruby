@@ -3168,11 +3168,11 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
 
 static void
 gen_sir_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
-    SIR_GEN_ASSERT(bbv->bbv_start < 0 && init_stack_size >= 0
+    SIR_GEN_ASSERT(init_stack_size >= 0
                    && (bbv->start_stack_size < 0 || bbv->start_stack_size == init_stack_size));
     bbv->start_stack_size = init_stack_size;
     if (bbv->head_bbv == NULL) { /* head bbv */
-        gen_sir_from_stack_insns(iseq, bbv);
+        if (bbv->bbv_start < 0) gen_sir_from_stack_insns(iseq, bbv);
         return;
     }
     if (bbv->head_bbv->bbv_start < 0) {
