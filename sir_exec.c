@@ -508,119 +508,171 @@ SIR_RES_CHECK_FUNCS2(sir_sfge, sir_check_res_nothing)
 
 #define CHECK_FUNC_NAME(insn_name) SIR_CONCAT(sir_input_check_, insn_name)
 
-#define SIR_CHECK_VFUNCS2(iname, fname)			                                        		\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svs))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sss))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvs))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vss))(VALUE v1, VALUE v2) { return fname(v1, v2); }
+#define SIR_CHECK_VFUNCS2(iname, fname, bop, flag)                                       			 \
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svv))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svs))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssv))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sss))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvv))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvs))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsv))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vss))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }
 
-#define SIR_CHECK_FUNCS2(iname, fname) SIR_CHECK_VFUNCS2(iname, fname)						 \
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, siv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sis))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, viv))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, VALUE v2) { return fname(v1, v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(VALUE v1, VALUE v2) { return fname(v1, v2); }
+#define SIR_CHECK_FUNCS2(iname, fname, bop, flag) SIR_CHECK_VFUNCS2(iname, fname, bop, flag) \
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svi))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, siv))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssi))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sis))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvi))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, viv))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(VALUE v1, VALUE v2) { return fname(v1, v2, bop, flag); }
 
-#define SIR_CHECK_IFUNCS2(iname, fname, fname1, fname2) SIR_CHECK_VFUNCS2(iname, fname) \
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svi))(VALUE v1, VALUE v2) { return fname1(v1); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, siv))(VALUE v1, VALUE v2) { return fname2(v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssi))(VALUE v1, VALUE v2) { return fname1(v1); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sis))(VALUE v1, VALUE v2) { return fname2(v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvi))(VALUE v1, VALUE v2) { return fname1(v1); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, viv))(VALUE v1, VALUE v2) { return fname2(v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, VALUE v2) { return fname1(v1); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(VALUE v1, VALUE v2) { return fname2(v2); }
+#define SIR_CHECK_IFUNCS2(iname, fname, fname1, fname2, bop, flag) SIR_CHECK_VFUNCS2(iname, fname, bop, flag) \
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svi))(VALUE v1, VALUE v2) { return fname1(v1, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, siv))(VALUE v1, VALUE v2) { return fname2(v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssi))(VALUE v1, VALUE v2) { return fname1(v1, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sis))(VALUE v1, VALUE v2) { return fname2(v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvi))(VALUE v1, VALUE v2) { return fname1(v1, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, viv))(VALUE v1, VALUE v2) { return fname2(v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, VALUE v2) { return fname1(v1, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(VALUE v1, VALUE v2) { return fname2(v2, bop, flag); }
 
-#define SIR_CHECK_DFUNCS2(iname, fname, fname1, fname2) SIR_CHECK_VFUNCS2(iname, fname) \
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svi))(VALUE v1, DBL v2) { return fname1(v1); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, siv))(DBL v1, VALUE v2) { return fname2(v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssi))(VALUE v1, DBL v2) { return fname1(v1); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sis))(DBL v1, VALUE v2) { return fname2(v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvi))(VALUE v1, DBL v2) { return fname1(v1); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, viv))(DBL v1, VALUE v2) { return fname2(v2); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, DBL v2) { return fname1(v1); }\
-    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(DBL v1, VALUE v2) { return fname2(v2); }
+#define SIR_CHECK_DFUNCS2(iname, fname, fname1, fname2, bop, flag) SIR_CHECK_VFUNCS2(iname, fname, bop, flag) \
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, svi))(VALUE v1, DBL v2) { return fname1(v1, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, siv))(DBL v1, VALUE v2) { return fname2(v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, ssi))(VALUE v1, DBL v2) { return fname1(v1, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, sis))(DBL v1, VALUE v2) { return fname2(v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vvi))(VALUE v1, DBL v2) { return fname1(v1, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, viv))(DBL v1, VALUE v2) { return fname2(v2, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vsi))(VALUE v1, DBL v2) { return fname1(v1, bop, flag); }\
+    static sir_inline VALUE CHECK_FUNC_NAME(SIR_CONCAT(iname, vis))(DBL v1, VALUE v2) { return fname2(v2, bop, flag); }
 
-static sir_inline int sir_check_zero(VALUE v1, VALUE v2) { return v2 == LONG2FIX(0); }
-static sir_inline int sir_check_nothing(VALUE v1, VALUE v2) { return FALSE; }
-static sir_inline int sir_check_nothing1(VALUE v) { return FALSE; }
-static sir_inline int sir_check_fix(VALUE v1, VALUE v2) { return !FIXNUM_2_P(v1, v2) || v2 == LONG2FIX(0); }
-static sir_inline int sir_check_fix1(VALUE v) { return !FIXNUM_P(v); }
-static sir_inline int sir_check_nonzero_fix(VALUE v1, VALUE v2) { return !FIXNUM_2_P(v1, v2) || v2 == LONG2FIX(0); }
-static sir_inline int sir_check_nonzero_fix1(VALUE v) { return !FIXNUM_P(v) || v == LONG2FIX(0); }
-static sir_inline int sir_fp_p(VALUE v) { return FLONUM_P(v) || (!SPECIAL_CONST_P(v) && RBASIC_CLASS(v) == rb_cFloat);}
-static sir_inline int sir_check_fp(VALUE v1, VALUE v2) { return !sir_fp_p(v1) || !sir_fp_p(v2); }
-static sir_inline int sir_check_fp1(VALUE v) { return !sir_fp_p(v); }
-static sir_inline int sir_check_aref1(VALUE v) { return SPECIAL_CONST_P(v) || RBASIC_CLASS(v) != rb_cArray; }
-static sir_inline int sir_check_aref(VALUE v1, VALUE v2) { return !FIXNUM_P(v2) || sir_check_aref1(v1); }
-static sir_inline int sir_check_ary_frozen(VALUE ary) { return RB_OBJ_FROZEN(ary); }
-static sir_inline int sir_check_ary_frozen2(VALUE ary, VALUE ind) { return RB_OBJ_FROZEN(ary); }
-static sir_inline int sir_check_aset1(VALUE v) {
-    return SPECIAL_CONST_P(v) || RBASIC_CLASS(v) != rb_cArray || sir_check_ary_frozen(v);
+static sir_inline int sir_check_fix_nothing(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(FIXNUM_2_P(v1, v2) && BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return FALSE;
 }
-static sir_inline int sir_check_aset(VALUE v1, VALUE v2) { return !FIXNUM_P(v2) || sir_check_aset1(v1); }
+static sir_inline int sir_check_fixnum_zero(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(FIXNUM_2_P(v1, v2) && BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return v2 == LONG2FIX(0);
+}
+static sir_inline int sir_check_nothing(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return FALSE;
+}
+static sir_inline int sir_check_nothing1(VALUE v, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return FALSE;
+}
+static sir_inline int sir_check_fix(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return !FIXNUM_2_P(v1, v2);
+}
+static sir_inline int sir_check_fix1(VALUE v, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return !FIXNUM_P(v);
+}
+static sir_inline int sir_check_nonzero_fix(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return !FIXNUM_2_P(v1, v2) || v2 == LONG2FIX(0);
+}
+static sir_inline int sir_check_nonzero_fix1(VALUE v, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return !FIXNUM_P(v) || v == LONG2FIX(0);
+}
+static sir_inline int sir_fp_p(VALUE v) { return FLONUM_P(v) || (!SPECIAL_CONST_P(v) && RBASIC_CLASS(v) == rb_cFloat);}
+static sir_inline int sir_check_fp(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return !sir_fp_p(v1) || !sir_fp_p(v2);
+}
+static sir_inline int sir_check_fp1(VALUE v, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return !sir_fp_p(v);
+}
+static sir_inline int sir_check_aref(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(!SPECIAL_CONST_P(v1) && RBASIC_CLASS(v1) == rb_cArray
+                    && FIXNUM_P(v2) && BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return FALSE;
+}
+static sir_inline int sir_check_ary(VALUE ary) {
+    return SPECIAL_CONST_P(ary) || RBASIC_CLASS(ary) != rb_cArray;
+}
+static sir_inline int sir_check_aref1(VALUE v, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return sir_check_ary(v);;
+}
+static sir_inline int sir_check_saref(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return !FIXNUM_P(v2) || sir_check_ary(v1);
+}
+static sir_inline int sir_check_aset(VALUE ary, VALUE ind, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(FIXNUM_P(ind) && !SPECIAL_CONST_P(ary) && RBASIC_CLASS(ary) == rb_cArray
+                    && BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return RB_OBJ_FROZEN(ary);
+}
+static sir_inline int sir_check_aset1(VALUE v, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return sir_check_ary(v) || RB_OBJ_FROZEN(v);
+}
+static sir_inline int sir_check_saset(VALUE v1, VALUE v2, enum ruby_basic_operators bop, int klass_flag) {
+    SIR_EXEC_ASSERT(BASIC_OP_UNREDEFINED_P(bop, klass_flag));
+    return !FIXNUM_P(v2) || sir_check_ary(v1) || RB_OBJ_FROZEN(v1);
+}
 
-SIR_CHECK_FUNCS2(sir_iplus, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_iminus, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_imult, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_idiv, sir_check_zero)
-SIR_CHECK_FUNCS2(sir_imod, sir_check_zero)
-SIR_CHECK_FUNCS2(sir_ior, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_iand, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_iaref, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_iaset, sir_check_ary_frozen2)
-SIR_CHECK_FUNCS2(sir_ieq, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_ineq, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_ilt, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_igt, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_ile, sir_check_nothing)
-SIR_CHECK_FUNCS2(sir_ige, sir_check_nothing)
-SIR_CHECK_DFUNCS2(sir_fplus, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_fminus, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_fmult, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_fdiv, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_fmod, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_feq, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_fneq, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_flt, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_fgt, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_fle, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
-SIR_CHECK_DFUNCS2(sir_fge, sir_check_nothing, sir_check_nothing1, sir_check_nothing1)
+SIR_CHECK_FUNCS2(sir_iplus, sir_check_fix_nothing, BOP_PLUS, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_iminus, sir_check_fix_nothing, BOP_MINUS, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_imult, sir_check_fix_nothing, BOP_MULT, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_idiv, sir_check_fixnum_zero, BOP_DIV, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_imod, sir_check_fixnum_zero, BOP_MOD, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_ior, sir_check_fix_nothing, BOP_OR, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_iand, sir_check_fix_nothing, BOP_AND, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_iaref, sir_check_aref, BOP_AREF, ARRAY_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_iaset, sir_check_aset, BOP_ASET, ARRAY_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_ieq, sir_check_fix_nothing, BOP_EQ, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_ineq, sir_check_fix_nothing, BOP_NEQ, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_ilt, sir_check_fix_nothing, BOP_LT, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_igt, sir_check_fix_nothing, BOP_GT, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_ile, sir_check_fix_nothing, BOP_LE, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_FUNCS2(sir_ige, sir_check_fix_nothing, BOP_GE, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fplus, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_PLUS, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fminus, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_MINUS, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fmult, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_MULT, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fdiv, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_DIV, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fmod, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_MOD, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_feq, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_EQ, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fneq, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_NEQ, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_flt, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_LT, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fgt, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_GT, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fle, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_LE, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_fge, sir_check_nothing, sir_check_nothing1, sir_check_nothing1, BOP_GE, FLOAT_REDEFINED_OP_FLAG)
 
-SIR_CHECK_IFUNCS2(sir_siplus, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_siminus, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_simult, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_sidiv, sir_check_nonzero_fix, sir_check_fix1, sir_check_nonzero_fix1)
-SIR_CHECK_IFUNCS2(sir_simod, sir_check_nonzero_fix, sir_check_fix1, sir_check_nonzero_fix1)
-SIR_CHECK_IFUNCS2(sir_sior, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_siand, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_siaref, sir_check_aref, sir_check_aref1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_siaset, sir_check_aset, sir_check_aset1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_sieq, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_sineq, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_silt, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_sigt, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_sile, sir_check_fix, sir_check_fix1, sir_check_fix1)
-SIR_CHECK_IFUNCS2(sir_sige, sir_check_fix, sir_check_fix1, sir_check_fix1)
+SIR_CHECK_IFUNCS2(sir_siplus, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_PLUS, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_siminus, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_MINUS, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_simult, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_MULT, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_sidiv, sir_check_nonzero_fix, sir_check_fix1, sir_check_nonzero_fix1, BOP_DIV, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_simod, sir_check_nonzero_fix, sir_check_fix1, sir_check_nonzero_fix1, BOP_MOD, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_sior, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_OR, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_siand, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_AND, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_siaref, sir_check_saref, sir_check_aref1, sir_check_fix1, BOP_AREF, ARRAY_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_siaset, sir_check_saset, sir_check_aset1, sir_check_fix1, BOP_ASET, ARRAY_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_sieq, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_EQ, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_sineq, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_NEQ, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_silt, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_LT, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_sigt, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_GT, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_sile, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_LE, INTEGER_REDEFINED_OP_FLAG)
+SIR_CHECK_IFUNCS2(sir_sige, sir_check_fix, sir_check_fix1, sir_check_fix1, BOP_GE, INTEGER_REDEFINED_OP_FLAG)
 
-SIR_CHECK_DFUNCS2(sir_sfplus, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfminus, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfmult, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfdiv, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfmod, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfeq, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfneq, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sflt, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfgt, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfle, sir_check_fp, sir_check_fp1, sir_check_fp1)
-SIR_CHECK_DFUNCS2(sir_sfge, sir_check_fp, sir_check_fp1, sir_check_fp1)
+SIR_CHECK_DFUNCS2(sir_sfplus, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_PLUS, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfminus, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_MINUS, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfmult, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_MULT, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfdiv, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_DIV, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfmod, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_MOD, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfeq, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_EQ, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfneq, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_NEQ, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sflt, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_LT, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfgt, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_GT, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfle, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_LE, FLOAT_REDEFINED_OP_FLAG)
+SIR_CHECK_DFUNCS2(sir_sfge, sir_check_fp, sir_check_fp1, sir_check_fp1, BOP_GE, FLOAT_REDEFINED_OP_FLAG)
 
 #define CHECK_INPUTS(iname, v1, v2)		                \
     if (UNLIKELY(CHECK_FUNC_NAME(iname)(v1, v2))) {             \

@@ -1896,6 +1896,7 @@ sir_feqvvi sir_fneqvvi sir_fltvvi sir_fgtvvi sir_flevvi sir_fgevvi
 ()
 {
     VALUE v1 = *(GET_EP() + op1), val;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     sir_stack_write(GET_EP(), (int)res, val);
@@ -1922,6 +1923,7 @@ sir_feqviv sir_fneqviv sir_fltviv sir_fgtviv sir_fleviv sir_fgeviv
 ()
 {
     VALUE v2 = *(GET_EP() + op2), val;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     sir_stack_write(GET_EP(), (int)res, val);
@@ -1978,6 +1980,7 @@ sir_feqvsi sir_fneqvsi sir_fltvsi sir_fgtvsi sir_flevsi sir_fgevsi
 ()
 {
     VALUE val;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     sir_stack_write(GET_EP(), (int)res, val);
@@ -2004,6 +2007,7 @@ sir_feqvis sir_fneqvis sir_fltvis sir_fgtvis sir_flevis sir_fgevis
 ()
 {
     VALUE val;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     sir_stack_write(GET_EP(), (int)res, val);
@@ -2018,6 +2022,7 @@ sir_feqvss sir_fneqvss sir_fltvss sir_fgtvss sir_flevss sir_fgevss
 ()
 {
     VALUE val;
+    CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
     sir_stack_write(GET_EP(), (int)res, val);
