@@ -23,6 +23,7 @@
 #define SIR_UNUSED
 #endif
 
+//#define SIR_SPEC_CHECK
 //#define SIR_PROFILE
 //#define MIRJIT_STAT
 
