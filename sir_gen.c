@@ -2628,12 +2628,14 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                         new_operands[0] = 0;
                         add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
                     }
-                } else {
-                    SIR_GEN_ASSERT(nops == 3 && !imm2_p && v_p && v2_p);
+                } else { /* vvv or viv */
+                    SIR_GEN_ASSERT(nops == 3 && v_p && (imm2_p || v2_p));
                     new_operands[0] = operands[0];
                     add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
-                    new_operands[0] = operands[1];
-                    add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                    if (v2_p) {
+                        new_operands[0] = operands[1];
+                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                    }
                 }
                 goto rest_cases;
             }
