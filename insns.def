@@ -1647,7 +1647,7 @@ sir_setlocal
 (VALUE val)
 ()
 {
-    VM_STACK_ENV_WRITE(GET_EP(), (int)idx, val);
+    sir_stack_write(GET_EP(), (int)idx, val);
     RB_DEBUG_COUNTER_INC(lvar_set);
     (void)RB_DEBUG_COUNTER_INC_IF(lvar_set_dynamic, FALSE);
 }
@@ -1872,7 +1872,7 @@ sir_feqvvv sir_fneqvvv sir_fltvvv sir_fgtvvv sir_flevvv sir_fgevvv
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1886,7 +1886,7 @@ sir_ieqvvi sir_ineqvvi sir_iltvvi sir_igtvvi sir_ilevvi sir_igevvi
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1898,7 +1898,7 @@ sir_feqvvi sir_fneqvvi sir_fltvvi sir_fgtvvi sir_flevvi sir_fgevvi
     VALUE v1 = *(GET_EP() + op1), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1912,7 +1912,7 @@ sir_ieqviv sir_ineqviv sir_iltviv sir_igtviv sir_ileviv sir_igeviv
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1924,7 +1924,7 @@ sir_feqviv sir_fneqviv sir_fltviv sir_fgtviv sir_fleviv sir_fgeviv
     VALUE v2 = *(GET_EP() + op2), val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1939,7 +1939,7 @@ sir_feqvvs sir_fneqvvs sir_fltvvs sir_fgtvvs sir_flevvs sir_fgevvs
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1954,7 +1954,7 @@ sir_feqvsv sir_fneqvsv sir_fltvsv sir_fgtvsv sir_flevsv sir_fgevsv
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1968,7 +1968,7 @@ sir_ieqvsi sir_ineqvsi sir_iltvsi sir_igtvsi sir_ilevsi sir_igevsi
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, v1, imm);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1980,7 +1980,7 @@ sir_feqvsi sir_fneqvsi sir_fltvsi sir_fgtvsi sir_flevsi sir_fgevsi
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, imm);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -1994,7 +1994,7 @@ sir_ieqvis sir_ineqvis sir_iltvis sir_igtvis sir_ilevis sir_igevis
     CHECK_INPUTS(NAME_OF_CURRENT_INSN, imm, v2);
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -2006,7 +2006,7 @@ sir_feqvis sir_fneqvis sir_fltvis sir_fgtvis sir_flevis sir_fgevis
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, imm, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN
@@ -2020,7 +2020,7 @@ sir_feqvss sir_fneqvss sir_fltvss sir_fgtvss sir_flevss sir_fgevss
     VALUE val;
     SIR_FUNC_NAME(NAME_OF_CURRENT_INSN)(&val, v1, v2);
     if (UNLIKELY(CHECK_RES_FUNC_NAME(NAME_OF_CURRENT_INSN)(val))) goto safe_insn_restart;
-    VM_STACK_ENV_WRITE(GET_EP(), (int)res, val);
+    sir_stack_write(GET_EP(), (int)res, val);
 }
 
 DEFINE_INSN

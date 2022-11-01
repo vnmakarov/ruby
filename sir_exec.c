@@ -18,7 +18,7 @@
    insns for JIT only as the used C compiler can generate specialized
    insns versions itself.  */
 
-#if 1
+#ifndef SIR_SPEC_CHECK
 #define SIR_EXEC_ASSERT(expr)
 #else
 #define SIR_EXEC_ASSERT(expr) RUBY_ASSERT_ALWAYS(expr)
@@ -31,6 +31,12 @@
 #define sir_inline inline
 #define sir_noinline
 #endif
+
+static sir_inline void
+sir_stack_write(const VALUE *ep, int idx, VALUE val) {
+    SIR_EXEC_ASSERT((ep[VM_ENV_DATA_INDEX_FLAGS] & VM_ENV_FLAG_WB_REQUIRED) == 0);
+    VM_STACK_ENV_WRITE(ep, (int)idx, val);
+}
 
 /* Macros used to translate insn name into the corresponding function
    name.  */
@@ -714,7 +720,7 @@ sir_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *), int (**arg_f
 
 static SIR_UNUSED void
 mirjit_push_frame(rb_execution_context_t *ec, const rb_iseq_t *iseq, VALUE type, VALUE self, VALUE specval,
-	      VALUE cref_or_me, const VALUE *pc, VALUE *sp, int local_size, int stack_max)
+                  VALUE cref_or_me, const VALUE *pc, VALUE *sp, int local_size, int stack_max)
 {
     rb_control_frame_t *const cfp = RUBY_VM_NEXT_CONTROL_FRAME(ec->cfp);
 
