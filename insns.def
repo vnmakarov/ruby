@@ -2745,9 +2745,11 @@ sir_getivar
     if (RB_FL_ANY_RAW(self, ROBJECT_EMBED)) {
         if (UNLIKELY(index >= ROBJECT_EMBED_LEN_MAX)) goto sir_getivar_exit;
         val = ROBJECT(self)->as.ary[index];
+        if (UNLIKELY(val == Qundef)) val = Qnil;
     } else {
         if (UNLIKELY(index >= ROBJECT(self)->as.heap.numiv)) goto sir_getivar_exit;
         val = ROBJECT(self)->as.heap.ivptr[index];
+        if (UNLIKELY(val == Qundef)) val = Qnil;
     }
     goto sir_getivar_end;
   sir_getivar_exit:
@@ -2847,9 +2849,11 @@ sir_send_ivget
     if (RB_FL_ANY_RAW(recv, ROBJECT_EMBED)) {
         if (UNLIKELY(index >= ROBJECT_EMBED_LEN_MAX)) goto sir_send_ivget_exit;
         val = ROBJECT(recv)->as.ary[index];
+        if (UNLIKELY(val == Qundef)) val = Qnil;
     } else {
         if (UNLIKELY(index >= ROBJECT(recv)->as.heap.numiv)) goto sir_send_ivget_exit;
         val = ROBJECT(recv)->as.heap.ivptr[index];
+        if (UNLIKELY(val == Qundef)) val = Qnil;
     }
     goto sir_send_ivget_end;
   sir_send_ivget_exit:
