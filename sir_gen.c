@@ -3605,7 +3605,9 @@ rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
 
     if (RB_TYPE_P(self, T_OBJECT)) {
         RB_VM_LOCK_ENTER();
-        if (debug_level >= 1) fprintf(stderr, "--> Changing sir_make_getivar to %4ld sir_getivar\n");
+        if (debug_level >= 1)
+            fprintf(stderr, "--> Changing sir_make_getivar to %4ld sir_getivar\n",
+                    (long)(cfp->pc - cfp->iseq->body->bbv_code));
         struct rb_iv_index_tbl_entry *entry = ((IVC)insn_pc[2])->entry;
         *insn_pc = (VALUE)sir_dispatch_table[BIN(sir_getivar)];
         insn_pc[1] = entry == NULL ? 0 : entry->index;
