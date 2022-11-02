@@ -2282,6 +2282,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             gen_write_barrier(buff, "val", "r");
         } else {
             O("  r = *pv;\n");
+            O("  if (__builtin_expect(r == 0x%x, 0)) r = 0x%x;\n", (int)Qundef, (int)Qnil);
             O("  *sp++= r;\n");
             O("  pc += %d;\n", insn_len(insn_id));
         }
@@ -2317,7 +2318,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
           (int)offsetof(struct RObject, as.heap.ivptr), (unsigned)index);
         O("  }\n");
         if (insn_id == BIN(sir_send_ivget)) {
-            O("  sp[-1] = *pv;\n");
+            O("  r = *pv;\n");
+            O("  if (__builtin_expect(r == 0x%x, 0)) r = 0x%x;\n", (int)Qundef, (int)Qnil);
+            O("  sp[-1] = r;\n");
             O("  pc += %d;\n", insn_len(insn_id));
         } else {
             O("  sp--;\n");
