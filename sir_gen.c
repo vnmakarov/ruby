@@ -1075,20 +1075,20 @@ nullify(int pos) {
 }
 
 static int
-remove_nops(int *nops_num) {
+remove_nops(int *nops_len) {
     int curr_ind, new_curr_ind, last_insn_p, nel, len, last_sir_ind = 0;
     enum ruby_vminsn_type insn_id;
 
-    *nops_num = 0;
+    *nops_len = 0;
     for (curr_ind = new_curr_ind = 0;
          curr_ind < (int)VARR_LENGTH(VALUE, bbv_encoded);
          curr_ind += len) { /* remove nops */
 	insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, curr_ind);
         len = insn_len(insn_id);
-        if (insn_id == BIN(nop)
+        if ((insn_id == BIN(nop) || insn_id == BIN(nop2))
             && (curr_ind >= (int)VARR_LENGTH(char, labeled_p)
                 || !VARR_GET(char, labeled_p, curr_ind))) {
-            (*nops_num)++;
+            (*nops_len) += len;
             continue;
         }
         last_sir_ind = new_curr_ind;
@@ -1333,7 +1333,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     int init_stack_size = bbv->start_stack_size;
     int i, n, last_pos, curr_orig_insn_pos, len, nops, inc, retn, br_p, dst2_p, stack_size;
     int op_insn_pos, op3_insn_pos, op2_insn_pos, local_p, local2_p, local3_p;
-    int last_sir_ind, nops_num;
+    int last_sir_ind, nops_len;
     int debug_level = rb_sir_debug_level();
     int disp = 0, disp2 = 0; /* for removing uninitialized warning */
     OFFSET dst = 0, dst2 = 0; /* for removing uninitialized warning */
@@ -1692,7 +1692,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 break;
         }
     }
-    last_sir_ind = remove_nops(&nops_num);
+    last_sir_ind = remove_nops(&nops_len);
     last_pos = VARR_LAST(int, pos_map);
     if (insn_id != BIN(leave) && insn_id != BIN(throw) && insn_id != BIN(opt_case_dispatch)) {
         if (!br_p) { // ??? reachable
@@ -2074,7 +2074,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     int sir_branch_offset_add, attr, inspect_attr1, inspect_attr2, op1_attr, op2_attr, op3_attr;
     int flag, imm_p, imm2_p, vs_p, v_p, v2_p, div_p, bool_p, aref_p, aset_p, neq_p;
     int debug_level = rb_sir_debug_level();
-    int disp, nops_num;
+    int disp, nops_len;
     VALUE val, *operands, new_operands[10];
     lindex_t op;
     int offset, specialize_bbv_pos = -1;
@@ -3061,7 +3061,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         /* We can not find specialize_bbv as we use bbv code
            specialized in another ractor -- don't add a new code */
         return -1;
-    remove_nops(&nops_num); // ??? modify out_gen_bbv_disps ... */
+    remove_nops(&nops_len); // ??? modify out_gen_bbv_disps ... */
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
     bbv->bbv_start = get_bbv_code_space(iseq, len);
     bbv->bbv_bound = bbv->bbv_start + len;
@@ -3086,7 +3086,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     SIR_GEN_ASSERT(bbv->out_edges == NULL);
     SIR_GEN_ASSERT(VARR_LENGTH(rb_iseq_bbv_t, out_bbvs) == VARR_LENGTH(int, out_gen_bbv_disps));
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, out_bbvs); i++)
-        add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i) - nops_num);
+        add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i) - nops_len);
     sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
     if (debug_level >= 2) {
         fprintf(stderr, "## %s specialized BBV%d 0x%llx (%s):", profile_p ? "Profile" : "Type",
@@ -3095,7 +3095,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
         print_pos_map(iseq, bbv->bbv_start, bbv->bbv_bound, TRUE);
     }
-    return specialize_bbv_pos < 0 ? -1 : bbv->bbv_start + specialize_bbv_pos - nops_num;
+    return specialize_bbv_pos < 0 ? -1 : bbv->bbv_start + specialize_bbv_pos - nops_len;
 }
 
 static void
