@@ -15,6 +15,7 @@
 #include "vm_sync.h"
 
 //#define RTL_ONLY
+//#define TYPE_SPEC_ONLY
 
 #define YJIT_STATS 0 /* used in vm_insnhelper.h */
 #include "vm_insnhelper.h"
@@ -2498,6 +2499,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             attr = get_res_attr(aref_p, imm_p, imm2_p, op1_attr, op2_attr, &flag);
             new_insn_id = get_sir_spec_insn2_id(insn_id, attr, bbv->used_bops, flag);
             if (new_insn_id == BIN(nop)) {
+#ifndef TYPE_SPEC_ONLY
                 if (profile_p) goto rest_cases;
                 if (imm_p && (!FIXNUM_P(operands[0]) && !fp_num_p(operands[0]))) goto rest_cases;
                 if (imm2_p && (!FIXNUM_P(operands[nops == 1 ? 0 : 1])
@@ -2534,6 +2536,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                         add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
                     }
                 }
+#endif
                 goto rest_cases;
             }
             stack_size -= (2 - nops);
@@ -2572,6 +2575,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_GEN_ASSERT(nops <= 3 && stack_size + nops >= 3);
             new_insn_id = get_sir_spec_insn3_id(insn_id, op1_attr, op2_attr, bbv->used_bops);
             if (new_insn_id == BIN(nop)) {
+#ifndef TYPE_SPEC_ONLY
                 if (profile_p) goto rest_cases;
                 if (imm2_p && !FIXNUM_P(operands[v_p ? 1 : 0])) goto rest_cases;
                 if (nops == 0) { /* sss */
@@ -2619,6 +2623,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                         add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
                     }
                 }
+#endif
                 goto rest_cases;
             }
             attr = op3_attr;
@@ -2685,16 +2690,20 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         BRANCH_CASES(ibgt):
         BRANCH_CASES(ible):
         BRANCH_CASES(ibge):
+#ifndef TYPE_SPEC_ONLY
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
             }
+#endif
             goto rest_cases;
         case BIN(sir_branch):
+#ifndef TYPE_SPEC_ONLY
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
             }
+#endif
             if (prev_new_insn_pos < 0 || specialize_bbv_pos >= 0) goto rest_cases;
             if (pos_in_catch_table_p(iseq, stack_insn_pos, TRUE)) goto rest_cases;
             prev_new_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos);
@@ -2958,10 +2967,12 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_GEN_ASSERT(FALSE); /* cannot occur in SIR */
             break;
         case BIN(sir_case_dispatch):
+#ifndef TYPE_SPEC_ONLY
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
             }
+#endif
             SIR_GEN_ASSERT(len == 4);
             new_operands[0] = rb_hash_dup(operands[0]); /* to duplicate */
             RB_OBJ_WRITTEN(iseq, Qundef, new_operands[0]);
@@ -2996,10 +3007,12 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             break;
         case BIN(leave):
         case BIN(throw):
+#ifndef TYPE_SPEC_ONLY
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
                 add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
             }
+#endif
             goto rest_cases;
         case BIN(specialize_bbv):
             specialize_bbv_pos = new_insn_pos;
