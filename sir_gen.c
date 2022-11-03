@@ -861,29 +861,11 @@ VALUE rb_insn_operand_intern(const rb_iseq_t *iseq,
 			     int len, size_t pos, VALUE *pnop, VALUE child);
 
 static void
-print_insn(const rb_iseq_t *iseq, int insn_id, VALUE *code, size_t pos, const char *prefix)
+print_insn(const rb_iseq_t *iseq, int insn_id, VALUE *code, size_t pos, const char *prefix, int sir_p)
 {
-    int len = insn_len(insn_id);
-    int i;
-    const char *types = insn_op_types(insn_id);
     VALUE str = rb_str_new(0, 0);
-    const char *insn_name_buff;
-
-    insn_name_buff = insn_name(insn_id);
-    extern const int rb_vm_max_insn_name_size;
-    rb_str_catf(str, "%04"PRIuSIZE" %-*s ", pos, rb_vm_max_insn_name_size, insn_name_buff);
-
-    for (i = 0; types[i]; i++) {
-	VALUE opstr = rb_insn_operand_intern(iseq, insn_id, i, code[pos + i + 1],
-					     len, pos, &code[pos + i + 2],
-					     0);
-	rb_str_concat(str, opstr);
-
-	if (types[i + 1]) {
-	    rb_str_cat2(str, ", ");
-	}
-    }
-    fprintf(stderr, "%s%.*s\n", prefix, (int)RSTRING_LEN(str), RSTRING_PTR(str));
+    rb_iseq_disasm_insn_1(str, code, pos, iseq, 0, TRUE, sir_p);
+    fprintf(stderr, "%s%.*s", prefix, (int)RSTRING_LEN(str), RSTRING_PTR(str));
 }
 
 static void
@@ -899,7 +881,7 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound, const char *prefix)
                     i, insn_name(insn_id), bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
             print_attrs(bbv->attrs);
         }
-        print_insn(iseq, insn_id, code, i, prefix);
+        print_insn(iseq, insn_id, code, i, prefix, code == iseq->body->bbv_code);
         len = insn_len(insn_id);
         if (longer_paths_p) {
             if (follow_jumps_p && insn_id == BIN(jump) && (long)code[i + 1] > 0)

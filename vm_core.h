@@ -1242,6 +1242,8 @@ rb_iseq_t *rb_iseq_new_with_callback(const struct rb_iseq_new_with_callback_call
     const rb_iseq_t *parent, enum iseq_type, const rb_compile_option_t*);
 
 VALUE rb_iseq_disasm(const rb_iseq_t *iseq);
+int rb_iseq_disasm_insn_1(VALUE str, const VALUE *iseqval, size_t pos,
+                          const rb_iseq_t *iseq, VALUE child, int encoded_p, int sir_p);
 int rb_iseq_disasm_insn(VALUE str, const VALUE *iseqval, size_t pos, const rb_iseq_t *iseq, VALUE child);
 
 VALUE rb_iseq_coverage(const rb_iseq_t *iseq);

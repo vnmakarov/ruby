@@ -2177,15 +2177,11 @@ right_strip(VALUE str)
     return str;
 }
 
-/**
- * Disassemble a instruction
- * Iseq -> Iseq inspect object
- */
 int
-rb_iseq_disasm_insn(VALUE ret, const VALUE *code, size_t pos,
-		    const rb_iseq_t *iseq, VALUE child)
+rb_iseq_disasm_insn_1(VALUE ret, const VALUE *code, size_t pos,
+                      const rb_iseq_t *iseq, VALUE child, int encoded_p, int sir_p)
 {
-    VALUE insn = code[pos];
+    VALUE insn = encoded_p ? (VALUE)rb_vm_insn_decode(code[pos]) : code[pos];
     int len = insn_len(insn);
     int j;
     const char *types = insn_op_types(insn);
@@ -2214,6 +2210,12 @@ rb_iseq_disasm_insn(VALUE ret, const VALUE *code, size_t pos,
     }
 
     {
+        if (sir_p) {
+            const VALUE *pc = iseq->body->bbv_code + pos;
+            pc = rb_iseq_encoded_pc(iseq, pc);
+            VM_ASSERT(pc >= iseq->body->iseq_encoded);
+            pos = pc - iseq->body->iseq_encoded;
+        }
 	unsigned int line_no = rb_iseq_line_no(iseq, pos);
 	unsigned int prev = pos == 0 ? 0 : rb_iseq_line_no(iseq, pos - 1);
 	if (line_no && line_no != prev) {
@@ -2250,6 +2252,17 @@ rb_iseq_disasm_insn(VALUE ret, const VALUE *code, size_t pos,
 	printf("%.*s\n", (int)RSTRING_LEN(str), RSTRING_PTR(str));
     }
     return len;
+}
+
+/**
+ * Disassemble a instruction
+ * Iseq -> Iseq inspect object
+ */
+int
+rb_iseq_disasm_insn(VALUE ret, const VALUE *code, size_t pos,
+		    const rb_iseq_t *iseq, VALUE child)
+{
+    return rb_iseq_disasm_insn_1(ret, code, pos, iseq, child, FALSE, FALSE);
 }
 
 static const char *
