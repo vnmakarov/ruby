@@ -5522,7 +5522,7 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
         return;
     } else if (!(body->iseq_encoded <= reg_cfp->pc && reg_cfp->pc <= body->iseq_encoded + body->iseq_size)) {
         /* It is an SIR trace insn */
-        if ((pc = rb_sir_trace_stack_insn_pc(ec, reg_cfp)) == NULL) return;
+        pc = rb_sir_trace_stack_insn_pc(ec, reg_cfp);
     } else {
         pc = reg_cfp->pc;
     }

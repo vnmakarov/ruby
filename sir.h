@@ -58,7 +58,7 @@ void rb_sir_finish(void);
 /* sir_gen.c: */
 int rb_sir_gen_init(void);
 void rb_sir_gen_finish(void);
-void rb_sir_trace_update(const rb_iseq_t *iseq);
+void rb_sir_trace_update(const rb_iseq_t *iseq, int turnon_p);
 void rb_sir_print_bbv(struct rb_iseq_bbv *bbv);
 void rb_sir_stub_gen(rb_iseq_t *iseq);
 VALUE *rb_sir_make_bbv(rb_control_frame_t *cfp, int iseq_bbv_start);

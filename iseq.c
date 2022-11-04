@@ -3356,7 +3356,6 @@ encoded_iseq_trace_instrument(const struct rb_iseq_constant_body *const body, in
             turnon = 1;
         }
         *iseq_encoded_insn = (VALUE) (turnon ? e->trace_encoded_insn : e->notrace_encoded_insn);
-        if (body->iseq_encoded_trace_p != NULL) body->iseq_encoded_trace_p[pos] = turnon != 0;
         return e->insn_len;
     }
 
@@ -3400,7 +3399,7 @@ iseq_add_local_tracepoint(const rb_iseq_t *iseq, rb_event_flag_t turnon_events, 
     }
 
     if (n > 0) {
-        rb_sir_trace_update(iseq);
+        rb_sir_trace_update(iseq, TRUE);
         if (iseq->aux.exec.local_hooks == NULL) {
             ((rb_iseq_t *)iseq)->aux.exec.local_hooks = RB_ZALLOC(rb_hook_list_t);
         }
@@ -3464,7 +3463,7 @@ iseq_remove_local_tracepoint(const rb_iseq_t *iseq, VALUE tpval)
             pc += encoded_iseq_trace_instrument(body, pc,
                                                 pc_events & (local_events | iseq->aux.exec.global_trace_events), false);
         }
-        rb_sir_trace_update(iseq);
+        rb_sir_trace_update(iseq, FALSE);
     }
     return n;
 }
@@ -3516,7 +3515,7 @@ rb_iseq_trace_set(const rb_iseq_t *iseq, rb_event_flag_t turnon_events)
             rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pc);
             pc += encoded_iseq_trace_instrument(body, pc, pc_events & enabled_events, true);
 	}
-        rb_sir_trace_update(iseq);
+        rb_sir_trace_update(iseq, TRUE);
     }
 }
 

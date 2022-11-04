@@ -808,15 +808,10 @@ bbv_encode(VALUE *bbv_encoded, int len) {
 }
 
 static int
-sir_insn_trace_update(const rb_iseq_t *iseq, VALUE *pc) {
-    const struct rb_iseq_constant_body *const body = iseq->body;
-    int stack_pos;
-    const VALUE *stack_pc;
+sir_insn_trace_update(const rb_iseq_t *iseq, VALUE *pc, int on_p) {
     rb_insn_data_t *e;
 
     e = rb_get_insn_data(pc);
-    stack_pc = rb_iseq_encoded_pc(iseq, pc);
-    VM_ASSERT(body->iseq_encoded <= stack_pc && stack_pc < body->iseq_encoded + body->iseq_size);
     switch (e->insn) {
     case BIN(sir_make_bbv):
     case BIN(sir_make_optpc_bbv):
@@ -834,27 +829,58 @@ sir_insn_trace_update(const rb_iseq_t *iseq, VALUE *pc) {
         *pc = (VALUE)e->notrace_encoded_insn;
         break;
     default:
-        stack_pos = (int)(stack_pc - body->iseq_encoded);
-        *pc = (VALUE)(body->iseq_encoded_trace_p != NULL && body->iseq_encoded_trace_p[stack_pos]
-                      ? e->trace_encoded_insn : e->notrace_encoded_insn);
+        *pc = (VALUE)(on_p ? e->trace_encoded_insn : e->notrace_encoded_insn);
         break;
     }
     return e->insn_len;
 }
 
 static void
-sir_trace_update(const rb_iseq_t *iseq, int start, int bound)
+sir_trace_update(const rb_iseq_t *iseq, int start, int bound, int on_p)
 {
     int pos;
 
     for (pos = start; pos < bound;)
-        pos += sir_insn_trace_update(iseq, &iseq->body->bbv_code[pos]);
+        pos += sir_insn_trace_update(iseq, &iseq->body->bbv_code[pos], on_p);
+}
+
+static void
+print_iseq_title(const rb_iseq_t *iseq) {
+    const rb_code_location_t *loc = &iseq->body->location.code_location;
+    fprintf(stderr, "#<ISeq %s@%s:%d (%d,%d)-(%d,%d)>",
+            RSTRING_PTR(iseq->body->location.label), RSTRING_PTR(rb_iseq_path(iseq)), loc->beg_pos.lineno,
+            loc->beg_pos.lineno, loc->beg_pos.column, loc->end_pos.lineno, loc->end_pos.column);
 }
 
 void
-rb_sir_trace_update(const rb_iseq_t *iseq)
+rb_sir_trace_update(const rb_iseq_t *iseq, int turnon_p)
 {
-    sir_trace_update(iseq, 0, iseq->body->bbv_code_free);
+    if (!rb_sir_enabled_p()) return;
+    RB_VM_LOCK_ENTER();
+    rb_vm_barrier (); /* the change can be non-atomic */
+    for (int i = 0; i < iseq->body->n_bbvs; i++) {
+        for (rb_iseq_bbv_t bbv = iseq->body->bbvs[i]; bbv != NULL; bbv = bbv->next_bbv) {
+            if (bbv->bbv_start >= 0) sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_bound, turnon_p);
+        }
+    }
+#if 1 /* ??? remove when tracing with profiling insns are added */
+    if (turnon_p) {
+        iseq->body->iseq_start_pc = iseq->body->iseq_encoded;
+        if (rb_sir_debug_level() >= 1) {
+            fprintf (stderr, "##Switching ");
+            print_iseq_title(iseq);
+            fprintf (stderr, " to stack insns for tracing\n");
+        }
+    } else {
+        iseq->body->iseq_start_pc = iseq->body->sir_start_pc;
+        if (rb_sir_debug_level() >= 1) {
+            fprintf (stderr, "##Switching ");
+            print_iseq_title(iseq);
+            fprintf (stderr, " back to SIR after finishing tracing\n");
+        }
+    }
+#endif
+    RB_VM_LOCK_LEAVE();
 }
 
 VALUE rb_insn_operand_intern(const rb_iseq_t *iseq,
@@ -898,14 +924,6 @@ print_bb(rb_iseq_t *iseq, VALUE *code, int start, int bound, const char *prefix)
 void
 rb_sir_print_bbv(rb_iseq_bbv_t bbv) {
     print_bb(bbv->iseq, bbv->iseq->body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
-}
-
-static void
-print_iseq_title(rb_iseq_t *iseq) {
-    const rb_code_location_t *loc = &iseq->body->location.code_location;
-    fprintf(stderr, "#<ISeq %s@%s:%d (%d,%d)-(%d,%d)>",
-            RSTRING_PTR(iseq->body->location.label), RSTRING_PTR(rb_iseq_path(iseq)), loc->beg_pos.lineno,
-            loc->beg_pos.lineno, loc->beg_pos.column, loc->end_pos.lineno, loc->end_pos.column);
 }
 
 void
@@ -1035,7 +1053,7 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
     memcpy(&body->bbv_pos_map[make_bbv_area_start],
            VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
     VARR_TRUNC(int, pos_map, 0);
-    body->iseq_code = body->iseq_start_pc = &body->bbv_code[make_bbv_area_start];
+    body->iseq_code = body->sir_start_pc = body->iseq_start_pc = &body->bbv_code[make_bbv_area_start];
     bbv_encode(&body->bbv_code[make_bbv_area_start], len);
     int debug_level = rb_sir_debug_level();
     if (debug_level >= 1) {
@@ -1315,7 +1333,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     enum ruby_vminsn_type new_insn_id, op_insn_id;
     int init_stack_size = bbv->start_stack_size;
     int i, n, last_pos, curr_orig_insn_pos, len, nops, inc, retn, br_p, dst2_p, stack_size;
-    int op_insn_pos, op3_insn_pos, op2_insn_pos, local_p, local2_p, local3_p;
+    int op_insn_pos, op3_insn_pos, op2_insn_pos, local_p, local2_p, local3_p, trace_p;
     int last_sir_ind, nops_len;
     int debug_level = rb_sir_debug_level();
     int disp = 0, disp2 = 0; /* for removing uninitialized warning */
@@ -1351,9 +1369,11 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         VARR_PUSH(char, operands_changed_p, FALSE);
     }
     SIR_GEN_ASSERT(bbv->iseq_bound < 0 || bbv->iseq_start < bbv->iseq_bound);
+    trace_p = FALSE;
     for (curr_orig_insn_pos = bbv->iseq_start;;) {
         last_sir_ind = (int)VARR_LENGTH(VALUE, bbv_encoded);
 	insn_id = rb_vm_insn_addr2insn((void *)body->iseq_encoded[curr_orig_insn_pos]);
+        if ((VALUE)sir_dispatch_table[insn_id] != body->iseq_encoded[curr_orig_insn_pos]) trace_p = TRUE;
         len = insn_len(insn_id);
         operands = &body->iseq_encoded[curr_orig_insn_pos + 1];
         switch (insn_id) {
@@ -1741,7 +1761,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     bbv_encode(&body->bbv_code[bbv->bbv_start], len);
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, out_bbvs); i++)
         add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i));
-    sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
+    if (trace_p) sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len, TRUE);
     if (debug_level >= 2) {
         fprintf(stderr, "## SIR BBV:\n");
         print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
@@ -2055,7 +2075,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     int i, n, curr_sir_insn_pos, len, nops, inc, retn, stack_size;
     int stack_insn_pos, orig_pos, new_insn_pos, prev_new_insn_pos, branch_pos, prev_new_insn_nops;
     int sir_branch_offset_add, attr, inspect_attr1, inspect_attr2, op1_attr, op2_attr, op3_attr;
-    int flag, imm_p, imm2_p, vs_p, v_p, v2_p, div_p, bool_p, aref_p, aset_p, neq_p;
+    int flag, imm_p, imm2_p, vs_p, v_p, v2_p, div_p, bool_p, aref_p, aset_p, neq_p, trace_p;
     int debug_level = rb_sir_debug_level();
     int disp, nops_len;
     VALUE val, *operands, new_operands[10];
@@ -2067,8 +2087,14 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
 
     mirjit_enabled_p = mirjit_enabled_p && profile_p;
     SIR_GEN_ASSERT(profile_p || bbv->bbv_start < 0);
-    if (head_bbv == NULL)
+    if (head_bbv == NULL) {
         head_bbv = bbv;
+    }
+    if (bbv->bbv_start < 0) {
+        SIR_GEN_ASSERT(head_bbv != NULL);
+        init_stack_size = head_bbv->start_stack_size;
+        bbv->start_stack_size = init_stack_size;
+    }
     SIR_GEN_ASSERT(init_stack_size >= 0 && head_bbv->start_stack_size == init_stack_size);
     orig_bbv = profile_p ? bbv : head_bbv;
     if (debug_level >= 1) {
@@ -2095,6 +2121,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         add_insn_arr(bbv->iseq_start, BIN(sir_bbv_start), 1, (VALUE *)&bbv);
         bbv->jit_count = BBV_COUNT_TO_JIT;
     }
+    trace_p = FALSE;
     for (curr_sir_insn_pos = orig_bbv->bbv_start;
          curr_sir_insn_pos < orig_bbv->bbv_bound;
          curr_sir_insn_pos += len) {
@@ -2102,6 +2129,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         new_insn_pos = (int)VARR_LENGTH(VALUE, bbv_encoded);
       again:
 	insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[curr_sir_insn_pos]);
+        if ((VALUE)sir_dispatch_table[insn_id] != body->bbv_code[curr_sir_insn_pos]) trace_p = TRUE;
         len = insn_len(insn_id);
         operands = &body->bbv_code[curr_sir_insn_pos + 1];
         aref_p = aset_p = neq_p = imm_p = imm2_p = vs_p = bool_p = FALSE; /* immediate operand and unknown result */
@@ -3082,7 +3110,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     SIR_GEN_ASSERT(VARR_LENGTH(rb_iseq_bbv_t, out_bbvs) == VARR_LENGTH(int, out_gen_bbv_disps));
     for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, out_bbvs); i++)
         add_bbv_edge(bbv, VARR_GET(rb_iseq_bbv_t, out_bbvs, i), VARR_GET(int, out_gen_bbv_disps, i) - nops_len);
-    sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len);
+    if (trace_p) sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_start + len, TRUE);
     if (debug_level >= 2) {
         fprintf(stderr, "## %s specialized BBV%d 0x%llx (%s):", profile_p ? "Profile" : "Type",
                 bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
@@ -3095,8 +3123,11 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
 
 static void
 change_insn(const rb_iseq_t *iseq, VALUE *pc, enum ruby_vminsn_type new_insn_id) {
+    enum ruby_vminsn_type old_insn_id = rb_vm_insn_addr2insn((void *)*pc);
+    int trace_p = (VALUE)sir_dispatch_table[old_insn_id] != *pc;
+
     *pc = (VALUE)sir_dispatch_table[new_insn_id];
-    sir_insn_trace_update(iseq, pc);
+    if (trace_p) sir_insn_trace_update(iseq, pc, TRUE);
 }
 
 void
@@ -3160,7 +3191,7 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
 static void
 gen_sir_bbv_code(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int init_stack_size) {
     SIR_GEN_ASSERT(init_stack_size >= 0
-                   && (bbv->start_stack_size < 0 || bbv->start_stack_size == init_stack_size));
+                   && (bbv->bbv_start < 0 || bbv->start_stack_size < 0 || bbv->start_stack_size == init_stack_size));
     bbv->start_stack_size = init_stack_size;
     if (bbv->head_bbv == NULL) { /* head bbv */
         if (bbv->bbv_start < 0) gen_sir_from_stack_insns(iseq, bbv);
@@ -3187,7 +3218,7 @@ rb_sir_make_bbv(rb_control_frame_t *cfp, int iseq_bbv_start) { /* called from ma
     if (bbv->bbv_start < 0)
         gen_sir_bbv_code((rb_iseq_t *)iseq, bbv, (int)(cfp->sp - cfp->__bp__));
     if (iseq_bbv_start == 0)
-        body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
+        body->sir_start_pc = body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
     start_pc = body->bbv_code + bbv->bbv_start;
     RB_VM_LOCK_LEAVE();
     return start_pc;
@@ -3431,7 +3462,7 @@ set_iseq_start(rb_iseq_bbv_t bbv) {
 
     if (bbv->type == RB_BBV_REGULAR) {
         if (bbv->iseq_start == 0)
-            body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
+            body->sir_start_pc = body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
     } else if (bbv->type == RB_BBV_OPT) {
         SIR_GEN_ASSERT(body->iseq_start_pc != NULL);
         body->curr_param_opt_table[bbv->index] = bbv->bbv_start + body->bbv_code - body->iseq_start_pc;
@@ -3502,20 +3533,22 @@ rb_sir_bop_redefined(enum ruby_basic_operators bop, int klass_flag) { // ???
     RB_VM_LOCK_LEAVE();
 }
 
-int
-rb_sir_singleton_method_defined(VALUE old_class, ID id) {
-    const rb_execution_context_t *ec;
+static void
+stack_switch_to_safe_code(const rb_execution_context_t *ec) {
     rb_control_frame_t *cfp;
-
-    if (!rb_sir_enabled_p() || old_class != rb_cArray || (id != idAREF && id != idASET)) return FALSE;
-    RB_VM_LOCK_ENTER();
-    rb_vm_barrier (); /* the change can be non-atomic */
-    ec = GET_EC();
     for (cfp = ec->cfp; (void *)cfp < (void *)(ec->vm_stack + ec->vm_stack_size); cfp++) {
         if (cfp->iseq != NULL && cfp->iseq->body->bbv_code != NULL) { /* switch given bbv pc to safe code one */
             cfp->pc = rb_sir_get_safe_pc(cfp, cfp->pc);
         }
     }
+}
+
+int
+rb_sir_singleton_method_defined(VALUE old_class, ID id) {
+    if (!rb_sir_enabled_p() || old_class != rb_cArray || (id != idAREF && id != idASET)) return FALSE;
+    RB_VM_LOCK_ENTER();
+    rb_vm_barrier (); /* the change can be non-atomic */
+    stack_switch_to_safe_code(GET_EC());
     RB_VM_LOCK_LEAVE();
     return TRUE;
 }
@@ -3536,19 +3569,7 @@ rb_sir_cme_invalidate(const rb_callable_method_entry_t *cme) {
 }
 
 void
-rb_sir_trace_invalidate(void) {
-    rb_iseq_bbv_t bbv;
-    int i;
-
-    if (!rb_sir_enabled_p()) return;
-    RB_VM_LOCK_ENTER();
-    rb_vm_barrier (); /* the change can be non-atomic */
-    for (i = 0; i < (int)VARR_LENGTH(rb_iseq_bbv_t, all_bbvs); i++) {
-        bbv = VARR_GET(rb_iseq_bbv_t, all_bbvs, i);
-        if (bbv == NULL || bbv->head_bbv == NULL) continue;
-        invalidate_bbv_code(bbv);
-    }
-    RB_VM_LOCK_LEAVE();
+rb_sir_trace_invalidate(void) { /* called from setting global and targeted tracing */
 }
 
 VALUE *
@@ -3814,26 +3835,7 @@ rb_sir_change_bbv(rb_iseq_bbv_t bbv)
 
 const VALUE *
 rb_sir_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp) {
-    const rb_iseq_t *iseq = reg_cfp->iseq;
-    struct rb_iseq_constant_body *body = iseq->body;
-    const VALUE *pc = rb_cfp_iseq_encoded_pc(reg_cfp);
-    enum ruby_vminsn_type insn_id, new_insn_id;
-
-    SIR_GEN_ASSERT(body->iseq_encoded <= pc && pc < body->iseq_encoded + body->iseq_size);
-    if (body->iseq_encoded_trace_p[pc - body->iseq_encoded]) return pc;
-    /* slow path : */
-    RB_VM_LOCK_ENTER();
-    insn_id = rb_vm_insn_addr2opcode(pc);
-    if (insn_id >= VM_INSTRUCTION_SIZE / 2) { /* can be become non-trace in another ractor */
-        new_insn_id = insn_id - VM_INSTRUCTION_SIZE / 2;
-        if (rb_sir_debug_level() >= 1) {
-            fprintf(stderr, "--> Changing %04d %s to %s\n", (int)(reg_cfp->pc - body->bbv_code),
-                    insn_name(insn_id), insn_name(new_insn_id));
-        }
-        *(VALUE *)reg_cfp->pc = (VALUE)sir_dispatch_table[new_insn_id];
-    }
-    RB_VM_LOCK_LEAVE();
-    return NULL;
+    return rb_cfp_iseq_encoded_pc(reg_cfp);
 }
 
 static sir_inline const VALUE *
