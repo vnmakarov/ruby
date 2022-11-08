@@ -743,6 +743,9 @@ definesmethod
 ()
 {
     if (vm_define_method(ec, obj, id, (VALUE)iseq, TRUE)) {
+#ifdef MJIT_HEADER
+        VALUE val = Qundef;
+#endif
         RESTORE_REGS();
         NEXT_INSN();
     }
