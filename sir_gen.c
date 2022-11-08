@@ -1144,7 +1144,7 @@ get_op(rb_iseq_t *iseq, int orig_insn_pos, int op_insn_pos, int *local_p, VALUE 
 }
 
 static int
-pos_in_catch_table_p(rb_iseq_t *iseq, int pos, int cont_only_p) {
+pos_in_catch_table_p(rb_iseq_t *iseq, int pos, int start_p, int end_p, int cont_p) {
     int i;
     const struct rb_iseq_constant_body *const body = iseq->body;
 
@@ -1152,11 +1152,9 @@ pos_in_catch_table_p(rb_iseq_t *iseq, int pos, int cont_only_p) {
         for (i = 0; i < (int)body->catch_table->size; i++) {
             const struct iseq_catch_table_entry *entry =
                 UNALIGNED_MEMBER_PTR(body->catch_table, entries[i]);
-            if (!cont_only_p) {
-                if (pos == (int)entry->start) return TRUE;
-                if (pos == (int)entry->end) return TRUE;
-            }
-            if (pos == (int)entry->cont) return TRUE;
+            if (start_p && pos == (int)entry->start) return TRUE;
+            if (end_p && pos == (int)entry->end) return TRUE;
+            if (cont_p && pos == (int)entry->cont) return TRUE;
         }
     }
     return FALSE;
@@ -1416,7 +1414,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         case BIN(nop):
         case BIN(sir_make_bbv): // ???
         case BIN(sir_jump): /* nops not labeled by catch table will be removed */
-            if (pos_in_catch_table_p(iseq, curr_orig_insn_pos, FALSE)) {
+            if (pos_in_catch_table_p(iseq, curr_orig_insn_pos, TRUE, TRUE, TRUE)) {
                 last_sir_ind = add_insn(curr_orig_insn_pos, BIN(nop), 0);
                 update_labeled(last_sir_ind);
             }
@@ -1579,7 +1577,8 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             if (VARR_LAST(char, operands_changed_p)) goto change_setlocal0;
             op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
             new_insn_id = get_var_res_sir_insn_id(op_insn_id);
-            if (new_insn_id == BIN(nop)) {
+            if (new_insn_id == BIN(nop)
+                && !pos_in_catch_table_p(iseq, VARR_GET(int, pos_map, op_insn_pos), FALSE, TRUE, FALSE)) {
                 switch (op_insn_id) {
                 case BIN(putobject):
                     val = VARR_GET(VALUE, bbv_encoded, op_insn_pos + 1);
@@ -2145,7 +2144,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             stack_insn_pos = body->bbv_pos_map[-stack_insn_pos - 1];
         }
         SIR_GEN_ASSERT(stack_insn_pos >= 0);
-        if (pos_in_catch_table_p(iseq, stack_insn_pos, TRUE)) /* clear all attrs: ??? improve */
+        if (pos_in_catch_table_p(iseq, stack_insn_pos, FALSE, FALSE, TRUE)) /* clear all attrs: ??? improve */
             for (int i = 0; i < stack_size; i++) {
                 int attr_num = get_temp_num(iseq, i);
                 if (attr_num < (int)VARR_LENGTH(char, attrs))
@@ -2733,7 +2732,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             }
 #endif
             if (prev_new_insn_pos < 0 || specialize_bbv_pos >= 0) goto rest_cases;
-            if (pos_in_catch_table_p(iseq, stack_insn_pos, TRUE)) goto rest_cases;
+            if (pos_in_catch_table_p(iseq, stack_insn_pos, FALSE, FALSE, TRUE)) goto rest_cases;
             prev_new_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos);
             new_insn_id = get_branch_sir_insn_id(prev_new_insn_id);
             if (new_insn_id == BIN(nop)) goto rest_cases;
@@ -2758,7 +2757,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_GEN_ASSERT(stack_size > 0);
             attr = get_attr(get_temp_num(iseq, stack_size - 1));
             if (bbv->env_p || (attr != ATTR_FIXNUM && attr != ATTR_BOOL)
-                || pos_in_catch_table_p(iseq, stack_insn_pos, TRUE)) {
+                || pos_in_catch_table_p(iseq, stack_insn_pos, FALSE, FALSE, TRUE)) {
                 SIR_GEN_ASSERT(insn_id != BIN(sir_setlocal));
                 setup_attr(get_lvar_num(iseq, operands[0]), attr); /* attr of temp */
                 goto rest_cases;
