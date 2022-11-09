@@ -859,6 +859,8 @@ print_iseq_title(const rb_iseq_t *iseq) {
             loc->beg_pos.lineno, loc->beg_pos.column, loc->end_pos.lineno, loc->end_pos.column);
 }
 
+static sir_inline const VALUE *get_safe_pc(const rb_iseq_t *iseq, const VALUE *pc);
+
 void
 rb_sir_trace_update(const rb_iseq_t *iseq, int turnon_p)
 {
@@ -870,13 +872,14 @@ rb_sir_trace_update(const rb_iseq_t *iseq, int turnon_p)
             if (bbv->bbv_start >= 0) sir_trace_update(iseq, bbv->bbv_start, bbv->bbv_bound, turnon_p);
         }
     }
-#if 1 /* ??? remove when tracing with profiling insns are added */
+#ifndef RTL_ONLY /* ??? remove when tracing with profiling insns are added */
     if (turnon_p) {
-        iseq->body->iseq_start_pc = iseq->body->iseq_encoded;
+        if (iseq->body->iseq_start_pc != iseq->body->iseq_encoded)
+            iseq->body->iseq_start_pc = get_safe_pc(iseq, iseq->body->sir_start_pc);
         if (rb_sir_debug_level() >= 1) {
             fprintf (stderr, "##Switching ");
             print_iseq_title(iseq);
-            fprintf (stderr, " to stack insns for tracing\n");
+            fprintf (stderr, " to safe RTL insns for tracing\n");
         }
     } else {
         iseq->body->iseq_start_pc = iseq->body->sir_start_pc;
@@ -3941,14 +3944,12 @@ rb_sir_trace_stack_insn_pc(rb_execution_context_t *ec, rb_control_frame_t *reg_c
 }
 
 static sir_inline const VALUE *
-get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
-    const struct rb_iseq_constant_body *body = cfp->iseq->body;
+get_safe_pc(const rb_iseq_t *iseq, const VALUE *pc) {
+    const struct rb_iseq_constant_body *body = iseq->body;
     SIR_GEN_ASSERT(body->bbv_code <= pc && pc < body->bbv_code + body->bbv_code_free);
     int pos = (int)(pc - body->bbv_code);
     SIR_GEN_ASSERT(pos < body->bbv_code_free);
-#ifdef RTL_ONLY
     if (body->bbv_pos_map[pos] >= 0) return pc;
-#endif
     int safe_pos = -body->bbv_pos_map[pos] - 1;
     SIR_GEN_ASSERT(safe_pos >= 0 && safe_pos < body->bbv_code_free);
     return body->bbv_code + safe_pos;
@@ -3956,7 +3957,7 @@ get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
 
 const VALUE *
 rb_sir_get_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
-    return get_safe_pc(cfp, pc);
+    return get_safe_pc(cfp->iseq, pc);
 }
 
 const VALUE *
@@ -3967,7 +3968,7 @@ rb_sir_get_jump_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc) {
     if (rb_sir_debug_p())
         fprintf (stderr, "canceling %04ld: %s\n", (long)(pc - cfp->iseq->body->bbv_code), insn_name(insn_id));
 #endif
-    return get_safe_pc(cfp, pc);
+    return get_safe_pc(cfp->iseq, pc);
 }
 
 void
