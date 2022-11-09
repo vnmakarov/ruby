@@ -660,6 +660,7 @@ get_bbv_code_space(rb_iseq_t *iseq, int len) {
         old_bbv_code = body->bbv_code;
         SIR_REALLOC_N(body->bbv_code, VALUE, body->bbv_code_bound);
         SIR_REALLOC_N(body->bbv_pos_map, int, body->bbv_code_bound);
+        SIR_REALLOC_N(body->bbv_pos_events, rb_event_flag_t, body->bbv_code_bound);
         if (old_bbv_code != NULL && body->bbv_code != old_bbv_code) {
             fprintf(stderr, "==> Repositioning bbv_code\n");
             abort();
@@ -710,13 +711,19 @@ static VARR(VALUE) *bbv_encoded;
 
 static VARR(int) *pos_map;
 
+DEF_VARR(rb_event_flag_t);
+static VARR(rb_event_flag_t) *pos_events;
+
 static void
-update_pos_map(int pos, int orig_pos, int len) {
+update_pos_map_events(int pos, int orig_pos, rb_event_flag_t events, int len) {
     int i;
 
-    while ((int)VARR_LENGTH(int, pos_map) < pos + len)
+    while ((int)VARR_LENGTH(int, pos_map) < pos + len) {
         VARR_PUSH(int, pos_map, orig_pos < 0 ? 0 : -1);
+        VARR_PUSH(rb_event_flag_t, pos_events, 0);
+    }
     VARR_SET(int, pos_map, pos, orig_pos);
+    VARR_SET(rb_event_flag_t, pos_events, pos, events);
     /* increase original position as line number is calculated from stack pc - 1. */
     for (i = 1; i < len; i++)
         VARR_SET(int, pos_map, pos + i, orig_pos + 1);
@@ -744,7 +751,7 @@ print_pos_map(rb_iseq_t *iseq, int start, int bound, int spec_p) {
 }
 
 static int
-add_insn(int orig_pos, enum ruby_vminsn_type insn_id, int nops, ...) {
+add_insn(int orig_pos, rb_event_flag_t events, enum ruby_vminsn_type insn_id, int nops, ...) {
     int start, i;
     va_list va;
 
@@ -755,12 +762,12 @@ add_insn(int orig_pos, enum ruby_vminsn_type insn_id, int nops, ...) {
         VARR_PUSH(VALUE, bbv_encoded, va_arg(va, VALUE));
     }
     va_end(va);
-    update_pos_map(start, orig_pos, nops + 1);
+    update_pos_map_events(start, orig_pos, events, nops + 1);
     return start;
 }
 
 static int
-add_insn_arr(int orig_pos, enum ruby_vminsn_type insn_id, int nops, VALUE *operands) {
+add_insn_arr(int orig_pos, rb_event_flag_t events, enum ruby_vminsn_type insn_id, int nops, VALUE *operands) {
     int start, i;
 
     start = (int)VARR_LENGTH(VALUE, bbv_encoded);
@@ -768,7 +775,7 @@ add_insn_arr(int orig_pos, enum ruby_vminsn_type insn_id, int nops, VALUE *opera
     for (i = 0; i < nops; i++) {
         VARR_PUSH(VALUE, bbv_encoded, operands[i]);
     }
-    update_pos_map(start, orig_pos, nops + 1);
+    update_pos_map_events(start, orig_pos, events, nops + 1);
     return start;
 }
 
@@ -1018,7 +1025,8 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
     /* Add sir_make_xxx_bbv insns for all entry points and create bbvs for opt_table and catch_table: */
     VARR_TRUNC(VALUE, bbv_encoded, 0);
     VARR_TRUNC(int, pos_map, 0);
-    add_insn(0, BIN(sir_make_bbv), 1, 0);
+    VARR_TRUNC(rb_event_flag_t, pos_events, 0);
+    add_insn(0, 0, BIN(sir_make_bbv), 1, 0);
     if (body->param.opt_num == 0) {
         body->curr_param_opt_table = NULL;
     } else {
@@ -1028,7 +1036,7 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
             bbv = create_bbv(iseq, RB_BBV_OPT, i, pos, -1, TRUE, 0, NULL);
             VARR_PUSH (rb_iseq_bbv_t, bbvs, bbv);
             body->curr_param_opt_table[i] = VARR_LENGTH(VALUE, bbv_encoded);
-            add_insn(pos, BIN(sir_make_optpc_bbv), 1, i);
+            add_insn(pos, 0, BIN(sir_make_optpc_bbv), 1, i);
         }
     }
     if (body->catch_table != NULL) {
@@ -1037,7 +1045,7 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
             bbv = create_bbv(iseq, RB_BBV_CATCH, i, pos, -1, TRUE, 0, NULL);
             VARR_PUSH(rb_iseq_bbv_t, bbvs, bbv);
             body->catch_table->entries[i].curr_cont = (unsigned)VARR_LENGTH(VALUE, bbv_encoded);
-            add_insn(pos, BIN(sir_make_catch_bbv), 1, i);
+            add_insn(pos, 0, BIN(sir_make_catch_bbv), 1, i);
         }
     }
     body->bbvs = SIR_ALLOC_N(rb_iseq_bbv_t, VARR_LENGTH(rb_iseq_bbv_t, bbvs));
@@ -1048,11 +1056,15 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
     make_bbv_area_start = get_bbv_code_space(iseq, len);
     SIR_GEN_ASSERT(make_bbv_area_start == 0);
     SIR_GEN_ASSERT(len == (int)VARR_LENGTH(int, pos_map));
+    SIR_GEN_ASSERT(len == (int)VARR_LENGTH(rb_event_flag_t, pos_events));
     memcpy(&body->bbv_code[make_bbv_area_start], VARR_ADDR(VALUE, bbv_encoded), len * sizeof(VALUE));
     VARR_TRUNC(VALUE, bbv_encoded, 0);
     memcpy(&body->bbv_pos_map[make_bbv_area_start],
            VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
+    memcpy(&body->bbv_pos_events[make_bbv_area_start], VARR_ADDR(rb_event_flag_t, pos_events),
+           VARR_LENGTH(rb_event_flag_t, pos_events) * sizeof(rb_event_flag_t));
     VARR_TRUNC(int, pos_map, 0);
+    VARR_TRUNC(rb_event_flag_t, pos_events, 0);
     body->iseq_code = body->sir_start_pc = body->iseq_start_pc = &body->bbv_code[make_bbv_area_start];
     bbv_encode(&body->bbv_code[make_bbv_area_start], len);
     int debug_level = rb_sir_debug_level();
@@ -1100,12 +1112,16 @@ remove_nops(int *nops_len) {
         last_insn_p = curr_ind + len >= (int)VARR_LENGTH(VALUE, bbv_encoded);
         for (nel = 0; nel < len; nel++, new_curr_ind++) {
             VARR_SET(VALUE, bbv_encoded, new_curr_ind, VARR_GET(VALUE, bbv_encoded, curr_ind + nel));
-            if (nel == 0 || !last_insn_p)
+            if (nel == 0 || !last_insn_p) {
                 VARR_SET(int, pos_map, new_curr_ind, VARR_GET(int, pos_map, curr_ind + nel));
+                VARR_SET(rb_event_flag_t, pos_events, new_curr_ind,
+                         VARR_GET(rb_event_flag_t, pos_events, curr_ind + nel));
+            }
         }
     }
     VARR_TRUNC(VALUE, bbv_encoded, new_curr_ind);
     VARR_TRUNC(int, pos_map, last_sir_ind + 1);
+    VARR_TRUNC(rb_event_flag_t, pos_events, last_sir_ind + 1);
     return last_sir_ind;
 }
 
@@ -1122,10 +1138,12 @@ catch_between_p(rb_iseq_t *iseq, int sir_producer_pos, int orig_consumer_pos) {
 }
 
 static void
-get_op(rb_iseq_t *iseq, int orig_insn_pos, int op_insn_pos, int *local_p, VALUE *local, VALUE *val) {
+get_op(rb_iseq_t *iseq, int orig_insn_pos, int op_insn_pos,
+       int *local_p, VALUE *local, VALUE *val, rb_event_flag_t *event) {
     *local_p = FALSE;
     *local = Qnil;
     if (val != NULL) *val = Qnil;
+    *event = rb_iseq_event_flags(iseq, VARR_GET(int, pos_map, op_insn_pos));
     if (op_insn_pos >= 0 && !catch_between_p(iseq, op_insn_pos, orig_insn_pos)) {
         enum ruby_vminsn_type op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
         if ((op_insn_id == BIN(getlocal) && VARR_GET(VALUE, bbv_encoded, op_insn_pos + 2) == 0)
@@ -1183,7 +1201,7 @@ set_case_hash_el(VALUE key, VALUE val, VALUE ptr)
     dst = data->origin_case_start + insn_len(BIN(opt_case_dispatch)) + (int)FIX2LONG(val);
     dst_bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, dst, data->env_p,
                       (int)VARR_LENGTH(char, attrs), VARR_ADDR(char, attrs));
-    disp = add_insn(data->origin_opt_case_pos, BIN(sir_gen_bbv_key), 3, (VALUE)dst_bbv, (VALUE)0, (VALUE)key);
+    disp = add_insn(data->origin_opt_case_pos, 0, BIN(sir_gen_bbv_key), 3, (VALUE)dst_bbv, (VALUE)0, (VALUE)key);
     VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
     VARR_PUSH(int, out_gen_bbv_disps, disp);
     /* offset sir_gen_bbv_key -> sir_case_dispatch */
@@ -1312,7 +1330,7 @@ contains_input_lvar_p(int insn_pos, int lvar) {
 
 static void
 add_case_gen_bbv(rb_iseq_bbv_t dst_bbv, int sir_case_pos, int orig_opt_case_pos, int nop) {
-    int gen_bbv_disp = add_insn(orig_opt_case_pos, BIN(sir_gen_bbv), 3, (VALUE)dst_bbv, (VALUE)0, nop);
+    int gen_bbv_disp = add_insn(orig_opt_case_pos, 0, BIN(sir_gen_bbv), 3, (VALUE)dst_bbv, (VALUE)0, nop);
     SIR_GEN_ASSERT(VARR_GET(VALUE, bbv_encoded, sir_case_pos) == BIN(sir_case_dispatch) && 2 <= nop && nop <= 3);
     VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
     VARR_PUSH(int, out_gen_bbv_disps, gen_bbv_disp);
@@ -1340,6 +1358,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     int offset, offset2;
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t dst_bbv;
+    rb_event_flag_t event, event1, event2, event3;
 
     SIR_GEN_ASSERT(bbv->head_bbv == NULL && bbv->attrs[0] == ATTR_END_MARKER && init_stack_size >= 0);
     if (debug_level >= 1) {
@@ -1360,6 +1379,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     VARR_TRUNC(int, stack, 0);
     VARR_TRUNC(char, operands_changed_p, 0);
     VARR_TRUNC(int, pos_map, 0);
+    VARR_TRUNC(rb_event_flag_t, pos_events, 0);
     VARR_TRUNC(rb_iseq_bbv_t, out_bbvs, 0);
     VARR_TRUNC(int, out_gen_bbv_disps, 0);
     while (init_stack_size > (int)VARR_LENGTH(int, stack)) {
@@ -1370,6 +1390,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     trace_p = FALSE;
     for (curr_orig_insn_pos = bbv->iseq_start;;) {
         last_sir_ind = (int)VARR_LENGTH(VALUE, bbv_encoded);
+        event = rb_iseq_event_flags(iseq, curr_orig_insn_pos);
 	insn_id = rb_vm_insn_addr2insn((void *)body->iseq_encoded[curr_orig_insn_pos]);
         if ((VALUE)sir_dispatch_table[insn_id] != body->iseq_encoded[curr_orig_insn_pos]) trace_p = TRUE;
         len = insn_len(insn_id);
@@ -1381,7 +1402,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             SIR_GEN_ASSERT(stack_size > n);
             for (i = 0; i <= n; i++) /* we can not use stack above n w/o change setn arg */
                 VARR_SET(int, stack, stack_size - i - 1, -1); /* flag of unknown insn */
-            add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
+            add_insn_arr(curr_orig_insn_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(topn):
             n = (int)operands[0];
@@ -1392,7 +1413,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             }
             VARR_PUSH(int, stack, -1); /* flag of unknown insn */
             VARR_PUSH(char, operands_changed_p, FALSE);
-            add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
+            add_insn_arr(curr_orig_insn_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(dup):
             n = 1;
@@ -1409,13 +1430,13 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 VARR_PUSH(int, stack, -1); /* flag of unknown insn */
                 VARR_PUSH(char, operands_changed_p, FALSE);
             }
-            add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
+            add_insn_arr(curr_orig_insn_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(nop):
         case BIN(sir_make_bbv): // ???
         case BIN(sir_jump): /* nops not labeled by catch table will be removed */
             if (pos_in_catch_table_p(iseq, curr_orig_insn_pos, TRUE, TRUE, TRUE)) {
-                last_sir_ind = add_insn(curr_orig_insn_pos, BIN(nop), 0);
+                last_sir_ind = add_insn(curr_orig_insn_pos, event, BIN(nop), 0);
                 update_labeled(last_sir_ind);
             }
             break;
@@ -1437,8 +1458,19 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             SIR_GEN_ASSERT(stack_size >= 2);
             op3_insn_pos = VARR_LAST(int, stack);
             op2_insn_pos = VARR_GET(int, stack, stack_size - 2);
-            get_op(iseq, curr_orig_insn_pos, op3_insn_pos, &local3_p, &local3, &val3);
-            get_op(iseq, curr_orig_insn_pos, op2_insn_pos, &local2_p, &local2, &val2);
+            get_op(iseq, curr_orig_insn_pos, op3_insn_pos, &local3_p, &local3, &val3, &event3);
+            get_op(iseq, curr_orig_insn_pos, op2_insn_pos, &local2_p, &local2, &val2, &event2);
+            if ((event & event2) == 0) {
+                if ((event & event2 & event3) != 0) {
+                    local3_p = FALSE;
+                    val3 = Qnil;
+                }
+            } else if ((event & event3) == 0) {
+                local2_p = FALSE;
+                val2 = Qnil;
+            } else {
+                goto rest_cases;
+            }
             new_insn_id = get_sir_insn2_id(insn_id, local2_p, &val2, local3_p, val3);
             SIR_GEN_ASSERT(val2 == Qnil || val3 == Qnil);
             if (new_insn_id == BIN(nop)) goto rest_cases;
@@ -1446,10 +1478,18 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             SIR_GEN_ASSERT(nops >= 1);
             if (local2_p || val2 != Qnil) {
                 new_operands[0] = local2_p ? (VALUE)-(EPDISP)local2 : val2;
-                if (local3_p || val3 != Qnil)
+                if ((event & event2) != 0) goto rest_cases;
+                if (local3_p || val3 != Qnil) {
+                    if ((event & event2 & event3) != 0) goto rest_cases;
+                    event |= event2 | event3;
                     new_operands[1] = local3_p ? (VALUE)-(EPDISP)local3 : val3;
+                } else {
+                    event |= event2;
+                }
             } else {
                 SIR_GEN_ASSERT(local3_p || val3 != Qnil);
+                if ((event & event3) != 0) goto rest_cases;
+                event |= event3;
                 new_operands[0] = local3_p ? (VALUE)-(EPDISP)local3 : val3;
             }
             if (nops + 2 == insn_len(new_insn_id)) { /* cd */
@@ -1461,7 +1501,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 new_operands[nops + 1] = operands[1];
                 nops += 2;
             }
-            last_sir_ind = add_insn_arr(curr_orig_insn_pos, new_insn_id, nops, new_operands);
+            last_sir_ind = add_insn_arr(curr_orig_insn_pos, event, new_insn_id, nops, new_operands);
             if (local2_p || val2 != Qnil)
                 nullify(op2_insn_pos);
             if (local3_p || val3 != Qnil)
@@ -1476,28 +1516,72 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             op_insn_pos = VARR_GET(int, stack, stack_size - 3);
             op2_insn_pos = VARR_GET(int, stack, stack_size - 2);
             op3_insn_pos = VARR_GET(int, stack, stack_size - 1);
-            get_op(iseq, curr_orig_insn_pos, op_insn_pos, &local_p, &local, NULL);
-            get_op(iseq, curr_orig_insn_pos, op2_insn_pos, &local2_p, &local2, &val2);
-            get_op(iseq, curr_orig_insn_pos, op3_insn_pos, &local3_p, &local3, NULL);
+            get_op(iseq, curr_orig_insn_pos, op_insn_pos, &local_p, &local, NULL, &event1);
+            get_op(iseq, curr_orig_insn_pos, op2_insn_pos, &local2_p, &local2, &val2, &event2);
+            get_op(iseq, curr_orig_insn_pos, op3_insn_pos, &local3_p, &local3, NULL, &event3);
+            if ((event & event1) == 0) {
+                if ((event & event1 & event2) != 0) {
+                    local2_p = FALSE;
+                    val2 = Qnil;
+                    if ((event & event1 & event3) != 0) {
+                        local3_p = FALSE;
+                        val3 = Qnil;
+                    }
+                } else if ((event & event1 & event3) != 0) {
+                    local3_p = FALSE;
+                    val3 = Qnil;
+                }
+            } else if ((event & event2) == 0) {
+                local_p = FALSE;
+                val = Qnil;
+                if ((event & event2 & event3) != 0) {
+                    local3_p = FALSE;
+                    val3 = Qnil;
+                }
+            } else if ((event & event3) == 0) {
+                local_p = local2_p = FALSE;
+                val = val2 = Qnil;
+            } else {
+                goto rest_cases;
+            }
             new_insn_id = get_sir_insn3_id(insn_id, local_p, local2_p, local3_p, val2);
             if (new_insn_id == BIN(nop)) goto rest_cases;
             nops = (local_p ? 1 : 0) + (local2_p || val2 != Qnil ? 1 : 0) + (local3_p ? 1 : 0);
             SIR_GEN_ASSERT(nops >= 1);
             if (local_p) {
+                if ((event & event1) != 0) goto rest_cases;
                 new_operands[0] = -(EPDISP)local;
                 if (local2_p || val2 != Qnil) {
+                    if ((event & event1 & event2) != 0) goto rest_cases;
                     new_operands[1] = local2_p ? (VALUE)-(EPDISP)local2 : val2;
-                    if (local3_p)
+                    if (local3_p) {
+                        if ((event & event1 & event2 & event3) != 0) goto rest_cases;
+                        event |= event1 | event2 | event3;
                         new_operands[2] = -(EPDISP)local3;
+                    } else {
+                        event |= event1 | event2;
+                    }
                 } else if (local3_p) {
+                    if ((event & event1 & event3) != 0) goto rest_cases;
+                    event |= event1 | event3;
                     new_operands[1] = -(EPDISP)local3;
+                } else {
+                    event |= event1;
                 }
             } else {
                 if (local2_p || val2 != Qnil) {
+                    if ((event & event2) != 0) goto rest_cases;
                     new_operands[0] = local2_p ? (VALUE)-(EPDISP)local2 : val2;
-                    if (local3_p)
+                    if (local3_p) {
+                        if ((event & event2 & event3) != 0) goto rest_cases;
+                        event |= event2 | event3;
                         new_operands[1] = (VALUE)-(EPDISP)local3;
+                    } else {
+                        event |= event2;
+                    }
                 } else if (local3_p) {
+                    if ((event & event3) != 0) goto rest_cases;
+                    event |= event3;
                     new_operands[0] = (VALUE)-(EPDISP)local3;
                 }
             }
@@ -1507,7 +1591,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             } else {
                 SIR_GEN_ASSERT(nops + 1 == insn_len(new_insn_id));
             }
-            last_sir_ind = add_insn_arr(curr_orig_insn_pos, new_insn_id, nops, new_operands);
+            last_sir_ind = add_insn_arr(curr_orig_insn_pos, event, new_insn_id, nops, new_operands);
             if (local_p)
                 nullify(op_insn_pos);
             if (local2_p || val2 != Qnil)
@@ -1521,7 +1605,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             br_p = TRUE;
             dst = curr_orig_insn_pos + len + operands[0];
             if (!longer_paths_p || !follow_jumps_p || (long)operands[0] <= 0)
-                add_insn(curr_orig_insn_pos, BIN(sir_jump), 1, (VALUE)0);
+                add_insn(curr_orig_insn_pos, event, BIN(sir_jump), 1, (VALUE)0);
             goto stack_update;
         case BIN(branchif):
         case BIN(branchunless):
@@ -1537,14 +1621,15 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 SIR_INSN2_CASES(gt):
                 SIR_INSN2_CASES(le):
                 SIR_INSN2_CASES(ge):
-                    add_insn_arr(VARR_GET(int, pos_map, op_insn_pos), op_insn_id, (int)insn_len(op_insn_id) - 1,
+                    event1 = rb_iseq_event_flags(iseq, VARR_GET(int, pos_map, op_insn_pos));
+                    add_insn_arr(VARR_GET(int, pos_map, op_insn_pos), event1, op_insn_id, (int)insn_len(op_insn_id) - 1,
                                  VARR_ADDR(VALUE, bbv_encoded) + op_insn_pos + 1);
                     nullify(op_insn_pos);
                     break;
                 default: break;
                 }
             }
-            add_insn(curr_orig_insn_pos, BIN(sir_branch), 4, (VALUE)0, (VALUE)0, (VALUE)0, (VALUE)0);
+            add_insn(curr_orig_insn_pos, event, BIN(sir_branch), 4, (VALUE)0, (VALUE)0, (VALUE)0, (VALUE)0);
             br_p = dst2_p = TRUE;
             if (insn_id == BIN(branchunless)) {
                 dst2 = curr_orig_insn_pos + len + (OFFSET)operands[0];
@@ -1558,13 +1643,13 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             br_p = dst2_p = TRUE;
             dst = curr_orig_insn_pos + len + (OFFSET)operands[0];
             dst2 = curr_orig_insn_pos + len;
-            add_insn(curr_orig_insn_pos, BIN(sir_branchnil), 2, (VALUE)0, (VALUE)0);
+            add_insn(curr_orig_insn_pos, event, BIN(sir_branchnil), 2, (VALUE)0, (VALUE)0);
             goto stack_update;
         case BIN(opt_getinlinecache):
             br_p = dst2_p = TRUE;
             dst = curr_orig_insn_pos + len + (OFFSET)operands[0];
             dst2 = curr_orig_insn_pos + len;
-            add_insn(curr_orig_insn_pos, BIN(sir_getinlinecache), 3, (VALUE)0, (VALUE)0, operands[1]);
+            add_insn(curr_orig_insn_pos, event, BIN(sir_getinlinecache), 3, (VALUE)0, (VALUE)0, operands[1]);
             goto stack_update;
         case BIN(setlocal):
             if (operands[1] != 0) goto rest_cases;
@@ -1577,7 +1662,8 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             if (VARR_LAST(char, operands_changed_p)) goto change_setlocal0;
             op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
             new_insn_id = get_var_res_sir_insn_id(op_insn_id);
-            if (new_insn_id == BIN(nop)
+            event1 = rb_iseq_event_flags(iseq, VARR_GET(int, pos_map, op_insn_pos));
+            if (new_insn_id == BIN(nop) && (event & event1) == 0
                 && !pos_in_catch_table_p(iseq, VARR_GET(int, pos_map, op_insn_pos), FALSE, TRUE, FALSE)) {
                 switch (op_insn_id) {
                 case BIN(putobject):
@@ -1589,14 +1675,14 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 case BIN(putobject_INT2FIX_1_):
                     val = INT2FIX(1);
                 move_imm:
-                    add_insn(curr_orig_insn_pos, BIN(sir_movi), 2, (VALUE)-(EPDISP)operands[0], val);
+                    add_insn(curr_orig_insn_pos, event | event1, BIN(sir_movi), 2, (VALUE)-(EPDISP)operands[0], val);
                     nullify(op_insn_pos);
                     goto change_setlocal;
                 case BIN (getlocal):
                     if (VARR_GET(VALUE, bbv_encoded, op_insn_pos + 2) != 0) goto rest_cases; /*op1==level*/
                     /* fallthrough */
                 case BIN(getlocal_WC_0):
-                    add_insn(curr_orig_insn_pos, BIN(sir_mov), 2, -(EPDISP)operands[0],
+                    add_insn(curr_orig_insn_pos, event | event1, BIN(sir_mov), 2, -(EPDISP)operands[0],
                              -(EPDISP)VARR_GET(VALUE, bbv_encoded, op_insn_pos + 1));
                     nullify(op_insn_pos);
                     goto change_setlocal;
@@ -1615,7 +1701,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 SIR_INSN2_CASES(le):
                 SIR_INSN2_CASES(ge):
                     /* put producer adjacent to setlocal */
-                    add_insn_arr(VARR_GET(int, pos_map, op_insn_pos),
+                    add_insn_arr(VARR_GET(int, pos_map, op_insn_pos), event1,
                                  op_insn_id, (int)insn_len(op_insn_id) - 1,
                                  VARR_ADDR(VALUE, bbv_encoded) + op_insn_pos + 1);
                     nullify(op_insn_pos);
@@ -1624,7 +1710,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
                 }
             }
         change_setlocal0:
-            add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
+            add_insn_arr(curr_orig_insn_pos, event, insn_id, len - 1, operands);
         change_setlocal:
             for (i = 0; i < stack_size - 1; i++) {
                 if (contains_input_lvar_p(VARR_GET(int, stack, i), (int)operands[0]))
@@ -1642,7 +1728,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             /* fallthrough */
         case BIN(getlocal_WC_0):
         add_and_push:
-            add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
+            add_insn_arr(curr_orig_insn_pos, event, insn_id, len - 1, operands);
         push:
             VARR_PUSH(int, stack, last_sir_ind); /* insn producing temp */
             VARR_PUSH(char, operands_changed_p, FALSE);
@@ -1652,13 +1738,13 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
             new_operands[0] = operands[0]; /* cdhash */
             new_operands[1] = 0; /* else offset */
             new_operands[2] = 0; /* fallthrough offset */
-            add_insn_arr(curr_orig_insn_pos, BIN(sir_case_dispatch), 3, operands);
+            add_insn_arr(curr_orig_insn_pos, event, BIN(sir_case_dispatch), 3, operands);
             goto stack_update;
             /* fall through */
         default:
         rest_cases:
             if (insn_id != BIN(sir_gen_bbv))
-                add_insn_arr(curr_orig_insn_pos, insn_id, len - 1, operands);
+                add_insn_arr(curr_orig_insn_pos, event, insn_id, len - 1, operands);
         stack_update:
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block)
                 || insn_id == BIN(invokesuper)) {
@@ -1698,18 +1784,18 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     last_pos = VARR_LAST(int, pos_map);
     if (insn_id != BIN(leave) && insn_id != BIN(throw) && insn_id != BIN(opt_case_dispatch)) {
         if (!br_p) { // ??? reachable
-            last_sir_ind = add_insn(last_pos, BIN(sir_jump), 1, (VALUE)0);
+            last_sir_ind = add_insn(last_pos, 0, BIN(sir_jump), 1, (VALUE)0);
             dst = bbv->iseq_bound;
         }
         dst_bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, (int)dst, bbv->env_p, 0, NULL);
         len = insn_len(BIN(sir_gen_bbv));
-        disp = add_insn(last_pos, BIN(sir_gen_bbv), 3, (VALUE)dst_bbv, (VALUE)0, 1);
+        disp = add_insn(last_pos, 0, BIN(sir_gen_bbv), 3, (VALUE)dst_bbv, (VALUE)0, 1);
         VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
         VARR_PUSH(int, out_gen_bbv_disps, disp);
         VARR_SET(VALUE, bbv_encoded, disp + 2, (VALUE)(last_sir_ind - (disp + len)));
         if (dst2_p) {
             dst_bbv = get_bbv(iseq, RB_BBV_REGULAR, 0, (int)dst2, bbv->env_p, 0, NULL);
-            disp2 = add_insn(last_pos, BIN(sir_gen_bbv), 3, (VALUE)dst_bbv, (VALUE)0, 2);
+            disp2 = add_insn(last_pos, 0, BIN(sir_gen_bbv), 3, (VALUE)dst_bbv, (VALUE)0, 2);
             VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
             VARR_PUSH(int, out_gen_bbv_disps, disp2);
             VARR_SET(VALUE, bbv_encoded, disp2 + 2, (VALUE)(last_sir_ind - (disp2 + len)));
@@ -1733,7 +1819,7 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         data.origin_opt_case_pos = last_pos;
         rb_hash_foreach(operands[0], set_case_hash_el, (VALUE)&data);
     }
-    add_insn(last_pos, BIN(nop), 0); /* to get position right after the last insn */
+    add_insn(last_pos, 0, BIN(nop), 0); /* to get position right after the last insn */
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
     bbv->bbv_start = get_bbv_code_space(iseq, len);
     bbv->bbv_bound = bbv->bbv_start + len;
@@ -1744,6 +1830,9 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
     VARR_TRUNC(VALUE, bbv_encoded, 0);
     memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map), VARR_LENGTH(int, pos_map) * sizeof(int));
     VARR_TRUNC(int, pos_map, 0);
+    memcpy(&body->bbv_pos_events[bbv->bbv_start], VARR_ADDR(rb_event_flag_t, pos_events),
+           VARR_LENGTH(rb_event_flag_t, pos_events) * sizeof(rb_event_flag_t));
+    VARR_TRUNC(rb_event_flag_t, pos_events, 0);
     if (insn_id != BIN(leave) && insn_id != BIN(throw) && insn_id != BIN(opt_case_dispatch)) {
         insn_id = (enum ruby_vminsn_type)body->bbv_code[bbv->bbv_start + last_sir_ind];
         offset = last_sir_ind + insn_len(insn_id); /* offset of the branch end from zero */
@@ -1769,9 +1858,9 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
 }
 
 static int
-add_spec_insn_arr(int sir_pos, enum ruby_vminsn_type insn_id, int nops, VALUE *operands) {
+add_spec_insn_arr(int sir_pos, rb_event_flag_t event, enum ruby_vminsn_type insn_id, int nops, VALUE *operands) {
     SIR_GEN_ASSERT(sir_pos >= 0);
-    return add_insn_arr(-(sir_pos + 1), insn_id, nops, operands);
+    return add_insn_arr(-(sir_pos + 1), event, insn_id, nops, operands);
 }
 
 #define BRANCH_CASES(name)      \
@@ -2083,6 +2172,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t head_bbv = bbv->head_bbv, orig_bbv, dst_bbv, old_dst_bbv, body_bbv;
     int add_bbv_cont_p, mirjit_enabled_p = rb_mirjit_enabled_p();
+    rb_event_flag_t event, event1;
 
     mirjit_enabled_p = mirjit_enabled_p && profile_p;
     SIR_GEN_ASSERT(profile_p || bbv->bbv_start < 0);
@@ -2117,7 +2207,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     new_insn_pos = -1;
     sir_branch_offset_add = 0;
     if (mirjit_enabled_p) {
-        add_insn_arr(bbv->iseq_start, BIN(sir_bbv_start), 1, (VALUE *)&bbv);
+        add_insn_arr(bbv->iseq_start, 0, BIN(sir_bbv_start), 1, (VALUE *)&bbv);
         bbv->jit_count = BBV_COUNT_TO_JIT;
     }
     trace_p = FALSE;
@@ -2128,6 +2218,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         new_insn_pos = (int)VARR_LENGTH(VALUE, bbv_encoded);
       again:
 	insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[curr_sir_insn_pos]);
+        event = body->bbv_pos_events[curr_sir_insn_pos];
         if ((VALUE)sir_dispatch_table[insn_id] != body->bbv_code[curr_sir_insn_pos]) trace_p = TRUE;
         len = insn_len(insn_id);
         operands = &body->bbv_code[curr_sir_insn_pos + 1];
@@ -2177,6 +2268,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             curr_sir_insn_pos += len;
             SIR_GEN_ASSERT(curr_sir_insn_pos < orig_bbv->bbv_bound);
             insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[curr_sir_insn_pos]);
+            event = body->bbv_pos_events[curr_sir_insn_pos];
             len = insn_len(insn_id);
             switch (insn_id) {
             case BIN(sir_inspect_fixtype):
@@ -2186,6 +2278,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 if (inspect_attr1 != ATTR_FIXNUM && inspect_attr1 != ATTR_ARRAY) goto again;
                 inspect_attr2 = ATTR_FIXNUM;
                 insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[curr_sir_insn_pos]);
+                event = body->bbv_pos_events[curr_sir_insn_pos];
                 len = insn_len(insn_id);
                 break;
             }
@@ -2196,6 +2289,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 if (inspect_attr1 != ATTR_FLONUM) goto again;
                 inspect_attr2 = ATTR_FLONUM;
                 insn_id = rb_vm_insn_addr2insn((void *)body->bbv_code[curr_sir_insn_pos]);
+                event = body->bbv_pos_events[curr_sir_insn_pos];
                 len = insn_len(insn_id);
                 break;
             }
@@ -2393,7 +2487,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 }
             }
         add_speculative:
-            add_spec_insn_arr(orig_pos, new_insn_id, nops, new_operands); /* excluding cd */
+            add_spec_insn_arr(orig_pos, event, new_insn_id, nops, new_operands); /* excluding cd */
             inc = insn_stack_increase(new_insn_id, new_operands);
             stack_size += inc - 1;
             if (aref_p || aset_p) attr = ATTR_UNKNOWN;
@@ -2404,20 +2498,20 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_GEN_ASSERT(stack_size >= 2);
             setup_attr(get_temp_num(iseq, stack_size - 1), get_attr(get_temp_num(iseq, stack_size - 2)));
             setup_attr(get_temp_num(iseq, stack_size - 2), attr);
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(setn):
             n = (int)operands[0];
             SIR_GEN_ASSERT(stack_size > n);
             setup_attr(get_temp_num(iseq, stack_size - n - 1), get_attr(get_temp_num(iseq, stack_size - 1)));
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(topn):
             n = (int)operands[0];
             SIR_GEN_ASSERT(stack_size > n);
             setup_attr(get_temp_num(iseq, stack_size), get_attr(get_temp_num(iseq, stack_size - n - 1)));
             stack_size++;
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(dup):
             n = 1;
@@ -2429,7 +2523,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             for (i = 0; i < n; i++)
                 setup_attr(get_temp_num(iseq, stack_size + i), get_attr(get_temp_num(iseq, stack_size - n + i)));
             stack_size += n;
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(nop):
             update_labeled(new_insn_pos);
@@ -2534,33 +2628,33 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 /* Always generate inspection for 1st and then 2nd operand: */
                 if (nops == 0) {
                     new_operands[0] = 1;
-                    add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                    add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                     new_operands[0] = 0;
-                    add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                    add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                 } else if (nops == 1) {
                     if (vs_p) {
                         new_operands[0] = operands[0];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                         new_operands[0] = 0;
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                     } else {
                         new_operands[0] = 0;
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                         if (!imm_p && !imm2_p) {
                             new_operands[0] = operands[0];
-                            add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                            add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                         }
                     }
                 } else {
                     SIR_GEN_ASSERT(nops == 2);
                     if (imm_p || imm2_p) {
                         new_operands[0] = imm2_p ? operands[0] : operands[1];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                     } else {
                         new_operands[0] = operands[0];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                         new_operands[0] = operands[1];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                     }
                 }
 #endif
@@ -2571,15 +2665,15 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 new_operands[0] = sir_dbl2val(FIXNUM_P(operands[0])
                                               ? (double)FIX2LONG(operands[0]) : RFLOAT_VALUE(operands[0]));
                 if (nops == 2) new_operands[1] = operands[1];
-                add_spec_insn_arr(orig_pos, new_insn_id, nops, new_operands);
+                add_spec_insn_arr(orig_pos, event, new_insn_id, nops, new_operands);
             } else if (attr == ATTR_FLONUM && imm2_p) {
                 if (nops == 2) new_operands[0] = operands[0];
                 new_operands[nops - 1] = sir_dbl2val(FIXNUM_P(operands[nops - 1])
                                                      ? (double)FIX2LONG(operands[nops - 1])
                                                      : RFLOAT_VALUE(operands[nops - 1]));
-                add_spec_insn_arr(orig_pos, new_insn_id, nops, new_operands);
+                add_spec_insn_arr(orig_pos, event, new_insn_id, nops, new_operands);
             } else {
-                add_spec_insn_arr(orig_pos, new_insn_id, nops, operands);
+                add_spec_insn_arr(orig_pos, event, new_insn_id, nops, operands);
             }
             if (aref_p) attr = ATTR_UNKNOWN;
             if (bool_p) attr = ATTR_BOOL;
@@ -2607,47 +2701,47 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 if (imm2_p && !FIXNUM_P(operands[v_p ? 1 : 0])) goto rest_cases;
                 if (nops == 0) { /* sss */
                     new_operands[0] = 1;
-                    add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                    add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                     new_operands[0] = 0;
-                    add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                    add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                 } else if (nops == 1) {
                     if (v_p) { /* vss */
                         new_operands[0] = operands[0];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                     } else { /* sis|svs|ssv */
                         new_operands[0] = 1;
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                     }
                     if (v2_p) { /* svs */
                         new_operands[0] = operands[0];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                     } else if (!imm2_p) { /* vss|ssv */
                         new_operands[0] = v_p ? 1 : 0;
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                     }
                 } else if (nops == 2) {
                     SIR_GEN_ASSERT(nops == 2);
                     if (v_p) { /* vvs | vis | vsv */
                         new_operands[0] = operands[0];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                     } else { /* svv | siv */
                         new_operands[0] = 0;
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                     }
                     if (v2_p) { /* vvs | svv */
                         new_operands[0] = operands[v_p ? 1 : 0];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                     } else if (!imm2_p) { /* vsv */
                         new_operands[0] = 0;
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_stack_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_stack_type), 1, new_operands);
                     }
                 } else { /* vvv or viv */
                     SIR_GEN_ASSERT(nops == 3 && v_p && (imm2_p || v2_p));
                     new_operands[0] = operands[0];
-                    add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                    add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                     if (v2_p) {
                         new_operands[0] = operands[1];
-                        add_spec_insn_arr(orig_pos, BIN(sir_inspect_type), 1, new_operands);
+                        add_spec_insn_arr(orig_pos, 0, BIN(sir_inspect_type), 1, new_operands);
                     }
                 }
 #endif
@@ -2655,7 +2749,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             }
             attr = op3_attr;
             stack_size -= (3 - nops);
-            add_spec_insn_arr(orig_pos, new_insn_id, nops, operands);
+            add_spec_insn_arr(orig_pos, event, new_insn_id, nops, operands);
             goto push;
         SIR_INSN2_SPEC_STACK_CASES(iplus):
         SIR_INSN2_SPEC_STACK_CASES(iminus):
@@ -2720,7 +2814,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
 #ifndef TYPE_SPEC_ONLY
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
-                add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
+                add_spec_insn_arr(orig_pos, 0, BIN(specialize_bbv), 1, new_operands);
             }
 #endif
             goto rest_cases;
@@ -2728,7 +2822,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
 #ifndef TYPE_SPEC_ONLY
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
-                add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
+                add_spec_insn_arr(orig_pos, 0, BIN(specialize_bbv), 1, new_operands);
             }
 #endif
             if (prev_new_insn_pos < 0 || specialize_bbv_pos >= 0) goto rest_cases;
@@ -2736,6 +2830,9 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             prev_new_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos);
             new_insn_id = get_branch_sir_insn_id(prev_new_insn_id);
             if (new_insn_id == BIN(nop)) goto rest_cases;
+            event1 = body->bbv_pos_events[prev_new_insn_pos];
+            if ((event & event1) != 0) goto rest_cases;
+            event |= event1;
             nops = insn_len(new_insn_id) - 1;
             new_operands[0] = operands[0];
             new_operands[1] = operands[1];
@@ -2745,7 +2842,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                 new_operands[nops - 1] = VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos + prev_new_insn_nops);
             if (prev_new_insn_nops >= 2)
                 new_operands[nops - 2] = VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos + prev_new_insn_nops - 1);
-            add_spec_insn_arr(orig_pos, new_insn_id, nops, new_operands);
+            add_spec_insn_arr(orig_pos, event, new_insn_id, nops, new_operands);
             nullify(prev_new_insn_pos);
             sir_branch_offset_add = len - insn_len(new_insn_id);
             goto stack_update;
@@ -2769,27 +2866,30 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             prev_new_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos);
             new_insn_id = get_var_res_sir_insn_id(prev_new_insn_id);
             if (new_insn_id == BIN(nop)) goto sir_setlocal;
+            event1 = body->bbv_pos_events[prev_new_insn_pos];
+            if ((event & event1) != 0) goto rest_cases;
+            event |= event1;
             nops = insn_len(new_insn_id) - 1;
             SIR_GEN_ASSERT(nops <= 3); /* longest variant is vvv or vvi */
             if (nops > 1)
                 new_operands[1] = VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos + 1); /* ops[0] */
             if (nops > 2)
                 new_operands[2] = VARR_GET(VALUE, bbv_encoded, prev_new_insn_pos + 2); /* ops[1] */
-            add_insn_arr(VARR_GET(int, pos_map, prev_new_insn_pos), new_insn_id, nops, new_operands);
+            add_insn_arr(VARR_GET(int, pos_map, prev_new_insn_pos), event, new_insn_id, nops, new_operands);
             nullify(prev_new_insn_pos);
             goto stack_update;
         sir_setlocal:
-            add_spec_insn_arr(orig_pos, BIN(sir_setlocal), 1, new_operands);
+            add_spec_insn_arr(orig_pos, event, BIN(sir_setlocal), 1, new_operands);
             goto stack_update;
         case BIN(getinstancevariable): /* to do specialized insn at the execution */
             SIR_GEN_ASSERT(len == 3);
             if (profile_p) goto rest_cases;
-            add_spec_insn_arr(orig_pos, BIN(sir_make_getivar), 2, operands);
+            add_spec_insn_arr(orig_pos, event, BIN(sir_make_getivar), 2, operands);
             goto stack_update;
         case BIN(setinstancevariable): /* to do specialized insn at the execution */
             SIR_GEN_ASSERT(len == 3);
             if (profile_p) goto rest_cases;
-            add_spec_insn_arr(orig_pos, BIN(sir_make_setivar), 2, operands);
+            add_spec_insn_arr(orig_pos, event, BIN(sir_make_setivar), 2, operands);
             goto stack_update;
         case BIN(opt_send_without_block): {
             CALL_DATA cd = (CALL_DATA)operands[0];
@@ -2802,7 +2902,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             new_operands[0] = operands[0];
             new_operands[1] = (VALUE)get_send_info(bbv, NULL, get_call_attrs(iseq, argc, stack_size),
                                                    Qundef, NULL, argc, vm_ci_mid(cd->ci));
-            add_spec_insn_arr(orig_pos, BIN(sir_make_send), 2, new_operands);
+            add_spec_insn_arr(orig_pos, event, BIN(sir_make_send), 2, new_operands);
             goto stack_update;
         }
         case BIN(send): {
@@ -2817,7 +2917,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             new_operands[0] = operands[0];
             new_operands[1] = (VALUE)get_send_info(bbv, (rb_iseq_t *)operands[1], get_call_attrs(iseq, argc, stack_size),
                                                    Qundef, NULL, argc, vm_ci_mid(cd->ci));
-            add_spec_insn_arr(orig_pos, BIN(sir_make_send), 2, new_operands);
+            add_spec_insn_arr(orig_pos, event, BIN(sir_make_send), 2, new_operands);
             goto stack_update;
         }
         case BIN(invokesuper): {
@@ -2827,7 +2927,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         case BIN(sir_send_without_block):
             SIR_GEN_ASSERT(profile_p);
             new_operands[0] = operands[0];
-            add_spec_insn_arr(orig_pos, BIN(opt_send_without_block), 1, new_operands);
+            add_spec_insn_arr(orig_pos, event, BIN(opt_send_without_block), 1, new_operands);
             goto stack_update;
         case BIN(sir_getivar):
         case BIN(sir_setivar):
@@ -2865,7 +2965,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             SIR_GEN_ASSERT(stack_size >= 1);
             if (!sir_get_iter_funcs(cfunc->func, &start_func, &arg_func, &cont_func, temp_attrs)) goto rest_cases;
             new_operands[0] = (lindex_t)start_func;
-            add_spec_insn_arr(orig_pos, BIN(sir_iter_start), 1, new_operands);
+            add_spec_insn_arr(orig_pos, event, BIN(sir_iter_start), 1, new_operands);
             disp = 0;
             if (mirjit_enabled_p)
                 disp = insn_len(BIN(sir_bbv_cont));
@@ -2880,20 +2980,20 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             /* if ntimes is redefined the caller block is already recorded by cfunc */
             new_operands[1] = (lindex_t)block_bbv;
             new_operands[2] = (lindex_t)arg_func;
-            add_spec_insn_arr(orig_pos, BIN(sir_iter_body), 3, new_operands);
+            add_spec_insn_arr(orig_pos, 0, BIN(sir_iter_body), 3, new_operands);
             disp = 0;
 #ifdef MIRJIT_ITER_INSNS
             if (mirjit_enabled_p) {
-                add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
+                add_spec_insn_arr(orig_pos, 0, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
                 disp = insn_len(BIN(sir_bbv_cont));
             }
 #endif
             /* to int_iter */
             new_operands[0] = -(OFFSET)(disp + insn_len(BIN(sir_iter_body)) + insn_len(BIN(sir_iter_cont)));
             new_operands[1] = (lindex_t)cont_func;
-            add_spec_insn_arr(orig_pos, BIN(sir_iter_cont), 2, new_operands);
+            add_spec_insn_arr(orig_pos, 0, BIN(sir_iter_cont), 2, new_operands);
             if (mirjit_enabled_p) {
-                add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
+                add_spec_insn_arr(orig_pos, 0, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
                 disp = insn_len(BIN(sir_bbv_cont));
             }
             goto stack_update;
@@ -2961,13 +3061,13 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             val = operands[1];
             attr = get_attr(get_lvar_num(iseq, operands[1]));
             setup_attr(get_lvar_num(iseq, operands[0]), attr);
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(sir_movi):
             val = operands[1];
             attr = FIXNUM_P(val) ? ATTR_FIXNUM : FLONUM_P(val) ? ATTR_FLONUM : ATTR_UNKNOWN;
             setup_attr(get_lvar_num(iseq, operands[0]), attr);
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, len - 1, operands);
             break;
         case BIN(putobject_INT2FIX_0_):
         case BIN(putobject_INT2FIX_1_):
@@ -2979,7 +3079,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         case BIN(getlocal_WC_0):
             attr = get_attr(get_lvar_num(iseq, operands[0]));
         add_and_push:
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, len - 1, operands);
         push:
             setup_attr(get_temp_num(iseq, stack_size), attr); /* attr of temp */
             stack_size++;
@@ -2997,7 +3097,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
 #ifndef TYPE_SPEC_ONLY
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
-                add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
+                add_spec_insn_arr(orig_pos, 0, BIN(specialize_bbv), 1, new_operands);
             }
 #endif
             SIR_GEN_ASSERT(len == 4);
@@ -3005,7 +3105,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             RB_OBJ_WRITTEN(iseq, Qundef, new_operands[0]);
             new_operands[1] = operands[1];
             new_operands[2] = operands[2];
-            add_spec_insn_arr(orig_pos, insn_id, 3, new_operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, 3, new_operands);
             goto stack_update;
         case BIN(sir_gen_bbv):
         case BIN(sir_gen_bbv_key):
@@ -3028,7 +3128,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
                              operands[2] /*key*/, INT2FIX(offset));
                 RB_OBJ_WRITTEN(iseq, Qundef, VARR_GET(VALUE, bbv_encoded, branch_pos + 1));
             }
-            disp = add_spec_insn_arr(orig_pos, insn_id, len - 1, new_operands);
+            disp = add_spec_insn_arr(orig_pos, event, insn_id, len - 1, new_operands);
             VARR_PUSH(rb_iseq_bbv_t, out_bbvs, dst_bbv);
             VARR_PUSH(int, out_gen_bbv_disps, disp);
             break;
@@ -3037,7 +3137,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
 #ifndef TYPE_SPEC_ONLY
             if (!profile_p) {
                 new_operands[0] = (VALUE)bbv;
-                add_spec_insn_arr(orig_pos, BIN(specialize_bbv), 1, new_operands);
+                add_spec_insn_arr(orig_pos, 0, BIN(specialize_bbv), 1, new_operands);
             }
 #endif
             goto rest_cases;
@@ -3048,9 +3148,9 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             break; /* remove */
         default:
         rest_cases:
-            add_spec_insn_arr(orig_pos, insn_id, len - 1, operands);
+            add_spec_insn_arr(orig_pos, event, insn_id, len - 1, operands);
             if (add_bbv_cont_p)
-                add_spec_insn_arr(orig_pos, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
+                add_spec_insn_arr(orig_pos, 0, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
         stack_update:
             if (insn_id == BIN(send) || insn_id == BIN(opt_send_without_block) || insn_id == BIN(invokesuper)
                 || insn_id == BIN(sir_send_without_block)) {
@@ -3093,6 +3193,9 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     memcpy(&body->bbv_pos_map[bbv->bbv_start], VARR_ADDR(int, pos_map),
            VARR_LENGTH(int, pos_map) * sizeof(int));
     VARR_TRUNC(int, pos_map, 0);
+    memcpy(&body->bbv_pos_events[bbv->bbv_start], VARR_ADDR(rb_event_flag_t, pos_events),
+           VARR_LENGTH(rb_event_flag_t, pos_events) * sizeof(rb_event_flag_t));
+    VARR_TRUNC(rb_event_flag_t, pos_events, 0);
     if (body->send_info == NULL && VARR_LENGTH(send_info_t, iseq_send_info) != 0) {
         SIR_GEN_ASSERT(!profile_p);
         VARR_PUSH(send_info_t, iseq_send_info, NULL); /* end marker */
@@ -3962,6 +4065,7 @@ rb_sir_gen_init(void) {
     VARR_CREATE(char, arg_attrs, 0);
     VARR_CREATE(char, labeled_p, 0);
     VARR_CREATE(int, pos_map, 0);
+    VARR_CREATE(rb_event_flag_t, pos_events, 0);
     VARR_CREATE(VALUE, bbv_encoded, 0);
     VARR_CREATE(rb_iseq_bbv_t, all_bbvs, 0);
     VARR_CREATE(rb_iseq_bbv_t, bbvs, 0);
@@ -4038,6 +4142,7 @@ rb_sir_gen_finish(void) {
     VARR_DESTROY(char, arg_attrs);
     VARR_DESTROY(char, labeled_p);
     VARR_DESTROY(int, pos_map);
+    VARR_DESTROY(rb_event_flag_t, pos_events);
     VARR_DESTROY(VALUE, bbv_encoded);
     VARR_DESTROY(rb_iseq_bbv_t, all_bbvs);
     VARR_DESTROY(rb_iseq_bbv_t, bbvs);

@@ -5517,17 +5517,22 @@ vm_trace(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp)
     const rb_iseq_t *iseq = reg_cfp->iseq;
     struct rb_iseq_constant_body *body = iseq->body;
     const VALUE *pc = reg_cfp->pc;
+    size_t pos;
+    rb_event_flag_t pc_events;
 
     if (enabled_flags == 0 && ruby_vm_event_local_num == 0) {
         return;
     } else if (!(body->iseq_encoded <= reg_cfp->pc && reg_cfp->pc <= body->iseq_encoded + body->iseq_size)) {
         /* It is an SIR trace insn */
+        pos = pc - iseq->body->bbv_code; /* bbv pos */
+        pc_events = iseq->body->bbv_pos_events[pos];
         pc = rb_sir_trace_stack_insn_pc(ec, reg_cfp);
+        pos = pc - iseq->body->iseq_encoded; /* stack insn pos */
     } else {
+        pos = pc - iseq->body->iseq_encoded;
+        pc_events = rb_iseq_event_flags(iseq, pos);
         pc = reg_cfp->pc;
     }
-    size_t pos = pc - iseq->body->iseq_encoded;
-    rb_event_flag_t pc_events = rb_iseq_event_flags(iseq, pos);
     rb_hook_list_t *local_hooks = iseq->aux.exec.local_hooks;
     rb_event_flag_t local_hook_events = local_hooks != NULL ? local_hooks->events : 0;
     enabled_flags |= local_hook_events;

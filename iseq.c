@@ -2209,16 +2209,20 @@ rb_iseq_disasm_insn_1(VALUE ret, const VALUE *code, size_t pos,
 	}
     }
 
+    rb_event_flag_t events;
     {
         if (sir_p) {
             const VALUE *pc = iseq->body->bbv_code + pos;
             pc = rb_iseq_encoded_pc(iseq, pc);
             VM_ASSERT(pc >= iseq->body->iseq_encoded);
+            events = iseq->body->bbv_pos_events[pos];
             pos = pc - iseq->body->iseq_encoded;
+        } else {
+            events = rb_iseq_event_flags(iseq, pos);
         }
 	unsigned int line_no = rb_iseq_line_no(iseq, pos);
 	unsigned int prev = pos == 0 ? 0 : rb_iseq_line_no(iseq, pos - 1);
-	if (line_no && line_no != prev) {
+	if (line_no && ((sir_p && (events & RUBY_EVENT_LINE) != 0) || line_no != prev)) {
 	    long slen = RSTRING_LEN(str);
 	    slen = (slen > 70) ? 0 : (70 - slen);
 	    str = rb_str_catf(str, "%*s(%4d)", (int)slen, "", line_no);
@@ -2226,7 +2230,6 @@ rb_iseq_disasm_insn_1(VALUE ret, const VALUE *code, size_t pos,
     }
 
     {
-	rb_event_flag_t events = rb_iseq_event_flags(iseq, pos);
 	if (events) {
             str = rb_str_catf(str, "[%s%s%s%s%s%s%s%s%s%s%s]",
 			      events & RUBY_EVENT_LINE     ? "Li" : "",

@@ -403,7 +403,9 @@ struct rb_iseq_constant_body {
        if negative: spec bbv pos(index) to non-spec bbv pos
        otherwise: non spec bbv pos(index) to original pos */
     int *bbv_pos_map;
-     /* index of variable in the parent iseq -> flag of that the
+    /* array of bbv_code_bound: if non-zero, events associated with this pos: */
+    rb_event_flag_t *bbv_pos_events;
+    /* index of variable in the parent iseq -> flag of that the
         variable is changed in given iseq or nested iseqs.  If all
         flags are false, the member value is NULL.  */
     char *parent_var_changed_p;
