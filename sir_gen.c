@@ -1149,7 +1149,9 @@ get_op(rb_iseq_t *iseq, int orig_insn_pos, int op_insn_pos,
     *local_p = FALSE;
     *local = Qnil;
     if (val != NULL) *val = Qnil;
-    *event = rb_iseq_event_flags(iseq, VARR_GET(int, pos_map, op_insn_pos));
+    *event = 0;
+    if (op_insn_pos >= 0)
+        *event = rb_iseq_event_flags(iseq, VARR_GET(int, pos_map, op_insn_pos));
     if (op_insn_pos >= 0 && !catch_between_p(iseq, op_insn_pos, orig_insn_pos)) {
         enum ruby_vminsn_type op_insn_id = (enum ruby_vminsn_type)VARR_GET(VALUE, bbv_encoded, op_insn_pos);
         if ((op_insn_id == BIN(getlocal) && VARR_GET(VALUE, bbv_encoded, op_insn_pos + 2) == 0)
