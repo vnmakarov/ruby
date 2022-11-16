@@ -392,6 +392,7 @@ struct rb_iseq_constant_body {
     VALUE *iseq_code; /* can be iseq_encoded or bbv_code */
     VALUE *iseq_start_pc; /* can be iseq_encoded or curr start point in bbv_code */
     VALUE *sir_start_pc; /* curr start point in bbv_code */
+    VALUE *sir_safe_start_pc; /* curr start point for non-specialized safe RTL in bbv_code */
     VALUE *curr_param_opt_table; /* displacement relative iseq_code */
 
     /* The following are use for SIR BBV interpretation: */

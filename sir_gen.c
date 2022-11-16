@@ -875,7 +875,7 @@ rb_sir_trace_update(const rb_iseq_t *iseq, int turnon_p)
 #ifndef RTL_ONLY /* ??? remove when tracing with profiling insns are added */
     if (turnon_p) {
         if (iseq->body->iseq_start_pc != iseq->body->iseq_encoded)
-            iseq->body->iseq_start_pc = (VALUE *)get_safe_pc(iseq, iseq->body->sir_start_pc);
+            iseq->body->iseq_start_pc = iseq->body->sir_safe_start_pc;
         if (rb_sir_debug_level() >= 1) {
             fprintf (stderr, "##Switching ");
             print_iseq_title(iseq);
@@ -1068,7 +1068,8 @@ rb_sir_stub_gen(rb_iseq_t *iseq) {
            VARR_LENGTH(rb_event_flag_t, pos_events) * sizeof(rb_event_flag_t));
     VARR_TRUNC(int, pos_map, 0);
     VARR_TRUNC(rb_event_flag_t, pos_events, 0);
-    body->iseq_code = body->sir_start_pc = body->iseq_start_pc = &body->bbv_code[make_bbv_area_start];
+    body->iseq_start_pc = body->iseq_code
+        = body->sir_start_pc = body->sir_safe_start_pc = &body->bbv_code[make_bbv_area_start];
     bbv_encode(&body->bbv_code[make_bbv_area_start], len);
     int debug_level = rb_sir_debug_level();
     if (debug_level >= 1) {
@@ -3322,8 +3323,11 @@ rb_sir_make_bbv(rb_control_frame_t *cfp, int iseq_bbv_start) { /* called from ma
     bbv = get_bbv((rb_iseq_t *)iseq, RB_BBV_REGULAR, 0, iseq_bbv_start, TRUE, 0, NULL);
     if (bbv->bbv_start < 0)
         gen_sir_bbv_code((rb_iseq_t *)iseq, bbv, (int)(cfp->sp - cfp->__bp__));
-    if (iseq_bbv_start == 0)
+    if (iseq_bbv_start == 0) {
         body->sir_start_pc = body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
+        if (bbv->head_bbv == NULL)
+            body->sir_safe_start_pc = body->sir_start_pc;
+    }
     start_pc = body->bbv_code + bbv->bbv_start;
     RB_VM_LOCK_LEAVE();
     return start_pc;
@@ -3566,8 +3570,11 @@ set_iseq_start(rb_iseq_bbv_t bbv) {
     struct rb_iseq_constant_body *body = iseq->body;
 
     if (bbv->type == RB_BBV_REGULAR) {
-        if (bbv->iseq_start == 0)
+        if (bbv->iseq_start == 0) {
             body->sir_start_pc = body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
+            if (bbv->head_bbv == NULL)
+                body->sir_safe_start_pc = body->sir_start_pc;
+        }
     } else if (bbv->type == RB_BBV_OPT) {
         SIR_GEN_ASSERT(body->iseq_start_pc != NULL);
         body->curr_param_opt_table[bbv->index] = bbv->bbv_start + body->bbv_code - body->iseq_start_pc;
