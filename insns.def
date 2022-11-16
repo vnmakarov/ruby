@@ -1597,7 +1597,7 @@ sir_spec_getinlinecache
         && ((ice->flags & IMEMO_CONST_CACHE_SHAREABLE)
             || (th = rb_ec_thread_ptr(ec)) == NULL || th->ractor == th->vm->ractor.main_ractor)) {
         if (ice->ic_cref != NULL) {
-            ABS_SAFE_JUMP(GET_CFP(), reg_pc);
+            ABS_SAFE_JUMP(GET_CFP(), reg_pc - 4);
             ABNORMAL_END_INSN(sir_spec_getinlinecache);
         }
         val = ice->value;
