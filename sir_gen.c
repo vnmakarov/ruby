@@ -1379,7 +1379,12 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         if (debug_level >= 2)
             print_bb(iseq, body->iseq_encoded, bbv->iseq_start, bbv->iseq_bound, "  ");
     }
-    SIR_GEN_ASSERT(bbv->bbv_start < 0);
+    if (bbv->bbv_start >= 0) {
+        if (debug_level >= 2)
+            fprintf(stderr, "\n## SIR BBV%d 0x%llx (%s) was already generated parallely -- bail out\n",
+                bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
+        return;
+    }
     br_p = dst2_p = FALSE;
     disp = disp2 = dst = dst2 = 0;
     VARR_TRUNC(VALUE, bbv_encoded, 0);
@@ -2176,7 +2181,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     int disp, nops_len;
     VALUE val, *operands, new_operands[10];
     lindex_t op;
-    int offset, specialize_bbv_pos = -1;
+    int offset, before_bbv_start, specialize_bbv_pos = -1;
     struct rb_iseq_constant_body *body = iseq->body;
     rb_iseq_bbv_t head_bbv = bbv->head_bbv, orig_bbv, dst_bbv, old_dst_bbv, body_bbv;
     int add_bbv_cont_p, mirjit_enabled_p = rb_mirjit_enabled_p();
@@ -2194,6 +2199,7 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
     }
     SIR_GEN_ASSERT(init_stack_size >= 0 && head_bbv->start_stack_size == init_stack_size);
     orig_bbv = profile_p ? bbv : head_bbv;
+    before_bbv_start = bbv->bbv_start;
     if (debug_level >= 1) {
         fprintf(stderr, "\n## Making %s Specialized BBV%d 0x%llx (%s):",
                 profile_p ? "Profile" : "Type", bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
@@ -2203,6 +2209,12 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
         fprintf(stderr, "\n");
         if (debug_level >= 2)
             print_bb(iseq, body->bbv_code, orig_bbv->bbv_start, orig_bbv->bbv_bound, "  ");
+    }
+    if (bbv->bbv_start != before_bbv_start) {
+        if (debug_level >= 2)
+            fprintf(stderr, "\n## %s Specialized BBV%d 0x%llx (%s) was already generated parallely -- bail out\n",
+                    profile_p ? "Profile" : "Type", bbv->num, (unsigned long long)bbv, bbv->env_p ? "env" : "stack");
+        return -1;
     }
     VARR_TRUNC(VALUE, bbv_encoded, 0);
     VARR_TRUNC(send_info_t, iseq_send_info, 0);
