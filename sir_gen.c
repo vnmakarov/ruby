@@ -875,6 +875,7 @@ rb_sir_trace_update(const rb_iseq_t *iseq, int turnon_p)
 #ifndef RTL_ONLY /* ??? remove when tracing with profiling insns are added */
     if (turnon_p) {
         if (iseq->body->iseq_start_pc != iseq->body->iseq_encoded)
+            /* We can not use get_safe_pc here because sir_ibxxx would switch to sir_branch.  */
             iseq->body->iseq_start_pc = iseq->body->sir_safe_start_pc;
         if (rb_sir_debug_level() >= 1) {
             fprintf (stderr, "##Switching ");
