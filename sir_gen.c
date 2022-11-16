@@ -1832,7 +1832,10 @@ gen_sir_from_stack_insns(rb_iseq_t *iseq, rb_iseq_bbv_t bbv) {
         data.origin_opt_case_pos = last_pos;
         rb_hash_foreach(operands[0], set_case_hash_el, (VALUE)&data);
     }
-    add_insn(last_pos, 0, BIN(nop), 0); /* to get position right after the last insn */
+     /* The following insns are never executed but used to get position right after
+        the last insn + 1 (remember pc can be incremented for search) */
+    add_insn(last_pos, 0, BIN(nop), 0);
+    add_insn(last_pos, 0, BIN(nop), 0);
     len = (int)VARR_LENGTH(VALUE, bbv_encoded);
     bbv->bbv_start = get_bbv_code_space(iseq, len);
     bbv->bbv_bound = bbv->bbv_start + len;
