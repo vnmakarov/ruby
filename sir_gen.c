@@ -939,6 +939,7 @@ rb_sir_print_bbv(rb_iseq_bbv_t bbv) {
 void
 rb_sir_stub_gen(rb_iseq_t *iseq) {
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     int i, n, lev, curr_bb_start, pos, len, make_bbv_area_start;
     enum ruby_vminsn_type insn_id;
     rb_iseq_t *parent_iseq, *last_iseq;
@@ -3255,6 +3256,7 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
         || (!array_p && (rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_array)
                          || rb_vm_insn_decode(*cfp->pc) == BIN(sir_inspect_stack_array)))) {
         RB_VM_LOCK_ENTER();
+        rb_vm_barrier();
         /* check that it was not already changed, e.g. in another Ractor */
         if ((insn_id = rb_vm_insn_decode(*cfp->pc)) != BIN(nop2)) {
             VALUE *insn_pc = (VALUE *)cfp->pc;
@@ -3271,6 +3273,7 @@ rb_sir_inspect_type(rb_control_frame_t *cfp, VALUE val, int stack_p) {
             VALUE *insn_pc = (VALUE *)cfp->pc;
             int debug_level = rb_sir_debug_level();
             RB_VM_LOCK_ENTER();
+            rb_vm_barrier();
             if (stack_p) {
                 new_insn_id = (fixtype_p ? BIN(sir_inspect_stack_fixtype)
                                : array_p ? BIN(sir_inspect_stack_array) : BIN(sir_inspect_stack_flotype));
@@ -3320,6 +3323,7 @@ rb_sir_make_bbv(rb_control_frame_t *cfp, int iseq_bbv_start) { /* called from ma
     VALUE *start_pc;
 
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     bbv = get_bbv((rb_iseq_t *)iseq, RB_BBV_REGULAR, 0, iseq_bbv_start, TRUE, 0, NULL);
     if (bbv->bbv_start < 0)
         gen_sir_bbv_code((rb_iseq_t *)iseq, bbv, (int)(cfp->sp - cfp->__bp__));
@@ -3342,6 +3346,7 @@ rb_sir_make_optpc_bbv(rb_control_frame_t *cfp, int opt) { /* called from make bb
     VALUE *start_pc;
 
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     bbv = get_bbv((rb_iseq_t *)iseq, RB_BBV_OPT, opt, iseq_bbv_start, TRUE, 0, NULL);
     if (bbv->bbv_start < 0)
         gen_sir_bbv_code((rb_iseq_t *)iseq, bbv, (int)(cfp->sp - cfp->__bp__));
@@ -3361,6 +3366,7 @@ rb_sir_make_catch_bbv(rb_control_frame_t *cfp, int entry_ind) { /* called from m
     VALUE *start_pc;
 
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     bbv = get_bbv((rb_iseq_t *)iseq, RB_BBV_CATCH, entry_ind, iseq_bbv_start, TRUE, 0, NULL);
     if (bbv->bbv_start < 0)
         gen_sir_bbv_code((rb_iseq_t *)iseq, bbv, (int)(cfp->sp - cfp->__bp__));
@@ -3387,6 +3393,7 @@ rb_sir_gen_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int branch_offset, in
     VALUE *start_pc;
 
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     struct rb_iseq_constant_body *body = cfp->iseq->body;
     int gen_bbv_insn_pos = (int)(cfp->pc - body->bbv_code); /* position of sir_gen_bbv end */
     enum ruby_vminsn_type branch_id = rb_vm_insn_decode(body->bbv_code[gen_bbv_insn_pos + branch_offset]);
@@ -3412,6 +3419,7 @@ rb_sir_gen_bbv_key(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv, int case_offset, 
     VALUE *start_pc;
 
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     struct rb_iseq_constant_body *body = cfp->iseq->body;
     int gen_bbv_insn_pos = (int)(cfp->pc - body->bbv_code); /* position of sir_gen_bbv_key end */
     enum ruby_vminsn_type branch_id = rb_vm_insn_decode(body->bbv_code[gen_bbv_insn_pos + case_offset]);
@@ -3693,6 +3701,7 @@ rb_sir_specialize_bbv(rb_control_frame_t *cfp, rb_iseq_bbv_t bbv) {
     VALUE *cont_pc;
 
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     /* specialize curr bbv by profile: */
     VARR_TRUNC(rb_iseq_bbv_t, bbvs, 0);
     bbv_cont_pos = gen_specialized_sir(bbv->iseq, bbv, TRUE);
@@ -3733,6 +3742,7 @@ rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
 
     if (RB_TYPE_P(self, T_OBJECT)) {
         RB_VM_LOCK_ENTER();
+        rb_vm_barrier();
         if (debug_level >= 1)
             fprintf(stderr, "--> Changing sir_make_getivar to %4ld sir_getivar\n",
                     (long)(cfp->pc - cfp->iseq->body->bbv_code));
@@ -3744,6 +3754,7 @@ rb_sir_change_getivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
         return;
     }
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     if (debug_level >= 1)
         fprintf(stderr, "--> Changing sir_make_getivar to getinstancevariable\n");
     change_insn(cfp->iseq, insn_pc, BIN(getinstancevariable));
@@ -3758,6 +3769,7 @@ rb_sir_change_setivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
     SIR_GEN_ASSERT(ic->entry != NULL);
     if (RB_TYPE_P(self, T_OBJECT)) {
         RB_VM_LOCK_ENTER();
+        rb_vm_barrier();
         if (debug_level >= 1)
             fprintf(stderr, "--> Changing sir_make_setivar to sir_setivar\n");
         struct rb_iv_index_tbl_entry *entry = ((IVC)insn_pc[2])->entry;
@@ -3768,6 +3780,7 @@ rb_sir_change_setivar(VALUE self, rb_control_frame_t *cfp, IVC ic) {
         return;
     }
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     if (debug_level >= 1)
         fprintf(stderr, "--> Changing sir_make_set_ivar to setinstancevariable\n");
     change_insn(cfp->iseq, insn_pc, BIN(setinstancevariable));
@@ -3813,6 +3826,7 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
                               si->attrs == NULL ? 0 : (int)strlen(si->attrs) + 1, si->attrs);
             if (bbv->bbv_start < 0) {
                 RB_VM_LOCK_ENTER();
+                rb_vm_barrier();
                 if (bbv->bbv_start < 0)
                     gen_sir_bbv_code(iseq, bbv, 0);
                 RB_VM_LOCK_LEAVE();
@@ -3940,6 +3954,7 @@ rb_sir_change_bbv(rb_iseq_bbv_t bbv)
             print_bb(iseq, body->bbv_code, bbv->bbv_start, bbv->bbv_bound, "  ");
     }
     RB_VM_LOCK_ENTER();
+    rb_vm_barrier();
     rb_jit_bbv(bbv);
     RB_VM_LOCK_LEAVE();
 #endif
