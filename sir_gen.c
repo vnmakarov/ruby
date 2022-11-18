@@ -873,22 +873,30 @@ rb_sir_trace_update(const rb_iseq_t *iseq, int turnon_p)
         }
     }
 #ifndef RTL_ONLY /* ??? remove when tracing with profiling insns are added */
-    if (turnon_p) {
-        if (iseq->body->iseq_start_pc != iseq->body->iseq_encoded)
+    if (iseq->body->iseq_encoded <= iseq->body->iseq_start_pc
+        && iseq->body->iseq_start_pc < iseq->body->iseq_encoded + iseq->body->iseq_size) {
+    } else if (turnon_p) {
+        if (iseq->body->iseq_start_pc != iseq->body->sir_safe_start_pc) {
+            if (rb_sir_debug_level() >= 1 && iseq->body->sir_safe_start_pc != iseq->body->bbv_code) {
+                /* Do not report switching to stub */
+                fprintf (stderr, "##Switching ");
+                print_iseq_title(iseq);
+                fprintf (stderr, " to safe RTL insns for tracing from %04ld to %04ld\n",
+                         (long)(iseq->body->iseq_start_pc - iseq->body->bbv_code),
+                         (long)(iseq->body->sir_safe_start_pc - iseq->body->bbv_code));
+            }
             /* We can not use get_safe_pc here because sir_ibxxx would switch to sir_branch.  */
             iseq->body->iseq_start_pc = iseq->body->sir_safe_start_pc;
-        if (rb_sir_debug_level() >= 1) {
+        }
+    } else if (iseq->body->iseq_start_pc != iseq->body->sir_start_pc) {
+        if (rb_sir_debug_level() >= 1 && iseq->body->sir_start_pc != iseq->body->bbv_code) {
             fprintf (stderr, "##Switching ");
             print_iseq_title(iseq);
-            fprintf (stderr, " to safe RTL insns for tracing\n");
+            fprintf (stderr, " back to SIR after finishing tracing from %04ld to %04ld\n",
+                     (long)(iseq->body->iseq_start_pc - iseq->body->bbv_code),
+                     (long)(iseq->body->sir_start_pc - iseq->body->bbv_code));
         }
-    } else {
         iseq->body->iseq_start_pc = iseq->body->sir_start_pc;
-        if (rb_sir_debug_level() >= 1) {
-            fprintf (stderr, "##Switching ");
-            print_iseq_title(iseq);
-            fprintf (stderr, " back to SIR after finishing tracing\n");
-        }
     }
 #endif
     RB_VM_LOCK_LEAVE();
