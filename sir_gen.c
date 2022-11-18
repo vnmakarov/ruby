@@ -726,7 +726,7 @@ update_pos_map_events(int pos, int orig_pos, rb_event_flag_t events, int len) {
     VARR_SET(rb_event_flag_t, pos_events, pos, events);
     /* increase original position as line number is calculated from stack pc - 1. */
     for (i = 1; i < len; i++)
-        VARR_SET(int, pos_map, pos + i, orig_pos + 1);
+        VARR_SET(int, pos_map, pos + i, orig_pos + (orig_pos < 0 ? -1 : 1));
 }
 
 static void
