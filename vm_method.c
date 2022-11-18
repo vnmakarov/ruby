@@ -167,7 +167,10 @@ clear_method_cache_by_id_in_class(VALUE klass, ID mid)
         // invalidate CCs
         if (cc_tbl && rb_id_table_lookup(cc_tbl, mid, &ccs_data)) {
             struct rb_class_cc_entries *ccs = (struct rb_class_cc_entries *)ccs_data;
-            if (NIL_P(ccs->cme->owner)) invalidate_negative_cache(mid);
+            if (NIL_P(ccs->cme->owner))
+                invalidate_negative_cache(mid);
+            else
+                rb_sir_cme_invalidate(ccs->cme);
             rb_vm_ccs_free(ccs);
             rb_id_table_delete(cc_tbl, mid);
             RB_DEBUG_COUNTER_INC(cc_invalidate_leaf_ccs);
