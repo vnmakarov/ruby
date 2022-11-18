@@ -3820,7 +3820,9 @@ change_send_without_block(const rb_execution_context_t *ec, rb_control_frame_t *
     rb_iseq_t *iseq;
     int debug_level = rb_sir_debug_level();
 
-    if (cme != NULL) {
+    if (cme != NULL && ((vm_ci_flag(ci) & VM_CALL_FCALL)
+                        || !(METHOD_ENTRY_VISI(cme) == METHOD_VISI_PRIVATE
+                             || METHOD_ENTRY_VISI(cme) == METHOD_VISI_PROTECTED))) {
         recv = *caller_cfp->sp;
         if (cme->def->type == VM_METHOD_TYPE_ISEQ
             && (iseq = (rb_iseq_t *)def_iseq_ptr(cme->def)) != NULL
@@ -3909,7 +3911,10 @@ change_to_cfunc_send(VALUE *call_pc, rb_iseq_t *caller_iseq) {
     int debug_level = rb_sir_debug_level();
     MAYBE_UNUSED (const rb_method_cfunc_t *cfunc);
 
-    if (cme == NULL || cme->def->type != VM_METHOD_TYPE_CFUNC) return FALSE;
+    if (cme == NULL || cme->def->type != VM_METHOD_TYPE_CFUNC
+        || (!(vm_ci_flag(ci) & VM_CALL_FCALL)
+            && (METHOD_ENTRY_VISI(cme) == METHOD_VISI_PRIVATE
+                || METHOD_ENTRY_VISI(cme) == METHOD_VISI_PROTECTED))) return FALSE;
     cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
 #if 0
     if (argc != cfunc->argc) return FALSE;
