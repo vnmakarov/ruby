@@ -3355,8 +3355,7 @@ rb_sir_make_bbv(rb_control_frame_t *cfp, int iseq_bbv_start) { /* called from ma
         gen_sir_bbv_code((rb_iseq_t *)iseq, bbv, (int)(cfp->sp - cfp->__bp__));
     if (iseq_bbv_start == 0) {
         body->sir_start_pc = body->iseq_start_pc = body->bbv_code + bbv->bbv_start;
-        if (bbv->head_bbv == NULL)
-            body->sir_safe_start_pc = body->sir_start_pc;
+        body->sir_safe_start_pc = body->bbv_code + (bbv->head_bbv == NULL ? bbv : bbv->head_bbv)->bbv_start;
     }
     start_pc = body->bbv_code + bbv->bbv_start;
     RB_VM_LOCK_LEAVE();
