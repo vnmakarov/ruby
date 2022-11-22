@@ -715,8 +715,10 @@ sir_range_each_cont(VALUE recv, VALUE index) {
 
 static int
 sir_range_each_body(VALUE recv, VALUE index, VALUE *arg) {
+    long lim = FIX2LONG(RANGE_END(recv));
+    if (!RTEST(RANGE_EXCL((recv)))) lim++;
     *arg = index;
-    if (RTEST(RANGE_EXCL(recv)) ? index < RANGE_END(recv) : index <= RANGE_END(recv))
+    if (FIX2LONG(index) < lim)
         return TRUE;
     *arg = recv;
     return FALSE;
