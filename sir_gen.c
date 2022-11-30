@@ -2995,6 +2995,11 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             if (!sir_get_iter_funcs(cfunc->func, &start_func, &body_func, temp_attrs)) goto rest_cases;
             new_operands[0] = (lindex_t)start_func;
             add_spec_insn_arr(orig_pos, event, BIN(sir_iter_start), 1, new_operands);
+#ifdef MIRJIT_ITER_INSNS
+            if (mirjit_enabled_p) {
+                add_spec_insn_arr(orig_pos, 0, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
+            }
+#endif
             temp_attrs[1] = ATTR_END_MARKER;
             block_bbv = get_bbv(block_iseq, RB_BBV_REGULAR, 0, 0, FALSE,
                                 temp_attrs[0] == ATTR_UNKNOWN ? 0 : 2,
@@ -3006,6 +3011,11 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             new_operands[0] = (lindex_t)block_bbv;
             new_operands[1] = (lindex_t)body_func;
             add_spec_insn_arr(orig_pos, 0, BIN(sir_iter_body), 2, new_operands);
+#ifdef MIRJIT_ITER_INSNS
+            if (mirjit_enabled_p) {
+                add_spec_insn_arr(orig_pos, 0, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
+            }
+#endif
             goto stack_update;
         }
         case BIN(sir_iter_body): {

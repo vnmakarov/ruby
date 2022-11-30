@@ -135,6 +135,7 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "register VALUE *pc asm(\"r14\") /*__mirc_attribute__ ((antialias (val)))*/;\n"
     "register rb_control_frame_t *cfp asm(\"r15\");\n"
 #endif
+    "extern VALUE *rb_sir_get_jump_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);\n"
 #ifdef FLONUM_INSNS
     "extern VALUE mirjit_fplus(VALUE, VALUE);\n"
     "extern VALUE mirjit_fplusf(VALUE, DBL);\n"
@@ -298,7 +299,7 @@ static void gen_push_frame(VARR(char) *buff, int local_size, int stack_max, int 
     O("    void *new_cfp = (char *)cfp - %d;\n", (int)sizeof(rb_control_frame_t));
     /* CHECK_VM_STACK_OVERFLOW0(new_cfp, new_sp, local_size + stack_max): */
     gen_check_overflow0(buff, "new_cfp", "new_sp", local_size + stack_max);
-    O("    pc += %d;\n", send_insn_len);
+    if (send_insn_len != 0) O("    pc += %d;\n", send_insn_len);
     O("    cfp->pc = pc;\n");
     O("    cfp->sp = new_sp;\n"); /* cfp->sp */
     O("    cfp = new_cfp; pc = %s;\n", start_pc);
@@ -2339,12 +2340,13 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val = sp[-1];\n");
         O("  if (!((int (*)(VALUE, VALUE *))0x%"PRIxVALUE ")(val, &val2)) goto restart;\n", (VALUE)f); /* f(arg, index)*/
         O("  *sp++ = val2;\n");
-        O("  *sp++ = 0x%"PRIxVALUE ";\n", Qnil);
+        O("  *sp++ = 0x%"PRIxVALUE ";\n", LONG2FIX(0)); /* state */
+        O("  *sp++ = 0x%"PRIxVALUE ";\n", Qnil); /* res */
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     }
     case BIN(sir_iter_body): {
-        struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)operands[1];
+        struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)operands[0];
         rb_iseq_t *iseq = bbv_ref->iseq;
         struct rb_iseq_constant_body * body = iseq->body;
         int param_size = body->param.size;
@@ -2353,20 +2355,29 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         int local_size = body->local_table_size - param_size;
         int stack_max = body->stack_max;
         const struct rb_callable_method_entry_struct *cme = bbv_ref->cme;
-        int (*f)(VALUE, VALUE, VALUE *) = (void *)operands[2];
+        VALUE (*f)(VALUE, VALUE, VALUE, VALUE *) = (void *)operands[1];
         long argc = 1;
 
         gen_insn_stat(buff, insn_id);
         O("  {\n");
-        O("    VALUE self, recv, index, arg, ary;\n");
-        O("    recv = sp[-3];\n");
-        O("    index = sp[-2];\n");
-        O("    if (!((int (*)(VALUE, VALUE, VALUE *))0x%"PRIxVALUE ")(recv, index, &arg)) {\n", (VALUE)f);
-        O("      sp -= 2;\n");
+        O("    VALUE self, recv, index, state, arg, ary;\n");
+        O("    recv = sp[-4];\n");
+        O("    index = sp[-3];\n");
+        O("    state = sp[-2];\n");
+        O("    if ((index = ((VALUE (*)(VALUE, VALUE, VALUE, VALUE *))0x%"PRIxVALUE ")(recv, index, state, &arg)) == 0x%"
+          PRIxVALUE ") {\n", (VALUE)f, (VALUE)Qundef);
+        O("      sp -= 3;\n");
         O("      sp[-1] = arg;\n"); /* result */
         O("      pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[0]);
+        O("      if (state & 2) {\n"); /* state 1 or 3: switch to safe code */
+        O("        pc = rb_sir_get_jump_safe_pc(cfp, pc);\n"); /*safe pc */
+        O("      }\n");
         O("      goto exit;\n");
         O("    }\n");
+        O("    if (state <= 0x%"PRIxVALUE ") {\n", LONG2FIX(1)); /* right from iter start */
+        O("      sp[-2] = state + 4;\n");  /* change state += 2 */
+        O("    }\n");
+        O("    sp[-3] = index;\n");
         O("    sp--;\n"); /* remove res from iter_start or previous sir_iter_body */
         O("    self = cfp->self;\n"); /* self */
         O("    *sp = self;\n");
@@ -2389,10 +2400,10 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         }
         O("    }\n");
         O("    VALUE *argv = sp + 1;\n");
-        O("    VALUE specval = cfp->ep | 1;\n");
+        O("    VALUE specval = (VALUE)cfp->ep | 1;\n");
         O("    recv = self;\n"); /* self */
         O("    VALUE *start_pc = (VALUE *)0x%"PRIxVALUE ";\n", (VALUE)(body->bbv_code + bbv_ref->bbv_start));
-        gen_push_frame(buff, local_size, stack_max, (int)insn_len(insn_id), (VALUE)cme,
+        gen_push_frame(buff, local_size, stack_max, 0, (VALUE)cme,
                        (VALUE)VM_FRAME_MAGIC_METHOD, (VALUE)iseq, "start_pc");
         O("  }\n");
         break;
@@ -2530,6 +2541,7 @@ static resolver_el_t resolver_els[] = {
     {"rb_gc_writebarrier", rb_gc_writebarrier},
     {"rb_check_array_type", rb_check_array_type},
     {"rb_check_cfp_consistency", rb_check_cfp_consistency},
+    {"rb_sir_get_jump_safe_pc", rb_sir_get_jump_safe_pc},
 #ifdef FLONUM_INSNS
     {"mirjit_fplus", mirjit_fplus},
     {"mirjit_fplusf", mirjit_fplusf},
