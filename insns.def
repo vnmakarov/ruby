@@ -2983,44 +2983,36 @@ DEFINE_INSN
 sir_iter_start
 (lindex_t func)
 ()
-(VALUE index, VALUE res)
+(VALUE index, VALUE state, VALUE res)
 {
-    VALUE arg = TOPN(0);
+    VALUE recv = TOPN(0); /* recv */
     int (*f)(VALUE, VALUE *) = (void *)func;
 
-    if (!f(arg, &index)) goto safe_insn_restart;
+    if (!f(recv, &index)) goto safe_insn_restart;
+    state = LONG2FIX(0); /* start */
     res = Qnil;
 }
 
 DEFINE_INSN
-sir_iter_cont
-(OFFSET dst, lindex_t func)
-()
-()
-{
-    VALUE (*f)(VALUE, VALUE) = (void *)func;
-    TOPN(1) = f(TOPN(0), TOPN(1)); /* (res, index): index is fixnum */
-    /* RUBY_VM_CHECK_INTS(ec); the check is done in leave of block iseq */
-    JUMP(dst);
-}
-
-DEFINE_INSN
 sir_iter_body
-(OFFSET exit, lindex_t bbv, lindex_t func)
+(lindex_t bbv, lindex_t body_func)
 (...)
 (...)
 // attr bool handles_sp = true;
-// attr bool leaf = false; /* has rb_check_array_type() */
-// attr rb_snum_t sp_inc = -2;
-// attr rb_snum_t comptime_sp_inc = -2;
+// attr bool leaf = true; /* sic! */
+// attr rb_snum_t sp_inc = -3;
+// attr rb_snum_t comptime_sp_inc = -3;
 {
-    VALUE arg, ary, recv = TOPN(2), index = TOPN(1);
+    VALUE arg, ary, recv = TOPN(3), index = TOPN(2), state = TOPN(1);
     long argc = 1;
-    int (*f)(VALUE, VALUE, VALUE *) = (void *)func;
-    if (!f(recv, index, &arg)) {
-        INC_SP(-2);
+    VALUE (*f)(VALUE, VALUE, VALUE, VALUE *) = (void *)body_func;
+    if ((index = f(recv, index, state, &arg)) == Qundef) {
+        INC_SP(-3); /* remove recv, index, state */
         TOPN(0) = arg; /* result */
-        JUMP(exit);
+        if (FIX2LONG(state) & 1)  { /* state 1 or 3: switch to safe code after iterator */
+            reg_pc += 3;
+            goto safe_insn_restart;
+        }
     } else {
         MIRJIT_CONST_PTR(struct rb_iseq_bbv *, bbv_ref, (struct rb_iseq_bbv *)bbv);
         MIRJIT_CONST_PTR(rb_iseq_t *, iseq, bbv_ref->iseq);
@@ -3028,6 +3020,10 @@ sir_iter_body
         MIRJIT_CONST(int, param_size, body->param.size, "d");
 
         VM_ASSERT(rb_simple_iseq_p(iseq));
+        if (UNLIKELY(state <= LONG2FIX(1))) { /* right from sir_iter_start */
+            TOPN(1) = state + 4; /* change state += 2 */
+        }
+        TOPN(2) = index;
         INC_SP(-1); /* remove res from iter_start or previous sir_iter_body */
         TOPN(-1) = GET_SELF();
         if (param_size > 1 && argc == 1 && !NIL_P(ary = rb_check_array_type(arg))) {

@@ -1501,7 +1501,7 @@ vm_throw_start(const rb_execution_context_t *ec, rb_control_frame_t *const reg_c
 			    entry->iseq == base_iseq &&
 			    entry->start < epc && entry->end >= epc) {
 			    if (entry->cont == epc
-                                || *pc == (VALUE)sir_dispatch_table[BIN(sir_iter_cont)]
+                                || *pc == (VALUE)sir_dispatch_table[BIN(sir_iter_body)]
                                 || *pc == (VALUE)sir_dispatch_table[BIN(sir_bbv_cont)]) { /* found! */
 				is_orphan = 0;
 			    }

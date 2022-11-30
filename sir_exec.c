@@ -688,14 +688,11 @@ sir_fixnum_times_start(VALUE recv, VALUE *index) {
 }
 
 static VALUE
-sir_fixnum_times_cont(VALUE recv, VALUE index) {
-    return index + 2; /* index is fixnum */
-}
-
-static int
-sir_fixnum_times_body(VALUE recv, VALUE index, VALUE *arg) {
+sir_fixnum_times_body(VALUE recv, VALUE index, VALUE state, VALUE *arg) {
+    if (state > LONG2FIX(1)) index += 2; /* continue, index is fixnum */
     *arg = index;
-    return index < recv;
+    if (index < recv) return index;
+    return Qundef; /* finish */
 }
 
 #include "internal/range.h"
@@ -709,19 +706,15 @@ sir_range_each_start(VALUE recv, VALUE *index) {
 }
 
 static VALUE
-sir_range_each_cont(VALUE recv, VALUE index) {
-    return index + 2;
-}
-
-static int
-sir_range_each_body(VALUE recv, VALUE index, VALUE *arg) {
+sir_range_each_body(VALUE recv, VALUE index, VALUE state, VALUE *arg) {
+    if (state > LONG2FIX(1)) index += 2; /* continue, index is fixnum */
     long lim = FIX2LONG(RANGE_END(recv));
     if (!RTEST(RANGE_EXCL((recv)))) lim++;
     *arg = index;
     if (FIX2LONG(index) < lim)
-        return TRUE;
+        return index;
     *arg = recv;
-    return FALSE;
+    return Qundef; /* finish */
 }
 
 static int
@@ -732,39 +725,31 @@ sir_arr_each_start(VALUE recv, VALUE *index) {
 }
 
 static VALUE
-sir_arr_each_cont(VALUE recv, VALUE index) {
-    return index + 2;
-}
-
-static int
-sir_arr_each_body(VALUE recv, VALUE index, VALUE *arg) {
+sir_arr_each_body(VALUE recv, VALUE index, VALUE state, VALUE *arg) {
+    if (state > LONG2FIX(1)) index += 2; /* continue, index is fixnum */
     long i = FIX2LONG(index);
-
     if (i < RARRAY_LEN(recv)) {
         *arg = RARRAY_AREF(recv, i);
-        return TRUE;
+        return index;
     }
     *arg = recv;
-    return FALSE;
+    return Qundef; /* finish */
 }
 
 int
-sir_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *), int (**arg_func)(VALUE, VALUE, VALUE *),
-                   VALUE (**cont_func)(VALUE, VALUE), char *attr) {
+sir_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *),
+                   VALUE (**arg_func)(VALUE, VALUE, VALUE, VALUE *), char *attr) {
     if (cfunc == sir_fixnum_ntimes_func) {
 	*start_func = sir_fixnum_times_start;
         *arg_func = sir_fixnum_times_body;
-        *cont_func = sir_fixnum_times_cont;
         *attr = ATTR_FIXNUM;
     } else if (cfunc == sir_range_each_func) {
 	*start_func = sir_range_each_start;
         *arg_func = sir_range_each_body;
-        *cont_func = sir_range_each_cont;
         *attr = ATTR_FIXNUM;
     } else if (cfunc == rb_ary_each) {
 	*start_func = sir_arr_each_start;
         *arg_func = sir_arr_each_body;
-        *cont_func = sir_arr_each_cont;
         *attr = ATTR_UNKNOWN;
     } else {
 	return FALSE;

@@ -2983,10 +2983,8 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             const rb_method_cfunc_t *cfunc;
             rb_iseq_bbv_t block_bbv;
             char temp_attrs[3];
-            OFFSET disp;
             int (*start_func)(VALUE, VALUE *);
-            int (*arg_func)(VALUE, VALUE, VALUE *);
-            VALUE (*cont_func)(VALUE, VALUE);
+            VALUE (*body_func)(VALUE, VALUE, VALUE, VALUE *);
 
             if (block_iseq == NULL) goto rest_cases;
             update_attrs(iseq, block_iseq);
@@ -2994,13 +2992,9 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             if (!rb_simple_iseq_p(block_iseq)) goto rest_cases;
             cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
             SIR_GEN_ASSERT(stack_size >= 1);
-            if (!sir_get_iter_funcs(cfunc->func, &start_func, &arg_func, &cont_func, temp_attrs)) goto rest_cases;
+            if (!sir_get_iter_funcs(cfunc->func, &start_func, &body_func, temp_attrs)) goto rest_cases;
             new_operands[0] = (lindex_t)start_func;
             add_spec_insn_arr(orig_pos, event, BIN(sir_iter_start), 1, new_operands);
-            disp = 0;
-            if (mirjit_enabled_p)
-                disp = insn_len(BIN(sir_bbv_cont));
-            new_operands[0] = (OFFSET)insn_len(BIN(sir_iter_cont)) + disp; /* to iter_finish */
             temp_attrs[1] = ATTR_END_MARKER;
             block_bbv = get_bbv(block_iseq, RB_BBV_REGULAR, 0, 0, FALSE,
                                 temp_attrs[0] == ATTR_UNKNOWN ? 0 : 2,
@@ -3009,24 +3003,9 @@ gen_specialized_sir(rb_iseq_t *iseq, rb_iseq_bbv_t bbv, int profile_p) {
             if (block_bbv->bbv_start < 0)
                 VARR_PUSH(rb_iseq_bbv_t, bbvs, block_bbv);
             /* if ntimes is redefined the caller block is already recorded by cfunc */
-            new_operands[1] = (lindex_t)block_bbv;
-            new_operands[2] = (lindex_t)arg_func;
-            add_spec_insn_arr(orig_pos, 0, BIN(sir_iter_body), 3, new_operands);
-            disp = 0;
-#ifdef MIRJIT_ITER_INSNS
-            if (mirjit_enabled_p) {
-                add_spec_insn_arr(orig_pos, 0, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
-                disp = insn_len(BIN(sir_bbv_cont));
-            }
-#endif
-            /* to int_iter */
-            new_operands[0] = -(OFFSET)(disp + insn_len(BIN(sir_iter_body)) + insn_len(BIN(sir_iter_cont)));
-            new_operands[1] = (lindex_t)cont_func;
-            add_spec_insn_arr(orig_pos, 0, BIN(sir_iter_cont), 2, new_operands);
-            if (mirjit_enabled_p) {
-                add_spec_insn_arr(orig_pos, 0, BIN(sir_bbv_cont), 1, (VALUE *)&bbv);
-                disp = insn_len(BIN(sir_bbv_cont));
-            }
+            new_operands[0] = (lindex_t)block_bbv;
+            new_operands[1] = (lindex_t)body_func;
+            add_spec_insn_arr(orig_pos, 0, BIN(sir_iter_body), 2, new_operands);
             goto stack_update;
         }
         case BIN(sir_iter_body): {
@@ -3640,7 +3619,11 @@ invalidate_bbv_code(rb_iseq_bbv_t bbv) {
         if (cfp->iseq != NULL && cfp->iseq->body->bbv_code != NULL && cfp->iseq == bbv->iseq
             && cfp->iseq->body->bbv_code + bbv->bbv_start <= cfp->pc
             && cfp->pc < cfp->iseq->body->bbv_code + bbv->bbv_bound) { /* switch given bbv pc to safe code one */
-            cfp->pc = rb_sir_get_safe_pc(cfp, cfp->pc);
+            if (*(VALUE *)cfp->pc == (VALUE)sir_dispatch_table[BIN(sir_iter_body)]) {
+                cfp->sp[-1] = cfp->sp[-1] + 2; /* don't finish iter_body, just change its state (+1: 0->1, 2->3) */
+            } else {
+                cfp->pc = rb_sir_get_safe_pc(cfp, cfp->pc);
+            }
         }
     }
     enter_bbv_p = bbv->type != RB_BBV_REGULAR || bbv->iseq_start == 0;

@@ -104,8 +104,7 @@ MJIT_FUNC_EXPORTED VALUE (*sir_fixnum_ntimes_func)(VALUE);
 MJIT_FUNC_EXPORTED VALUE (*sir_range_each_func)(VALUE);
 
 int sir_get_iter_funcs(void *cfunc, int (**start_func)(VALUE, VALUE *),
-                       int (**arg_func)(VALUE, VALUE, VALUE *),
-                       VALUE (**cont_func)(VALUE, VALUE),
+                       VALUE (**body_func)(VALUE, VALUE, VALUE, VALUE *),
                        char *);
 
 #define SIR_ALLOC_N(type, n) malloc(sizeof(type) * (n))
