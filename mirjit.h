@@ -10,7 +10,7 @@
 
 #define JRET
 //#define MIRJIT_RESTART_STAT
-//#define MIRJIT_ITER_INSNS
+#define MIRJIT_ITER_INSNS
 
 #include "vm_core.h"
 
