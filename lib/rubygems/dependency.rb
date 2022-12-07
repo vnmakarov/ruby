@@ -97,14 +97,14 @@ class Gem::Dependency
   end
 
   def pretty_print(q) # :nodoc:
-    q.group 1, 'Gem::Dependency.new(', ')' do
+    q.group 1, "Gem::Dependency.new(", ")" do
       q.pp name
-      q.text ','
+      q.text ","
       q.breakable
 
       q.pp requirement
 
-      q.text ','
+      q.text ","
       q.breakable
 
       q.pp type
@@ -115,7 +115,7 @@ class Gem::Dependency
   # What does this dependency require?
 
   def requirement
-    return @requirement if defined?(@requirement) and @requirement
+    return @requirement if defined?(@requirement) && @requirement
 
     # @version_requirements and @version_requirement are legacy ivar
     # names, and supported here because older gems need to keep
@@ -197,7 +197,7 @@ class Gem::Dependency
     reqs = other.requirement.requirements
 
     return false unless reqs.length == 1
-    return false unless reqs.first.first == '='
+    return false unless reqs.first.first == "="
 
     version = reqs.first.last
 
@@ -230,10 +230,10 @@ class Gem::Dependency
 
     version = Gem::Version.new version
 
-    return true if requirement.none? and not version.prerelease?
-    return false if version.prerelease? and
-                    not allow_prerelease and
-                    not prerelease?
+    return true if requirement.none? && !version.prerelease?
+    return false if version.prerelease? &&
+                    !allow_prerelease &&
+                    !prerelease?
 
     requirement.satisfied_by? version
   end
@@ -277,7 +277,7 @@ class Gem::Dependency
       requirement.satisfied_by?(spec.version) && env_req.satisfied_by?(spec.version)
     end.map(&:to_spec)
 
-    Gem::BundlerVersionFinder.filter!(matches) if filters_bundler?
+    Gem::BundlerVersionFinder.prioritize!(matches) if prioritizes_bundler?
 
     if platform_only
       matches.reject! do |spec|
@@ -295,7 +295,7 @@ class Gem::Dependency
     @requirement.specific?
   end
 
-  def filters_bundler?
+  def prioritizes_bundler?
     name == "bundler".freeze && !specific?
   end
 
@@ -325,11 +325,11 @@ class Gem::Dependency
     active = matches.find {|spec| spec.activated? }
     return active if active
 
-    return matches.first if prerelease?
-
-    # Move prereleases to the end of the list for >= 0 requirements
-    pre, matches = matches.partition {|spec| spec.version.prerelease? }
-    matches += pre if requirement == Gem::Requirement.default
+    unless prerelease?
+      # Move prereleases to the end of the list for >= 0 requirements
+      pre, matches = matches.partition {|spec| spec.version.prerelease? }
+      matches += pre if requirement == Gem::Requirement.default
+    end
 
     matches.first
   end

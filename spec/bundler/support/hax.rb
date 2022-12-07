@@ -1,5 +1,10 @@
 # frozen_string_literal: true
 
+if ENV["BUNDLER_SPEC_RUBY_PLATFORM"]
+  Object.send(:remove_const, :RUBY_PLATFORM)
+  RUBY_PLATFORM = ENV["BUNDLER_SPEC_RUBY_PLATFORM"]
+end
+
 module Gem
   def self.ruby=(ruby)
     @ruby = ruby
@@ -14,25 +19,19 @@ module Gem
     @default_specifications_dir = nil
   end
 
+  if ENV["BUNDLER_SPEC_WINDOWS"]
+    @@win_platform = true # rubocop:disable Style/ClassVars
+  end
+
   if ENV["BUNDLER_SPEC_PLATFORM"]
     class Platform
       @local = new(ENV["BUNDLER_SPEC_PLATFORM"])
     end
     @platforms = [Gem::Platform::RUBY, Gem::Platform.local]
-
-    if ENV["BUNDLER_SPEC_PLATFORM"] == "ruby"
-      class << self
-        remove_method :finish_resolve
-
-        def finish_resolve
-          []
-        end
-      end
-    end
   end
 
   if ENV["BUNDLER_SPEC_GEM_SOURCES"]
-    @sources = [ENV["BUNDLER_SPEC_GEM_SOURCES"]]
+    self.sources = [ENV["BUNDLER_SPEC_GEM_SOURCES"]]
   end
 
   # We only need this hack for rubygems versions without the BundlerVersionFinder

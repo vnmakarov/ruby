@@ -7,7 +7,6 @@ printf.o: $(hdrdir)/ruby/backward.h
 printf.o: $(hdrdir)/ruby/backward/2/assume.h
 printf.o: $(hdrdir)/ruby/backward/2/attributes.h
 printf.o: $(hdrdir)/ruby/backward/2/bool.h
-printf.o: $(hdrdir)/ruby/backward/2/gcc_version_since.h
 printf.o: $(hdrdir)/ruby/backward/2/inttypes.h
 printf.o: $(hdrdir)/ruby/backward/2/limits.h
 printf.o: $(hdrdir)/ruby/backward/2/long_long.h
@@ -16,6 +15,7 @@ printf.o: $(hdrdir)/ruby/backward/2/stdarg.h
 printf.o: $(hdrdir)/ruby/defines.h
 printf.o: $(hdrdir)/ruby/encoding.h
 printf.o: $(hdrdir)/ruby/intern.h
+printf.o: $(hdrdir)/ruby/internal/abi.h
 printf.o: $(hdrdir)/ruby/internal/anyargs.h
 printf.o: $(hdrdir)/ruby/internal/arithmetic.h
 printf.o: $(hdrdir)/ruby/internal/arithmetic/char.h

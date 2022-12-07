@@ -49,8 +49,8 @@ RSpec.describe "bundle doctor" do
       doctor = Bundler::CLI::Doctor.new({})
       expect(doctor).to receive(:bundles_for_gem).exactly(2).times.and_return ["/path/to/rack/rack.bundle"]
       expect(doctor).to receive(:dylibs).exactly(2).times.and_return ["/usr/lib/libSystem.dylib"]
-      allow(File).to receive(:exist?).with("/usr/lib/libSystem.dylib").and_return(true)
-      expect { doctor.run }.not_to(raise_error, @stdout.string)
+      allow(Fiddle).to receive(:dlopen).with("/usr/lib/libSystem.dylib").and_return(true)
+      expect { doctor.run }.not_to raise_error
       expect(@stdout.string).to be_empty
     end
 
@@ -58,7 +58,7 @@ RSpec.describe "bundle doctor" do
       doctor = Bundler::CLI::Doctor.new({})
       expect(doctor).to receive(:bundles_for_gem).exactly(2).times.and_return ["/path/to/rack/rack.bundle"]
       expect(doctor).to receive(:dylibs).exactly(2).times.and_return ["/usr/local/opt/icu4c/lib/libicui18n.57.1.dylib"]
-      allow(File).to receive(:exist?).with("/usr/local/opt/icu4c/lib/libicui18n.57.1.dylib").and_return(false)
+      allow(Fiddle).to receive(:dlopen).with("/usr/local/opt/icu4c/lib/libicui18n.57.1.dylib").and_raise(Fiddle::DLError)
       expect { doctor.run }.to raise_error(Bundler::ProductionError, strip_whitespace(<<-E).strip), @stdout.string
         The following gems are missing OS dependencies:
          * bundler: /usr/local/opt/icu4c/lib/libicui18n.57.1.dylib
@@ -79,7 +79,7 @@ RSpec.describe "bundle doctor" do
     it "exits with an error if home contains files that are not readable/writable" do
       expect { Bundler::CLI::Doctor.new({}).run }.not_to raise_error
       expect(@stdout.string).to include(
-        "Broken links exist in the Bundler home. Please report them to the offending gem's upstream repo. These files are:\n - #{@unwritable_file}"
+        "Broken links exist in the Bundler home. Please report them to the offending gem's upstream repo. These files are:\n - #{@broken_symlink}"
       )
       expect(@stdout.string).not_to include("No issues")
     end
@@ -131,6 +131,16 @@ RSpec.describe "bundle doctor" do
         )
         expect(@stdout.string).not_to include("No issues")
       end
+    end
+  end
+
+  context "when home contains filesname with special characters" do
+    it "escape filename before command execute" do
+      doctor = Bundler::CLI::Doctor.new({})
+      expect(doctor).to receive(:`).with("/usr/bin/otool -L \\$\\(date\\)\\ \\\"\\'\\\\.bundle").and_return("dummy string")
+      doctor.dylibs_darwin('$(date) "\'\.bundle')
+      expect(doctor).to receive(:`).with("/usr/bin/ldd \\$\\(date\\)\\ \\\"\\'\\\\.bundle").and_return("dummy string")
+      doctor.dylibs_ldd('$(date) "\'\.bundle')
     end
   end
 end

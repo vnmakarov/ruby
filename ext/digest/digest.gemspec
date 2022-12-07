@@ -2,8 +2,13 @@
 # frozen_string_literal: true
 
 Gem::Specification.new do |spec|
+  version_module = Module.new do
+    version_rb = File.join(__dir__, "lib/digest/version.rb")
+    module_eval(File.read(version_rb), version_rb)
+  end
+
   spec.name          = "digest"
-  spec.version       = "3.1.0.pre2"
+  spec.version       = version_module::Digest::VERSION
   spec.authors       = ["Akinori MUSHA"]
   spec.email         = ["knu@idaemons.org"]
 
@@ -31,7 +36,7 @@ Gem::Specification.new do |spec|
   else
     spec.extensions = Dir["ext/digest/**/extconf.rb"]
 
-    spec.files += Dir["ext/digest/**/*.{rb,c,h,sh}"]
+    spec.files += Dir["ext/digest/**/{*.{rb,c,h,sh},depend}"]
     spec.require_paths = %w[lib]
   end
 

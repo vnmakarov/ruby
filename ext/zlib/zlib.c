@@ -25,7 +25,7 @@
 # define VALGRIND_MAKE_MEM_UNDEFINED(p, n) 0
 #endif
 
-#define RUBY_ZLIB_VERSION "2.1.1"
+#define RUBY_ZLIB_VERSION "3.0.0"
 
 #ifndef RB_PASS_CALLED_KEYWORDS
 # define rb_class_new_instance_kw(argc, argv, klass, kw_splat) rb_class_new_instance(argc, argv, klass)
@@ -42,6 +42,14 @@
 #else
 #define DEF_MEM_LEVEL  MAX_MEM_LEVEL
 #endif
+#endif
+
+#if defined(HAVE_TYPE_Z_SIZE_T)
+typedef uLong (*checksum_func)(uLong, const Bytef*, z_size_t);
+# define crc32 crc32_z
+# define adler32 adler32_z
+#else
+typedef uLong (*checksum_func)(uLong, const Bytef*, uInt);
 #endif
 
 #if SIZEOF_LONG > SIZEOF_INT
@@ -65,7 +73,7 @@ static ID id_dictionaries, id_read, id_buffer;
 
 static NORETURN(void raise_zlib_error(int, const char*));
 static VALUE rb_zlib_version(VALUE);
-static VALUE do_checksum(int, VALUE*, uLong (*)(uLong, const Bytef*, uInt));
+static VALUE do_checksum(int, VALUE*, checksum_func);
 static VALUE rb_zlib_adler32(int, VALUE*, VALUE);
 static VALUE rb_zlib_crc32(int, VALUE*, VALUE);
 static VALUE rb_zlib_crc_table(VALUE);
@@ -288,6 +296,7 @@ static VALUE rb_gzreader_readlines(int, VALUE*, VALUE);
  *   - Zlib::MemError
  *   - Zlib::BufError
  *   - Zlib::VersionError
+ *   - Zlib::InProgressError
  *
  * (if you have GZIP_SUPPORT)
  * - Zlib::GzipReader
@@ -304,7 +313,7 @@ void Init_zlib(void);
 /*--------- Exceptions --------*/
 
 static VALUE cZError, cStreamEnd, cNeedDict;
-static VALUE cStreamError, cDataError, cMemError, cBufError, cVersionError;
+static VALUE cStreamError, cDataError, cMemError, cBufError, cVersionError, cInProgressError;
 
 static void
 raise_zlib_error(int err, const char *msg)
@@ -373,26 +382,32 @@ rb_zlib_version(VALUE klass)
     return rb_str_new2(zlibVersion());
 }
 
-#if SIZEOF_LONG > SIZEOF_INT
+#if SIZEOF_LONG * CHAR_BIT > 32
+# define mask32(x) ((x) & 0xffffffff)
+#else
+# define mask32(x) (x)
+#endif
+
+#if SIZEOF_LONG > SIZEOF_INT && !defined(HAVE_TYPE_Z_SIZE_T)
 static uLong
 checksum_long(uLong (*func)(uLong, const Bytef*, uInt), uLong sum, const Bytef *ptr, long len)
 {
     if (len > UINT_MAX) {
 	do {
-	    sum = func(sum, ptr, UINT_MAX);
+	    sum = func(mask32(sum), ptr, UINT_MAX);
 	    ptr += UINT_MAX;
 	    len -= UINT_MAX;
 	} while (len >= UINT_MAX);
     }
-    if (len > 0) sum = func(sum, ptr, (uInt)len);
+    if (len > 0) sum = func(mask32(sum), ptr, (uInt)len);
     return sum;
 }
 #else
-#define checksum_long(func, sum, ptr, len) (func)((sum), (ptr), (len))
+#define checksum_long(func, sum, ptr, len) (func)(mask32(sum), (ptr), (len))
 #endif
 
 static VALUE
-do_checksum(int argc, VALUE *argv, uLong (*func)(uLong, const Bytef*, uInt))
+do_checksum(int argc, VALUE *argv, checksum_func func)
 {
     VALUE str, vsum;
     unsigned long sum;
@@ -410,7 +425,7 @@ do_checksum(int argc, VALUE *argv, uLong (*func)(uLong, const Bytef*, uInt))
     }
 
     if (NIL_P(str)) {
-	sum = func(sum, Z_NULL, 0);
+	sum = func(mask32(sum), Z_NULL, 0);
     }
     else if (rb_obj_is_kind_of(str, rb_cIO)) {
         VALUE buf;
@@ -460,7 +475,7 @@ rb_zlib_adler32(int argc, VALUE *argv, VALUE klass)
  *
  * call-seq: Zlib.adler32_combine(adler1, adler2, len2)
  *
- * Combine two Adler-32 check values in to one.  +alder1+ is the first Adler-32
+ * Combine two Adler-32 check values in to one.  +adler1+ is the first Adler-32
  * value, +adler2+ is the second Adler-32 value.  +len2+ is the length of the
  * string used to generate +adler2+.
  *
@@ -557,14 +572,15 @@ struct zstream {
     } *func;
 };
 
-#define ZSTREAM_FLAG_READY      0x1
-#define ZSTREAM_FLAG_IN_STREAM  0x2
-#define ZSTREAM_FLAG_FINISHED   0x4
-#define ZSTREAM_FLAG_CLOSING    0x8
-#define ZSTREAM_FLAG_GZFILE     0x10 /* disallows yield from expand_buffer for
+#define ZSTREAM_FLAG_READY      (1 << 0)
+#define ZSTREAM_FLAG_IN_STREAM  (1 << 1)
+#define ZSTREAM_FLAG_FINISHED   (1 << 2)
+#define ZSTREAM_FLAG_CLOSING    (1 << 3)
+#define ZSTREAM_FLAG_GZFILE     (1 << 4) /* disallows yield from expand_buffer for
                                         gzip*/
-#define ZSTREAM_REUSE_BUFFER    0x20
-#define ZSTREAM_FLAG_UNUSED     0x40
+#define ZSTREAM_REUSE_BUFFER    (1 << 5)
+#define ZSTREAM_IN_PROGRESS     (1 << 6)
+#define ZSTREAM_FLAG_UNUSED     (1 << 7)
 
 #define ZSTREAM_READY(z)       ((z)->flags |= ZSTREAM_FLAG_READY)
 #define ZSTREAM_IS_READY(z)    ((z)->flags & ZSTREAM_FLAG_READY)
@@ -593,7 +609,9 @@ static const struct zstream_funcs inflate_funcs = {
 };
 
 struct zstream_run_args {
-    struct zstream * z;
+    struct zstream *const z;
+    Bytef *src;
+    long len;
     int flush;         /* stream flush value for inflate() or deflate() */
     int interrupt;     /* stop processing the stream and return to ruby */
     int jump_state;    /* for buffer expansion block break or exception */
@@ -1058,18 +1076,17 @@ zstream_unblock_func(void *ptr)
     args->interrupt = 1;
 }
 
-static void
-zstream_run0(struct zstream *z, Bytef *src, long len, int flush)
+static VALUE
+zstream_run_try(VALUE value_arg)
 {
-    struct zstream_run_args args;
+    struct zstream_run_args *args = (struct zstream_run_args *)value_arg;
+    struct zstream *z = args->z;
+    Bytef *src = args->src;
+    long len = args->len;
+    int flush = args->flush;
+
     int err;
     VALUE old_input = Qnil;
-
-    args.z = z;
-    args.flush = flush;
-    args.interrupt = 0;
-    args.jump_state = 0;
-    args.stream_output = !ZSTREAM_IS_GZFILE(z) && rb_block_given_p();
 
     if (NIL_P(z->input) && len == 0) {
 	z->stream.next_in = (Bytef*)"";
@@ -1092,17 +1109,17 @@ zstream_run0(struct zstream *z, Bytef *src, long len, int flush)
 
 loop:
 #ifndef RB_NOGVL_UBF_ASYNC_SAFE
-    err = (int)(VALUE)rb_thread_call_without_gvl(zstream_run_func, (void *)&args,
-						 zstream_unblock_func, (void *)&args);
+    err = (int)(VALUE)rb_thread_call_without_gvl(zstream_run_func, (void *)args,
+						 zstream_unblock_func, (void *)args);
 #else
-    err = (int)(VALUE)rb_nogvl(zstream_run_func, (void *)&args,
-                               zstream_unblock_func, (void *)&args,
+    err = (int)(VALUE)rb_nogvl(zstream_run_func, (void *)args,
+                               zstream_unblock_func, (void *)args,
                                RB_NOGVL_UBF_ASYNC_SAFE);
 #endif
 
     /* retry if no exception is thrown */
-    if (err == Z_OK && args.interrupt) {
-       args.interrupt = 0;
+    if (err == Z_OK && args->interrupt) {
+       args->interrupt = 0;
        goto loop;
     }
 
@@ -1138,34 +1155,52 @@ loop:
 	rb_str_resize(old_input, 0);
     }
 
-    if (args.jump_state)
-	rb_jump_tag(args.jump_state);
+    if (args->jump_state)
+	rb_jump_tag(args->jump_state);
+
+    return Qnil;
 }
 
-struct zstream_run_synchronized_args {
-    struct zstream *z;
-    Bytef *src;
-    long len;
-    int flush;
-};
+static VALUE
+zstream_run_ensure(VALUE value_arg)
+{
+    struct zstream_run_args *args = (struct zstream_run_args *)value_arg;
+
+    /* Remove ZSTREAM_IN_PROGRESS flag to signal that this zstream is not in use. */
+    args->z->flags &= ~ZSTREAM_IN_PROGRESS;
+
+    return Qnil;
+}
 
 static VALUE
 zstream_run_synchronized(VALUE value_arg)
 {
-    struct zstream_run_synchronized_args *run_args = (struct zstream_run_synchronized_args *)value_arg;
-    zstream_run0(run_args->z, run_args->src, run_args->len, run_args->flush);
+    struct zstream_run_args *args = (struct zstream_run_args *)value_arg;
+
+    /* Cannot start zstream while it is in progress. */
+    if (args->z->flags & ZSTREAM_IN_PROGRESS) {
+        rb_raise(cInProgressError, "zlib stream is in progress");
+    }
+    args->z->flags |= ZSTREAM_IN_PROGRESS;
+
+    rb_ensure(zstream_run_try, value_arg, zstream_run_ensure, value_arg);
+
     return Qnil;
 }
 
 static void
 zstream_run(struct zstream *z, Bytef *src, long len, int flush)
 {
-    struct zstream_run_synchronized_args run_args;
-    run_args.z = z;
-    run_args.src = src;
-    run_args.len = len;
-    run_args.flush = flush;
-    rb_mutex_synchronize(z->mutex, zstream_run_synchronized, (VALUE)&run_args);
+    struct zstream_run_args args = {
+        .z = z,
+        .src = src,
+        .len = len,
+        .flush = flush,
+        .interrupt = 0,
+        .jump_state = 0,
+        .stream_output = !ZSTREAM_IS_GZFILE(z) && rb_block_given_p(),
+    };
+    rb_mutex_synchronize(z->mutex, zstream_run_synchronized, (VALUE)&args);
 }
 
 static VALUE
@@ -4615,6 +4650,7 @@ Init_zlib(void)
     cMemError     = rb_define_class_under(mZlib, "MemError", cZError);
     cBufError     = rb_define_class_under(mZlib, "BufError", cZError);
     cVersionError = rb_define_class_under(mZlib, "VersionError", cZError);
+    cInProgressError = rb_define_class_under(mZlib, "InProgressError", cZError);
 
     rb_define_module_function(mZlib, "zlib_version", rb_zlib_version, 0);
     rb_define_module_function(mZlib, "adler32", rb_zlib_adler32, -1);
@@ -4922,6 +4958,7 @@ Init_zlib(void)
  * - Zlib::MemError
  * - Zlib::BufError
  * - Zlib::VersionError
+ * - Zlib::InProgressError
  *
  */
 
@@ -4994,6 +5031,20 @@ Init_zlib(void)
  *
  * Usually if a stream was prematurely freed.
  *
+ */
+
+/*
+ * Document-class: Zlib::InProgressError
+ *
+ * Subclass of Zlib::Error. This error is raised when the zlib
+ * stream is currently in progress.
+ *
+ * For example:
+ *
+ *   inflater = Zlib::Inflate.new
+ *   inflater.inflate(compressed) do
+ *     inflater.inflate(compressed) # Raises Zlib::InProgressError
+ *   end
  */
 
 /*

@@ -37,6 +37,8 @@ class TestTime < Test::Unit::TestCase
   end
 
   def test_new
+    assert_equal(Time.new(2000,1,1,0,0,0), Time.new(2000))
+    assert_equal(Time.new(2000,2,1,0,0,0), Time.new("2000", "Feb"))
     assert_equal(Time.utc(2000,2,10), Time.new(2000,2,10, 11,0,0, 3600*11))
     assert_equal(Time.utc(2000,2,10), Time.new(2000,2,9, 13,0,0, -3600*11))
     assert_equal(Time.utc(2000,2,29,23,0,0), Time.new(2000, 3, 1, 0, 0, 0, 3600))
@@ -47,7 +49,12 @@ class TestTime < Test::Unit::TestCase
     t = Time.new(*tm, "-12:00")
     assert_equal([2001,2,28,23,59,30,-43200], [t.year, t.month, t.mday, t.hour, t.min, t.sec, t.gmt_offset], bug4090)
     assert_raise(ArgumentError) { Time.new(2000,1,1, 0,0,0, "+01:60") }
-    assert_raise(ArgumentError) { Time.new(2021, 1, 1, "+09:99") }
+    msg = /invalid value for Integer/
+    assert_raise_with_message(ArgumentError, msg) { Time.new(2021, 1, 1, "+09:99") }
+    assert_raise_with_message(ArgumentError, msg) { Time.new(2021, 1, "+09:99") }
+    assert_raise_with_message(ArgumentError, msg) { Time.new(2021, "+09:99") }
+
+    assert_equal([0, 0, 0, 2, 1, 2000], Time.new(2000, 1, 1, 24, 0, 0, "-00:00").to_a[0, 6])
   end
 
   def test_time_add()
@@ -111,7 +118,7 @@ class TestTime < Test::Unit::TestCase
       assert_equal(946684800, Time.utc(2000, 1, 1, 0, 0, 0).tv_sec)
 
       # Giveup to try 2nd test because some state is changed.
-      skip if Test::Unit::Runner.current_repeat_count > 0
+      omit if Test::Unit::Runner.current_repeat_count > 0
 
       assert_equal(0x7fffffff, Time.utc(2038, 1, 19, 3, 14, 7).tv_sec)
       assert_equal(0x80000000, Time.utc(2038, 1, 19, 3, 14, 8).tv_sec)
@@ -239,6 +246,10 @@ class TestTime < Test::Unit::TestCase
     assert_equal(100, Time.at(0, 0.1).nsec)
     assert_equal(10, Time.at(0, 0.01).nsec)
     assert_equal(1, Time.at(0, 0.001).nsec)
+  end
+
+  def test_at_splat
+    assert_equal(Time.at(1, 2), Time.at(*[1, 2]))
   end
 
   def test_at_with_unit
@@ -378,6 +389,11 @@ class TestTime < Test::Unit::TestCase
       assert_equal('UTC', t1.zone)
       assert_equal('UTC', t2.zone)
     end
+  end
+
+  def test_marshal_broken_month
+    data = "\x04\x08u:\tTime\r\x20\x7c\x1e\xc0\x00\x00\x00\x00"
+    assert_equal(Time.utc(2022, 4, 1), Marshal.load(data))
   end
 
   def test_marshal_distant_past
@@ -1169,7 +1185,7 @@ class TestTime < Test::Unit::TestCase
 
   def test_2038
     # Giveup to try 2nd test because some state is changed.
-    skip if Test::Unit::Runner.current_repeat_count > 0
+    omit if Test::Unit::Runner.current_repeat_count > 0
 
     if no_leap_seconds?
       assert_equal(0x80000000, Time.utc(2038, 1, 19, 3, 14, 8).tv_sec)
@@ -1294,21 +1310,37 @@ class TestTime < Test::Unit::TestCase
 
   def test_memsize
     # Time objects are common in some code, try to keep them small
-    skip "Time object size test" if /^(?:i.?86|x86_64)-linux/ !~ RUBY_PLATFORM
-    skip "GC is in debug" if GC::INTERNAL_CONSTANTS[:DEBUG]
+    omit "Time object size test" if /^(?:i.?86|x86_64)-linux/ !~ RUBY_PLATFORM
+    omit "GC is in debug" if GC::INTERNAL_CONSTANTS[:DEBUG]
     require 'objspace'
     t = Time.at(0)
-    size = GC::INTERNAL_CONSTANTS[:RVALUE_SIZE]
-    case size
-    when 20 then expect = 50
-    when 24 then expect = 54
-    when 40 then expect = 86
-    when 48 then expect = 94
-    else
-      flunk "Unsupported RVALUE_SIZE=#{size}, update test_memsize"
-    end
+    sizeof_timew =
+      if RbConfig::SIZEOF.key?("uint64_t") && RbConfig::SIZEOF["long"] * 2 <= RbConfig::SIZEOF["uint64_t"]
+        RbConfig::SIZEOF["uint64_t"]
+      else
+        RbConfig::SIZEOF["void*"] # Same size as VALUE
+      end
+    expect =
+      GC::INTERNAL_CONSTANTS[:BASE_SLOT_SIZE] +
+        sizeof_timew +
+        RbConfig::SIZEOF["void*"] * 4 + 5 + # vtm
+        1 # tzmode, tm_got
     assert_equal expect, ObjectSpace.memsize_of(t)
   rescue LoadError => e
-    skip "failed to load objspace: #{e.message}"
+    omit "failed to load objspace: #{e.message}"
+  end
+
+  def test_deconstruct_keys
+    t = in_timezone('JST-9') { Time.local(2022, 10, 16, 14, 1, 30, 500) }
+    assert_equal(
+      {year: 2022, month: 10, day: 16, wday: 0, yday: 289,
+        hour: 14, min: 1, sec: 30, subsec: 1/2000r, dst: false, zone: 'JST'},
+      t.deconstruct_keys(nil)
+    )
+
+    assert_equal(
+      {year: 2022, month: 10, sec: 30},
+      t.deconstruct_keys(%i[year month sec nonexistent])
+    )
   end
 end

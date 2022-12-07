@@ -255,31 +255,31 @@ class Reline::KeyActor::Emacs::Test < Reline::TestCase
   end
 
   def test_em_kill_line
-    input_keys("\C-u", false)
+    @line_editor.input_key(Reline::Key.new(:em_kill_line, :em_kill_line, false))
     assert_byte_pointer_size('')
     assert_cursor(0)
     assert_cursor_max(0)
     assert_line('')
     input_keys('abc')
-    assert_byte_pointer_size('abc')
-    assert_cursor(3)
-    assert_cursor_max(3)
-    input_keys("\C-u", false)
+    @line_editor.input_key(Reline::Key.new(:em_kill_line, :em_kill_line, false))
     assert_byte_pointer_size('')
     assert_cursor(0)
     assert_cursor_max(0)
     assert_line('')
     input_keys('abc')
-    input_keys("\C-b\C-u", false)
+    input_keys("\C-b", false)
+    @line_editor.input_key(Reline::Key.new(:em_kill_line, :em_kill_line, false))
     assert_byte_pointer_size('')
     assert_cursor(0)
-    assert_cursor_max(1)
-    assert_line('c')
-    input_keys("\C-u", false)
+    assert_cursor_max(0)
+    assert_line('')
+    input_keys('abc')
+    input_keys("\C-a", false)
+    @line_editor.input_key(Reline::Key.new(:em_kill_line, :em_kill_line, false))
     assert_byte_pointer_size('')
     assert_cursor(0)
-    assert_cursor_max(1)
-    assert_line('c')
+    assert_cursor_max(0)
+    assert_line('')
   end
 
   def test_ed_move_to_beg
@@ -2306,11 +2306,49 @@ class Reline::KeyActor::Emacs::Test < Reline::TestCase
     assert_line('abcd')
   end
 
+  def test_halfwidth_kana_width_dakuten
+    input_raw_keys('ｶﾞｷﾞｹﾞｺﾞ')
+    assert_byte_pointer_size('ｶﾞｷﾞｹﾞｺﾞ')
+    assert_cursor(8)
+    assert_cursor_max(8)
+    input_keys("\C-b\C-b", false)
+    assert_byte_pointer_size('ｶﾞｷﾞ')
+    assert_cursor(4)
+    assert_cursor_max(8)
+    input_raw_keys('ｸﾞ', false)
+    assert_byte_pointer_size('ｶﾞｷﾞｸﾞ')
+    assert_cursor(6)
+    assert_cursor_max(10)
+    assert_line('ｶﾞｷﾞｸﾞｹﾞｺﾞ')
+  end
+
   def test_input_unknown_char
     input_keys('͸') # U+0378 (unassigned)
     assert_line('͸')
     assert_byte_pointer_size('͸')
     assert_cursor(1)
     assert_cursor_max(1)
+  end
+
+  def test_unix_line_discard
+    input_keys("\C-u", false)
+    assert_byte_pointer_size('')
+    assert_cursor(0)
+    assert_cursor_max(0)
+    assert_line('')
+    input_keys('abc')
+    assert_byte_pointer_size('abc')
+    assert_cursor(3)
+    assert_cursor_max(3)
+    input_keys("\C-b\C-u", false)
+    assert_byte_pointer_size('')
+    assert_cursor(0)
+    assert_cursor_max(1)
+    assert_line('c')
+    input_keys("\C-f\C-u", false)
+    assert_byte_pointer_size('')
+    assert_cursor(0)
+    assert_cursor_max(0)
+    assert_line('')
   end
 end

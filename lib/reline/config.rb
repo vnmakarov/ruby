@@ -45,6 +45,8 @@ class Reline::Config
     attr_accessor v
   end
 
+  attr_accessor :autocompletion
+
   def initialize
     @additional_key_bindings = {} # from inputrc
     @additional_key_bindings[:emacs] = {}
@@ -55,6 +57,7 @@ class Reline::Config
     @if_stack = nil
     @editing_mode_label = :emacs
     @keymap_label = :emacs
+    @keymap_prefix = []
     @key_actors = {}
     @key_actors[:emacs] = Reline::KeyActor::Emacs.new
     @key_actors[:vi_insert] = Reline::KeyActor::ViInsert.new
@@ -67,6 +70,7 @@ class Reline::Config
     @keyseq_timeout = 500
     @test_mode = false
     @autocompletion = false
+    @convert_meta = true if seven_bit_encoding?(Reline::IOGate.encoding)
   end
 
   def reset
@@ -90,14 +94,6 @@ class Reline::Config
 
   def editing_mode_is?(*val)
     (val.respond_to?(:any?) ? val : [val]).any?(@editing_mode_label)
-  end
-
-  def autocompletion=(val)
-    @autocompletion = val
-  end
-
-  def autocompletion
-    @autocompletion
   end
 
   def keymap
@@ -220,7 +216,7 @@ class Reline::Config
         key, func_name = $1, $2
         keystroke, func = bind_key(key, func_name)
         next unless keystroke
-        @additional_key_bindings[@keymap_label][keystroke] = func
+        @additional_key_bindings[@keymap_label][@keymap_prefix + keystroke] = func
       end
     end
     unless @if_stack.empty?
@@ -291,18 +287,29 @@ class Reline::Config
       when 'emacs'
         @editing_mode_label = :emacs
         @keymap_label = :emacs
+        @keymap_prefix = []
       when 'vi'
         @editing_mode_label = :vi_insert
         @keymap_label = :vi_insert
+        @keymap_prefix = []
       end
     when 'keymap'
       case value
-      when 'emacs', 'emacs-standard', 'emacs-meta', 'emacs-ctlx'
+      when 'emacs', 'emacs-standard'
         @keymap_label = :emacs
+        @keymap_prefix = []
+      when 'emacs-ctlx'
+        @keymap_label = :emacs
+        @keymap_prefix = [?\C-x.ord]
+      when 'emacs-meta'
+        @keymap_label = :emacs
+        @keymap_prefix = [?\e.ord]
       when 'vi', 'vi-move', 'vi-command'
         @keymap_label = :vi_command
+        @keymap_prefix = []
       when 'vi-insert'
         @keymap_label = :vi_insert
+        @keymap_prefix = []
       end
     when 'keyseq-timeout'
       @keyseq_timeout = value.to_i
@@ -386,5 +393,9 @@ class Reline::Config
       ret << key_notation_to_code($&)
     end
     ret
+  end
+
+  private def seven_bit_encoding?(encoding)
+    encoding == Encoding::US_ASCII
   end
 end

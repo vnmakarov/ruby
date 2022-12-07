@@ -1,17 +1,15 @@
 # coding: utf-8
 
-bigdecimal_version = '3.1.0.dev'
-
 Gem::Specification.new do |s|
   s.name          = "bigdecimal"
-  s.version       = bigdecimal_version
+  s.version       = "3.1.3"
   s.authors       = ["Kenta Murata", "Zachary Scott", "Shigeo Kobayashi"]
   s.email         = ["mrkn@mrkn.jp"]
 
   s.summary       = "Arbitrary-precision decimal floating-point number library."
   s.description   = "This library provides arbitrary-precision decimal floating-point number class."
   s.homepage      = "https://github.com/ruby/bigdecimal"
-  s.license       = "Ruby"
+  s.licenses       = ["Ruby", "bsd-2-clause"]
 
   s.require_paths = %w[lib]
   s.extensions    = %w[ext/bigdecimal/extconf.rb]

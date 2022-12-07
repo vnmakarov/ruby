@@ -969,6 +969,43 @@ mentioned below.
 
     {MIT License}[rdoc-label:label-MIT+License]
 
+[lib/bundler/vendor/thor]
+
+  Thor is under the following license.
+
+  >>>
+    Copyright (c) 2008 Yehuda Katz, Eric Hodel, et al.
+
+    {MIT License}[rdoc-label:label-MIT+License]
+
+[lib/rubygems/resolver/molinillo]
+[lib/bundler/vendor/molinillo]
+
+  molinillo is under the following license.
+
+  >>>
+    Copyright (c) 2014 Samuel E. Giddins segiddins@segiddins.me
+
+    {MIT License}[rdoc-label:label-MIT+License]
+
+[lib/bundler/vendor/connection_pool]
+
+  connection_pool is under the following license.
+
+  >>>
+    Copyright (c) 2011 Mike Perham
+
+    {MIT License}[rdoc-label:label-MIT+License]
+
+[lib/bundler/vendor/net-http-persistent]
+
+  net-http-persistent is under the following license.
+
+  >>>
+    Copyright (c) Eric Hodel, Aaron Patterson
+
+    {MIT License}[rdoc-label:label-MIT+License]
+
 [lib/did_you_mean]
 [lib/did_you_mean.rb]
 [test/did_you_mean]
@@ -977,6 +1014,17 @@ mentioned below.
 
   >>>
     Copyright (c) 2014-2016 Yuki Nishijima
+
+    {MIT License}[rdoc-label:label-MIT+License]
+
+[lib/error_highlight]
+[lib/error_highlight.rb]
+[test/error_highlight]
+
+  error_highlight is under the following license.
+
+  >>>
+    Copyright (c) 2021 Yusuke Endoh
 
     {MIT License}[rdoc-label:label-MIT+License]
 

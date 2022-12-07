@@ -152,7 +152,7 @@ class TestDir < Test::Unit::TestCase
   end
 
   def test_chroot_nodir
-    skip if RUBY_PLATFORM =~ /android/
+    omit if RUBY_PLATFORM =~ /android/
     assert_raise(NotImplementedError, Errno::ENOENT, Errno::EPERM
 		) { Dir.chroot(File.join(@nodir, "")) }
   end
@@ -175,6 +175,12 @@ class TestDir < Test::Unit::TestCase
                  Dir.glob([@root, File.join(@root, "*")], sort: true))
     assert_raise_with_message(ArgumentError, /nul-separated/) do
       Dir.glob(@root + "\0\0\0" + File.join(@root, "*"))
+    end
+    assert_raise_with_message(ArgumentError, /expected true or false/) do
+      Dir.glob(@root, sort: 1)
+    end
+    assert_raise_with_message(ArgumentError, /expected true or false/) do
+      Dir.glob(@root, sort: nil)
     end
 
     assert_equal(("a".."z").step(2).map {|f| File.join(File.join(@root, f), "") },
@@ -250,6 +256,20 @@ class TestDir < Test::Unit::TestCase
       bug15649 = '[ruby-core:91728] [Bug #15649]'
       assert_equal(["#{@root}/a", "#{@root}/b"],
                    Dir.glob("{#{@root}/a,#{@root}/b}"), bug15649)
+    end
+  end
+
+  def test_glob_recursive_with_brace
+    Dir.chdir(@root) do
+      bug19042 = '[ruby-core:110220] [Bug #19042]'
+      %w"c/dir_a c/dir_b c/dir_b/dir".each do |d|
+        Dir.mkdir(d)
+      end
+      expected = %w"c/dir_a/file c/dir_b/dir/file"
+      expected.each do |f|
+        File.write(f, "")
+      end
+      assert_equal(expected, Dir.glob("**/{dir_a,dir_b/dir}/file"), bug19042)
     end
   end
 
@@ -484,9 +504,9 @@ class TestDir < Test::Unit::TestCase
     def test_glob_legacy_short_name
       bug10819 = '[ruby-core:67954] [Bug #10819]'
       bug11206 = '[ruby-core:69435] [Bug #11206]'
-      skip unless /\A\w:/ =~ ENV["ProgramFiles"]
+      omit unless /\A\w:/ =~ ENV["ProgramFiles"]
       short = "#$&/PROGRA~1"
-      skip unless File.directory?(short)
+      omit unless File.directory?(short)
       entries = Dir.glob("#{short}/Common*")
       assert_not_empty(entries, bug10819)
       long = File.expand_path(short)

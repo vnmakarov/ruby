@@ -14,6 +14,7 @@
 
 #include "internal/compilers.h" /* for __has_attribute */
 #include "ruby/ruby.h"          /* for rb_event_flag_t */
+#include "shape.h"
 
 struct rb_execution_context_struct; /* in vm_core.h */
 struct rb_objspace; /* in vm_core.h */
@@ -67,9 +68,22 @@ struct rb_objspace; /* in vm_core.h */
     rb_obj_write((VALUE)(a), UNALIGNED_MEMBER_ACCESS((VALUE *)(slot)), \
                  (VALUE)(b), __FILE__, __LINE__)
 
-typedef struct ractor_newobj_cache {
+#if USE_RVARGC && SHAPE_IN_BASIC_FLAGS
+# define SIZE_POOL_COUNT 5
+#else
+# define SIZE_POOL_COUNT 1
+#endif
+
+#define RCLASS_EXT_EMBEDDED (SIZE_POOL_COUNT > 1)
+
+typedef struct ractor_newobj_size_pool_cache {
     struct RVALUE *freelist;
     struct heap_page *using_page;
+} rb_ractor_newobj_size_pool_cache_t;
+
+typedef struct ractor_newobj_cache {
+    size_t incremental_mark_step_allocated_slots;
+    rb_ractor_newobj_size_pool_cache_t size_pool_caches[SIZE_POOL_COUNT];
 } rb_ractor_newobj_cache_t;
 
 /* gc.c */
@@ -89,6 +103,7 @@ RUBY_ATTR_MALLOC void *rb_aligned_malloc(size_t, size_t) RUBY_ATTR_ALLOC_SIZE((2
 size_t rb_size_mul_or_raise(size_t, size_t, VALUE); /* used in compile.c */
 size_t rb_size_mul_add_or_raise(size_t, size_t, size_t, VALUE); /* used in iseq.h */
 RUBY_ATTR_MALLOC void *rb_xmalloc_mul_add(size_t, size_t, size_t);
+RUBY_ATTR_MALLOC void *rb_xcalloc_mul_add(size_t, size_t, size_t);
 void *rb_xrealloc_mul_add(const void *, size_t, size_t, size_t);
 RUBY_ATTR_MALLOC void *rb_xmalloc_mul_add_mul(size_t, size_t, size_t, size_t);
 RUBY_ATTR_MALLOC void *rb_xcalloc_mul_add_mul(size_t, size_t, size_t, size_t);

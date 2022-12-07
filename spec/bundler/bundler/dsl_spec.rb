@@ -25,6 +25,45 @@ RSpec.describe Bundler::Dsl do
       expect { subject.git_source(:example) }.to raise_error(Bundler::InvalidOption)
     end
 
+    it "converts :github PR to URI using https" do
+      subject.gem("sparks", :github => "https://github.com/indirect/sparks/pull/5")
+      github_uri = "https://github.com/indirect/sparks.git"
+      expect(subject.dependencies.first.source.uri).to eq(github_uri)
+      expect(subject.dependencies.first.source.branch).to eq("refs/pull/5/head")
+    end
+
+    it "rejects :github PR URI with a branch, ref or tag" do
+      expect do
+        subject.gem("sparks", :github => "https://github.com/indirect/sparks/pull/5", :branch => "foo")
+      end.to raise_error(
+        Bundler::GemfileError,
+        %(The :branch option can't be used with `github: "https://github.com/indirect/sparks/pull/5"`),
+      )
+
+      expect do
+        subject.gem("sparks", :github => "https://github.com/indirect/sparks/pull/5", :ref => "foo")
+      end.to raise_error(
+        Bundler::GemfileError,
+        %(The :ref option can't be used with `github: "https://github.com/indirect/sparks/pull/5"`),
+      )
+
+      expect do
+        subject.gem("sparks", :github => "https://github.com/indirect/sparks/pull/5", :tag => "foo")
+      end.to raise_error(
+        Bundler::GemfileError,
+        %(The :tag option can't be used with `github: "https://github.com/indirect/sparks/pull/5"`),
+      )
+    end
+
+    it "rejects :github with :git" do
+      expect do
+        subject.gem("sparks", :github => "indirect/sparks", :git => "https://github.com/indirect/sparks.git")
+      end.to raise_error(
+        Bundler::GemfileError,
+        %(The :git option can't be used with `github: "indirect/sparks"`),
+      )
+    end
+
     context "default hosts", :bundler => "< 3" do
       it "converts :github to URI using https" do
         subject.gem("sparks", :github => "indirect/sparks")
@@ -98,12 +137,15 @@ RSpec.describe Bundler::Dsl do
   end
 
   describe "#gem" do
-    [:ruby, :ruby_18, :ruby_19, :ruby_20, :ruby_21, :ruby_22, :ruby_23, :ruby_24, :ruby_25, :ruby_26, :mri, :mri_18, :mri_19,
-     :mri_20, :mri_21, :mri_22, :mri_23, :mri_24, :mri_25, :mri_26, :jruby, :rbx, :truffleruby].each do |platform|
+    # rubocop:disable Naming/VariableNumber
+    [:ruby, :ruby_18, :ruby_19, :ruby_20, :ruby_21, :ruby_22, :ruby_23, :ruby_24, :ruby_25, :ruby_26, :ruby_27,
+     :ruby_30, :ruby_31, :mri, :mri_18, :mri_19, :mri_20, :mri_21, :mri_22, :mri_23, :mri_24, :mri_25, :mri_26,
+     :mri_27, :mri_30, :mri_31, :jruby, :rbx, :truffleruby].each do |platform|
       it "allows #{platform} as a valid platform" do
         subject.gem("foo", :platform => platform)
       end
     end
+    # rubocop:enable Naming/VariableNumber
 
     it "rejects invalid platforms" do
       expect { subject.gem("foo", :platform => :bogus) }.

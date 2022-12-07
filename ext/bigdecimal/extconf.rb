@@ -3,10 +3,7 @@ require 'mkmf'
 
 def check_bigdecimal_version(gemspec_path)
   message "checking RUBY_BIGDECIMAL_VERSION... "
-
-  bigdecimal_version =
-    IO.readlines(gemspec_path)
-      .grep(/\Abigdecimal_version\s+=\s+/)[0][/\'([^\']+)\'/, 1]
+  bigdecimal_version = File.read(gemspec_path).match(/^\s*s\.version\s+=\s+['"]([^'"]+)['"]\s*$/)[1]
 
   version_components = bigdecimal_version.split('.')
   bigdecimal_version = version_components[0, 3].join('.')
@@ -70,14 +67,10 @@ have_header("ruby/atomic.h")
 have_header("ruby/internal/has/builtin.h")
 have_header("ruby/internal/static_assert.h")
 
-have_type("struct RRational", "ruby.h")
 have_func("rb_rational_num", "ruby.h")
 have_func("rb_rational_den", "ruby.h")
-have_type("struct RComplex", "ruby.h")
 have_func("rb_complex_real", "ruby.h")
 have_func("rb_complex_imag", "ruby.h")
-have_func("rb_array_const_ptr", "ruby.h")
-have_func("rb_sym2str", "ruby.h")
 have_func("rb_opts_exception_p", "ruby.h")
 have_func("rb_category_warn", "ruby.h")
 have_const("RB_WARN_CATEGORY_DEPRECATED", "ruby.h")

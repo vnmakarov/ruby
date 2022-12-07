@@ -1426,4 +1426,40 @@ class Reline::KeyActor::ViInsert::Test < Reline::TestCase
     assert_cursor(4)
     assert_cursor_max(4)
   end
+
+  def test_vi_kill_line_prev
+    input_keys("\C-u", false)
+    assert_byte_pointer_size('')
+    assert_cursor(0)
+    assert_cursor_max(0)
+    assert_line('')
+    input_keys('abc')
+    assert_byte_pointer_size('abc')
+    assert_cursor(3)
+    assert_cursor_max(3)
+    input_keys("\C-u", false)
+    assert_byte_pointer_size('')
+    assert_cursor(0)
+    assert_cursor_max(0)
+    assert_line('')
+    input_keys('abc')
+    input_keys("\C-[\C-u", false)
+    assert_byte_pointer_size('')
+    assert_cursor(0)
+    assert_cursor_max(1)
+    assert_line('c')
+    input_keys("\C-u", false)
+    assert_byte_pointer_size('')
+    assert_cursor(0)
+    assert_cursor_max(1)
+    assert_line('c')
+  end
+
+  def test_vi_motion_operators
+    assert_instance_of(Reline::KeyActor::ViInsert, @config.editing_mode)
+
+    assert_nothing_raised do
+      input_keys("test = { foo: bar }\C-[BBBldt}b")
+    end
+  end
 end

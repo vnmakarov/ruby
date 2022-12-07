@@ -1,10 +1,12 @@
 $LOAD_PATH.unshift File.expand_path('../../lib', __FILE__)
-require 'irb/ruby-lex'
-require 'test/unit'
+require 'irb'
+require 'rubygems'
 require 'ostruct'
 
+require_relative "helper"
+
 module TestIRB
-  class TestRubyLex < Test::Unit::TestCase
+  class TestRubyLex < TestCase
     Row = Struct.new(:content, :current_line_spaces, :new_line_spaces, :nesting_level)
 
     class MockIO_AutoIndent
@@ -19,28 +21,50 @@ module TestIRB
       end
     end
 
+    def setup
+      save_encodings
+    end
+
+    def teardown
+      restore_encodings
+    end
+
     def assert_indenting(lines, correct_space_count, add_new_line)
       lines = lines + [""] if add_new_line
       last_line_index = lines.length - 1
       byte_pointer = lines.last.length
 
+      context = build_context
+      context.auto_indent_mode = true
       ruby_lex = RubyLex.new()
       io = MockIO_AutoIndent.new([lines, last_line_index, byte_pointer, add_new_line]) do |auto_indent|
         error_message = "Calculated the wrong number of spaces for:\n #{lines.join("\n")}"
         assert_equal(correct_space_count, auto_indent, error_message)
       end
-      ruby_lex.set_input(io)
-      context = OpenStruct.new(auto_indent_mode: true)
+      ruby_lex.set_input(io, context: context)
       ruby_lex.set_auto_indent(context)
     end
 
-    def assert_nesting_level(lines, expected)
-      ruby_lex = RubyLex.new()
-      io = proc{ lines.join("\n") }
-      ruby_lex.set_input(io, io)
-      ruby_lex.lex
+    def assert_nesting_level(lines, expected, local_variables: [])
+      ruby_lex = ruby_lex_for_lines(lines, local_variables: local_variables)
       error_message = "Calculated the wrong number of nesting level for:\n #{lines.join("\n")}"
       assert_equal(expected, ruby_lex.instance_variable_get(:@indent), error_message)
+    end
+
+    def assert_code_block_open(lines, expected, local_variables: [])
+      ruby_lex = ruby_lex_for_lines(lines, local_variables: local_variables)
+      error_message = "Wrong result of code_block_open for:\n #{lines.join("\n")}"
+      assert_equal(expected, ruby_lex.instance_variable_get(:@code_block_open), error_message)
+    end
+
+    def ruby_lex_for_lines(lines, local_variables: [])
+      ruby_lex = RubyLex.new()
+
+      context = build_context(local_variables)
+      io = proc{ lines.join("\n") }
+      ruby_lex.set_input(io, io, context: context)
+      ruby_lex.lex(context)
+      ruby_lex
     end
 
     def test_auto_indent
@@ -157,12 +181,43 @@ module TestIRB
     end
 
     def test_endless_range_at_end_of_line
-      if Gem::Version.new(RUBY_VERSION) < Gem::Version.new('2.6.0')
-        pend 'Endless range is available in 2.6.0 or later'
-      end
       input_with_prompt = [
         PromptRow.new('001:0: :> ', %q(a = 3..)),
         PromptRow.new('002:0: :* ', %q()),
+      ]
+
+      lines = input_with_prompt.map(&:content)
+      expected_prompt_list = input_with_prompt.map(&:prompt)
+      assert_dynamic_prompt(lines, expected_prompt_list)
+    end
+
+    def test_heredoc_with_embexpr
+      input_with_prompt = [
+        PromptRow.new('001:0:":* ', %q(<<A+%W[#{<<B)),
+        PromptRow.new('002:0:":* ', %q(#{<<C+%W[)),
+        PromptRow.new('003:0:":* ', %q()),
+        PromptRow.new('004:0:":* ', %q(C)),
+        PromptRow.new('005:0:]:* ', %q()),
+        PromptRow.new('006:0:":* ', %q(]})),
+        PromptRow.new('007:0:":* ', %q(})),
+        PromptRow.new('008:0:":* ', %q(A)),
+        PromptRow.new('009:0:]:* ', %q(B)),
+        PromptRow.new('010:0:]:* ', %q(})),
+        PromptRow.new('011:0: :> ', %q(])),
+        PromptRow.new('012:0: :* ', %q()),
+      ]
+
+      lines = input_with_prompt.map(&:content)
+      expected_prompt_list = input_with_prompt.map(&:prompt)
+      assert_dynamic_prompt(lines, expected_prompt_list)
+    end
+
+    def test_backtick_method
+      input_with_prompt = [
+        PromptRow.new('001:0: :> ', %q(self.`(arg))),
+        PromptRow.new('002:0: :* ', %q()),
+        PromptRow.new('003:0: :> ', %q(def `(); end)),
+        PromptRow.new('004:0: :* ', %q()),
       ]
 
       lines = input_with_prompt.map(&:content)
@@ -399,6 +454,23 @@ module TestIRB
       end
     end
 
+    def test_corresponding_syntax_to_keyword_in
+      input_with_correct_indents = [
+        Row.new(%q(module E), nil, 2, 1),
+        Row.new(%q(end), 0, 0, 0),
+        Row.new(%q(class A), nil, 2, 1),
+        Row.new(%q(  in), nil, 4, 1)
+      ]
+
+      lines = []
+      input_with_correct_indents.each do |row|
+        lines << row.content
+        assert_indenting(lines, row.current_line_spaces, false)
+        assert_indenting(lines, row.new_line_spaces, true)
+        assert_nesting_level(lines, row.nesting_level)
+      end
+    end
+
     def test_bracket_corresponding_to_times
       input_with_correct_indents = [
         Row.new(%q(3.times { |i|), nil, 2, 1),
@@ -461,6 +533,15 @@ module TestIRB
         assert_indenting(lines, row.new_line_spaces, true)
         assert_nesting_level(lines, row.nesting_level)
       end
+    end
+
+    def test_local_variables_dependent_code
+      pend if RUBY_ENGINE == 'truffleruby'
+      lines = ["a /1#/ do", "2"]
+      assert_nesting_level(lines, 1)
+      assert_code_block_open(lines, true)
+      assert_nesting_level(lines, 0, local_variables: ['a'])
+      assert_code_block_open(lines, false, local_variables: ['a'])
     end
 
     def test_heredoc_with_indent
@@ -546,7 +627,8 @@ module TestIRB
       ruby_lex.set_prompt do |ltype, indent, continue, line_no|
         '%03d:%01d:%1s:%s ' % [line_no, indent, ltype, continue ? '*' : '>']
       end
-      ruby_lex.set_input(io)
+      context = build_context
+      ruby_lex.set_input(io, context: context)
     end
 
     def test_dyanmic_prompt
@@ -581,8 +663,8 @@ module TestIRB
       tokens = RubyLex.ripper_lex_without_warning('%wwww')
       pos_to_index = {}
       tokens.each_with_index { |t, i|
-        assert_nil(pos_to_index[t[0]], "There is already another token in the position of #{t.inspect}.")
-        pos_to_index[t[0]] = i
+        assert_nil(pos_to_index[t.pos], "There is already another token in the position of #{t.inspect}.")
+        pos_to_index[t.pos] = i
       }
     end
 
@@ -598,9 +680,46 @@ module TestIRB
       EOC
       pos_to_index = {}
       tokens.each_with_index { |t, i|
-        assert_nil(pos_to_index[t[0]], "There is already another token in the position of #{t.inspect}.")
-        pos_to_index[t[0]] = i
+        assert_nil(pos_to_index[t.pos], "There is already another token in the position of #{t.inspect}.")
+        pos_to_index[t.pos] = i
       }
+    end
+
+    def test_unterminated_code
+      if Gem::Version.new(RUBY_VERSION) < Gem::Version.new('2.7.0')
+        pend 'This test needs Ripper::Lexer#scan to take broken tokens'
+      end
+
+      ['do', '<<A'].each do |code|
+        tokens = RubyLex.ripper_lex_without_warning(code)
+        assert_equal(code, tokens.map(&:tok).join, "Cannot reconstruct code from tokens")
+        error_tokens = tokens.map(&:event).grep(/error/)
+        assert_empty(error_tokens, 'Error tokens must be ignored if there is corresponding non-error token')
+      end
+    end
+
+    def test_unterminated_heredoc_string_literal
+      ['<<A;<<B', "<<A;<<B\n", "%W[\#{<<A;<<B", "%W[\#{<<A;<<B\n"].each do |code|
+        tokens = RubyLex.ripper_lex_without_warning(code)
+        string_literal = RubyLex.new.check_string_literal(tokens)
+        assert_equal('<<A', string_literal&.tok)
+      end
+    end
+
+    private
+
+    def build_context(local_variables = nil)
+      IRB.init_config(nil)
+      workspace = IRB::WorkSpace.new(TOPLEVEL_BINDING.dup)
+
+      if local_variables
+        local_variables.each do |n|
+          workspace.binding.local_variable_set(n, nil)
+        end
+      end
+
+      IRB.conf[:VERBOSE] = false
+      IRB::Context.new(nil, workspace)
     end
   end
 end

@@ -20,6 +20,7 @@ struct rb_thread_struct;        /* in vm_core.h */
 #define COVERAGE_TARGET_BRANCHES 2
 #define COVERAGE_TARGET_METHODS  4
 #define COVERAGE_TARGET_ONESHOT_LINES 8
+#define COVERAGE_TARGET_EVAL 16
 
 VALUE rb_obj_is_mutex(VALUE obj);
 VALUE rb_suppress_tracing(VALUE (*func)(VALUE), VALUE arg);
@@ -35,6 +36,7 @@ int rb_thread_to_be_killed(VALUE thread);
 void rb_mutex_allow_trap(VALUE self, int val);
 VALUE rb_uninterruptible(VALUE (*b_proc)(VALUE), VALUE data);
 VALUE rb_mutex_owned_p(VALUE self);
+VALUE rb_exec_recursive_outer_mid(VALUE (*f)(VALUE g, VALUE h, int r), VALUE g, VALUE h, ID mid);
 
 int rb_thread_wait_for_single_fd(int fd, int events, struct timeval * timeout);
 

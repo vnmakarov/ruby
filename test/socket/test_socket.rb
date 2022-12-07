@@ -1,9 +1,5 @@
 # frozen_string_literal: true
 
-# tentatively disabled due to IPv6 configuration issue on Solaris CI
-# http://rubyci.s3.amazonaws.com/solaris10-gcc/ruby-master/log/20210729T040002Z.fail.html.gz
-return if /solaris/ =~ RUBY_PLATFORM
-
 begin
   require "socket"
   require "tmpdir"
@@ -347,7 +343,7 @@ class TestSocket < Test::Unit::TestCase
     begin
       ifaddrs = Socket.getifaddrs
     rescue NotImplementedError
-      skip "Socket.getifaddrs not implemented"
+      omit "Socket.getifaddrs not implemented"
     end
 
     ifconfig = nil
@@ -441,10 +437,10 @@ class TestSocket < Test::Unit::TestCase
         }
       rescue NotImplementedError, Errno::ENOSYS
         skipped = true
-        skip "need sendmsg and recvmsg: #{$!}"
+        omit "need sendmsg and recvmsg: #{$!}"
       rescue RuntimeError
         skipped = true
-        skip "UDP server is no response: #{$!}"
+        omit "UDP server is no response: #{$!}"
       ensure
         if th
           if skipped
@@ -490,7 +486,7 @@ class TestSocket < Test::Unit::TestCase
         end while IO.select([r], nil, nil, 0.1).nil?
         n
       end
-      timeout = (defined?(RubyVM::JIT) && RubyVM::JIT.enabled? ? 120 : 30) # for --jit-wait
+      timeout = (defined?(RubyVM::MJIT) && RubyVM::MJIT.enabled? ? 120 : 30) # for --jit-wait
       assert_equal([[s1],[],[]], IO.select([s1], nil, nil, timeout))
       msg, _, _, stamp = s1.recvmsg
       assert_equal("a", msg)
@@ -587,7 +583,7 @@ class TestSocket < Test::Unit::TestCase
   ensure
     serv_thread.value.close
     server.close
-  end
+  end unless RUBY_PLATFORM.include?("freebsd")
 
   def test_connect_timeout
     host = "127.0.0.1"

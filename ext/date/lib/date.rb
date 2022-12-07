@@ -4,7 +4,12 @@
 require 'date_core'
 
 class Date
+  VERSION = "3.3.0" # :nodoc:
 
+  # call-seq:
+  #   infinite? -> false
+  #
+  # Returns +false+
   def infinite?
     false
   end

@@ -4,6 +4,19 @@ require 'timeout'
 require_relative 'terminfo'
 
 class Reline::ANSI
+  CAPNAME_KEY_BINDINGS = {
+    'khome' => :ed_move_to_beg,
+    'kend'  => :ed_move_to_end,
+    'kcuu1' => :ed_prev_history,
+    'kcud1' => :ed_next_history,
+    'kcuf1' => :ed_next_char,
+    'kcub1' => :ed_prev_char,
+    'cuu' => :ed_prev_history,
+    'cud' => :ed_next_history,
+    'cuf' => :ed_next_char,
+    'cub' => :ed_prev_char,
+  }
+
   if Reline::Terminfo.enabled?
     Reline::Terminfo.setupterm(0, 2)
   end
@@ -34,30 +47,38 @@ class Reline::ANSI
       config.add_default_key_binding_by_keymap(:vi_command, key, func)
     end
     {
+      [27, 91, 90] => :completion_journey_up, # S-Tab
+    }.each_pair do |key, func|
+      config.add_default_key_binding_by_keymap(:emacs, key, func)
+      config.add_default_key_binding_by_keymap(:vi_insert, key, func)
+    end
+    {
       # default bindings
       [27, 32] => :em_set_mark,             # M-<space>
       [24, 24] => :em_exchange_mark,        # C-x C-x
-      [27, 91, 90] => :completion_journey_up, # S-Tab
     }.each_pair do |key, func|
       config.add_default_key_binding_by_keymap(:emacs, key, func)
     end
   end
 
   def self.set_default_key_bindings_terminfo(config)
-    {
-      Reline::Terminfo.tigetstr('khome').bytes => :ed_move_to_beg,
-      Reline::Terminfo.tigetstr('kend').bytes => :ed_move_to_end,
-      Reline::Terminfo.tigetstr('kcuu1').bytes => :ed_prev_history,
-      Reline::Terminfo.tigetstr('kcud1').bytes => :ed_next_history,
-      Reline::Terminfo.tigetstr('kcuf1').bytes => :ed_next_char,
-      Reline::Terminfo.tigetstr('kcub1').bytes => :ed_prev_char,
-      # Escape sequences that omit the move distance and are set to defaults
-      # value 1 may be sometimes sent by pressing the arrow-key.
-      Reline::Terminfo.tigetstr('cuu').sub(/%p1%d/, '').bytes => :ed_prev_history,
-      Reline::Terminfo.tigetstr('cud').sub(/%p1%d/, '').bytes => :ed_next_history,
-      Reline::Terminfo.tigetstr('cuf').sub(/%p1%d/, '').bytes => :ed_next_char,
-      Reline::Terminfo.tigetstr('cub').sub(/%p1%d/, '').bytes => :ed_prev_char,
-    }.each_pair do |key, func|
+    key_bindings = CAPNAME_KEY_BINDINGS.map do |capname, key_binding|
+      begin
+        key_code = Reline::Terminfo.tigetstr(capname)
+        case capname
+        # Escape sequences that omit the move distance and are set to defaults
+        # value 1 may be sometimes sent by pressing the arrow-key.
+        when 'cuu', 'cud', 'cuf', 'cub'
+          [ key_code.sub(/%p1%d/, '').bytes, key_binding ]
+        else
+          [ key_code.bytes, key_binding ]
+        end
+      rescue Reline::Terminfo::TerminfoError
+        # capname is undefined
+      end
+    end.compact.to_h
+
+    key_bindings.each_pair do |key, func|
       config.add_default_key_binding_by_keymap(:emacs, key, func)
       config.add_default_key_binding_by_keymap(:vi_insert, key, func)
       config.add_default_key_binding_by_keymap(:vi_command, key, func)
@@ -126,10 +147,10 @@ class Reline::ANSI
     unless @@buf.empty?
       return @@buf.shift
     end
-    until c = @@input.raw(intr: true) { select([@@input], [], [], 0.1) && @@input.getbyte }
+    until c = @@input.raw(intr: true) { @@input.wait_readable(0.1) && @@input.getbyte }
       Reline.core.line_editor.resize
     end
-    (c == 0x16 && @@input.raw(min: 0, tim: 0, &:getbyte)) || c
+    (c == 0x16 && @@input.raw(min: 0, time: 0, &:getbyte)) || c
   rescue Errno::EIO
     # Maybe the I/O has been closed.
     nil
@@ -261,7 +282,7 @@ class Reline::ANSI
 
   def self.move_cursor_up(x)
     if x > 0
-      @@output.write "\e[#{x}A" if x > 0
+      @@output.write "\e[#{x}A"
     elsif x < 0
       move_cursor_down(-x)
     end
@@ -269,7 +290,7 @@ class Reline::ANSI
 
   def self.move_cursor_down(x)
     if x > 0
-      @@output.write "\e[#{x}B" if x > 0
+      @@output.write "\e[#{x}B"
     elsif x < 0
       move_cursor_up(-x)
     end
@@ -277,7 +298,11 @@ class Reline::ANSI
 
   def self.hide_cursor
     if Reline::Terminfo.enabled?
-      @@output.write Reline::Terminfo.tigetstr('civis')
+      begin
+        @@output.write Reline::Terminfo.tigetstr('civis')
+      rescue Reline::Terminfo::TerminfoError
+        # civis is undefined
+      end
     else
       # ignored
     end
@@ -285,7 +310,11 @@ class Reline::ANSI
 
   def self.show_cursor
     if Reline::Terminfo.enabled?
-      @@output.write Reline::Terminfo.tigetstr('cnorm')
+      begin
+        @@output.write Reline::Terminfo.tigetstr('cnorm')
+      rescue Reline::Terminfo::TerminfoError
+        # cnorm is undefined
+      end
     else
       # ignored
     end
@@ -316,8 +345,6 @@ class Reline::ANSI
   end
 
   def self.deprep(otio)
-    int_handle = Signal.trap('INT', 'IGNORE')
-    Signal.trap('INT', int_handle)
     Signal.trap('WINCH', @@old_winch_handler) if @@old_winch_handler
   end
 end

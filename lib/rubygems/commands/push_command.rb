@@ -1,8 +1,8 @@
 # frozen_string_literal: true
-require_relative '../command'
-require_relative '../local_remote_options'
-require_relative '../gemcutter_utilities'
-require_relative '../package'
+require_relative "../command"
+require_relative "../local_remote_options"
+require_relative "../gemcutter_utilities"
+require_relative "../package"
 
 class Gem::Commands::PushCommand < Gem::Command
   include Gem::LocalRemoteOptions
@@ -29,7 +29,7 @@ The push command will use ~/.gem/credentials to authenticate to a server, but yo
   end
 
   def initialize
-    super 'push', 'Push a gem up to the gem server', :host => self.host
+    super "push", "Push a gem up to the gem server", :host => self.host
 
     @user_defined_host = false
 
@@ -37,9 +37,9 @@ The push command will use ~/.gem/credentials to authenticate to a server, but yo
     add_key_option
     add_otp_option
 
-    add_option('--host HOST',
-               'Push to another gemcutter-compatible host',
-               '  (e.g. https://rubygems.org)') do |value, options|
+    add_option("--host HOST",
+               "Push to another gemcutter-compatible host",
+               "  (e.g. https://rubygems.org)") do |value, options|
       options[:host] = value
       @user_defined_host = true
     end
@@ -52,14 +52,14 @@ The push command will use ~/.gem/credentials to authenticate to a server, but yo
     default_gem_server, push_host = get_hosts_for(gem_name)
 
     @host = if @user_defined_host
-              options[:host]
-            elsif default_gem_server
-              default_gem_server
-            elsif push_host
-              push_host
-            else
-              options[:host]
-            end
+      options[:host]
+    elsif default_gem_server
+      default_gem_server
+    elsif push_host
+      push_host
+    else
+      options[:host]
+    end
 
     sign_in @host, scope: get_push_scope
 

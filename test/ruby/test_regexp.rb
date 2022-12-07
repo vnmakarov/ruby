@@ -91,6 +91,59 @@ class TestRegexp < Test::Unit::TestCase
     assert_warn('', '[ruby-core:82328] [Bug #13798]') {re.to_s}
   end
 
+  def test_extended_comment_invalid_escape_bug_18294
+    assert_separately([], <<-RUBY)
+      re = / C:\\\\[a-z]{5} # e.g. C:\\users /x
+      assert_match(re, 'C:\\users')
+      assert_not_match(re, 'C:\\user')
+
+      re = /
+        foo  # \\M-ca
+        bar
+      /x
+      assert_match(re, 'foobar')
+      assert_not_match(re, 'foobaz')
+
+      re = /
+        f[#o]o  # \\M-ca
+        bar
+      /x
+      assert_match(re, 'foobar')
+      assert_not_match(re, 'foobaz')
+
+      re = /
+        f[[:alnum:]#]o  # \\M-ca
+        bar
+      /x
+      assert_match(re, 'foobar')
+      assert_not_match(re, 'foobaz')
+
+      re = /
+        f(?# \\M-ca)oo  # \\M-ca
+        bar
+      /x
+      assert_match(re, 'foobar')
+      assert_not_match(re, 'foobaz')
+
+      re = /f(?# \\M-ca)oobar/
+      assert_match(re, 'foobar')
+      assert_not_match(re, 'foobaz')
+
+      re = /[-(?# fca)]oobar/
+      assert_match(re, 'foobar')
+      assert_not_match(re, 'foobaz')
+
+      re = /f(?# ca\0\\M-ca)oobar/
+      assert_match(re, 'foobar')
+      assert_not_match(re, 'foobaz')
+    RUBY
+
+    assert_raise(SyntaxError) {eval "/\\users/x"}
+    assert_raise(SyntaxError) {eval "/[\\users]/x"}
+    assert_raise(SyntaxError) {eval "/(?<\\users)/x"}
+    assert_raise(SyntaxError) {eval "/# \\users/"}
+  end
+
   def test_union
     assert_equal :ok, begin
       Regexp.union(
@@ -424,6 +477,27 @@ class TestRegexp < Test::Unit::TestCase
     assert_equal([2, 3], m.offset(3))
   end
 
+  def test_match_byteoffset_begin_end
+    m = /(?<x>b..)/.match("foobarbaz")
+    assert_equal([3, 6], m.byteoffset("x"))
+    assert_equal(3, m.begin("x"))
+    assert_equal(6, m.end("x"))
+    assert_raise(IndexError) { m.byteoffset("y") }
+    assert_raise(IndexError) { m.byteoffset(2) }
+    assert_raise(IndexError) { m.begin(2) }
+    assert_raise(IndexError) { m.end(2) }
+
+    m = /(?<x>q..)?/.match("foobarbaz")
+    assert_equal([nil, nil], m.byteoffset("x"))
+    assert_equal(nil, m.begin("x"))
+    assert_equal(nil, m.end("x"))
+
+    m = /\A\u3042(.)(.)?(.)\z/.match("\u3042\u3043\u3044")
+    assert_equal([3, 6], m.byteoffset(1))
+    assert_equal([nil, nil], m.byteoffset(2))
+    assert_equal([6, 9], m.byteoffset(3))
+  end
+
   def test_match_to_s
     m = /(?<x>b..)/.match("foobarbaz")
     assert_equal("bar", m.to_s)
@@ -467,6 +541,7 @@ class TestRegexp < Test::Unit::TestCase
     assert_nil(m[5])
     assert_raise(IndexError) { m[:foo] }
     assert_raise(TypeError) { m[nil] }
+    assert_equal(["baz", nil], m[-2, 3])
   end
 
   def test_match_values_at
@@ -533,9 +608,43 @@ class TestRegexp < Test::Unit::TestCase
     assert_equal('#<MatchData "foobarbaz" 1:"foo" 2:"bar" 3:"baz" 4:nil>', m.inspect)
   end
 
+  def test_match_data_deconstruct
+    m = /foo.+/.match("foobarbaz")
+    assert_equal([], m.deconstruct)
+
+    m = /(foo).+(baz)/.match("foobarbaz")
+    assert_equal(["foo", "baz"], m.deconstruct)
+
+    m = /(...)(...)(...)(...)?/.match("foobarbaz")
+    assert_equal(["foo", "bar", "baz", nil], m.deconstruct)
+  end
+
+  def test_match_data_deconstruct_keys
+    m = /foo.+/.match("foobarbaz")
+    assert_equal({}, m.deconstruct_keys([:a]))
+
+    m = /(?<a>foo).+(?<b>baz)/.match("foobarbaz")
+    assert_equal({a: "foo", b: "baz"}, m.deconstruct_keys(nil))
+    assert_equal({a: "foo", b: "baz"}, m.deconstruct_keys([:a, :b]))
+    assert_equal({b: "baz"}, m.deconstruct_keys([:b]))
+    assert_equal({}, m.deconstruct_keys([:c, :a]))
+    assert_equal({a: "foo"}, m.deconstruct_keys([:a, :c]))
+    assert_equal({}, m.deconstruct_keys([:a, :b, :c]))
+
+    assert_raise(TypeError) {
+      m.deconstruct_keys(0)
+    }
+
+    assert_raise(TypeError) {
+      m.deconstruct_keys(["a", "b"])
+    }
+  end
+
   def test_initialize
     assert_raise(ArgumentError) { Regexp.new }
     assert_equal(/foo/, assert_warning(/ignored/) {Regexp.new(/foo/, Regexp::IGNORECASE)})
+    assert_equal(/foo/, assert_no_warning(/ignored/) {Regexp.new(/foo/)})
+    assert_equal(/foo/, assert_no_warning(/ignored/) {Regexp.new(/foo/, timeout: nil)})
 
     assert_equal(Encoding.find("US-ASCII"), Regexp.new("b..", nil, "n").encoding)
     assert_equal("bar", "foobarbaz"[Regexp.new("b..", nil, "n")])
@@ -549,6 +658,29 @@ class TestRegexp < Test::Unit::TestCase
     assert_raise(RegexpError) { Regexp.new('[\\40000000000') }
     assert_raise(RegexpError) { Regexp.new('[\\600000000000.') }
     assert_raise(RegexpError) { Regexp.new("((?<v>))\\g<0>") }
+  end
+
+  def test_initialize_bool_warning
+    assert_warning(/expected true or false as ignorecase/) do
+      Regexp.new("foo", :i)
+    end
+  end
+
+  def test_initialize_option
+    assert_equal(//i, Regexp.new("", "i"))
+    assert_equal(//m, Regexp.new("", "m"))
+    assert_equal(//x, Regexp.new("", "x"))
+    assert_equal(//imx, Regexp.new("", "imx"))
+    assert_equal(//, Regexp.new("", ""))
+    assert_equal(//imx, Regexp.new("", "mimix"))
+
+    assert_raise(ArgumentError) { Regexp.new("", "e") }
+    assert_raise(ArgumentError) { Regexp.new("", "n") }
+    assert_raise(ArgumentError) { Regexp.new("", "s") }
+    assert_raise(ArgumentError) { Regexp.new("", "u") }
+    assert_raise(ArgumentError) { Regexp.new("", "o") }
+    assert_raise(ArgumentError) { Regexp.new("", "j") }
+    assert_raise(ArgumentError) { Regexp.new("", "xmen") }
   end
 
   def test_match_control_meta_escape
@@ -1184,6 +1316,11 @@ class TestRegexp < Test::Unit::TestCase
 
     assert_no_match(/^\p{age=12.0}$/u, "\u32FF")
     assert_match(/^\p{age=12.1}$/u, "\u32FF")
+    assert_no_match(/^\p{age=13.0}$/u, "\u{10570}")
+    assert_match(/^\p{age=14.0}$/u, "\u{10570}")
+    assert_match(/^\p{age=14.0}$/u, "\u9FFF")
+    assert_match(/^\p{age=14.0}$/u, "\u{2A6DF}")
+    assert_match(/^\p{age=14.0}$/u, "\u{2B738}")
   end
 
   MatchData_A = eval("class MatchData_\u{3042} < MatchData; self; end")
@@ -1396,6 +1533,21 @@ class TestRegexp < Test::Unit::TestCase
     end
   end
 
+  def test_bug18631
+    assert_kind_of MatchData, /(?<x>a)(?<x>aa)\k<x>/.match("aaaaa")
+    assert_kind_of MatchData, /(?<x>a)(?<x>aa)\k<x>/.match("aaaa")
+    assert_kind_of MatchData, /(?<x>a)(?<x>aa)\k<x>/.match("aaaab")
+  end
+
+  def test_invalid_group
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+    begin;
+      assert_raise_with_message(RegexpError, /invalid conditional pattern/) do
+        Regexp.new("((?(1)x|x|)x)+")
+      end
+    end;
+  end
+
   # This assertion is for porting x2() tests in testpy.py of Onigmo.
   def assert_match_at(re, str, positions, msg = nil)
     re = Regexp.new(re) unless re.is_a?(Regexp)
@@ -1424,5 +1576,121 @@ class TestRegexp < Test::Unit::TestCase
       errs.map {|str, match| "\t#{'not ' unless match}match #{str.inspect}"}.join(",\n")
     }
     assert_empty(errs, msg)
+  end
+
+  def test_s_timeout
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+      timeout = #{ EnvUtil.apply_timeout_scale(0.2).inspect }
+    begin;
+      Regexp.timeout = timeout
+      assert_in_delta(timeout, Regexp.timeout, timeout * 2 * Float::EPSILON)
+
+      t = Time.now
+      assert_raise_with_message(Regexp::TimeoutError, "regexp match timeout") do
+        # A typical ReDoS case
+        /^(a*)*\1$/ =~ "a" * 1000000 + "x"
+      end
+      t = Time.now - t
+
+      assert_in_delta(timeout, t, timeout / 2)
+    end;
+  end
+
+  def test_s_timeout_corner_cases
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+    begin;
+      assert_nil(Regexp.timeout)
+
+      # This is just an implementation detail that users should not depend on:
+      # If Regexp.timeout is set to a value greater than the value that can be
+      # represented in the internal representation of timeout, it uses the
+      # maximum value that can be represented.
+      Regexp.timeout = Float::INFINITY
+      assert_equal(((1<<64)-1) / 1000000000.0, Regexp.timeout)
+
+      Regexp.timeout = 1e300
+      assert_equal(((1<<64)-1) / 1000000000.0, Regexp.timeout)
+
+      assert_raise(ArgumentError) { Regexp.timeout = 0 }
+      assert_raise(ArgumentError) { Regexp.timeout = -1 }
+
+      Regexp.timeout = nil
+      assert_nil(Regexp.timeout)
+    end;
+  end
+
+  def per_instance_redos_test(global_timeout, per_instance_timeout, expected_timeout)
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+      global_timeout = #{ EnvUtil.apply_timeout_scale(global_timeout).inspect }
+      per_instance_timeout = #{ (per_instance_timeout ? EnvUtil.apply_timeout_scale(per_instance_timeout) : nil).inspect }
+      expected_timeout = #{ EnvUtil.apply_timeout_scale(expected_timeout).inspect }
+    begin;
+      Regexp.timeout = global_timeout
+
+      re = Regexp.new("^(a*)\\1b?a*$", timeout: per_instance_timeout)
+      if per_instance_timeout
+        assert_in_delta(per_instance_timeout, re.timeout, per_instance_timeout * 2 * Float::EPSILON)
+      else
+        assert_nil(re.timeout)
+      end
+
+      t = Time.now
+      assert_raise_with_message(Regexp::TimeoutError, "regexp match timeout") do
+        re =~ "a" * 1000000 + "x"
+      end
+      t = Time.now - t
+
+      assert_in_delta(expected_timeout, t, expected_timeout * 3 / 4)
+    end;
+  end
+
+  def test_timeout_shorter_than_global
+    per_instance_redos_test(10, 0.2, 0.2)
+  end
+
+  def test_timeout_longer_than_global
+    per_instance_redos_test(0.01, 0.5, 0.5)
+  end
+
+  def test_timeout_nil
+    per_instance_redos_test(0.5, nil, 0.5)
+  end
+
+  def test_timeout_corner_cases
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+    begin;
+      assert_nil(//.timeout)
+
+      # This is just an implementation detail that users should not depend on:
+      # If Regexp.timeout is set to a value greater than the value that can be
+      # represented in the internal representation of timeout, it uses the
+      # maximum value that can be represented.
+      assert_equal(((1<<64)-1) / 1000000000.0, Regexp.new("foo", timeout: Float::INFINITY).timeout)
+
+      assert_equal(((1<<64)-1) / 1000000000.0, Regexp.new("foo", timeout: 1e300).timeout)
+
+      assert_raise(ArgumentError) { Regexp.new("foo", timeout: 0) }
+      assert_raise(ArgumentError) { Regexp.new("foo", timeout: -1) }
+    end;
+  end
+
+  def test_cache_optimization_exponential
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+      timeout = #{ EnvUtil.apply_timeout_scale(10).inspect }
+    begin;
+      Regexp.timeout = timeout
+
+      assert_nil(/^(a*)*$/ =~ "a" * 1000000 + "x")
+    end;
+  end
+
+  def test_cache_optimization_square
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+      timeout = #{ EnvUtil.apply_timeout_scale(10).inspect }
+    begin;
+      Regexp.timeout = timeout
+
+      assert_nil(/^a*b?a*$/ =~ "a" * 1000000 + "x")
+    end;
   end
 end

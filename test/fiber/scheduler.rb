@@ -14,6 +14,14 @@ rescue LoadError
 end
 
 class Scheduler
+  experimental = Warning[:experimental]
+  begin
+    Warning[:experimental] = false
+    IO::Buffer.new(0)
+  ensure
+    Warning[:experimental] = experimental
+  end
+
   def initialize
     @readable = {}
     @writable = {}
@@ -22,7 +30,7 @@ class Scheduler
     @closed = false
 
     @lock = Thread::Mutex.new
-    @blocking = 0
+    @blocking = Hash.new.compare_by_identity
     @ready = []
 
     @urgent = IO.pipe
@@ -49,7 +57,7 @@ class Scheduler
   def run
     # $stderr.puts [__method__, Fiber.current].inspect
 
-    while @readable.any? or @writable.any? or @waiting.any? or @blocking.positive?
+    while @readable.any? or @writable.any? or @waiting.any? or @blocking.any?
       # Can only handle file descriptors up to 1024...
       readable, writable = IO.select(@readable.keys + [@urgent.first], @writable.keys, [], next_timeout)
 
@@ -184,6 +192,16 @@ class Scheduler
     end
 
     Fiber.yield
+  ensure
+    @readable.delete(io)
+    @writable.delete(io)
+  end
+
+  def io_select(...)
+    # Emulate the operation using a non-blocking thread:
+    Thread.new do
+      IO.select(...)
+    end.value
   end
 
   # Used for Kernel#sleep and Thread::Mutex#sleep
@@ -200,20 +218,22 @@ class Scheduler
   def block(blocker, timeout = nil)
     # $stderr.puts [__method__, blocker, timeout].inspect
 
+    fiber = Fiber.current
+
     if timeout
-      @waiting[Fiber.current] = current_time + timeout
+      @waiting[fiber] = current_time + timeout
       begin
         Fiber.yield
       ensure
         # Remove from @waiting in the case #unblock was called before the timeout expired:
-        @waiting.delete(Fiber.current)
+        @waiting.delete(fiber)
       end
     else
-      @blocking += 1
+      @blocking[fiber] = true
       begin
         Fiber.yield
       ensure
-        @blocking -= 1
+        @blocking.delete(fiber)
       end
     end
   end
@@ -249,6 +269,70 @@ class Scheduler
   end
 end
 
+class IOBufferScheduler < Scheduler
+  EAGAIN = -Errno::EAGAIN::Errno
+
+  def io_read(io, buffer, length, offset)
+    total = 0
+    io.nonblock = true
+
+    while true
+      maximum_size = buffer.size - offset
+      result = blocking{buffer.read(io, maximum_size, offset)}
+
+      if result > 0
+        total += result
+        offset += result
+        break if total >= length
+      elsif result == 0
+        break
+      elsif result == EAGAIN
+        if length > 0
+          self.io_wait(io, IO::READABLE, nil)
+        else
+          return result
+        end
+      elsif result < 0
+        return result
+      end
+    end
+
+    return total
+  end
+
+  def io_write(io, buffer, length, offset)
+    total = 0
+    io.nonblock = true
+
+    while true
+      maximum_size = buffer.size - offset
+      result = blocking{buffer.write(io, maximum_size, offset)}
+
+      if result > 0
+        total += result
+        offset += result
+        break if total >= length
+      elsif result == 0
+        break
+      elsif result == EAGAIN
+        if length > 0
+          self.io_wait(io, IO::WRITABLE, nil)
+        else
+          return result
+        end
+      elsif result < 0
+        return result
+      end
+    end
+
+    return total
+  end
+
+  def blocking(&block)
+    Fiber.blocking(&block)
+  end
+end
+
 class BrokenUnblockScheduler < Scheduler
   def unblock(blocker, fiber)
     super
@@ -264,5 +348,16 @@ class SleepingUnblockScheduler < Scheduler
 
     # This changes the current thread state to `THREAD_RUNNING` which causes `thread_join_sleep` to hang.
     sleep(0.1)
+  end
+end
+
+class SleepingBlockingScheduler < Scheduler
+  def kernel_sleep(duration = nil)
+    # Deliberaly sleep in a blocking state which can trigger a deadlock if the implementation is not correct.
+    Fiber.blocking{sleep 0.0001}
+
+    self.block(:sleep, duration)
+
+    return true
   end
 end

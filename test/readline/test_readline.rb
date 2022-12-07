@@ -494,18 +494,17 @@ module BasetestReadline
     # Maybe the same issue: https://github.com/facebookresearch/nle/issues/120
     omit if /i[3-6]86-linux/ =~ RUBY_PLATFORM
 
+    if defined?(TestReadline) && self.class == TestReadline
+      use = "use_ext_readline"
+    elsif defined?(TestRelineAsReadline) && self.class == TestRelineAsReadline
+      use = "use_lib_reline"
+    end
     code = <<-"end;"
       $stdout.sync = true
       require 'readline'
       require 'helper'
+      #{use}
       puts "Readline::VERSION is \#{Readline::VERSION}."
-      #{
-        if defined?(TestReadline) && self.class == TestReadline
-          "use_ext_readline"
-        elsif defined?(TestRelineAsReadline) && self.class == TestRelineAsReadline
-          "use_lib_reline"
-        end
-      }
       Readline.input = STDIN
       # 0. Send SIGINT to this script.
       begin
@@ -535,11 +534,12 @@ module BasetestReadline
         loop do
           c = _out.read(1)
           log << c if c
-          break if log.include?('input>')
+          break if log.include?('input> ')
         end
         log << "** SIGINT **"
+        sleep 0.5
         Process.kill(:INT, pid)
-        sleep 0.1
+        sleep 0.5
         loop do
           c = _out.read(1)
           log << c if c
@@ -568,10 +568,21 @@ module BasetestReadline
         assert interrupt_suppressed, "Should handle SIGINT correctly but raised interrupt.\nLog: #{log}\n----"
       end
     rescue Timeout::Error => e
+      Process.kill(:KILL, pid)
+      log << "\nKilled by timeout"
       assert false, "Timed out to handle SIGINT!\nLog: #{log}\nBacktrace:\n#{e.full_message(highlight: false)}\n----"
     ensure
-      status = Process.wait2(pid).last
-      assert status.success?, "Unknown failure with exit status #{status}\nLog: #{log}\n----"
+      status = nil
+      begin
+        Timeout.timeout(TIMEOUT) do
+          status = Process.wait2(pid).last
+        end
+      rescue Timeout::Error => e
+        log << "\nKilled by timeout to wait2"
+        Process.kill(:KILL, pid)
+        assert false, "Timed out to wait for terminating a process in a test of SIGINT!\nLog: #{log}\nBacktrace:\n#{e.full_message(highlight: false)}\n----"
+      end
+      assert status&.success?, "Unknown failure with exit status #{status.inspect}\nLog: #{log}\n----"
     end
 
     assert log.include?('INT'), "Interrupt was handled correctly."

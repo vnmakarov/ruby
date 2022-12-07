@@ -95,11 +95,10 @@ RBIMPL_ATTR_NOALIAS()
  *
  * @param[out]  dst   Target fdset.
  * @param[in]   src   Source fdset.
- * @param[in]   n     Unused parameter.
  * @post        `dst` is a copy of `src`.
  */
 static inline void
-rb_fd_dup(rb_fdset_t *dst, const fd_set *src, int n)
+rb_fd_dup(rb_fdset_t *dst, const fd_set *src)
 {
     *dst = *src;
 }
@@ -137,7 +136,7 @@ rb_fd_max(const rb_fdset_t *f)
 }
 
 /** @cond INTERNAL_MACRO */
-/* :FIXME: What are these?  They don't exist for shibling implementations. */
+/* :FIXME: What are these?  They don't exist for sibling implementations. */
 #define rb_fd_init_copy(d, s) (*(d) = *(s))
 #define rb_fd_term(f)   ((void)(f))
 /** @endcond */
