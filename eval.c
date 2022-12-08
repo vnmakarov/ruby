@@ -263,7 +263,7 @@ rb_ec_cleanup(rb_execution_context_t *ec, enum ruby_tag_type ex)
 
     rb_ec_finalize(ec);
 
-#ifdef HAVE_LIBMIR
+#if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H)
     rb_mirjit_finish();
 #endif
     rb_sir_finish();

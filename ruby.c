@@ -1187,7 +1187,7 @@ setup_sir_options(const char *s, struct rb_sir_options *sir_opt)
     return true;
 }
 
-#ifdef HAVE_LIBMIR
+#if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H)
 static bool
 setup_mirjit_options(const char *s, struct rb_mirjit_options *mirjit_opt)
 {
@@ -1216,7 +1216,7 @@ setup_mirjit_options(const char *s, struct rb_mirjit_options *mirjit_opt)
     }
     return true;
 }
-#endif /* #ifdef HAVE_LIBMIR */
+#endif /* #if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H) */
 
 static long
 proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
@@ -1613,7 +1613,7 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
             else if (strcmp("sir", s) == 0 || setup_sir_options(s, &opt->sir)) {
                 opt->sir.sir_enabled_p = TRUE;
             }
-#ifdef HAVE_LIBMIR
+#if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H)
             else if (strcmp("mirjit", s) == 0 || setup_mirjit_options(s, &opt->mirjit)) {
                 opt->sir.sir_enabled_p = TRUE;
                 opt->mirjit.mirjit_enabled_p = TRUE;
@@ -1622,7 +1622,7 @@ proc_options(long argc, char **argv, ruby_cmdline_options_t *opt, int envopt)
             else if (strncmp("mirjit", s, 6) == 0) {
                 rb_warn("MIRJIT support is disabled.");
             }
-#endif /* #ifdef HAVE_LIBMIR */
+#endif /* #if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H) */
             else if (strcmp("yydebug", s) == 0) {
                 if (envopt) goto noenvopt_long;
                 opt->dump |= DUMP_BIT(yydebug);
@@ -2045,7 +2045,7 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
 #endif
     Init_ruby_description(opt);
     rb_sir_init(&opt->sir);
-#ifdef HAVE_LIBMIR
+#if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H)
     rb_mirjit_init(&opt->mirjit);
 #endif
     if (opt->dump & (DUMP_BIT(version) | DUMP_BIT(version_v))) {

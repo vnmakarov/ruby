@@ -22,7 +22,7 @@
 
 #include "mirjit.h"
 
-#ifndef HAVE_LIBMIR
+#if !defined(HAVE_LIBMIR) || !defined(HAVE_PTHREAD_H)
 
 int
 rb_mirjit_enabled_p(void) { return FALSE; }
@@ -2831,4 +2831,4 @@ rb_mirjit_finish(void) {
     rb_st_free_table(pc_dispatch_addr_map);
 }
 
-#endif /* #ifdef HAVE_LIBMIR */
+#endif /* #if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H) */

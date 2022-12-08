@@ -4032,7 +4032,7 @@ rb_sir_change_send(const rb_execution_context_t *ec, rb_control_frame_t *caller_
 void
 rb_sir_change_bbv(rb_iseq_bbv_t bbv)
 {
-#ifdef HAVE_LIBMIR
+#if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H)
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = ISEQ_BODY(iseq);
     int debug_level = rb_mirjit_debug_level();

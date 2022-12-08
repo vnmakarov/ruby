@@ -20,7 +20,7 @@ enum ruby_vminsn_type rb_mirjit_insn_decode(VALUE *slot);
 void rb_mirjit_mark_bbv_change(struct rb_iseq_bbv *bbv);
 void rb_rejit_bbv(struct rb_iseq_bbv *bbv);
 
-#ifdef HAVE_LIBMIR
+#if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H)
 
 /* MIRJIT_STATS controls supporting runtime counters in generation and execution of MIRJIT code.
    Switching this on slows down interpretation enormously. */
@@ -45,5 +45,5 @@ void rb_mirjit_resolver_init(void);
 void *rb_mirjit_import_resolver(const char *name);
 void rb_mirjit_resolver_finish(void);
 
-#endif /* #ifdef HAVE_LIBMIR */
+#endif /* #if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H) */
 #endif /* #ifndef MIRJIT_H */
