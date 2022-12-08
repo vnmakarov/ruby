@@ -3395,8 +3395,8 @@ compile.$(OBJEXT): {$(VPATH)}re.h
 compile.$(OBJEXT): {$(VPATH)}regex.h
 compile.$(OBJEXT): {$(VPATH)}ruby_assert.h
 compile.$(OBJEXT): {$(VPATH)}ruby_atomic.h
-compile.$(OBJEXT): {$(VPATH)}sir.h
 compile.$(OBJEXT): {$(VPATH)}shape.h
+compile.$(OBJEXT): {$(VPATH)}sir.h
 compile.$(OBJEXT): {$(VPATH)}st.h
 compile.$(OBJEXT): {$(VPATH)}subst.h
 compile.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -6678,8 +6678,8 @@ eval.$(OBJEXT): {$(VPATH)}ractor.h
 eval.$(OBJEXT): {$(VPATH)}ractor_core.h
 eval.$(OBJEXT): {$(VPATH)}ruby_assert.h
 eval.$(OBJEXT): {$(VPATH)}ruby_atomic.h
-eval.$(OBJEXT): {$(VPATH)}sir.h
 eval.$(OBJEXT): {$(VPATH)}shape.h
+eval.$(OBJEXT): {$(VPATH)}sir.h
 eval.$(OBJEXT): {$(VPATH)}st.h
 eval.$(OBJEXT): {$(VPATH)}subst.h
 eval.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -8339,8 +8339,8 @@ iseq.$(OBJEXT): {$(VPATH)}oniguruma.h
 iseq.$(OBJEXT): {$(VPATH)}ractor.h
 iseq.$(OBJEXT): {$(VPATH)}ruby_assert.h
 iseq.$(OBJEXT): {$(VPATH)}ruby_atomic.h
-iseq.$(OBJEXT): {$(VPATH)}sir.h
 iseq.$(OBJEXT): {$(VPATH)}shape.h
+iseq.$(OBJEXT): {$(VPATH)}sir.h
 iseq.$(OBJEXT): {$(VPATH)}st.h
 iseq.$(OBJEXT): {$(VPATH)}subst.h
 iseq.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -9892,6 +9892,7 @@ mirjit.$(OBJEXT): {$(VPATH)}insns.inc
 mirjit.$(OBJEXT): {$(VPATH)}insns_info.inc
 mirjit.$(OBJEXT): {$(VPATH)}intern.h
 mirjit.$(OBJEXT): {$(VPATH)}internal.h
+mirjit.$(OBJEXT): {$(VPATH)}internal/abi.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/anyargs.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/arithmetic.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/arithmetic/char.h
@@ -10039,6 +10040,7 @@ mirjit.$(OBJEXT): {$(VPATH)}missing.h
 mirjit.$(OBJEXT): {$(VPATH)}node.h
 mirjit.$(OBJEXT): {$(VPATH)}ruby_assert.h
 mirjit.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+mirjit.$(OBJEXT): {$(VPATH)}shape.h
 mirjit.$(OBJEXT): {$(VPATH)}sir.h
 mirjit.$(OBJEXT): {$(VPATH)}st.h
 mirjit.$(OBJEXT): {$(VPATH)}subst.h
@@ -10249,6 +10251,7 @@ mjit.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 mjit.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 mjit.$(OBJEXT): {$(VPATH)}iseq.h
 mjit.$(OBJEXT): {$(VPATH)}method.h
+mjit.$(OBJEXT): {$(VPATH)}mirjit.h
 mjit.$(OBJEXT): {$(VPATH)}missing.h
 mjit.$(OBJEXT): {$(VPATH)}mjit.c
 mjit.$(OBJEXT): {$(VPATH)}mjit.h
@@ -10263,6 +10266,7 @@ mjit.$(OBJEXT): {$(VPATH)}ractor_core.h
 mjit.$(OBJEXT): {$(VPATH)}ruby_assert.h
 mjit.$(OBJEXT): {$(VPATH)}ruby_atomic.h
 mjit.$(OBJEXT): {$(VPATH)}shape.h
+mjit.$(OBJEXT): {$(VPATH)}sir.h
 mjit.$(OBJEXT): {$(VPATH)}st.h
 mjit.$(OBJEXT): {$(VPATH)}subst.h
 mjit.$(OBJEXT): {$(VPATH)}thread.h
@@ -10873,8 +10877,8 @@ numeric.$(OBJEXT): {$(VPATH)}onigmo.h
 numeric.$(OBJEXT): {$(VPATH)}oniguruma.h
 numeric.$(OBJEXT): {$(VPATH)}ruby_assert.h
 numeric.$(OBJEXT): {$(VPATH)}ruby_atomic.h
-numeric.$(OBJEXT): {$(VPATH)}sir.h
 numeric.$(OBJEXT): {$(VPATH)}shape.h
+numeric.$(OBJEXT): {$(VPATH)}sir.h
 numeric.$(OBJEXT): {$(VPATH)}st.h
 numeric.$(OBJEXT): {$(VPATH)}subst.h
 numeric.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -12516,6 +12520,7 @@ range.$(OBJEXT): {$(VPATH)}oniguruma.h
 range.$(OBJEXT): {$(VPATH)}range.c
 range.$(OBJEXT): {$(VPATH)}ruby_assert.h
 range.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+range.$(OBJEXT): {$(VPATH)}shape.h
 range.$(OBJEXT): {$(VPATH)}sir.h
 range.$(OBJEXT): {$(VPATH)}st.h
 range.$(OBJEXT): {$(VPATH)}subst.h
@@ -12523,9 +12528,6 @@ range.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
 range.$(OBJEXT): {$(VPATH)}thread_native.h
 range.$(OBJEXT): {$(VPATH)}vm_core.h
 range.$(OBJEXT): {$(VPATH)}vm_opts.h
-range.$(OBJEXT): {$(VPATH)}shape.h
-range.$(OBJEXT): {$(VPATH)}st.h
-range.$(OBJEXT): {$(VPATH)}subst.h
 rational.$(OBJEXT): $(hdrdir)/ruby.h
 rational.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 rational.$(OBJEXT): $(top_srcdir)/internal/array.h
@@ -14104,8 +14106,8 @@ ruby.$(OBJEXT): {$(VPATH)}oniguruma.h
 ruby.$(OBJEXT): {$(VPATH)}ruby.c
 ruby.$(OBJEXT): {$(VPATH)}ruby_assert.h
 ruby.$(OBJEXT): {$(VPATH)}ruby_atomic.h
-ruby.$(OBJEXT): {$(VPATH)}sir.h
 ruby.$(OBJEXT): {$(VPATH)}shape.h
+ruby.$(OBJEXT): {$(VPATH)}sir.h
 ruby.$(OBJEXT): {$(VPATH)}st.h
 ruby.$(OBJEXT): {$(VPATH)}subst.h
 ruby.$(OBJEXT): {$(VPATH)}thread.h
@@ -14915,6 +14917,7 @@ sir.$(OBJEXT): {$(VPATH)}defines.h
 sir.$(OBJEXT): {$(VPATH)}id.h
 sir.$(OBJEXT): {$(VPATH)}intern.h
 sir.$(OBJEXT): {$(VPATH)}internal.h
+sir.$(OBJEXT): {$(VPATH)}internal/abi.h
 sir.$(OBJEXT): {$(VPATH)}internal/anyargs.h
 sir.$(OBJEXT): {$(VPATH)}internal/arithmetic.h
 sir.$(OBJEXT): {$(VPATH)}internal/arithmetic/char.h
@@ -15059,6 +15062,7 @@ sir.$(OBJEXT): {$(VPATH)}missing.h
 sir.$(OBJEXT): {$(VPATH)}node.h
 sir.$(OBJEXT): {$(VPATH)}ruby_assert.h
 sir.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+sir.$(OBJEXT): {$(VPATH)}shape.h
 sir.$(OBJEXT): {$(VPATH)}sir.c
 sir.$(OBJEXT): {$(VPATH)}sir.h
 sir.$(OBJEXT): {$(VPATH)}st.h
@@ -15108,6 +15112,7 @@ sir_gen.$(OBJEXT): {$(VPATH)}insns.inc
 sir_gen.$(OBJEXT): {$(VPATH)}insns_info.inc
 sir_gen.$(OBJEXT): {$(VPATH)}intern.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal.h
+sir_gen.$(OBJEXT): {$(VPATH)}internal/abi.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/anyargs.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/arithmetic.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/arithmetic/char.h
@@ -15254,6 +15259,7 @@ sir_gen.$(OBJEXT): {$(VPATH)}missing.h
 sir_gen.$(OBJEXT): {$(VPATH)}node.h
 sir_gen.$(OBJEXT): {$(VPATH)}ruby_assert.h
 sir_gen.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+sir_gen.$(OBJEXT): {$(VPATH)}shape.h
 sir_gen.$(OBJEXT): {$(VPATH)}sir.h
 sir_gen.$(OBJEXT): {$(VPATH)}sir_gen.c
 sir_gen.$(OBJEXT): {$(VPATH)}st.h
@@ -17808,6 +17814,7 @@ version.$(OBJEXT): {$(VPATH)}internal/variable.h
 version.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 version.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 version.$(OBJEXT): {$(VPATH)}method.h
+version.$(OBJEXT): {$(VPATH)}mirjit.h
 version.$(OBJEXT): {$(VPATH)}missing.h
 version.$(OBJEXT): {$(VPATH)}mjit.h
 version.$(OBJEXT): {$(VPATH)}node.h
@@ -17815,6 +17822,7 @@ version.$(OBJEXT): {$(VPATH)}revision.h
 version.$(OBJEXT): {$(VPATH)}ruby_assert.h
 version.$(OBJEXT): {$(VPATH)}ruby_atomic.h
 version.$(OBJEXT): {$(VPATH)}shape.h
+version.$(OBJEXT): {$(VPATH)}sir.h
 version.$(OBJEXT): {$(VPATH)}st.h
 version.$(OBJEXT): {$(VPATH)}subst.h
 version.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -18052,9 +18060,9 @@ vm.$(OBJEXT): {$(VPATH)}ractor.h
 vm.$(OBJEXT): {$(VPATH)}ractor_core.h
 vm.$(OBJEXT): {$(VPATH)}ruby_assert.h
 vm.$(OBJEXT): {$(VPATH)}ruby_atomic.h
+vm.$(OBJEXT): {$(VPATH)}shape.h
 vm.$(OBJEXT): {$(VPATH)}sir.h
 vm.$(OBJEXT): {$(VPATH)}sir_exec.c
-vm.$(OBJEXT): {$(VPATH)}shape.h
 vm.$(OBJEXT): {$(VPATH)}st.h
 vm.$(OBJEXT): {$(VPATH)}subst.h
 vm.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
@@ -18862,8 +18870,8 @@ vm_trace.$(OBJEXT): {$(VPATH)}oniguruma.h
 vm_trace.$(OBJEXT): {$(VPATH)}ractor.h
 vm_trace.$(OBJEXT): {$(VPATH)}ruby_assert.h
 vm_trace.$(OBJEXT): {$(VPATH)}ruby_atomic.h
-vm_trace.$(OBJEXT): {$(VPATH)}sir.h
 vm_trace.$(OBJEXT): {$(VPATH)}shape.h
+vm_trace.$(OBJEXT): {$(VPATH)}sir.h
 vm_trace.$(OBJEXT): {$(VPATH)}st.h
 vm_trace.$(OBJEXT): {$(VPATH)}subst.h
 vm_trace.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
