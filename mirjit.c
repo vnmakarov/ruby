@@ -360,7 +360,7 @@ static int
 gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn_id) {
     const VALUE *operands = &insn_pc[1];
     const char *op, *fn;
-    int rv_p, v1_p, v2_p, imm1_p, imm2_p, fop_p, check_p, siaset_p, nil_p, start, stack_ops_num;
+    int level, rv_p, v1_p, v2_p, imm1_p, imm2_p, fop_p, check_p, siaset_p, nil_p, start, stack_ops_num;
 
     fop_p = check_p = siaset_p = FALSE;
     switch (insn_id) {
@@ -444,8 +444,12 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  *sp++ = 3;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
-    case BIN(getlocal): {
-        int level = (int)(rb_num_t)operands[1];
+    case BIN(getlocal_WC_1):
+        level = 1;
+        goto getlocal;
+    case BIN(getlocal):
+        level = (int)(rb_num_t)operands[1];
+    getlocal:
         if (level != 0) {
             gen_insn_stat(buff, insn_id);
             O("  {\n");
@@ -462,7 +466,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  }\n");
             break;
         }
-    }
         /* fall through */
     case BIN(getlocal_WC_0):
         gen_insn_stat(buff, insn_id);
@@ -470,8 +473,12 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  *sp++ = val;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
-    case BIN(setlocal): {
-        int level = (int)(rb_num_t)operands[1];
+    case BIN(setlocal_WC_1):
+        level = 1;
+        goto setlocal;
+    case BIN(setlocal):
+        level = (int)(rb_num_t)operands[1];
+    setlocal:
         if (level != 0) {
             gen_insn_stat(buff, insn_id);
             O("  {\n");
@@ -490,7 +497,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("  }\n");
             break;
         }
-    }
         /* fall through */
     case BIN(setlocal_WC_0):
         gen_insn_stat(buff, insn_id);
