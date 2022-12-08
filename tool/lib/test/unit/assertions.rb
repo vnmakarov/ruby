@@ -193,6 +193,22 @@ module Test
       end
 
       ##
+      # Fails unless +obj+ is true
+
+      def assert_true obj, msg = nil
+        msg = message(msg) { "Expected #{mu_pp(obj)} to be true" }
+        assert obj == true, msg
+      end
+
+      ##
+      # Fails unless +obj+ is false
+
+      def assert_false obj, msg = nil
+        msg = message(msg) { "Expected #{mu_pp(obj)} to be false" }
+        assert obj == false, msg
+      end
+
+      ##
       # For testing with binary operators.
       #
       #   assert_operator 5, :<=, 4
@@ -513,11 +529,9 @@ module Test
       end
       alias omit pend
 
-      # TODO: Removed this and enabled to raise NoMethodError with skip
-      alias skip pend
-      # def skip(msg = nil, bt = caller)
-      #   raise NoMethodError, "use omit or pend", caller
-      # end
+      def skip(msg = nil, bt = caller)
+        raise NoMethodError, "use omit or pend", caller
+      end
 
       ##
       # Was this testcase skipped? Meant for #teardown.
@@ -547,10 +561,6 @@ module Test
       #    end
       def assert_block(*msgs)
         assert yield, *msgs
-      end
-
-      def assert_raises(*exp, &b)
-        raise NoMethodError, "use assert_raise", caller
       end
 
       # :call-seq:

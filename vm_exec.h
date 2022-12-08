@@ -78,11 +78,11 @@ error !
 #define INSN_ENTRY_SIG(insn) \
   if (0) { \
       ruby_debug_printf("exec: %s@(%"PRIdPTRDIFF", %"PRIdPTRDIFF")@%s:%u\n", #insn, \
-                        (reg_pc - reg_cfp->iseq->body->iseq_code), \
-                        (reg_cfp->pc - reg_cfp->iseq->body->iseq_code), \
+                        (reg_pc - ISEQ_BODY(reg_cfp->iseq)->iseq_code), \
+                        (reg_cfp->pc - ISEQ_BODY(reg_cfp->iseq)->iseq_code), \
                         RSTRING_PTR(rb_iseq_path(reg_cfp->iseq)), \
                         rb_iseq_line_no(reg_cfp->iseq, rb_cfp_iseq_encoded_pc(reg_cfp) \
-                                        - reg_cfp->iseq->body->iseq_encoded)); \
+                                        - ISEQ_BODY(reg_cfp->iseq)->iseq_encoded)); \
   } \
   if (USE_INSNS_COUNTER) vm_insns_counter_count_insn(BIN(insn));
 

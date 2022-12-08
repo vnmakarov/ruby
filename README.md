@@ -1,3 +1,5 @@
+**Update Dec 2022**: sir-mirjit-base and sir-mirjit branches were merged with Dec 2022 ruby trunk.
+
 # What's the branch about
 
 * The branch `sir-mirjit` is used for development of **specialized** VM insns (specialized IR or **SIR** in brief),
@@ -91,7 +93,7 @@
     * base - the base interpreter (`miniruby`)
     * sir - the interpreter with specialized (`miniruby --sir`)
     * yjit - YJIT (`miniruby --yjit-call-threshold=1`)
-    * mjit - MJIT (`miniruby --jit-min-calls=1`)
+    * mjit - MJIT (`ruby --mit-call-threshold=2`)
     * mir - MIR-based JIT (`miniruby --mirjit`)
 
 * I used the following micro-benchmarks (see MJIT-benchmarks directory):
@@ -129,33 +131,33 @@
 
 * Wall time speedup:
 
-|                     | base   | sir    | yjit   | mjit   | mir    |
+|                     | base   | sir    | mjit   | yjit   | mir    |
 :---------------------|-------:|-------:|-------:|-------:|-------:|
-aread.rb              | 1.0    | 4.18   | 4.63   | 2.41   | 5.66   |
-aref.rb               | 1.0    | 4.77   | 3.84   | 3.76   | 6.36   |
-aset.rb               | 1.0    | 3.34   | 2.35   | 2.46   | 4.69   |
-awrite.rb             | 1.0    | 3.27   | 3.37   | 2.2    | 4.79   |
-bench.rb              | 1.0    | 1.52   | 1.55   | 1.21   | 1.53   |
-call.rb               | 1.0    | 2.25   | 3.72   | 6.74   | 3.34   |
-complex-mandelbrot.rb | 1.0    | 1.16   | 1.4    | 1.21   | 1.07   |
-const2.rb             | 1.0    | 3.2    | 3.63   | 6.74   | 4.36   |
-const.rb              | 1.0    | 3.21   | 3.63   | 6.72   | 4.36   |
-fannk.rb              | 1.0    | 1.16   | 0.99   | 1.12   | 1.21   |
-fib.rb                | 1.0    | 1.98   | 3.95   | 3.08   | 2.79   |
-ivread.rb             | 1.0    | 1.97   | 2.96   | 4.22   | 3.05   |
-ivwrite.rb            | 1.0    | 2.85   | 2.53   | 4.07   | 3.8    |
-mandelbrot.rb         | 1.0    | 1.59   | 1.68   | 1.27   | 1.36   |
-meteor.rb             | 1.0    | 1.25   | 1.29   | 1.08   | 1.23   |
-nbody.rb              | 1.0    | 1.59   | 1.51   | 1.41   | 1.59   |
-nest-ntimes.rb        | 1.0    | 1.76   | 1.16   | 1.3    | 2.23   |
-nest-while.rb         | 1.0    | 4.9    | 3.91   | 3.93   | 9.41   |
-norm.rb               | 1.0    | 1.44   | 1.49   | 1.31   | 1.56   |
-pent.rb               | 1.0    | 1.06   | 1.0    | 1.12   | 1.04   |
-red-black.rb          | 1.0    | 1.54   | 2.92   | 1.1    | 1.66   |
-sieve.rb              | 1.0    | 2.54   | 2.23   | 2.24   | 2.85   |
-trees.rb              | 1.0    | 1.28   | 1.77   | 1.26   | 1.37   |
-while.rb              | 1.0    | 4.26   | 2.68   | 5.06   | 5.53   |
-GeoMean.              | 1.0    | 2.16   | 2.26   | 2.25   | 2.62   |
+aread.rb              | 1.0    | 4.61   | 2.13   | 4.61   | 6.02   |
+aref.rb               | 1.0    | 4.54   | 3.53   | 4.04   | 5.99   |
+aset.rb               | 1.0    | 2.53   | 2.28   | 2.39   | 4.81   |
+awrite.rb             | 1.0    | 3.47   | 1.89   | 2.13   | 4.48   |
+bench.rb              | 1.0    | 1.36   | 1.07   | 1.64   | 1.38   |
+call.rb               | 1.0    | 2.22   | 5.5    | 3.7    | 3.33   |
+complex-mandelbrot.rb | 1.0    | 1.15   | 1.05   | 1.4    | 1.06   |
+const2.rb             | 1.0    | 2.9    | 3.92   | 3.84   | 3.12   |
+const.rb              | 1.0    | 2.9    | 3.91   | 3.84   | 3.12   |
+fannk.rb              | 1.0    | 1.19   | 0.91   | 1.01   | 1.21   |
+fib.rb                | 1.0    | 2.11   | 1.81   | 3.89   | 2.71   |
+ivread.rb             | 1.0    | 1.99   | 4.55   | 3.27   | 3.17   |
+ivwrite.rb            | 1.0    | 3.29   | 5.11   | 3.44   | 3.75   |
+mandelbrot.rb         | 1.0    | 1.51   | 1.18   | 1.61   | 1.31   |
+meteor.rb             | 1.0    | 1.26   | 1.0    | 1.3    | 1.25   |
+nbody.rb              | 1.0    | 1.57   | 1.24   | 1.53   | 1.59   |
+nest-ntimes.rb        | 1.0    | 1.89   | 1.28   | 1.21   | 2.25   |
+nest-while.rb         | 1.0    | 5.08   | 3.74   | 4.35   | 9.74   |
+norm.rb               | 1.0    | 1.4    | 1.52   | 1.55   | 1.49   |
+pent.rb               | 1.0    | 1.06   | 1.02   | 1.04   | 1.05   |
+red-black.rb          | 1.0    | 1.65   | 0.88   | 3.06   | 1.87   |
+sieve.rb              | 1.0    | 2.49   | 2.07   | 2.38   | 2.8    |
+trees.rb              | 1.0    | 1.28   | 1.14   | 1.77   | 1.35   |
+while.rb              | 1.0    | 4.24   | 4.91   | 2.76   | 5.51   |
+GeoMean.              | 1.0    | 2.14   | 1.98   | 2.31   | 2.53   |
 
 ---
 
@@ -167,7 +169,7 @@ GeoMean.              | 1.0    | 2.16   | 2.26   | 2.25   | 2.62   |
 
 |                     | base   | sir    | mjit   | yjit   | mir    |
 :---------------------|-------:|-------:|-------:|-------:|-------:|
-GeoMean.              | 1.0    | 1.08   | 13.06  | 3.3    | 2.07   |
+GeoMean.              | 1.0    | 1.16   | 3.65   | 1.03   | 2.02   |
 
 ---
 

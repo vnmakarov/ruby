@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-require "bundler/psyched_yaml"
+require "psych"
 require "bundler/vendored_fileutils"
 require "bundler/vendored_uri"
 require "digest"
@@ -23,7 +23,6 @@ require_relative "support/indexes"
 require_relative "support/matchers"
 require_relative "support/permissions"
 require_relative "support/platforms"
-require_relative "support/sudo"
 
 $debug = false
 
@@ -40,7 +39,6 @@ RSpec.configure do |config|
   config.include Spec::Matchers
   config.include Spec::Path
   config.include Spec::Platforms
-  config.include Spec::Sudo
   config.include Spec::Permissions
 
   # Enable flags like --only-failures and --next-failure
@@ -60,6 +58,8 @@ RSpec.configure do |config|
 
   config.expect_with :rspec do |c|
     c.syntax = :expect
+
+    c.max_formatted_output_length = 1000
   end
 
   config.mock_with :rspec do |mocks|
@@ -71,8 +71,11 @@ RSpec.configure do |config|
 
     require_relative "support/rubygems_ext"
     Spec::Rubygems.test_setup
-    ENV["BUNDLE_SPEC_RUN"] = "true"
+    ENV["BUNDLER_SPEC_RUN"] = "true"
+    ENV["BUNDLER_NO_OLD_RUBYGEMS_WARNING"] = "true"
     ENV["BUNDLE_USER_CONFIG"] = ENV["BUNDLE_USER_CACHE"] = ENV["BUNDLE_USER_PLUGIN"] = nil
+    ENV["BUNDLE_APP_CONFIG"] = nil
+    ENV["BUNDLE_SILENCE_ROOT_WARNING"] = nil
     ENV["RUBYGEMS_GEMDEPS"] = nil
     ENV["XDG_CONFIG_HOME"] = nil
     ENV["GEMRC"] = nil

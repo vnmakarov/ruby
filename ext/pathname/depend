@@ -7,7 +7,6 @@ pathname.o: $(hdrdir)/ruby/backward.h
 pathname.o: $(hdrdir)/ruby/backward/2/assume.h
 pathname.o: $(hdrdir)/ruby/backward/2/attributes.h
 pathname.o: $(hdrdir)/ruby/backward/2/bool.h
-pathname.o: $(hdrdir)/ruby/backward/2/gcc_version_since.h
 pathname.o: $(hdrdir)/ruby/backward/2/inttypes.h
 pathname.o: $(hdrdir)/ruby/backward/2/limits.h
 pathname.o: $(hdrdir)/ruby/backward/2/long_long.h
@@ -16,6 +15,7 @@ pathname.o: $(hdrdir)/ruby/backward/2/stdarg.h
 pathname.o: $(hdrdir)/ruby/defines.h
 pathname.o: $(hdrdir)/ruby/encoding.h
 pathname.o: $(hdrdir)/ruby/intern.h
+pathname.o: $(hdrdir)/ruby/internal/abi.h
 pathname.o: $(hdrdir)/ruby/internal/anyargs.h
 pathname.o: $(hdrdir)/ruby/internal/arithmetic.h
 pathname.o: $(hdrdir)/ruby/internal/arithmetic/char.h

@@ -14,6 +14,7 @@
 
 #include "gc.h"
 #include "internal.h"
+#include "internal/array.h"
 #include "internal/hash.h"
 #include "internal/string.h"
 #include "internal/sanitizers.h"
@@ -35,6 +36,7 @@ struct dump_config {
     const char *root_category;
     VALUE cur_obj;
     VALUE cur_obj_klass;
+    size_t cur_page_slot_size;
     size_t cur_obj_references;
     unsigned int roots: 1;
     unsigned int full_heap: 1;
@@ -75,7 +77,8 @@ buffer_ensure_capa(struct dump_config *dc, unsigned long requested)
     }
 }
 
-static void buffer_append(struct dump_config *dc, const char *cstr, unsigned long len)
+static void
+buffer_append(struct dump_config *dc, const char *cstr, unsigned long len)
 {
     if (LIKELY(len > 0)) {
         buffer_ensure_capa(dc, len);
@@ -141,10 +144,10 @@ dump_append_sizet(struct dump_config *dc, const size_t number)
 }
 
 static void
-dump_append_c(struct dump_config *dc, char c)
+dump_append_c(struct dump_config *dc, unsigned char c)
 {
     if (c <= 0x1f) {
-        const unsigned int width = (sizeof(c) * CHAR_BIT / 4) + 5;
+        const unsigned int width = rb_strlen_lit("\\u0000") + 1;
         buffer_ensure_capa(dc, width);
         unsigned long required = snprintf(dc->buffer + dc->buffer_len, width, "\\u00%02x", c);
         RUBY_ASSERT(required <= width);
@@ -162,7 +165,7 @@ dump_append_ref(struct dump_config *dc, VALUE ref)
 {
     RUBY_ASSERT(ref > 0);
 
-    char buffer[((sizeof(VALUE) * CHAR_BIT + 3) / 4) + 4];
+    char buffer[roomof(sizeof(VALUE) * CHAR_BIT, 4) + rb_strlen_lit("\"0x\"")];
     char *buffer_start, *buffer_end;
 
     buffer_start = buffer_end = &buffer[sizeof(buffer)];
@@ -234,32 +237,32 @@ obj_type(VALUE obj)
 {
     switch (BUILTIN_TYPE(obj)) {
 #define CASE_TYPE(type) case T_##type: return #type
-	CASE_TYPE(NONE);
-	CASE_TYPE(NIL);
-	CASE_TYPE(OBJECT);
-	CASE_TYPE(CLASS);
-	CASE_TYPE(ICLASS);
-	CASE_TYPE(MODULE);
-	CASE_TYPE(FLOAT);
-	CASE_TYPE(STRING);
-	CASE_TYPE(REGEXP);
-	CASE_TYPE(ARRAY);
-	CASE_TYPE(HASH);
-	CASE_TYPE(STRUCT);
-	CASE_TYPE(BIGNUM);
-	CASE_TYPE(FILE);
-	CASE_TYPE(FIXNUM);
-	CASE_TYPE(TRUE);
-	CASE_TYPE(FALSE);
-	CASE_TYPE(DATA);
-	CASE_TYPE(MATCH);
-	CASE_TYPE(SYMBOL);
-	CASE_TYPE(RATIONAL);
-	CASE_TYPE(COMPLEX);
-	CASE_TYPE(IMEMO);
-	CASE_TYPE(UNDEF);
-	CASE_TYPE(NODE);
-	CASE_TYPE(ZOMBIE);
+        CASE_TYPE(NONE);
+        CASE_TYPE(NIL);
+        CASE_TYPE(OBJECT);
+        CASE_TYPE(CLASS);
+        CASE_TYPE(ICLASS);
+        CASE_TYPE(MODULE);
+        CASE_TYPE(FLOAT);
+        CASE_TYPE(STRING);
+        CASE_TYPE(REGEXP);
+        CASE_TYPE(ARRAY);
+        CASE_TYPE(HASH);
+        CASE_TYPE(STRUCT);
+        CASE_TYPE(BIGNUM);
+        CASE_TYPE(FILE);
+        CASE_TYPE(FIXNUM);
+        CASE_TYPE(TRUE);
+        CASE_TYPE(FALSE);
+        CASE_TYPE(DATA);
+        CASE_TYPE(MATCH);
+        CASE_TYPE(SYMBOL);
+        CASE_TYPE(RATIONAL);
+        CASE_TYPE(COMPLEX);
+        CASE_TYPE(IMEMO);
+        CASE_TYPE(UNDEF);
+        CASE_TYPE(NODE);
+        CASE_TYPE(ZOMBIE);
 #undef CASE_TYPE
       default: break;
     }
@@ -312,6 +315,17 @@ reachable_object_i(VALUE ref, void *data)
     dc->cur_obj_references++;
 }
 
+static bool
+dump_string_ascii_only(const char *str, long size)
+{
+    for (long i = 0; i < size; i++) {
+        if (str[i] & 0x80) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void
 dump_append_string_content(struct dump_config *dc, VALUE obj)
 {
@@ -322,9 +336,17 @@ dump_append_string_content(struct dump_config *dc, VALUE obj)
         dump_append_sizet(dc, rb_str_capacity(obj));
     }
 
-    if (is_ascii_string(obj)) {
-        dump_append(dc, ", \"value\":");
-        dump_append_string_value(dc, obj);
+    if (RSTRING_LEN(obj) && rb_enc_asciicompat(rb_enc_from_index(ENCODING_GET(obj)))) {
+        int cr = ENC_CODERANGE(obj);
+        if (cr == RUBY_ENC_CODERANGE_UNKNOWN) {
+            if (dump_string_ascii_only(RSTRING_PTR(obj), RSTRING_LEN(obj))) {
+                cr = RUBY_ENC_CODERANGE_7BIT;
+            }
+        }
+        if (cr == RUBY_ENC_CODERANGE_7BIT) {
+            dump_append(dc, ", \"value\":");
+            dump_append_string_value(dc, obj);
+        }
     }
 }
 
@@ -360,6 +382,9 @@ dump_object(VALUE obj, struct dump_config *dc)
     dump_append(dc, obj_type(obj));
     dump_append(dc, "\"");
 
+    dump_append(dc, ", \"slot_size\":");
+    dump_append_sizet(dc, dc->cur_page_slot_size);
+
     if (dc->cur_obj_klass) {
         dump_append(dc, ", \"class\":");
         dump_append_ref(dc, dc->cur_obj_klass);
@@ -385,8 +410,6 @@ dump_object(VALUE obj, struct dump_config *dc)
       case T_STRING:
         if (STR_EMBED_P(obj))
             dump_append(dc, ", \"embedded\":true");
-        if (is_broken_string(obj))
-            dump_append(dc, ", \"broken\":true");
         if (FL_TEST(obj, RSTRING_FSTR))
             dump_append(dc, ", \"fstring\":true");
         if (STR_SHARED_P(obj))
@@ -399,6 +422,27 @@ dump_object(VALUE obj, struct dump_config *dc)
             dump_append(dc, rb_enc_name(rb_enc_from_index(ENCODING_GET(obj))));
             dump_append(dc, "\"");
         }
+
+        dump_append(dc, ", \"coderange\":\"");
+        switch (RB_ENC_CODERANGE(obj)) {
+          case RUBY_ENC_CODERANGE_UNKNOWN:
+            dump_append(dc, "unknown");
+            break;
+          case RUBY_ENC_CODERANGE_7BIT:
+            dump_append(dc, "7bit");
+            break;
+          case RUBY_ENC_CODERANGE_VALID:
+            dump_append(dc, "valid");
+            break;
+          case RUBY_ENC_CODERANGE_BROKEN:
+            dump_append(dc, "broken");
+            break;
+        }
+        dump_append(dc, "\"");
+
+        if (RB_ENC_CODERANGE(obj) == RUBY_ENC_CODERANGE_BROKEN)
+            dump_append(dc, ", \"broken\":true");
+
         break;
 
       case T_HASH:
@@ -413,9 +457,9 @@ dump_object(VALUE obj, struct dump_config *dc)
       case T_ARRAY:
         dump_append(dc, ", \"length\":");
         dump_append_ld(dc, RARRAY_LEN(obj));
-        if (RARRAY_LEN(obj) > 0 && FL_TEST(obj, ELTS_SHARED))
+        if (RARRAY_LEN(obj) > 0 && FL_TEST(obj, RARRAY_SHARED_FLAG))
             dump_append(dc, ", \"shared\":true");
-        if (RARRAY_LEN(obj) > 0 && FL_TEST(obj, RARRAY_EMBED_FLAG))
+        if (FL_TEST(obj, RARRAY_EMBED_FLAG))
             dump_append(dc, ", \"embedded\":true");
         break;
 
@@ -439,7 +483,8 @@ dump_object(VALUE obj, struct dump_config *dc)
                 dump_append(dc, ", \"name\":\"");
                 dump_append(dc, RSTRING_PTR(mod_name));
                 dump_append(dc, "\"");
-            } else {
+            }
+            else {
                 VALUE real_mod_name = rb_mod_name(rb_class_real(obj));
                 if (RTEST(real_mod_name)) {
                     dump_append(dc, ", \"real_class_name\":\"");
@@ -470,7 +515,7 @@ dump_object(VALUE obj, struct dump_config *dc)
 
       case T_OBJECT:
         dump_append(dc, ", \"ivars\":");
-        dump_append_lu(dc, ROBJECT_NUMIV(obj));
+        dump_append_lu(dc, ROBJECT_IV_CAPACITY(obj));
         break;
 
       case T_FILE:
@@ -482,8 +527,8 @@ dump_object(VALUE obj, struct dump_config *dc)
         break;
 
       case T_ZOMBIE:
-          dump_append(dc, "}\n");
-          return;
+        dump_append(dc, "}\n");
+        return;
 
       default:
         break;
@@ -539,9 +584,10 @@ heap_i(void *vstart, void *vend, size_t stride, void *data)
     for (; v != (VALUE)vend; v += stride) {
         void *ptr = asan_poisoned_object_p(v);
         asan_unpoison_object(v, false);
+        dc->cur_page_slot_size = stride;
 
-	if (dc->full_heap || RBASIC(v)->flags)
-	    dump_object(v, dc);
+        if (dc->full_heap || RBASIC(v)->flags)
+            dump_object(v, dc);
 
         if (ptr) {
             asan_poison_object(v);
@@ -582,7 +628,8 @@ dump_output(struct dump_config *dc, VALUE output, VALUE full, VALUE since)
     if (TYPE(output) == T_STRING) {
         dc->stream = Qfalse;
         dc->string = output;
-    } else {
+    }
+    else {
         dc->stream = output;
         dc->string = Qfalse;
     }
@@ -594,7 +641,8 @@ dump_output(struct dump_config *dc, VALUE output, VALUE full, VALUE since)
     if (RTEST(since)) {
         dc->partial_dump = 1;
         dc->since = NUM2SIZET(since);
-    } else {
+    }
+    else {
         dc->partial_dump = 0;
     }
 }
@@ -606,7 +654,8 @@ dump_result(struct dump_config *dc)
 
     if (dc->string) {
         return dc->string;
-    } else {
+    }
+    else {
         rb_io_flush(dc->stream);
         return dc->stream;
     }
@@ -616,6 +665,10 @@ static VALUE
 objspace_dump(VALUE os, VALUE obj, VALUE output)
 {
     struct dump_config dc = {0,};
+    if (!RB_SPECIAL_CONST_P(obj)) {
+        dc.cur_page_slot_size = rb_gc_obj_slot_size(obj);
+    }
+
     dump_output(&dc, output, Qnil, Qnil);
 
     dump_object(obj, &dc);

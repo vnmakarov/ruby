@@ -85,9 +85,10 @@ class CSV
     # If there is no more data (eos? = true), it returns "".
     #
     class InputsScanner
-      def initialize(inputs, encoding, chunk_size: 8192)
+      def initialize(inputs, encoding, row_separator, chunk_size: 8192)
         @inputs = inputs.dup
         @encoding = encoding
+        @row_separator = row_separator
         @chunk_size = chunk_size
         @last_scanner = @inputs.empty?
         @keeps = []
@@ -233,7 +234,7 @@ class CSV
           @last_scanner = @inputs.empty?
           true
         else
-          chunk = input.gets(nil, @chunk_size)
+          chunk = input.gets(@row_separator, @chunk_size)
           if chunk
             raise InvalidEncoding unless chunk.valid_encoding?
             @scanner = StringScanner.new(chunk)
@@ -361,6 +362,7 @@ class CSV
       prepare_skip_lines
       prepare_strip
       prepare_separators
+      validate_strip_and_col_sep_options
       prepare_quoted
       prepare_unquoted
       prepare_line
@@ -529,6 +531,28 @@ class CSV
       @lf = "\n".encode(@encoding)
       @line_end = Regexp.new("\r\n|\n|\r".encode(@encoding))
       @not_line_end = Regexp.new("[^\r\n]+".encode(@encoding))
+    end
+
+    # This method verifies that there are no (obvious) ambiguities with the
+    # provided +col_sep+ and +strip+ parsing options. For example, if +col_sep+
+    # and +strip+ were both equal to +\t+, then there would be no clear way to
+    # parse the input.
+    def validate_strip_and_col_sep_options
+      return unless @strip
+
+      if @strip.is_a?(String)
+        if @column_separator.start_with?(@strip) || @column_separator.end_with?(@strip)
+          raise ArgumentError,
+                "The provided strip (#{@escaped_strip}) and " \
+                "col_sep (#{@escaped_column_separator}) options are incompatible."
+        end
+      else
+        if Regexp.new("\\A[#{@escaped_strip}]|[#{@escaped_strip}]\\z").match?(@column_separator)
+          raise ArgumentError,
+                "The provided strip (true) and " \
+                "col_sep (#{@escaped_column_separator}) options are incompatible."
+        end
+      end
     end
 
     def prepare_quoted
@@ -738,6 +762,7 @@ class CSV
         end
         InputsScanner.new(inputs,
                           @encoding,
+                          @row_separator,
                           chunk_size: SCANNER_TEST_CHUNK_SIZE)
       end
     else
@@ -745,7 +770,10 @@ class CSV
         string = nil
         if @samples.empty? and @input.is_a?(StringIO)
           string = @input.read
-        elsif @samples.size == 1 and @input.respond_to?(:eof?) and @input.eof?
+        elsif @samples.size == 1 and
+              @input != ARGF and
+              @input.respond_to?(:eof?) and
+              @input.eof?
           string = @samples[0]
         end
         if string
@@ -764,7 +792,7 @@ class CSV
             StringIO.new(sample)
           end
           inputs << @input
-          InputsScanner.new(inputs, @encoding)
+          InputsScanner.new(inputs, @encoding, @row_separator)
         end
       end
     end

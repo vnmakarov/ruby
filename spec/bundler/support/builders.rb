@@ -94,8 +94,8 @@ module Spec
         end
 
         build_gem "platform_specific" do |s|
-          s.platform = Bundler.local_platform
-          s.write "lib/platform_specific.rb", "PLATFORM_SPECIFIC = '1.0.0 #{Bundler.local_platform}'"
+          s.platform = Gem::Platform.local
+          s.write "lib/platform_specific.rb", "PLATFORM_SPECIFIC = '1.0.0 #{Gem::Platform.local}'"
         end
 
         build_gem "platform_specific" do |s|
@@ -110,15 +110,27 @@ module Spec
 
         build_gem "platform_specific" do |s|
           s.platform = "x86-mswin32"
-          s.write "lib/platform_specific.rb", "PLATFORM_SPECIFIC = '1.0.0 MSWIN'"
+          s.write "lib/platform_specific.rb", "PLATFORM_SPECIFIC = '1.0 x86-mswin32'"
+        end
+
+        build_gem "platform_specific" do |s|
+          s.platform = "x64-mswin64"
+          s.write "lib/platform_specific.rb", "PLATFORM_SPECIFIC = '1.0 x64-mswin64'"
         end
 
         build_gem "platform_specific" do |s|
           s.platform = "x86-mingw32"
+          s.write "lib/platform_specific.rb", "PLATFORM_SPECIFIC = '1.0 x86-mingw32'"
         end
 
         build_gem "platform_specific" do |s|
           s.platform = "x64-mingw32"
+          s.write "lib/platform_specific.rb", "PLATFORM_SPECIFIC = '1.0 x64-mingw32'"
+        end
+
+        build_gem "platform_specific" do |s|
+          s.platform = "x64-mingw-ucrt"
+          s.write "lib/platform_specific.rb", "PLATFORM_SPECIFIC = '1.0 x64-mingw-ucrt'"
         end
 
         build_gem "platform_specific" do |s|
@@ -259,7 +271,7 @@ module Spec
       @_build_path = "#{path}/gems"
       @_build_repo = File.basename(path)
       yield
-      with_gem_path_as Path.base_system_gems do
+      with_gem_path_as Path.base_system_gem_path do
         gem_command :generate_index, :dir => path
       end
     ensure
@@ -444,8 +456,7 @@ module Spec
         write "ext/extconf.rb", <<-RUBY
           require "mkmf"
 
-
-          # exit 1 unless with_config("simple")
+          $extout = "$(topdir)/" + RbConfig::CONFIG["EXTOUT"] unless RUBY_VERSION < "2.4"
 
           extension_name = "#{name}_c"
           if extra_lib_dir = with_config("ext-lib")
@@ -484,7 +495,7 @@ module Spec
         end
 
         @spec.authors = ["no one"]
-        @spec.files = @files.keys
+        @spec.files += @files.keys
 
         case options[:gemspec]
         when false
@@ -525,7 +536,7 @@ module Spec
 
     class GitBuilder < LibBuilder
       def _build(options)
-        default_branch = options[:default_branch] || "master"
+        default_branch = options[:default_branch] || "main"
         path = options[:path] || _default_path
         source = options[:source] || "git@#{path}"
         super(options.merge(:path => path, :source => source))
@@ -589,7 +600,8 @@ module Spec
 
     class GemBuilder < LibBuilder
       def _build(opts)
-        lib_path = super(opts.merge(:path => @context.tmp(".tmp/#{@spec.full_name}"), :no_default => opts[:no_default]))
+        lib_path = opts[:lib_path] || @context.tmp(".tmp/#{@spec.full_name}")
+        lib_path = super(opts.merge(:path => lib_path, :no_default => opts[:no_default]))
         destination = opts[:path] || _default_path
         FileUtils.mkdir_p(lib_path.join(destination))
 

@@ -280,6 +280,7 @@ class TC_OpenStruct < Test::Unit::TestCase
     os = OpenStruct.new(method: :foo, hash: 42)
     assert_equal(os.object_id, os.method!(:object_id).call)
     assert_not_equal(42, os.hash!)
+    refute os.methods.include?(:"!~!")
   end
 
   def test_override_subclass
@@ -404,5 +405,11 @@ class TC_OpenStruct < Test::Unit::TestCase
     o = OpenStruct.new(name: "John Smith", age: 70, pension: 300.42)
     o2 = Marshal.load(Marshal.dump(o))
     assert_equal o, o2
+  end
+
+  def test_class
+    os = OpenStruct.new(class: 'my-class', method: 'post')
+    assert_equal('my-class', os.class)
+    assert_equal(OpenStruct, os.class!)
   end
 end

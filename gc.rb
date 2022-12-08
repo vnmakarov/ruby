@@ -39,27 +39,6 @@ module GC
   end
 
   #  call-seq:
-  #     GC.auto_compact    -> true or false
-  #
-  #  Returns whether or not automatic compaction has been enabled.
-  #
-  def self.auto_compact
-    Primitive.gc_get_auto_compact
-  end
-
-  #  call-seq:
-  #     GC.auto_compact = flag
-  #
-  #  Updates automatic compaction mode.
-  #
-  #  When enabled, the compactor will execute on every major collection.
-  #
-  #  Enabling compaction will degrade performance on major collections.
-  def self.auto_compact=(flag)
-    Primitive.gc_set_auto_compact(flag)
-  end
-
-  #  call-seq:
   #     GC.enable    -> true or false
   #
   #  Enables garbage collection, returning +true+ if garbage
@@ -123,19 +102,21 @@ module GC
 
   #  call-seq:
   #     GC.stat -> Hash
-  #     GC.stat(hash) -> hash
+  #     GC.stat(hash) -> Hash
   #     GC.stat(:key) -> Numeric
   #
   #  Returns a Hash containing information about the GC.
   #
-  #  The contents of the hash are implementation specific and may be changed in
-  #  the future.
+  #  The contents of the hash are implementation specific and may change in
+  #  the future without notice.
   #
   #  The hash includes information about internal statistics about GC such as:
   #
   #  [count]
   #    The total number of garbage collections ran since application start
   #    (count includes both minor and major garbage collections)
+  #  [time]
+  #    The total time spent in garbage collections (in milliseconds)
   #  [heap_allocated_pages]
   #    The total number of `:heap_eden_pages` + `:heap_tomb_pages`
   #  [heap_sorted_length]
@@ -173,6 +154,13 @@ module GC
   #    The total number of minor garbage collections run since process start
   #  [major_gc_count]
   #    The total number of major garbage collections run since process start
+  #  [compact_count]
+  #    The total number of compactions run since process start
+  #  [read_barrier_faults]
+  #    The total number of times the read barrier was triggered during
+  #    compaction
+  #  [total_moved_objects]
+  #    The total number of objects compaction has moved
   #  [remembered_wb_unprotected_objects]
   #    The total number of objects without write barriers
   #  [remembered_wb_unprotected_objects_limit]
@@ -191,9 +179,43 @@ module GC
   #  it is overwritten and returned.
   #  This is intended to avoid probe effect.
   #
-  #  This method is only expected to work on C Ruby.
+  #  This method is only expected to work on CRuby.
   def self.stat hash_or_key = nil
     Primitive.gc_stat hash_or_key
+  end
+
+  # call-seq:
+  #    GC.stat_heap -> Hash
+  #    GC.stat_heap(nil, hash) -> Hash
+  #    GC.stat_heap(heap_name) -> Hash
+  #    GC.stat_heap(heap_name, hash) -> Hash
+  #    GC.stat_heap(heap_name, :key) -> Numeric
+  #
+  # Returns information for memory pools in the GC.
+  #
+  # If the first optional argument, +heap_name+, is passed in and not +nil+, it
+  # returns a +Hash+ containing information about the particular memory pool.
+  # Otherwise, it will return a +Hash+ with memory pool names as keys and
+  # a +Hash+ containing information about the memory pool as values.
+  #
+  # If the second optional argument, +hash_or_key+, is given as +Hash+, it will
+  # be overwritten and returned. This is intended to avoid the probe effect.
+  #
+  # If both optional arguments are passed in and the second optional argument is
+  # a symbol, it will return a +Numeric+ of the value for the particular memory
+  # pool.
+  #
+  # On CRuby, +heap_name+ is of the type +Integer+ but may be of type +String+
+  # on other implementations.
+  #
+  # The contents of the hash are implementation specific and may change in
+  # the future without notice.
+  #
+  # If the optional argument, hash, is given, it is overwritten and returned.
+  #
+  # This method is only expected to work on CRuby.
+  def self.stat_heap heap_name = nil, hash_or_key = nil
+    Primitive.gc_stat_heap heap_name, hash_or_key
   end
 
   #  call-seq:
@@ -210,61 +232,58 @@ module GC
     Primitive.gc_latest_gc_info hash_or_key
   end
 
-  #  call-seq:
-  #     GC.latest_compact_info -> {:considered=>{:T_CLASS=>11}, :moved=>{:T_CLASS=>11}}
-  #
-  #  Returns information about object moved in the most recent GC compaction.
-  #
-  # The returned hash has two keys :considered and :moved.  The hash for
-  # :considered lists the number of objects that were considered for movement
-  # by the compactor, and the :moved hash lists the number of objects that
-  # were actually moved.  Some objects can't be moved (maybe they were pinned)
-  # so these numbers can be used to calculate compaction efficiency.
-  def self.latest_compact_info
-    Primitive.gc_compact_stats
-  end
-
-  #  call-seq:
-  #     GC.compact
-  #
-  # This function compacts objects together in Ruby's heap.  It eliminates
-  # unused space (or fragmentation) in the heap by moving objects in to that
-  # unused space.  This function returns a hash which contains statistics about
-  # which objects were moved.  See `GC.latest_gc_info` for details about
-  # compaction statistics.
-  #
-  # This method is implementation specific and not expected to be implemented
-  # in any implementation besides MRI.
-  def self.compact
-    Primitive.gc_compact
+  if respond_to?(:compact)
+    # call-seq:
+    #    GC.verify_compaction_references(toward: nil, double_heap: false) -> hash
+    #
+    # Verify compaction reference consistency.
+    #
+    # This method is implementation specific.  During compaction, objects that
+    # were moved are replaced with T_MOVED objects.  No object should have a
+    # reference to a T_MOVED object after compaction.
+    #
+    # This function expands the heap to ensure room to move all objects,
+    # compacts the heap to make sure everything moves, updates all references,
+    # then performs a full GC.  If any object contains a reference to a T_MOVED
+    # object, that object should be pushed on the mark stack, and will
+    # make a SEGV.
+    def self.verify_compaction_references(toward: nil, double_heap: false, expand_heap: false)
+      Primitive.gc_verify_compaction_references(double_heap, expand_heap, toward == :empty)
+    end
   end
 
   # call-seq:
-  #    GC.verify_compaction_references(toward: nil, double_heap: false) -> hash
+  #    GC.measure_total_time = true/false
   #
-  # Verify compaction reference consistency.
-  #
-  # This method is implementation specific.  During compaction, objects that
-  # were moved are replaced with T_MOVED objects.  No object should have a
-  # reference to a T_MOVED object after compaction.
-  #
-  # This function doubles the heap to ensure room to move all objects,
-  # compacts the heap to make sure everything moves, updates all references,
-  # then performs a full GC.  If any object contains a reference to a T_MOVED
-  # object, that object should be pushed on the mark stack, and will
-  # make a SEGV.
-  def self.verify_compaction_references(toward: nil, double_heap: false)
-    Primitive.gc_verify_compaction_references(double_heap, toward == :empty)
+  # Enable to measure GC time.
+  # You can get the result with <tt>GC.stat(:time)</tt>.
+  # Note that GC time measurement can cause some performance overhead.
+  def self.measure_total_time=(flag)
+    Primitive.cstmt! %{
+      rb_objspace.flags.measure_gc = RTEST(flag) ? TRUE : FALSE;
+      return flag;
+    }
   end
 
-  # :nodoc:
   # call-seq:
-  #     GC.using_rvargc? -> true or false
+  #    GC.measure_total_time -> true/false
   #
-  # Returns true if using experimental feature Variable Width Allocation, false
-  # otherwise.
-  def self.using_rvargc?
-    GC::INTERNAL_CONSTANTS[:SIZE_POOL_COUNT] > 1
+  # Return measure_total_time flag (default: +true+).
+  # Note that measurement can affect the application performance.
+  def self.measure_total_time
+    Primitive.cexpr! %{
+      RBOOL(rb_objspace.flags.measure_gc)
+    }
+  end
+
+  # call-seq:
+  #    GC.total_time -> int
+  #
+  # Return measured GC total time in nano seconds.
+  def self.total_time
+    Primitive.cexpr! %{
+      ULL2NUM(rb_objspace.profile.total_time_ns)
+    }
   end
 end
 

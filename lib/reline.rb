@@ -33,7 +33,18 @@ module Reline
     alias_method :==, :match?
   end
   CursorPos = Struct.new(:x, :y)
-  DialogRenderInfo = Struct.new(:pos, :contents, :bg_color, :width, :height, :scrollbar, keyword_init: true)
+  DialogRenderInfo = Struct.new(
+    :pos,
+    :contents,
+    :bg_color,
+    :pointer_bg_color,
+    :fg_color,
+    :pointer_fg_color,
+    :width,
+    :height,
+    :scrollbar,
+    keyword_init: true
+  )
 
   class Core
     ATTR_READER_NAMES = %i(
@@ -58,9 +69,14 @@ module Reline
     attr_accessor :last_incremental_search
     attr_reader :output
 
+    extend Forwardable
+    def_delegators :config,
+      :autocompletion,
+      :autocompletion=
+
     def initialize
       self.output = STDOUT
-      @dialog_proc_list = []
+      @dialog_proc_list = {}
       yield self
       @completion_quote_character = nil
       @bracketed_paste_finished = false
@@ -123,14 +139,6 @@ module Reline
       @completion_proc = p
     end
 
-    def autocompletion
-      @config.autocompletion
-    end
-
-    def autocompletion=(val)
-      @config.autocompletion = val
-    end
-
     def output_modifier_proc=(p)
       raise ArgumentError unless p.respond_to?(:call) or p.nil?
       @output_modifier_proc = p
@@ -155,10 +163,15 @@ module Reline
       @dig_perfect_match_proc = p
     end
 
+    DialogProc = Struct.new(:dialog_proc, :context)
     def add_dialog_proc(name_sym, p, context = nil)
       raise ArgumentError unless p.respond_to?(:call) or p.nil?
       raise ArgumentError unless name_sym.instance_of?(Symbol)
-      @dialog_proc_list << [name_sym, p, context]
+      @dialog_proc_list[name_sym] = DialogProc.new(p, context)
+    end
+
+    def dialog_proc(name_sym)
+      @dialog_proc_list[name_sym]
     end
 
     def input=(val)
@@ -238,7 +251,16 @@ module Reline
         context.push(cursor_pos_to_render, result, pointer, dialog)
       end
       dialog.pointer = pointer
-      DialogRenderInfo.new(pos: cursor_pos_to_render, contents: result, scrollbar: true, height: 15)
+      DialogRenderInfo.new(
+        pos: cursor_pos_to_render,
+        contents: result,
+        scrollbar: true,
+        height: 15,
+        bg_color: 46,
+        pointer_bg_color: 45,
+        fg_color: 37,
+        pointer_fg_color: 37
+      )
     }
     Reline::DEFAULT_DIALOG_CONTEXT = Array.new
 
@@ -301,9 +323,8 @@ module Reline
       line_editor.auto_indent_proc = auto_indent_proc
       line_editor.dig_perfect_match_proc = dig_perfect_match_proc
       line_editor.pre_input_hook = pre_input_hook
-      @dialog_proc_list.each do |d|
-        name_sym, dialog_proc, context = d
-        line_editor.add_dialog_proc(name_sym, dialog_proc, context)
+      @dialog_proc_list.each_pair do |name_sym, d|
+        line_editor.add_dialog_proc(name_sym, d.dialog_proc, d.context)
       end
 
       unless config.test_mode
@@ -315,6 +336,7 @@ module Reline
       line_editor.rerender
 
       begin
+        line_editor.set_signal_handlers
         prev_pasting_state = false
         loop do
           prev_pasting_state = Reline::IOGate.in_pasting?
@@ -343,6 +365,11 @@ module Reline
         line_editor.finalize
         Reline::IOGate.deprep(otio)
         raise e
+      rescue Exception
+        # Including Interrupt
+        line_editor.finalize
+        Reline::IOGate.deprep(otio)
+        raise
       end
 
       line_editor.finalize
@@ -456,7 +483,7 @@ module Reline
     end
 
     private def may_req_ambiguous_char_width
-      @ambiguous_width = 2 if Reline::IOGate == Reline::GeneralIO or STDOUT.is_a?(File)
+      @ambiguous_width = 2 if Reline::IOGate == Reline::GeneralIO or !STDOUT.tty?
       return if defined? @ambiguous_width
       Reline::IOGate.move_cursor_column(0)
       begin
@@ -516,6 +543,7 @@ module Reline
   def_single_delegators :core, :last_incremental_search
   def_single_delegators :core, :last_incremental_search=
   def_single_delegators :core, :add_dialog_proc
+  def_single_delegators :core, :dialog_proc
   def_single_delegators :core, :autocompletion, :autocompletion=
 
   def_single_delegators :core, :readmultiline
@@ -552,24 +580,21 @@ module Reline
 end
 
 require 'reline/general_io'
-if RbConfig::CONFIG['host_os'] =~ /mswin|msys|mingw|cygwin|bccwin|wince|emc/
-  require 'reline/windows'
-  if Reline::Windows.msys_tty?
-    Reline::IOGate = if ENV['TERM'] == 'dumb'
-      Reline::GeneralIO
-    else
-      require 'reline/ansi'
-      Reline::ANSI
-    end
+io = Reline::GeneralIO
+unless ENV['TERM'] == 'dumb'
+  case RbConfig::CONFIG['host_os']
+  when /mswin|msys|mingw|cygwin|bccwin|wince|emc/
+    require 'reline/windows'
+    tty = (io = Reline::Windows).msys_tty?
   else
-    Reline::IOGate = Reline::Windows
-  end
-else
-  Reline::IOGate = if $stdout.isatty
-    require 'reline/ansi'
-    Reline::ANSI
-  else
-    Reline::GeneralIO
+    tty = $stdout.tty?
   end
 end
+Reline::IOGate = if tty
+  require 'reline/ansi'
+  Reline::ANSI
+else
+  io
+end
+
 Reline::HISTORY = Reline::History.new(Reline.core.config)

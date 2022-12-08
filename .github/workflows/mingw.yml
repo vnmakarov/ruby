@@ -1,43 +1,56 @@
 name: MinGW
 on: [workflow_dispatch] # switched off because of failure in download of zlib
-#  push:
-#    paths-ignore:
-#      - 'doc/**'
-#      - '**.md'
-#      - '**.rdoc'
-#  pull_request:
-#    paths-ignore:
-#      - 'doc/**'
-#      - '**.md'
-#      - '**.rdoc'
+  push:
+    paths-ignore:
+      - 'doc/**'
+      - '**.md'
+      - '**.rdoc'
+      - '**/.document'
+      - '**.[1-8]'
+      - '**.ronn'
+  pull_request:
+    paths-ignore:
+      - 'doc/**'
+      - '**.md'
+      - '**.rdoc'
+      - '**/.document'
+      - '**.[1-8]'
+      - '**.ronn'
+
+concurrency:
+  group: ${{ github.workflow }} / ${{ startsWith(github.event_name, 'pull') && github.ref_name || github.sha }}
+  cancel-in-progress: ${{ startsWith(github.event_name, 'pull') }}
+
+permissions:
+  contents: read
 
 # Notes:
 # Actions console encoding causes issues, see test-all & test-spec steps
 #
 jobs:
   make:
-    runs-on: windows-2019
+    runs-on: windows-2022
     name: ${{ github.workflow }} (${{ matrix.msystem }})
     env:
       MSYSTEM: ${{ matrix.msystem }}
       MSYS2_ARCH: x86_64
       CHOST: "x86_64-w64-mingw32"
-      CFLAGS:   "-march=x86-64 -mtune=generic -O3 -pipe -fstack-protector-strong"
+      CFLAGS:   "-march=x86-64 -mtune=generic -O3 -pipe"
       CXXFLAGS: "-march=x86-64 -mtune=generic -O3 -pipe"
       CPPFLAGS: "-D_FORTIFY_SOURCE=2 -D__USE_MINGW_ANSI_STDIO=1 -DFD_SETSIZE=2048"
-      LDFLAGS:  "-pipe -fstack-protector-strong"
+      LDFLAGS:  "-pipe"
       UPDATE_UNICODE: "UNICODE_FILES=. UNICODE_PROPERTY_FILES=. UNICODE_AUXILIARY_FILES=. UNICODE_EMOJI_FILES=."
       GITPULLOPTIONS: --no-tags origin ${{github.ref}}
     strategy:
       matrix:
         include:
-          - msystem: "MINGW64"
-            base_ruby: 2.6
-            test_task: [ "check" ] # to make job names consistent
+          # To mitigate flakiness of MinGW CI, we test only one runtime that newer MSYS2 uses.
           - msystem: "UCRT64"
             base_ruby: head
-            test_task: [ "check" ] # to make job names consistent
+            test_task: "check"
+            test-all-opts: "--name=!/TestObjSpace#test_reachable_objects_during_iteration/"
       fail-fast: false
+    if: ${{ !contains(github.event.head_commit.message, '[DOC]') && !contains(github.event.pull_request.labels.*.name, 'Documentation') }}
     steps:
       - run: mkdir build
         working-directory:
@@ -47,28 +60,42 @@ jobs:
           git config --global core.eol lf
           git config --global advice.detachedHead 0
           git config --global init.defaultBranch garbage
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
         with:
           path: src
+      - uses: actions/cache@9b0c1fce7a93df8e3bb8926b0d6e9d89e92f20a7 # v3.0.11
+        with:
+          path: src/.downloaded-cache
+          key: downloaded-cache
       - name: Set up Ruby & MSYS2
-        uses: MSP-Greg/setup-ruby-pkgs@ucrt
+        uses: ruby/setup-ruby@c7079efafd956afb5d823e8999c2506e1053aefa # v1.126.0
         with:
           ruby-version: ${{ matrix.base_ruby }}
-          setup-ruby-ref: MSP-Greg/ruby-setup-ruby/00-win-ucrt
-          mingw: _upgrade_ gmp libffi libyaml openssl ragel readline gcc
-          msys2: automake1.16 bison
       - name: set env
         run: |
           echo "GNUMAKEFLAGS=-j$((2 * NUMBER_OF_PROCESSORS))" >> $GITHUB_ENV
-          echo "TEST_JOBS=$((15 * NUMBER_OF_PROCESSORS / 10))" >> $GITHUB_ENV
 
       - name: where check
         run: |
           # show where
+          mv /c/Windows/System32/libcrypto-1_1-x64.dll /c/Windows/System32/libcrypto-1_1-x64.dll_
+          mv /c/Windows/System32/libssl-1_1-x64.dll    /c/Windows/System32/libssl-1_1-x64.dll_
           result=true
           for e in gcc.exe ragel.exe make.exe bison.exe libcrypto-1_1-x64.dll libssl-1_1-x64.dll; do
             echo '##['group']'$'\033[93m'$e$'\033[m'
             where $e || result=false
+            echo '##['endgroup']'
+          done
+          $result
+
+      - name: version check
+        run: |
+          # show version
+          result=true
+          for e in gcc ragel make bison "openssl version"; do
+            case "$e" in *" "*) ;; *) e="$e --version";; esac
+            echo '##['group']'$'\033[93m'$e$'\033[m'
+            $e || result=false
             echo '##['endgroup']'
           done
           $result
@@ -92,7 +119,7 @@ jobs:
           make update-gems
 
       - name: make all
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: |
           make
 
@@ -106,31 +133,36 @@ jobs:
         timeout-minutes: 5
         run: |
           make test
+        if: ${{matrix.test_task == 'check' || matrix.test_task == 'test'}}
 
       - name: test-all
-        timeout-minutes: 40
+        timeout-minutes: 45
         run: |
           # Actions uses UTF8, causes test failures, similar to normal OS setup
           chcp.com 437
-          make test-all
+          make ${{ StartsWith(matrix.test_task, 'test/') && matrix.test_task || 'test-all' }}
         env:
-          RUBY_TESTOPTS: -j${{env.TEST_JOBS}} --retry --job-status=normal --show-skip --timeout-scale=1.5
+          RUBY_TESTOPTS: >-
+            --retry --job-status=normal --show-skip --timeout-scale=1.5
+            ${{ matrix.test-all-opts }}
           BUNDLER_VERSION:
+        if: ${{matrix.test_task == 'check' || matrix.test_task == 'test-all' || StartsWith(matrix.test_task, 'test/')}}
 
       - name: test-spec
         timeout-minutes: 10
         run: |
-          make test-spec
+          make ${{ StartsWith(matrix.test_task, 'spec/') && matrix.test_task || 'test-spec' }}
+        if: ${{matrix.test_task == 'check' || matrix.test_task == 'test-spec' || StartsWith(matrix.test_task, 'spec/')}}
 
-      - uses: k0kubun/action-slack@v2.0.0
+      - uses: ruby/action-slack@b6882ea6ef8f556f9f9af9ec1220d3f1ced74acf # v3.0.0
         with:
           payload: |
             {
               "ci": "GitHub Actions",
-              "env": "${{ github.workflow }} / ${{ matrix.test_task }}",
+              "env": "${{ github.workflow }} ${{ matrix.msystem }} / ${{ matrix.test_task }}",
               "url": "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}",
               "commit": "${{ github.sha }}",
-              "branch": "${{ github.ref }}".split('/').reverse()[0]
+              "branch": "${{ github.ref_name }}"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SIMPLER_ALERTS_URL }} # ruby-lang slack: ruby/simpler-alerts-bot

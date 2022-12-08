@@ -97,6 +97,8 @@ RB_DEBUG_COUNTER(ccf_bmethod)
 RB_DEBUG_COUNTER(ccf_opt_send)
 RB_DEBUG_COUNTER(ccf_opt_call)
 RB_DEBUG_COUNTER(ccf_opt_block_call)
+RB_DEBUG_COUNTER(ccf_opt_struct_aref)
+RB_DEBUG_COUNTER(ccf_opt_struct_aset)
 RB_DEBUG_COUNTER(ccf_super_method)
 
 /*
@@ -128,7 +130,6 @@ RB_DEBUG_COUNTER(frame_C2R)
 /* instance variable counts
  *
  * * ivar_get_ic_hit/miss: ivar_get inline cache (ic) hit/miss counts (VM insn)
- * * ivar_get_ic_miss_serial: ivar_get ic miss reason by serial (VM insn)
  * * ivar_get_ic_miss_unset:                      ... by unset (VM insn)
  * * ivar_get_ic_miss_noobject:                   ... by "not T_OBJECT" (VM insn)
  * * ivar_set_...: same counts with ivar_set (VM insn)
@@ -138,17 +139,17 @@ RB_DEBUG_COUNTER(frame_C2R)
  */
 RB_DEBUG_COUNTER(ivar_get_ic_hit)
 RB_DEBUG_COUNTER(ivar_get_ic_miss)
-RB_DEBUG_COUNTER(ivar_get_ic_miss_serial)
-RB_DEBUG_COUNTER(ivar_get_ic_miss_unset)
 RB_DEBUG_COUNTER(ivar_get_ic_miss_noobject)
 RB_DEBUG_COUNTER(ivar_set_ic_hit)
 RB_DEBUG_COUNTER(ivar_set_ic_miss)
-RB_DEBUG_COUNTER(ivar_set_ic_miss_serial)
-RB_DEBUG_COUNTER(ivar_set_ic_miss_unset)
 RB_DEBUG_COUNTER(ivar_set_ic_miss_iv_hit)
 RB_DEBUG_COUNTER(ivar_set_ic_miss_noobject)
 RB_DEBUG_COUNTER(ivar_get_base)
 RB_DEBUG_COUNTER(ivar_set_base)
+RB_DEBUG_COUNTER(ivar_get_ic_miss_set)
+RB_DEBUG_COUNTER(ivar_get_cc_miss_set)
+RB_DEBUG_COUNTER(ivar_get_ic_miss_unset)
+RB_DEBUG_COUNTER(ivar_get_cc_miss_unset)
 
 /* local variable counts
  *
@@ -344,13 +345,6 @@ RB_DEBUG_COUNTER(vm_sync_lock_enter)
 RB_DEBUG_COUNTER(vm_sync_lock_enter_nb)
 RB_DEBUG_COUNTER(vm_sync_lock_enter_cr)
 RB_DEBUG_COUNTER(vm_sync_barrier)
-
-/* mjit_exec() counts */
-RB_DEBUG_COUNTER(mjit_exec)
-RB_DEBUG_COUNTER(mjit_exec_not_added)
-RB_DEBUG_COUNTER(mjit_exec_not_ready)
-RB_DEBUG_COUNTER(mjit_exec_not_compiled)
-RB_DEBUG_COUNTER(mjit_exec_call_func)
 
 /* MJIT enqueue / unload */
 RB_DEBUG_COUNTER(mjit_add_iseq_to_process)

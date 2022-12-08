@@ -106,13 +106,15 @@ vm_lock_enter(rb_ractor_t *cr, rb_vm_t *vm, bool locked, bool no_barrier, unsign
     vm->ractor.sync.lock_rec++;
     *lev = vm->ractor.sync.lock_rec;
 
-    RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%d", vm->ractor.sync.lock_rec, rb_ractor_id(vm->ractor.sync.lock_owner));
+    RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%u", vm->ractor.sync.lock_rec,
+                    (unsigned int)rb_ractor_id(vm->ractor.sync.lock_owner));
 }
 
 static void
 vm_lock_leave(rb_vm_t *vm, unsigned int *lev APPEND_LOCATION_ARGS)
 {
-    RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%d", vm->ractor.sync.lock_rec, rb_ractor_id(vm->ractor.sync.lock_owner));
+    RUBY_DEBUG_LOG2(file, line, "rec:%u owner:%u", vm->ractor.sync.lock_rec,
+                    (unsigned int)rb_ractor_id(vm->ractor.sync.lock_owner));
 
     ASSERT_vm_locking();
     VM_ASSERT(vm->ractor.sync.lock_rec > 0);
@@ -254,7 +256,7 @@ rb_vm_barrier(void)
 
         // send signal
         rb_ractor_t *r = 0;
-        list_for_each(&vm->ractor.set, r, vmlr_node) {
+        ccan_list_for_each(&vm->ractor.set, r, vmlr_node) {
             if (r != cr) {
                 rb_ractor_vm_barrier_interrupt_running_thread(r);
             }
@@ -272,7 +274,7 @@ rb_vm_barrier(void)
         vm->ractor.sync.barrier_waiting = false;
         vm->ractor.sync.barrier_cnt++;
 
-        list_for_each(&vm->ractor.set, r, vmlr_node) {
+        ccan_list_for_each(&vm->ractor.set, r, vmlr_node) {
             rb_native_cond_signal(&r->barrier_wait_cond);
         }
     }

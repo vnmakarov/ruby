@@ -157,9 +157,9 @@ RSpec.describe "bundle lock" do
       gem "rack_middleware", :group => "test"
     G
     bundle "config set without test"
-    bundle "config set path .bundle"
+    bundle "config set path vendor/bundle"
     bundle "lock"
-    expect(bundled_app(".bundle")).not_to exist
+    expect(bundled_app("vendor/bundle")).not_to exist
   end
 
   # see update_spec for more coverage on same options. logic is shared so it's not necessary
@@ -217,7 +217,7 @@ RSpec.describe "bundle lock" do
 
     allow(Bundler::SharedHelpers).to receive(:find_gemfile).and_return(bundled_app_gemfile)
     lockfile = Bundler::LockfileParser.new(read_lockfile)
-    expect(lockfile.platforms).to match_array(local_platforms.unshift(java, mingw).uniq)
+    expect(lockfile.platforms).to match_array([java, x86_mingw32, specific_local_platform].uniq)
   end
 
   it "supports adding new platforms with force_ruby_platform = true" do
@@ -241,7 +241,7 @@ RSpec.describe "bundle lock" do
 
     allow(Bundler::SharedHelpers).to receive(:find_gemfile).and_return(bundled_app_gemfile)
     lockfile = Bundler::LockfileParser.new(read_lockfile)
-    expect(lockfile.platforms).to contain_exactly(rb, linux, java, mingw)
+    expect(lockfile.platforms).to contain_exactly(rb, linux, java, x86_mingw32)
   end
 
   it "supports adding the `ruby` platform" do
@@ -249,7 +249,7 @@ RSpec.describe "bundle lock" do
 
     allow(Bundler::SharedHelpers).to receive(:find_gemfile).and_return(bundled_app_gemfile)
     lockfile = Bundler::LockfileParser.new(read_lockfile)
-    expect(lockfile.platforms).to match_array(local_platforms.unshift("ruby").uniq)
+    expect(lockfile.platforms).to match_array(["ruby", specific_local_platform].uniq)
   end
 
   it "warns when adding an unknown platform" do
@@ -262,16 +262,16 @@ RSpec.describe "bundle lock" do
 
     allow(Bundler::SharedHelpers).to receive(:find_gemfile).and_return(bundled_app_gemfile)
     lockfile = Bundler::LockfileParser.new(read_lockfile)
-    expect(lockfile.platforms).to match_array(local_platforms.unshift(java, mingw).uniq)
+    expect(lockfile.platforms).to match_array([java, x86_mingw32, specific_local_platform].uniq)
 
     bundle "lock --remove-platform java"
 
     lockfile = Bundler::LockfileParser.new(read_lockfile)
-    expect(lockfile.platforms).to match_array(local_platforms.unshift(mingw).uniq)
+    expect(lockfile.platforms).to match_array([x86_mingw32, specific_local_platform].uniq)
   end
 
   it "errors when removing all platforms" do
-    bundle "lock --remove-platform #{local_platforms.join(" ")}", :raise_on_error => false
+    bundle "lock --remove-platform #{specific_local_platform}", :raise_on_error => false
     expect(err).to include("Removing all platforms from the bundle is not allowed")
   end
 
@@ -280,7 +280,7 @@ RSpec.describe "bundle lock" do
     build_repo4 do
       build_gem "ffi", "1.9.14"
       build_gem "ffi", "1.9.14" do |s|
-        s.platform = mingw
+        s.platform = x86_mingw32
       end
 
       build_gem "gssapi", "0.1"
@@ -312,7 +312,7 @@ RSpec.describe "bundle lock" do
       gem "gssapi"
     G
 
-    simulate_platform(mingw) { bundle :lock }
+    simulate_platform(x86_mingw32) { bundle :lock }
 
     expect(lockfile).to eq <<~G
       GEM
@@ -337,7 +337,8 @@ RSpec.describe "bundle lock" do
          #{Bundler::VERSION}
     G
 
-    simulate_platform(rb) { bundle :lock }
+    bundle "config set --local force_ruby_platform true"
+    bundle :lock
 
     expect(lockfile).to eq <<~G
       GEM
@@ -492,22 +493,25 @@ RSpec.describe "bundle lock" do
   end
 
   it "does not conflict on ruby requirements when adding new platforms" do
-    next_minor = Gem.ruby_version.segments[0..1].map.with_index {|s, i| i == 1 ? s + 1 : s }.join(".")
-
     build_repo4 do
       build_gem "raygun-apm", "1.0.78" do |s|
         s.platform = "x86_64-linux"
-        s.required_ruby_version = "< #{next_minor}.dev"
+        s.required_ruby_version = "< #{next_ruby_minor}.dev"
       end
 
       build_gem "raygun-apm", "1.0.78" do |s|
         s.platform = "universal-darwin"
-        s.required_ruby_version = "< #{next_minor}.dev"
+        s.required_ruby_version = "< #{next_ruby_minor}.dev"
       end
 
       build_gem "raygun-apm", "1.0.78" do |s|
         s.platform = "x64-mingw32"
-        s.required_ruby_version = "< #{next_minor}.dev"
+        s.required_ruby_version = "< #{next_ruby_minor}.dev"
+      end
+
+      build_gem "raygun-apm", "1.0.78" do |s|
+        s.platform = "x64-mingw-ucrt"
+        s.required_ruby_version = "< #{next_ruby_minor}.dev"
       end
     end
 
@@ -534,6 +538,38 @@ RSpec.describe "bundle lock" do
     L
 
     bundle "lock --add-platform x86_64-linux", :artifice => "compact_index", :env => { "BUNDLER_SPEC_GEM_REPO" => gem_repo4.to_s }
+  end
+
+  it "respects lower bound ruby requirements" do
+    build_repo4 do
+      build_gem "our_private_gem", "0.1.0" do |s|
+        s.required_ruby_version = ">= #{Gem.ruby_version}"
+      end
+    end
+
+    gemfile <<-G
+      source "https://localgemserver.test"
+
+      gem "our_private_gem"
+    G
+
+    lockfile <<-L
+      GEM
+        remote: https://localgemserver.test/
+        specs:
+          our_private_gem (0.1.0)
+
+      PLATFORMS
+        #{lockfile_platforms}
+
+      DEPENDENCIES
+        our_private_gem
+
+      BUNDLED WITH
+         #{Bundler::VERSION}
+    L
+
+    bundle "install", :artifice => "compact_index", :env => { "BUNDLER_SPEC_GEM_REPO" => gem_repo4.to_s }
   end
 
   context "when an update is available" do

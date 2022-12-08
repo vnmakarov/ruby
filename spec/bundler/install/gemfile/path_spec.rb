@@ -137,7 +137,7 @@ RSpec.describe "bundle install with explicit source paths" do
 
     install_gemfile <<-G
       source "#{file_uri_for(gem_repo1)}"
-      gem 'foo', :path => File.expand_path("../foo-1.0", __FILE__)
+      gem 'foo', :path => File.expand_path("foo-1.0", __dir__)
     G
 
     bundle "config set --local frozen true"
@@ -181,6 +181,72 @@ RSpec.describe "bundle install with explicit source paths" do
     G
 
     expect(the_bundle).to include_gems "foo 1.0"
+  end
+
+  it "works when using prereleases of 0.0.0" do
+    build_lib "foo", "0.0.0.dev", :path => lib_path("foo")
+
+    gemfile <<~G
+      source "#{file_uri_for(gem_repo1)}"
+      gem "foo", :path => "#{lib_path("foo")}"
+    G
+
+    lockfile <<~L
+      PATH
+        remote: #{lib_path("foo")}
+        specs:
+          foo (0.0.0.dev)
+
+      GEM
+        remote: #{file_uri_for(gem_repo1)}/
+        specs:
+
+      PLATFORMS
+        #{lockfile_platforms}
+
+      DEPENDENCIES
+        foo!
+
+      BUNDLED WITH
+        #{Bundler::VERSION}
+    L
+
+    bundle :install
+
+    expect(the_bundle).to include_gems "foo 0.0.0.dev"
+  end
+
+  it "works when using uppercase prereleases of 0.0.0" do
+    build_lib "foo", "0.0.0.SNAPSHOT", :path => lib_path("foo")
+
+    gemfile <<~G
+      source "#{file_uri_for(gem_repo1)}"
+      gem "foo", :path => "#{lib_path("foo")}"
+    G
+
+    lockfile <<~L
+      PATH
+        remote: #{lib_path("foo")}
+        specs:
+          foo (0.0.0.SNAPSHOT)
+
+      GEM
+        remote: #{file_uri_for(gem_repo1)}/
+        specs:
+
+      PLATFORMS
+        #{lockfile_platforms}
+
+      DEPENDENCIES
+        foo!
+
+      BUNDLED WITH
+        #{Bundler::VERSION}
+    L
+
+    bundle :install
+
+    expect(the_bundle).to include_gems "foo 0.0.0.SNAPSHOT"
   end
 
   it "handles downgrades" do

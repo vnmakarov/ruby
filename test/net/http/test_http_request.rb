@@ -46,11 +46,12 @@ class HTTPRequestTest < Test::Unit::TestCase
     assert_not_predicate req, :response_body_permitted?
 
     expected = {
-      'accept'     => %w[*/*],
-      'user-agent' => %w[Ruby],
+      'accept'          => %w[*/*],
+      "accept-encoding" => %w[gzip;q=1.0,deflate;q=0.6,identity;q=0.3],
+      'user-agent'      => %w[Ruby],
     }
 
-    assert_equal expected, req.to_hash.tap{_1.delete 'accept-encoding'}
+    assert_equal expected, req.to_hash
   end
 
   def test_initialize_accept_encoding

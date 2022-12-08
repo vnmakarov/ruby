@@ -4,14 +4,15 @@ RSpec.describe "real world edgecases", :realworld => true do
   def rubygems_version(name, requirement)
     ruby <<-RUBY
       require "#{spec_dir}/support/artifice/vcr"
-      require "#{entrypoint}"
-      require "#{entrypoint}/source/rubygems/remote"
-      require "#{entrypoint}/fetcher"
+      require "bundler"
+      require "bundler/source/rubygems/remote"
+      require "bundler/fetcher"
       rubygem = Bundler.ui.silence do
         source = Bundler::Source::Rubygems::Remote.new(Bundler::URI("https://rubygems.org"))
         fetcher = Bundler::Fetcher.new(source)
         index = fetcher.specs([#{name.dump}], nil)
-        index.search(Gem::Dependency.new(#{name.dump}, #{requirement.dump})).last
+        requirement = Gem::Requirement.create(#{requirement.dump})
+        index.search(#{name.dump}).select {|spec| requirement.satisfied_by?(spec.version) }.last
       end
       if rubygem.nil?
         raise "Could not find #{name} (#{requirement}) on rubygems.org!\n" \
@@ -64,7 +65,7 @@ RSpec.describe "real world edgecases", :realworld => true do
   it "is able to update a top-level dependency when there is a conflict on a shared transitive child" do
     # from https://github.com/rubygems/bundler/issues/5031
 
-    system_gems "bundler-2.99.0"
+    pristine_system_gems "bundler-1.99.0"
 
     gemfile <<-G
       source "https://rubygems.org"
@@ -154,7 +155,7 @@ RSpec.describe "real world edgecases", :realworld => true do
             activemodel (= 4.2.7.1)
             activerecord (= 4.2.7.1)
             activesupport (= 4.2.7.1)
-            bundler (>= 1.3.0, < 3.0)
+            bundler (>= 1.3.0, < 2.0)
             railties (= 4.2.7.1)
             sprockets-rails
           rails-deprecated_sanitizer (1.0.3)
@@ -191,12 +192,12 @@ RSpec.describe "real world edgecases", :realworld => true do
         rails (~> 4.2.7.1)
     L
 
-    bundle "lock --update paperclip", :env => { "BUNDLER_VERSION" => "2.99.0" }
+    bundle "lock --update paperclip", :env => { "BUNDLER_VERSION" => "1.99.0" }
 
     expect(lockfile).to include(rubygems_version("paperclip", "~> 5.1.0"))
   end
 
-  it "outputs a helpful error message when gems have invalid gemspecs" do
+  it "outputs a helpful error message when gems have invalid gemspecs", :rubygems => "< 3.3.16" do
     install_gemfile <<-G, :standalone => true, :raise_on_error => false, :env => { "BUNDLE_FORCE_RUBY_PLATFORM" => "1" }
       source 'https://rubygems.org'
       gem "resque-scheduler", "2.2.0"
@@ -207,8 +208,18 @@ RSpec.describe "real world edgecases", :realworld => true do
     expect(err).to include("resque-scheduler 2.2.0 has an invalid gemspec")
   end
 
+  it "outputs a helpful warning when gems have a gemspec with invalid `require_paths`", :rubygems => ">= 3.3.16" do
+    install_gemfile <<-G, :standalone => true, :env => { "BUNDLE_FORCE_RUBY_PLATFORM" => "1" }
+      source 'https://rubygems.org'
+      gem "resque-scheduler", "2.2.0"
+      gem "redis-namespace", "1.6.0" # for a consistent resolution including ruby 2.3.0
+      gem "ruby2_keywords", "0.0.5"
+    G
+    expect(err).to include("resque-scheduler 2.2.0 includes a gemspec with `require_paths` set to an array of arrays. Newer versions of this gem might've already fixed this").once
+  end
+
   it "doesn't hang on big gemfile" do
-    skip "Only for ruby 2.7.3" if RUBY_VERSION != "2.7.3" || RUBY_PLATFORM =~ /darwin/
+    skip "Only for ruby 2.7.3" if RUBY_VERSION != "2.7.3" || RUBY_PLATFORM.include?("darwin")
 
     gemfile <<~G
       # frozen_string_literal: true
@@ -320,7 +331,7 @@ RSpec.describe "real world edgecases", :realworld => true do
   end
 
   it "doesn't hang on tricky gemfile" do
-    skip "Only for ruby 2.7.3" if RUBY_VERSION != "2.7.3" || RUBY_PLATFORM =~ /darwin/
+    skip "Only for ruby 2.7.3" if RUBY_VERSION != "2.7.3" || RUBY_PLATFORM.include?("darwin")
 
     gemfile <<~G
       source 'https://rubygems.org'
@@ -346,7 +357,7 @@ RSpec.describe "real world edgecases", :realworld => true do
   end
 
   it "doesn't hang on nix gemfile" do
-    skip "Only for ruby 3.0.1" if RUBY_VERSION != "3.0.1" || RUBY_PLATFORM =~ /darwin/
+    skip "Only for ruby 3.0.1" if RUBY_VERSION != "3.0.1" || RUBY_PLATFORM.include?("darwin")
 
     gemfile <<~G
       source "https://rubygems.org" do

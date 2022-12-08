@@ -6,7 +6,17 @@ class Numeric
   #  Returns +true+ if +num+ is a real number (i.e. not Complex).
   #
   def real?
-    return true
+    true
+  end
+
+  #
+  # call-seq:
+  #    num.real  ->  self
+  #
+  # Returns self.
+  #
+  def real
+    self
   end
 
   #
@@ -19,7 +29,7 @@ class Numeric
   #      1.integer?     #=> true
   #
   def integer?
-    return false
+    false
   end
 
   #
@@ -29,7 +39,7 @@ class Numeric
   #  Returns +true+ if +num+ is a finite number, otherwise returns +false+.
   #
   def finite?
-    return true
+    true
   end
 
   #
@@ -40,8 +50,34 @@ class Numeric
   #  finite, <code>-Infinity</code>, or <code>+Infinity</code>.
   #
   def infinite?
-    return nil
+    nil
   end
+
+  #
+  # call-seq:
+  #    num.imag       ->  0
+  #    num.imaginary  ->  0
+  #
+  # Returns zero.
+  #
+  def imaginary
+    0
+  end
+
+  alias imag imaginary
+
+  #
+  # call-seq:
+  #    num.conj       ->  self
+  #    num.conjugate  ->  self
+  #
+  # Returns self.
+  #
+  def conjugate
+    self
+  end
+
+  alias conj conjugate
 end
 
 class Integer
@@ -146,7 +182,7 @@ class Integer
   #
   #  Since +int+ is already an Integer, this always returns +true+.
   def integer?
-    return true
+    true
   end
 
   alias magnitude abs
@@ -178,7 +214,7 @@ class Integer
   #
   #  For example, <code>?a.ord</code> returns 97 both in 1.8 and 1.9.
   def ord
-    return self
+    self
   end
 
   #
@@ -208,7 +244,7 @@ class Integer
   #
   #  #to_int is an alias for #to_i.
   def to_i
-    return self
+    self
   end
 
   #  call-seq:
@@ -216,7 +252,7 @@ class Integer
   #
   #  Since +int+ is already an Integer, returns +self+.
   def to_int
-    return self
+    self
   end
 
   # call-seq:
@@ -227,7 +263,66 @@ class Integer
     Primitive.attr! 'inline'
     Primitive.cexpr! 'rb_int_zero_p(self)'
   end
+
+  #  call-seq:
+  #    ceildiv(other) -> integer
+  #
+  #  Returns the result of division +self+ by +other+. The result is rounded up to the nearest integer.
+  #
+  #    3.ceildiv(3) # => 1
+  #    4.ceildiv(3) # => 2
+  #
+  #    4.ceildiv(-3) # => -1
+  #    -4.ceildiv(3) # => -1
+  #    -4.ceildiv(-3) # => 2
+  #
+  #    3.ceildiv(1.2) # => 3
+  def ceildiv(other)
+    -div(-other)
+  end
+
+  #
+  # call-seq:
+  #    int.numerator  ->  self
+  #
+  # Returns self.
+  #
+  def numerator
+    self
+  end
+
+  #
+  # call-seq:
+  #    int.denominator  ->  1
+  #
+  # Returns 1.
+  #
+  def denominator
+    1
+  end
 end
+
+#  call-seq:
+#    Integer.try_convert(object) -> object, integer, or nil
+#
+#  If +object+ is an \Integer object, returns +object+.
+#    Integer.try_convert(1) # => 1
+#
+#  Otherwise if +object+ responds to <tt>:to_int</tt>,
+#  calls <tt>object.to_int</tt> and returns the result.
+#    Integer.try_convert(1.25) # => 1
+#
+#  Returns +nil+ if +object+ does not respond to <tt>:to_int</tt>
+#    Integer.try_convert([]) # => nil
+#
+#  Raises an exception unless <tt>object.to_int</tt> returns an \Integer object.
+#
+def Integer.try_convert(num)
+=begin
+  Primitive.attr! 'inline'
+  Primitive.cexpr! 'rb_check_integer_type(num)'
+=end
+end if false
 
 class Float
   #
@@ -237,7 +332,7 @@ class Float
   # Since +float+ is already a Float, returns +self+.
   #
   def to_f
-    return self
+    self
   end
 
   #
@@ -306,4 +401,5 @@ class Float
     Primitive.attr! 'inline'
     Primitive.cexpr! 'RBOOL(RFLOAT_VALUE(self) < 0.0)'
   end
+
 end

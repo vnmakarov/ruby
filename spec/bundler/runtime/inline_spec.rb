@@ -89,19 +89,21 @@ RSpec.describe "bundler/inline#gemfile" do
 
     expect(out).to include("Installing activesupport")
     err_lines = err.split("\n")
-    err_lines.reject!{|line| line =~ /\.rb:\d+: warning: / } unless RUBY_VERSION < "2.7"
+    err_lines.reject! {|line| line =~ /\.rb:\d+: warning: / } unless RUBY_VERSION < "2.7"
     expect(err_lines).to be_empty
   end
 
   it "lets me use my own ui object" do
     script <<-RUBY, :artifice => "endpoint"
       require '#{entrypoint}'
-      class MyBundlerUI < Bundler::UI::Silent
+      class MyBundlerUI < Bundler::UI::Shell
         def confirm(msg, newline = nil)
           puts "CONFIRMED!"
         end
       end
-      gemfile(true, :ui => MyBundlerUI.new) do
+      my_ui = MyBundlerUI.new
+      my_ui.level = "confirm"
+      gemfile(true, :ui => my_ui) do
         source "https://notaserver.com"
         gem "activesupport", :require => true
       end
@@ -239,6 +241,40 @@ RSpec.describe "bundler/inline#gemfile" do
     expect(err).to be_empty
   end
 
+  it "does not leak Gemfile.lock versions to the installation output" do
+    gemfile <<-G
+      source "https://notaserver.com"
+      gem "rake"
+    G
+
+    lockfile <<-G
+      GEM
+        remote: https://rubygems.org/
+        specs:
+          rake (11.3.0)
+
+      PLATFORMS
+        ruby
+
+      DEPENDENCIES
+        rake
+
+      BUNDLED WITH
+         #{Bundler::VERSION}
+    G
+
+    script <<-RUBY
+      gemfile(true) do
+        source "#{file_uri_for(gem_repo1)}"
+        gem "rake", "~> 13.0"
+      end
+    RUBY
+
+    expect(out).to include("Installing rake 13.0")
+    expect(out).not_to include("was 11.3.0")
+    expect(err).to be_empty
+  end
+
   it "installs inline gems when frozen is set" do
     script <<-RUBY, :env => { "BUNDLE_FROZEN" => "true" }
       gemfile do
@@ -309,7 +345,7 @@ RSpec.describe "bundler/inline#gemfile" do
   end
 
   it "skips platform warnings" do
-    simulate_platform "ruby"
+    bundle "config set --local force_ruby_platform true"
 
     script <<-RUBY
       gemfile(true) do
@@ -319,6 +355,20 @@ RSpec.describe "bundler/inline#gemfile" do
     RUBY
 
     expect(err).to be_empty
+  end
+
+  it "still installs if the application has `bundle package` no_install config set" do
+    bundle "config set --local no_install true"
+
+    script <<-RUBY
+      gemfile do
+        source "#{file_uri_for(gem_repo1)}"
+        gem "rack"
+      end
+    RUBY
+
+    expect(last_command).to be_success
+    expect(system_gem_path("gems/rack-1.0.0")).to exist
   end
 
   it "preserves previous BUNDLE_GEMFILE value" do
@@ -401,9 +451,10 @@ RSpec.describe "bundler/inline#gemfile" do
 
     realworld_system_gems "pathname --version 0.2.0"
 
-    realworld_system_gems "fiddle" # not sure why, but this is needed on Windows to boot rubygems successfully
-
     realworld_system_gems "timeout uri" # this spec uses net/http which requires these default gems
+
+    # on prerelease rubies, a required_rubygems_version constraint is added by RubyGems to the resolution, causing Molinillo to load the `set` gem
+    realworld_system_gems "set --version 1.0.3" if Gem.ruby_version.prerelease?
 
     script <<-RUBY, :dir => tmp("path_without_gemfile"), :env => { "BUNDLER_GEM_DEFAULT_DIR" => system_gem_path.to_s }
       require "bundler/inline"

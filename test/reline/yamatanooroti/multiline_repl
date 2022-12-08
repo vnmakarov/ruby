@@ -1,5 +1,9 @@
 #!/usr/bin/env ruby
 
+
+require 'bundler'
+Bundler.require
+
 require 'reline'
 require 'optparse'
 require_relative 'termination_checker'
@@ -26,6 +30,14 @@ opt.on('--broken-dynamic-prompt') {
 }
 opt.on('--dynamic-prompt-returns-empty') {
   Reline.prompt_proc = proc { |l| [] }
+}
+opt.on('--dynamic-prompt-with-newline') {
+  Reline.prompt_proc = proc { |lines|
+    range = lines.size > 1 ? (0..(lines.size - 2)) : (0..0)
+    lines[range].each_with_index.map { |l, i|
+      '[%04d\n]> ' % i
+    }
+  }
 }
 opt.on('--auto-indent') {
   AutoIndent.new
@@ -135,6 +147,28 @@ opt.on('--autocomplete-super-long') {
   Reline.completion_proc = lambda { |target, preposing = nil, postposing = nil|
     c = 'A'
     2000.times.map{ s = "Str_#{c}"; c.succ!; s }.select{ |c| c.start_with?(target) }
+  }
+}
+
+opt.on('--autocomplete-width-long') {
+  Reline.autocompletion = true
+  Reline.completion_proc = lambda { |target, preposing = nil, postposing = nil|
+    %w{
+        remove_instance_variable
+        respond_to?
+        ruby2_keywords
+        rand
+        readline
+        readlines
+        require
+        require_relative
+        raise
+        respond_to_missing?
+        redo
+        rescue
+        retry
+        return
+    }.select{ |c| c.start_with?(target) }
   }
 }
 opt.parse!(ARGV)

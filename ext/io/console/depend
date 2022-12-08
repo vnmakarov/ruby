@@ -7,7 +7,6 @@ console.o: $(hdrdir)/ruby/backward.h
 console.o: $(hdrdir)/ruby/backward/2/assume.h
 console.o: $(hdrdir)/ruby/backward/2/attributes.h
 console.o: $(hdrdir)/ruby/backward/2/bool.h
-console.o: $(hdrdir)/ruby/backward/2/gcc_version_since.h
 console.o: $(hdrdir)/ruby/backward/2/inttypes.h
 console.o: $(hdrdir)/ruby/backward/2/limits.h
 console.o: $(hdrdir)/ruby/backward/2/long_long.h
@@ -17,6 +16,7 @@ console.o: $(hdrdir)/ruby/defines.h
 console.o: $(hdrdir)/ruby/encoding.h
 console.o: $(hdrdir)/ruby/fiber/scheduler.h
 console.o: $(hdrdir)/ruby/intern.h
+console.o: $(hdrdir)/ruby/internal/abi.h
 console.o: $(hdrdir)/ruby/internal/anyargs.h
 console.o: $(hdrdir)/ruby/internal/arithmetic.h
 console.o: $(hdrdir)/ruby/internal/arithmetic/char.h

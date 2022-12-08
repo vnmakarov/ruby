@@ -738,7 +738,7 @@ class TestClass < Test::Unit::TestCase
     assert_same(c, Module.new.const_set(:Foo, c))
   end
 
-  def test_descendants
+  def test_subclasses
     c = Class.new
     sc = Class.new(c)
     ssc = Class.new(sc)
@@ -746,27 +746,58 @@ class TestClass < Test::Unit::TestCase
       k.include Module.new
       k.new.define_singleton_method(:force_singleton_class){}
     end
-    assert_equal([sc, ssc], c.descendants)
-    assert_equal([ssc], sc.descendants)
-    assert_equal([], ssc.descendants)
+    assert_equal([sc], c.subclasses)
+    assert_equal([ssc], sc.subclasses)
+    assert_equal([], ssc.subclasses)
 
-    object_descendants = Object.descendants
-    assert_include(object_descendants, c)
-    assert_include(object_descendants, sc)
-    assert_include(object_descendants, ssc)
+    object_subclasses = Object.subclasses
+    assert_include(object_subclasses, c)
+    assert_not_include(object_subclasses, sc)
+    assert_not_include(object_subclasses, ssc)
+    object_subclasses.each do |subclass|
+      assert_equal Object, subclass.superclass, "Expected #{subclass}.superclass to be Object"
+    end
   end
 
-  def test_descendants_gc
+  def test_attached_object
     c = Class.new
-    100000.times { Class.new(c) }
-    assert(c.descendants.size <= 100000)
+    sc = c.singleton_class
+    obj = c.new
+
+    assert_equal(obj, obj.singleton_class.attached_object)
+    assert_equal(c, sc.attached_object)
+
+    assert_raise_with_message(TypeError, /is not a singleton class/) do
+      c.attached_object
+    end
+
+    assert_raise_with_message(TypeError, /`NilClass' is not a singleton class/) do
+      nil.singleton_class.attached_object
+    end
+
+    assert_raise_with_message(TypeError, /`FalseClass' is not a singleton class/) do
+      false.singleton_class.attached_object
+    end
+
+    assert_raise_with_message(TypeError, /`TrueClass' is not a singleton class/) do
+      true.singleton_class.attached_object
+    end
   end
 
-  def test_descendants_gc_stress
+  def test_subclass_gc
+    c = Class.new
+    10_000.times do
+      cc = Class.new(c)
+      100.times { Class.new(cc) }
+    end
+    assert(c.subclasses.size <= 10_000)
+  end
+
+  def test_subclass_gc_stress
     10000.times do
       c = Class.new
       100.times { Class.new(c) }
-      assert(c.descendants.size <= 100)
+      assert(c.subclasses.size <= 100)
     end
   end
 
@@ -777,5 +808,14 @@ code = proc { Class.new }
 PREP
 3_000_000.times(&code)
 CODE
+  end
+
+  def test_instance_freeze_dont_freeze_the_class_bug_19164
+    klass = Class.new
+    klass.prepend(Module.new)
+
+    klass.new.freeze
+    klass.define_method(:bar) {}
+    assert_equal klass, klass.remove_method(:bar), '[Bug #19164]'
   end
 end

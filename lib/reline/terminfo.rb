@@ -35,7 +35,7 @@ module Reline::Terminfo
       # Gem module isn't defined in test-all of the Ruby repository, and
       # Fiddle in Ruby 3.0.0 or later supports Fiddle::TYPE_VARIADIC.
       fiddle_supports_variadic = true
-    elsif Fiddle.const_defined?(:VERSION) and Gem::Version.create(Fiddle::VERSION) >= Gem::Version.create('1.0.1')
+    elsif Fiddle.const_defined?(:VERSION,false) and Gem::Version.create(Fiddle::VERSION) >= Gem::Version.create('1.0.1')
       # Fiddle::TYPE_VARIADIC is supported from Fiddle 1.0.1.
       fiddle_supports_variadic = true
     else
@@ -74,12 +74,27 @@ module Reline::Terminfo
     #extern 'char *tparm(const char *str, ...)'
     @tiparm = Fiddle::Function.new(curses_dl['tparm'], [Fiddle::TYPE_VOIDP, Fiddle::TYPE_VARIADIC], Fiddle::TYPE_VOIDP)
   end
-  # TODO: add int tigetflag(char *capname) and int tigetnum(char *capname)
+  begin
+    #extern 'int tigetflag(char *str)'
+    @tigetflag = Fiddle::Function.new(curses_dl['tigetflag'], [Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+  rescue Fiddle::DLError
+    # OpenBSD lacks tigetflag
+    #extern 'int tgetflag(char *str)'
+    @tigetflag = Fiddle::Function.new(curses_dl['tgetflag'], [Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+  end
+  begin
+    #extern 'int tigetnum(char *str)'
+    @tigetnum = Fiddle::Function.new(curses_dl['tigetnum'], [Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+  rescue Fiddle::DLError
+    # OpenBSD lacks tigetnum
+    #extern 'int tgetnum(char *str)'
+    @tigetnum = Fiddle::Function.new(curses_dl['tgetnum'], [Fiddle::TYPE_VOIDP], Fiddle::TYPE_INT)
+  end
 
   def self.setupterm(term, fildes)
-    errret_int = String.new("\x00" * 8, encoding: 'ASCII-8BIT')
+    errret_int = Fiddle::Pointer.malloc(Fiddle::SIZEOF_INT)
     ret = @setupterm.(term, fildes, errret_int)
-    errret = errret_int.unpack1('i')
+    errret = errret_int[0, Fiddle::SIZEOF_INT].unpack1('i')
     case ret
     when 0 # OK
       0
@@ -106,6 +121,7 @@ module Reline::Terminfo
   end
 
   def self.tigetstr(capname)
+    raise TerminfoError, "capname is not String: #{capname.inspect}" unless capname.is_a?(String)
     capability = @tigetstr.(capname)
     case capability.to_i
     when 0, -1
@@ -120,6 +136,30 @@ module Reline::Terminfo
       new_args << Fiddle::TYPE_INT << a
     end
     @tiparm.(str, *new_args).to_s
+  end
+
+  def self.tigetflag(capname)
+    raise TerminfoError, "capname is not String: #{capname.inspect}" unless capname.is_a?(String)
+    flag = @tigetflag.(capname).to_i
+    case flag
+    when -1
+      raise TerminfoError, "not boolean capability: #{capname}"
+    when 0
+      raise TerminfoError, "can't find capability: #{capname}"
+    end
+    flag
+  end
+
+  def self.tigetnum(capname)
+    raise TerminfoError, "capname is not String: #{capname.inspect}" unless capname.is_a?(String)
+    num = @tigetnum.(capname).to_i
+    case num
+    when -2
+      raise TerminfoError, "not numeric capability: #{capname}"
+    when -1
+      raise TerminfoError, "can't find capability: #{capname}"
+    end
+    num
   end
 
   def self.enabled?

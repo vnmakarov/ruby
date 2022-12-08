@@ -190,7 +190,7 @@ assert_equal '[:ok, :ok, :ok]', %q{
 # Ractor.make_shareable issue for locals in proc [Bug #18023]
 assert_equal '[:a, :b, :c, :d, :e]', %q{
   v1, v2, v3, v4, v5 = :a, :b, :c, :d, :e
-  closure = Proc.new { [v1, v2, v3, v4, v5] }
+  closure = Ractor.current.instance_eval{ Proc.new { [v1, v2, v3, v4, v5] } }
 
   Ractor.make_shareable(closure).call
 }
@@ -198,15 +198,28 @@ assert_equal '[:a, :b, :c, :d, :e]', %q{
 # Ractor.make_shareable issue for locals in proc [Bug #18023]
 assert_equal '[:a, :b, :c, :d, :e, :f, :g]', %q{
   a = :a
-  closure = -> {
-    b, c, d = :b, :c, :d
+  closure = Ractor.current.instance_eval do
     -> {
-      e, f, g = :e, :f, :g
-      -> { [a, b, c, d, e, f, g] }
+      b, c, d = :b, :c, :d
+      -> {
+        e, f, g = :e, :f, :g
+        -> { [a, b, c, d, e, f, g] }
+      }.call
     }.call
-  }.call
+  end
 
   Ractor.make_shareable(closure).call
+}
+
+# Now autoload in non-main Ractor is not supported
+assert_equal 'ok', %q{
+  autoload :Foo, 'foo.rb'
+  r = Ractor.new do
+    p Foo
+  rescue Ractor::UnsafeError
+    :ok
+  end
+  r.take
 }
 
 ###
@@ -270,8 +283,9 @@ assert_equal 30.times.map { 'ok' }.to_s, %q{
   30.times.map{|i|
     test i
   }
-} unless ENV['RUN_OPTS'] =~ /--jit-min-calls=5/ || # This always fails with --jit-wait --jit-min-calls=5
-  (ENV.key?('TRAVIS') && ENV['TRAVIS_CPU_ARCH'] == 'arm64') # https://bugs.ruby-lang.org/issues/17878
+} unless ENV['RUN_OPTS'] =~ /--mjit-call-threshold=5/ || # This always fails with --mjit-wait --mjit-call-threshold=5
+  (ENV.key?('TRAVIS') && ENV['TRAVIS_CPU_ARCH'] == 'arm64') || # https://bugs.ruby-lang.org/issues/17878
+  true # too flaky everywhere http://ci.rvm.jp/results/trunk@ruby-sp1/4321096
 
 # Exception for empty select
 assert_match /specify at least one ractor/, %q{
@@ -466,6 +480,7 @@ assert_equal 'ok', %q{
 }
 
 # multiple Ractors can receive (wait) from one Ractor
+yjit_enabled = ENV.key?('RUBY_YJIT_ENABLE') || ENV.fetch('RUN_OPTS', '').include?('yjit')
 assert_equal '[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]', %q{
   pipe = Ractor.new do
     loop do
@@ -488,7 +503,7 @@ assert_equal '[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]', %q{
     rs.delete r
     n
   }.sort
-}
+} unless yjit_enabled # flaky with YJIT https://github.com/ruby/ruby/actions/runs/3603398545/jobs/6071549328#step:18:33
 
 # Ractor.select also support multiple take, receive and yield
 assert_equal '[true, true, true]', %q{
@@ -1088,6 +1103,28 @@ assert_equal 'can not access class variables from non-main Ractors', %q{
   end
 }
 
+# also cached cvar in shareable-objects are not allowed to access from non-main Ractor
+assert_equal 'can not access class variables from non-main Ractors', %q{
+  class C
+    @@cv = 'str'
+    def self.cv
+      @@cv
+    end
+  end
+
+  C.cv # cache
+
+  r = Ractor.new do
+    C.cv
+  end
+
+  begin
+    r.take
+  rescue Ractor::RemoteError => e
+    e.cause.message
+  end
+}
+
 # Getting non-shareable objects via constants by other Ractors is not allowed
 assert_equal 'can not access non-shareable objects in constant C::CONST by non-main Ractor.', %q{
   class C
@@ -1276,9 +1313,13 @@ assert_equal 'true', %q{
 # Ractor.make_shareable(a_proc) makes a proc shareable.
 assert_equal 'true', %q{
   a = [1, [2, 3], {a: "4"}]
-  pr = Proc.new do
-    a
+
+  pr = Ractor.current.instance_eval do
+    Proc.new do
+      a
+    end
   end
+
   Ractor.make_shareable(a) # referred value should be shareable
   Ractor.make_shareable(pr)
   Ractor.shareable?(pr)
@@ -1326,10 +1367,12 @@ assert_equal '1', %q{
 # Ractor.make_shareable(a_proc) makes a proc shareable.
 assert_equal 'can not make a Proc shareable because it accesses outer variables (a).', %q{
   a = b = nil
-  pr = Proc.new do
-    c = b # assign to a is okay because c is block local variable
-          # reading b is okay
-    a = b # assign to a is not allowed #=> Ractor::Error
+  pr = Ractor.current.instance_eval do
+    Proc.new do
+      c = b # assign to a is okay because c is block local variable
+      # reading b is okay
+      a = b # assign to a is not allowed #=> Ractor::Error
+    end
   end
 
   begin
@@ -1500,7 +1543,7 @@ assert_equal "ok", %q{
 
   1_000.times { idle_worker, tmp_reporter = Ractor.select(*workers) }
   "ok"
-}
+} unless yjit_enabled # flaky with YJIT https://github.com/ruby/ruby/actions/runs/3575374374/jobs/6011846425
 
 assert_equal "ok", %q{
   def foo(*); ->{ super }; end
@@ -1536,6 +1579,51 @@ assert_equal "ok", %q{
   rescue Ractor::IsolationError
     "ok"
   end
+}
+
+assert_equal "ok", %q{
+  module M
+    def foo
+      @foo
+    end
+  end
+
+  class A
+    include M
+
+    def initialize
+      100.times { |i| instance_variable_set(:"@var_#{i}", "bad: #{i}") }
+      @foo = 2
+    end
+  end
+
+  class B
+    include M
+
+    def initialize
+      @foo = 1
+    end
+  end
+
+  Ractor.new do
+    b = B.new
+    100_000.times do
+      raise unless b.foo == 1
+    end
+  end
+
+  a = A.new
+  100_000.times do
+    raise unless a.foo == 2
+  end
+
+  "ok"
+}
+
+assert_match /\Atest_ractor\.rb:1:\s+warning:\s+Ractor is experimental/, %q{
+  Warning[:experimental] = $VERBOSE = true
+  STDERR.reopen(STDOUT)
+  eval("Ractor.new{}.take", nil, "test_ractor.rb", 1)
 }
 
 end # if !ENV['GITHUB_WORKFLOW']

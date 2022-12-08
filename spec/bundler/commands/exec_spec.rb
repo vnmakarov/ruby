@@ -291,7 +291,7 @@ RSpec.describe "bundle exec" do
       end
     end
 
-    bundle "config set path.system true"
+    bundle "config set --global path.system true"
 
     install_gemfile <<-G
       source "#{file_uri_for(gem_repo1)}"
@@ -612,6 +612,36 @@ RSpec.describe "bundle exec" do
     expect(out).to include("Installing foo 1.0")
   end
 
+  it "loads the correct optparse when `auto_install` is set, and optparse is a dependency" do
+    if Gem.ruby_version >= Gem::Version.new("3.0.0") && Gem.rubygems_version < Gem::Version.new("3.3.0.a")
+      skip "optparse is a default gem, and rubygems loads it during install"
+    end
+
+    build_repo4 do
+      build_gem "fastlane", "2.192.0" do |s|
+        s.executables = "fastlane"
+        s.add_dependency "optparse", "~> 999.999.999"
+      end
+
+      build_gem "optparse", "999.999.998"
+      build_gem "optparse", "999.999.999"
+    end
+
+    system_gems "optparse-999.999.998", :gem_repo => gem_repo4
+
+    bundle "config set auto_install 1"
+    bundle "config set --local path vendor/bundle"
+
+    gemfile <<~G
+      source "#{file_uri_for(gem_repo4)}"
+      gem "fastlane"
+    G
+
+    bundle "exec fastlane"
+    expect(out).to include("Installing optparse 999.999.999")
+    expect(out).to include("2.192.0")
+  end
+
   describe "with gems bundled via :path with invalid gemspecs" do
     it "outputs the gemspec validation errors" do
       build_lib "foo"
@@ -745,9 +775,7 @@ RSpec.describe "bundle exec" do
       end
       let(:expected_err) { "" }
       let(:exit_code) do
-        # signal mask 128 + plus signal 15 -> TERM
-        # this is specified by C99
-        128 + 15
+        exit_status_for_signal(Signal.list["TERM"])
       end
 
       it "runs" do
@@ -837,7 +865,10 @@ RSpec.describe "bundle exec" do
       let(:expected) { "" }
       let(:expected_err) { <<-EOS.strip }
 Could not find gem 'rack (= 2)' in locally installed gems.
-The source contains the following versions of 'rack': 0.9.1, 1.0.0
+
+The source contains the following gems matching 'rack':
+  * rack-0.9.1
+  * rack-1.0.0
 Run `bundle install` to install missing gems.
       EOS
 
@@ -864,7 +895,9 @@ Run `bundle install` to install missing gems.
       let(:expected) { "" }
       let(:expected_err) { <<-EOS.strip }
 Could not find gem 'rack (= 2)' in locally installed gems.
-The source contains the following versions of 'rack': 1.0.0
+
+The source contains the following gems matching 'rack':
+  * rack-1.0.0
 Run `bundle install` to install missing gems.
       EOS
 

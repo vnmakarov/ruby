@@ -371,7 +371,15 @@ RSpec.describe "bundle install with gems on multiple sources" do
 
       it "fails" do
         bundle :install, :artifice => "compact_index", :raise_on_error => false
-        expect(err).to include("Could not find gem 'missing', which is required by gem 'depends_on_missing', in any of the sources.")
+        expect(err).to end_with <<~E.strip
+          Could not find compatible versions
+
+          Because every version of depends_on_missing depends on missing >= 0
+            and missing >= 0 could not be found in any of the sources,
+            every version of depends_on_missing is forbidden.
+          So, because Gemfile depends on depends_on_missing >= 0,
+            version solving has failed.
+        E
       end
     end
 
@@ -425,9 +433,15 @@ RSpec.describe "bundle install with gems on multiple sources" do
 
         it "does not find the dependency" do
           bundle :install, :artifice => "compact_index", :raise_on_error => false
-          expect(err).to include(
-            "Could not find gem 'rack', which is required by gem 'depends_on_rack', in rubygems repository https://gem.repo2/ or installed locally."
-          )
+          expect(err).to end_with <<~E.strip
+            Could not find compatible versions
+
+            Because every version of depends_on_rack depends on rack >= 0
+              and rack >= 0 could not be found in rubygems repository https://gem.repo2/ or installed locally,
+              every version of depends_on_rack is forbidden.
+            So, because Gemfile depends on depends_on_rack >= 0,
+              version solving has failed.
+          E
         end
       end
 
@@ -1250,8 +1264,34 @@ RSpec.describe "bundle install with gems on multiple sources" do
       G
     end
 
-    it "installs the higher version in the new repo" do
-      expect(the_bundle).to include_gems("rack 1.2")
+    it "conservatively installs the existing locked version" do
+      expect(the_bundle).to include_gems("rack 1.0.0")
+    end
+  end
+
+  context "when Gemfile overrides a gemspec development dependency to change the default source" do
+    before do
+      build_repo4 do
+        build_gem "bar"
+      end
+
+      build_lib("gemspec_test", :path => tmp.join("gemspec_test")) do |s|
+        s.add_development_dependency "bar"
+      end
+
+      install_gemfile <<-G, :artifice => "compact_index"
+        source "https://gem.repo1"
+
+        source "https://gem.repo4" do
+          gem "bar"
+        end
+
+        gemspec :path => "#{tmp.join("gemspec_test")}"
+      G
+    end
+
+    it "does not print warnings" do
+      expect(err).to be_empty
     end
   end
 
@@ -1336,8 +1376,8 @@ RSpec.describe "bundle install with gems on multiple sources" do
       G
       expect(err).to eq strip_whitespace(<<-EOS).strip
         Warning: The gem 'rack' was found in multiple relevant sources.
-          * rubygems repository https://gem.repo1/ or installed locally
-          * rubygems repository https://gem.repo4/ or installed locally
+          * rubygems repository https://gem.repo1/
+          * rubygems repository https://gem.repo4/
         You should add this gem to the source block for the source you wish it to be installed from.
       EOS
       expect(last_command).to be_success
@@ -1366,8 +1406,8 @@ RSpec.describe "bundle install with gems on multiple sources" do
       expect(last_command).to be_failure
       expect(err).to eq strip_whitespace(<<-EOS).strip
         The gem 'rack' was found in multiple relevant sources.
-          * rubygems repository https://gem.repo1/ or installed locally
-          * rubygems repository https://gem.repo4/ or installed locally
+          * rubygems repository https://gem.repo1/
+          * rubygems repository https://gem.repo4/
         You must add this gem to the source block for the source you wish it to be installed from.
       EOS
       expect(the_bundle).not_to be_locked
@@ -1441,6 +1481,192 @@ RSpec.describe "bundle install with gems on multiple sources" do
         BUNDLED WITH
            #{Bundler::VERSION}
       L
+    end
+  end
+
+  context "when default source includes old gems with nil required_ruby_version" do
+    before do
+      build_repo2 do
+        build_gem "ruport", "1.7.0.3" do |s|
+          s.add_dependency "pdf-writer", "1.1.8"
+        end
+      end
+
+      build_repo gem_repo4 do
+        build_gem "pdf-writer", "1.1.8"
+      end
+
+      path = "#{gem_repo4}/#{Gem::MARSHAL_SPEC_DIR}/pdf-writer-1.1.8.gemspec.rz"
+      spec = Marshal.load(Bundler.rubygems.inflate(File.binread(path)))
+      spec.instance_variable_set(:@required_ruby_version, nil)
+      File.open(path, "wb") do |f|
+        f.write Gem.deflate(Marshal.dump(spec))
+      end
+
+      gemfile <<~G
+        source "https://localgemserver.test"
+
+        gem "ruport", "= 1.7.0.3", :source => "https://localgemserver.test/extra"
+      G
+    end
+
+    it "handles that fine" do
+      bundle "install", :artifice => "compact_index_extra", :env => { "BUNDLER_SPEC_GEM_REPO" => gem_repo4.to_s }
+
+      expect(lockfile).to eq <<~L
+        GEM
+          remote: https://localgemserver.test/
+          specs:
+            pdf-writer (1.1.8)
+
+        GEM
+          remote: https://localgemserver.test/extra/
+          specs:
+            ruport (1.7.0.3)
+              pdf-writer (= 1.1.8)
+
+        PLATFORMS
+          #{specific_local_platform}
+
+        DEPENDENCIES
+          ruport (= 1.7.0.3)!
+
+        BUNDLED WITH
+           #{Bundler::VERSION}
+      L
+    end
+  end
+
+  context "when default source includes old gems with nil required_rubygems_version" do
+    before do
+      build_repo2 do
+        build_gem "ruport", "1.7.0.3" do |s|
+          s.add_dependency "pdf-writer", "1.1.8"
+        end
+      end
+
+      build_repo gem_repo4 do
+        build_gem "pdf-writer", "1.1.8"
+      end
+
+      path = "#{gem_repo4}/#{Gem::MARSHAL_SPEC_DIR}/pdf-writer-1.1.8.gemspec.rz"
+      spec = Marshal.load(Bundler.rubygems.inflate(File.binread(path)))
+      spec.instance_variable_set(:@required_rubygems_version, nil)
+      File.open(path, "wb") do |f|
+        f.write Gem.deflate(Marshal.dump(spec))
+      end
+
+      gemfile <<~G
+        source "https://localgemserver.test"
+
+        gem "ruport", "= 1.7.0.3", :source => "https://localgemserver.test/extra"
+      G
+    end
+
+    it "handles that fine" do
+      bundle "install", :artifice => "compact_index_extra", :env => { "BUNDLER_SPEC_GEM_REPO" => gem_repo4.to_s }
+
+      expect(lockfile).to eq <<~L
+        GEM
+          remote: https://localgemserver.test/
+          specs:
+            pdf-writer (1.1.8)
+
+        GEM
+          remote: https://localgemserver.test/extra/
+          specs:
+            ruport (1.7.0.3)
+              pdf-writer (= 1.1.8)
+
+        PLATFORMS
+          #{specific_local_platform}
+
+        DEPENDENCIES
+          ruport (= 1.7.0.3)!
+
+        BUNDLED WITH
+           #{Bundler::VERSION}
+      L
+    end
+  end
+
+  context "when default source uses the old API and includes old gems with nil required_rubygems_version" do
+    before do
+      build_repo4 do
+        build_gem "pdf-writer", "1.1.8"
+      end
+
+      path = "#{gem_repo4}/#{Gem::MARSHAL_SPEC_DIR}/pdf-writer-1.1.8.gemspec.rz"
+      spec = Marshal.load(Bundler.rubygems.inflate(File.binread(path)))
+      spec.instance_variable_set(:@required_rubygems_version, nil)
+      File.open(path, "wb") do |f|
+        f.write Gem.deflate(Marshal.dump(spec))
+      end
+
+      gemfile <<~G
+        source "https://localgemserver.test"
+
+        gem "pdf-writer", "= 1.1.8"
+      G
+    end
+
+    it "handles that fine" do
+      bundle "install --verbose", :artifice => "endpoint", :env => { "BUNDLER_SPEC_GEM_REPO" => gem_repo4.to_s }
+
+      expect(lockfile).to eq <<~L
+        GEM
+          remote: https://localgemserver.test/
+          specs:
+            pdf-writer (1.1.8)
+
+        PLATFORMS
+          #{specific_local_platform}
+
+        DEPENDENCIES
+          pdf-writer (= 1.1.8)
+
+        BUNDLED WITH
+           #{Bundler::VERSION}
+      L
+    end
+  end
+
+  context "when mistakenly adding a top level gem already depended on and cached under the wrong source" do
+    before do
+      build_repo4 do
+        build_gem "some_private_gem", "0.1.0" do |s|
+          s.add_dependency "example", "~> 1.0"
+        end
+      end
+
+      build_repo2 do
+        build_gem "example", "1.0.0"
+      end
+
+      install_gemfile <<~G, :artifice => "compact_index"
+        source "https://gem.repo2"
+
+        source "https://gem.repo4" do
+          gem "some_private_gem"
+        end
+      G
+
+      gemfile <<~G
+        source "https://gem.repo2"
+
+        source "https://gem.repo4" do
+          gem "some_private_gem"
+          gem "example" # MISTAKE, example is not available at gem.repo4
+        end
+      G
+    end
+
+    it "shows a proper error message and does not generate a corrupted lockfile" do
+      expect do
+        bundle :install, :artifice => "compact_index", :raise_on_error => false, :env => { "BUNDLER_SPEC_GEM_REPO" => gem_repo4.to_s }
+      end.not_to change { lockfile }
+
+      expect(err).to include("Could not find gem 'example' in rubygems repository https://gem.repo4/")
     end
   end
 end

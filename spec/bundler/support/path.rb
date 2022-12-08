@@ -30,7 +30,7 @@ module Spec
     end
 
     def test_gemfile
-      @test_gemfile ||= source_root.join("tool/bundler/test_gems.rb")
+      @test_gemfile ||= tool_dir.join("test_gems.rb")
     end
 
     def rubocop_gemfile
@@ -42,7 +42,7 @@ module Spec
     end
 
     def dev_gemfile
-      @dev_gemfile ||= git_root.join("dev_gems.rb")
+      @dev_gemfile ||= tool_dir.join("dev_gems.rb")
     end
 
     def bindir
@@ -144,6 +144,10 @@ module Spec
 
     def bundled_app_lock
       bundled_app("Gemfile.lock")
+    end
+
+    def base_system_gem_path
+      scoped_gem_path(base_system_gems)
     end
 
     def base_system_gems
@@ -254,6 +258,10 @@ module Spec
       end
     end
 
+    def git_root
+      ruby_core? ? source_root : source_root.parent
+    end
+
     private
 
     def git_ls_files(glob)
@@ -274,10 +282,6 @@ module Spec
       ruby_core? ? "man/bundle* man/gemfile*" : "lib/bundler/man/bundle*.1 lib/bundler/man/gemfile*.5"
     end
 
-    def git_root
-      ruby_core? ? source_root : source_root.parent
-    end
-
     def ruby_core_tarball?
       !git_root.join(".git").directory?
     end
@@ -290,7 +294,7 @@ module Spec
       else
         "rubocop_gems"
       end
-      source_root.join("tool/bundler/#{filename}.rb")
+      tool_dir.join("#{filename}.rb")
     end
 
     def standard_gemfile_basename
@@ -301,7 +305,15 @@ module Spec
       else
         "standard_gems"
       end
-      source_root.join("tool/bundler/#{filename}.rb")
+      tool_dir.join("#{filename}.rb")
+    end
+
+    def tool_dir
+      source_root.join("tool/bundler")
+    end
+
+    def templates_dir
+      lib_dir.join("bundler", "templates")
     end
 
     extend self

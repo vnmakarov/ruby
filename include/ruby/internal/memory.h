@@ -364,7 +364,7 @@ typedef uint128_t DSIZE_T;
  * @return  `p1`.
  * @post    First `n` elements of `p2` are copied into `p1`.
  */
-#define MEMCPY(p1,p2,type,n) memcpy((p1), (p2), rbimpl_size_mul_or_raise(sizeof(type), (n)))
+#define MEMCPY(p1,p2,type,n) ruby_nonempty_memcpy((p1), (p2), rbimpl_size_mul_or_raise(sizeof(type), (n)))
 
 /**
  * Handy macro to call memmove.
@@ -645,7 +645,6 @@ rb_alloc_tmp_buffer2(volatile VALUE *store, long count, size_t elsize)
     return rb_alloc_tmp_buffer_with_count(store, total_size, cnt);
 }
 
-#if ! defined(__MINGW32__) && ! defined(__DOXYGEN__)
 RBIMPL_SYMBOL_EXPORT_BEGIN()
 RBIMPL_ATTR_NOALIAS()
 RBIMPL_ATTR_NONNULL((1))
@@ -664,8 +663,5 @@ ruby_nonempty_memcpy(void *dest, const void *src, size_t n)
     }
 }
 RBIMPL_SYMBOL_EXPORT_END()
-#undef memcpy
-#define memcpy ruby_nonempty_memcpy
-#endif
 
 #endif /* RBIMPL_MEMORY_H */

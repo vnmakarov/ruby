@@ -102,13 +102,7 @@ module Bundler
         @install_path ||= begin
           git_scope = "#{base_name}-#{shortref_for_path(revision)}"
 
-          path = Bundler.install_path.join(git_scope)
-
-          if !path.exist? && Bundler.requires_sudo?
-            Bundler.user_bundle_path.join(Bundler.ruby_scope).join(git_scope)
-          else
-            path
-          end
+          Bundler.install_path.join(git_scope)
         end
       end
 
@@ -181,7 +175,7 @@ module Bundler
       def install(spec, options = {})
         force = options[:force]
 
-        print_using_message "Using #{version_message(spec)} from #{self}"
+        print_using_message "Using #{version_message(spec, options[:previous_spec])} from #{self}"
 
         if (requires_checkout? && !@copied) || force
           Bundler.ui.debug "  * Checking out revision: #{ref}"
@@ -219,13 +213,11 @@ module Bundler
       # across different projects, this cache will be shared.
       # When using local git repos, this is set to the local repo.
       def cache_path
-        @cache_path ||= begin
-          if Bundler.requires_sudo? || Bundler.feature_flag.global_gem_cache?
-            Bundler.user_cache
-          else
-            Bundler.bundle_path.join("cache", "bundler")
-          end.join("git", git_scope)
-        end
+        @cache_path ||= if Bundler.feature_flag.global_gem_cache?
+          Bundler.user_cache
+        else
+          Bundler.bundle_path.join("cache", "bundler")
+        end.join("git", git_scope)
       end
 
       def app_cache_dirname
@@ -336,7 +328,7 @@ module Bundler
 
       def load_gemspec(file)
         stub = Gem::StubSpecification.gemspec_stub(file, install_path.parent, install_path.parent)
-        stub.full_gem_path = Pathname.new(file).dirname.expand_path(root).to_s.tap{|x| x.untaint if RUBY_VERSION < "2.7" }
+        stub.full_gem_path = Pathname.new(file).dirname.expand_path(root).to_s.tap {|x| x.untaint if RUBY_VERSION < "2.7" }
         StubSpecification.from_stub(stub)
       end
 

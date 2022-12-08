@@ -9,13 +9,16 @@
 from __future__ import print_function
 import lldb
 import os
+import inspect
+import sys
 import shlex
+import platform
+import glob
 
-HEAP_PAGE_ALIGN_LOG = 14
-HEAP_PAGE_ALIGN_MASK = (~(~0 << HEAP_PAGE_ALIGN_LOG))
-HEAP_PAGE_ALIGN = (1 << HEAP_PAGE_ALIGN_LOG)
-HEAP_PAGE_SIZE = HEAP_PAGE_ALIGN
+from lldb_rb.constants import *
 
+# BEGIN FUNCTION STYLE DECLS
+# This will be refactored to use class style decls in the misc/commands dir
 class BackTrace:
     VM_FRAME_MAGIC_METHOD = 0x11110001
     VM_FRAME_MAGIC_BLOCK = 0x22220001
@@ -75,7 +78,7 @@ class BackTrace:
             pathobj = pathobj.Cast(self.tRArray)
 
             if flags & RUBY_FL_USER1:
-                len = ((flags & (RUBY_FL_USER3|RUBY_FL_USER4)) >> (RUBY_FL_USHIFT+3))
+                len = ((flags & (RUBY_FL_USER3|RUBY_FL_USER4|RUBY_FL_USER5|RUBY_FL_USER6|RUBY_FL_USER7|RUBY_FL_USER8|RUBY_FL_USER9)) >> (RUBY_FL_USHIFT+3))
                 ptr = pathobj.GetValueForExpressionPath("->as.ary")
             else:
                 len = pathobj.GetValueForExpressionPath("->as.heap.len").GetValueAsSigned()
@@ -166,6 +169,14 @@ def lldb_init(debugger):
 
     value_types = []
     g = globals()
+
+    imemo_types = target.FindFirstType('enum imemo_type')
+    enum_members = imemo_types.GetEnumMembers()
+
+    for i in range(enum_members.GetSize()):
+        member = enum_members.GetTypeEnumMemberAtIndex(i)
+        g[member.GetName()] = member.GetValueAsUnsigned()
+
     for enum in target.FindFirstGlobalVariable('ruby_dummy_gdb_enums'):
         enum = enum.GetType()
         members = enum.GetEnumMembers()
@@ -191,8 +202,7 @@ def string2cstr(rstring):
         clen = int(rstring.GetValueForExpressionPath(".as.heap.len").value, 0)
     else:
         cptr = int(rstring.GetValueForExpressionPath(".as.embed.ary").location, 0)
-        # clen = int(rstring.GetValueForExpressionPath(".as.embed.len").value, 0)
-        clen = (flags & RSTRING_EMBED_LEN_MASK) >> RSTRING_EMBED_LEN_SHIFT
+        clen = int(rstring.GetValueForExpressionPath(".as.embed.len").value, 0)
     return cptr, clen
 
 def output_string(debugger, result, rstring):
@@ -286,6 +296,9 @@ def lldb_inspect(debugger, target, result, val):
         elif flType == RUBY_T_CLASS or flType == RUBY_T_MODULE or flType == RUBY_T_ICLASS:
             result.write('T_%s: %s' % ('CLASS' if flType == RUBY_T_CLASS else 'MODULE' if flType == RUBY_T_MODULE else 'ICLASS', flaginfo))
             append_command_output(debugger, "print *(struct RClass*)%0#x" % val.GetValueAsUnsigned(), result)
+            tRClass = target.FindFirstType("struct RClass")
+            if not val.Cast(tRClass).GetChildMemberWithName("ptr").IsValid():
+                append_command_output(debugger, "print *(struct rb_classext_struct*)%0#x" % (val.GetValueAsUnsigned() + tRClass.GetByteSize()), result)
         elif flType == RUBY_T_STRING:
             result.write('T_STRING: %s' % flaginfo)
             encidx = ((flags & RUBY_ENCODING_MASK)>>RUBY_ENCODING_SHIFT)
@@ -311,7 +324,7 @@ def lldb_inspect(debugger, target, result, val):
             tRArray = target.FindFirstType("struct RArray").GetPointerType()
             val = val.Cast(tRArray)
             if flags & RUBY_FL_USER1:
-                len = ((flags & (RUBY_FL_USER3|RUBY_FL_USER4)) >> (RUBY_FL_USHIFT+3))
+                len = ((flags & (RUBY_FL_USER3|RUBY_FL_USER4|RUBY_FL_USER5|RUBY_FL_USER6|RUBY_FL_USER7|RUBY_FL_USER8|RUBY_FL_USER9)) >> (RUBY_FL_USHIFT+3))
                 ptr = val.GetValueForExpressionPath("->as.ary")
             else:
                 len = val.GetValueForExpressionPath("->as.heap.len").GetValueAsSigned()
@@ -405,9 +418,14 @@ def lldb_inspect(debugger, target, result, val):
         elif flType == RUBY_T_IMEMO:
             # I'm not sure how to get IMEMO_MASK out of lldb. It's not in globals()
             imemo_type = (flags >> RUBY_FL_USHIFT) & 0x0F # IMEMO_MASK
+
             print("T_IMEMO: ", file=result)
             append_command_output(debugger, "p (enum imemo_type) %d" % imemo_type, result)
             append_command_output(debugger, "p *(struct MEMO *) %0#x" % val.GetValueAsUnsigned(), result)
+        elif flType == RUBY_T_STRUCT:
+            tRTypedData = target.FindFirstType("struct RStruct").GetPointerType()
+            val = val.Cast(tRTypedData)
+            append_command_output(debugger, "p *(struct RStruct *) %0#x" % val.GetValueAsUnsigned(), result)
         elif flType == RUBY_T_ZOMBIE:
             tRZombie = target.FindFirstType("struct RZombie").GetPointerType()
             val = val.Cast(tRZombie)
@@ -452,19 +470,6 @@ def check_bits(page, bitmap_name, bitmap_index, bitmap_bit, v):
     else:
         return ' '
 
-def heap_page(debugger, command, ctx, result, internal_dict):
-    target = debugger.GetSelectedTarget()
-    process = target.GetProcess()
-    thread = process.GetSelectedThread()
-    frame = thread.GetSelectedFrame()
-
-    val = frame.EvaluateExpression(command)
-    page = get_page(lldb, target, val)
-    page_type = target.FindFirstType("struct heap_page").GetPointerType()
-    page.Cast(page_type)
-    append_command_output(debugger, "p (struct heap_page *) %0#x" % page.GetValueAsUnsigned(), result)
-    append_command_output(debugger, "p *(struct heap_page *) %0#x" % page.GetValueAsUnsigned(), result)
-
 def heap_page_body(debugger, command, ctx, result, internal_dict):
     target = debugger.GetSelectedTarget()
     process = target.GetProcess()
@@ -497,6 +502,8 @@ def dump_node(debugger, command, ctx, result, internal_dict):
     output_string(ctx, result, dump)
 
 def rb_backtrace(debugger, command, result, internal_dict):
+    if not ('RUBY_Qfalse' in globals()):
+        lldb_init(debugger)
     bt = BackTrace(debugger, command, result, internal_dict)
     frame = bt.frame
 
@@ -595,9 +602,13 @@ def dump_page_internal(page, target, process, thread, frame, result, debugger, h
                 try:
                     flidx = "%3d" % freelist.index(obj_addr)
                 except ValueError:
-                    flidx = '   '
+                    flidx = ' -1'
 
-            result_str = "%s idx: [%3d] freelist_idx: {%s} Addr: %0#x (flags: %0#x)" % (rb_type(flags, ruby_type_map), page_index, flidx, obj_addr, flags)
+            if flType == RUBY_T_NONE:
+                klass = obj.GetChildMemberWithName('klass').GetValueAsUnsigned()
+                result_str = "%s idx: [%3d] freelist_idx: {%s} Addr: %0#x (flags: %0#x, next: %0#x)" % (rb_type(flags, ruby_type_map), page_index, flidx, obj_addr, flags, klass)
+            else:
+                result_str = "%s idx: [%3d] freelist_idx: {%s} Addr: %0#x (flags: %0#x)" % (rb_type(flags, ruby_type_map), page_index, flidx, obj_addr, flags)
 
             if highlight == obj_addr:
                 result_str = ' '.join([result_str, "<<<<<"])
@@ -701,18 +712,37 @@ def rb_id2str(debugger, command, result, internal_dict):
         pos = (num % ID_ENTRY_UNIT) * ID_ENTRY_SIZE
         id_str = rb_ary_entry(target, ary, pos, result)
         lldb_inspect(debugger, target, result, id_str)
+# END FUNCTION STYLE DECLS
+
+
+load_dir, _ = os.path.split(os.path.realpath(__file__))
+
+for fname in glob.glob(f"{load_dir}/lldb_rb/commands/*_command.py"):
+    _, basename = os.path.split(fname)
+    mname, _ = os.path.splitext(basename)
+
+    exec(f"import lldb_rb.commands.{mname}")
 
 def __lldb_init_module(debugger, internal_dict):
+    # Register all classes that subclass RbBaseCommand
+
+    for memname, mem in inspect.getmembers(sys.modules["lldb_rb.rb_base_command"]):
+        if inspect.isclass(mem):
+            for sclass in mem.__subclasses__():
+                sclass.register_lldb_command(debugger, f"{__name__}.{sclass.__module__}")
+
+
+    ## FUNCTION INITS - These should be removed when converted to class commands
     debugger.HandleCommand("command script add -f lldb_cruby.lldb_rp rp")
     debugger.HandleCommand("command script add -f lldb_cruby.count_objects rb_count_objects")
     debugger.HandleCommand("command script add -f lldb_cruby.stack_dump_raw SDR")
     debugger.HandleCommand("command script add -f lldb_cruby.dump_node dump_node")
-    debugger.HandleCommand("command script add -f lldb_cruby.heap_page heap_page")
     debugger.HandleCommand("command script add -f lldb_cruby.heap_page_body heap_page_body")
     debugger.HandleCommand("command script add -f lldb_cruby.rb_backtrace rbbt")
     debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
     debugger.HandleCommand("command script add -f lldb_cruby.dump_page_rvalue dump_page_rvalue")
     debugger.HandleCommand("command script add -f lldb_cruby.rb_id2str rb_id2str")
 
-    lldb_init(debugger)
+    lldb_rb.rb_base_command.RbBaseCommand.lldb_init(debugger)
+
     print("lldb scripts for ruby has been installed.")

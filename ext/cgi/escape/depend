@@ -7,7 +7,6 @@ escape.o: $(hdrdir)/ruby/backward.h
 escape.o: $(hdrdir)/ruby/backward/2/assume.h
 escape.o: $(hdrdir)/ruby/backward/2/attributes.h
 escape.o: $(hdrdir)/ruby/backward/2/bool.h
-escape.o: $(hdrdir)/ruby/backward/2/gcc_version_since.h
 escape.o: $(hdrdir)/ruby/backward/2/inttypes.h
 escape.o: $(hdrdir)/ruby/backward/2/limits.h
 escape.o: $(hdrdir)/ruby/backward/2/long_long.h
@@ -16,6 +15,7 @@ escape.o: $(hdrdir)/ruby/backward/2/stdarg.h
 escape.o: $(hdrdir)/ruby/defines.h
 escape.o: $(hdrdir)/ruby/encoding.h
 escape.o: $(hdrdir)/ruby/intern.h
+escape.o: $(hdrdir)/ruby/internal/abi.h
 escape.o: $(hdrdir)/ruby/internal/anyargs.h
 escape.o: $(hdrdir)/ruby/internal/arithmetic.h
 escape.o: $(hdrdir)/ruby/internal/arithmetic/char.h

@@ -9,6 +9,7 @@
 #include "debug_counter.h"
 #include "gc.h"
 #include "internal.h"
+#include "internal/array.h"
 #include "internal/gc.h"
 #include "internal/hash.h"
 #include "internal/sanitizers.h"
@@ -59,7 +60,9 @@
 
                                           /*  K      M */
 #define TRANSIENT_HEAP_BLOCK_SIZE  (1024 *   32       ) /* 32KB int16_t */
+#ifndef TRANSIENT_HEAP_TOTAL_SIZE
 #define TRANSIENT_HEAP_TOTAL_SIZE  (1024 * 1024 *   32) /* 32 MB */
+#endif
 #define TRANSIENT_HEAP_ALLOC_MAX   (1024 *    2       ) /* 2 KB */
 #define TRANSIENT_HEAP_BLOCK_NUM   (TRANSIENT_HEAP_TOTAL_SIZE / TRANSIENT_HEAP_BLOCK_SIZE)
 #define TRANSIENT_HEAP_USABLE_SIZE (TRANSIENT_HEAP_BLOCK_SIZE - sizeof(struct transient_heap_block_header))
@@ -166,7 +169,7 @@ ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS(static void transient_heap_ptr_check(struct
 static void
 transient_heap_ptr_check(struct transient_heap *theap, VALUE obj)
 {
-    if (obj != Qundef) {
+    if (!UNDEF_P(obj)) {
         const void *ptr = transient_heap_ptr(obj, FALSE);
         TH_ASSERT(ptr == NULL || transient_header_managed_ptr_p(theap, ptr));
     }
@@ -590,7 +593,7 @@ transient_heap_ptr(VALUE obj, int error)
     switch (BUILTIN_TYPE(obj)) {
       case T_ARRAY:
         if (RARRAY_TRANSIENT_P(obj)) {
-            TH_ASSERT(!FL_TEST_RAW(obj, RARRAY_EMBED_FLAG));
+            TH_ASSERT(!ARY_EMBED_P(obj));
             ptr = RARRAY(obj)->as.heap.ptr;
         }
         break;
@@ -962,8 +965,6 @@ void
 rb_transient_heap_finish_marking(void)
 {
     ASSERT_vm_locking();
-    RUBY_DEBUG_LOG("");
-
     struct transient_heap* theap = transient_heap_get();
 
     RUBY_DEBUG_LOG("objects:%d, marked:%d",

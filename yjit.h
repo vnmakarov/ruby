@@ -15,49 +15,56 @@
 # define YJIT_STATS RUBY_DEBUG
 #endif
 
-struct rb_yjit_options {
-    // Enable compilation with YJIT
-    bool yjit_enabled;
+#if USE_YJIT && !defined(MJIT_HEADER) // MJIT and YJIT can't be enabled simultaneously
 
-    // Size of the executable memory block to allocate in MiB
-    unsigned exec_mem_size;
+// We generate x86 or arm64 assembly
+#if defined(_WIN32) ? defined(_M_AMD64) : (defined(__x86_64__) || defined(__aarch64__))
+// x86_64 platforms without mingw/msys or x64-mswin
+#else
+# error YJIT unsupported platform
+#endif
 
-    // Number of method calls after which to start generating code
-    // Threshold==1 means compile on first execution
-    unsigned call_threshold;
-
-    // Generate versions greedily until the limit is hit
-    bool greedy_versioning;
-
-    // Maximum number of versions per block
-    // 1 means always create generic versions
-    unsigned max_versions;
-
-    // Capture and print out stats
-    bool gen_stats;
-
-    // Run backend tests
-    bool test_backend;
-};
-
+// Expose these as declarations since we are building YJIT.
 bool rb_yjit_enabled_p(void);
 unsigned rb_yjit_call_threshold(void);
-
 void rb_yjit_invalidate_all_method_lookup_assumptions(void);
-void rb_yjit_method_lookup_change(VALUE klass, ID mid);
-void rb_yjit_cme_invalidate(VALUE cme);
+void rb_yjit_cme_invalidate(rb_callable_method_entry_t *cme);
 void rb_yjit_collect_vm_usage_insn(int insn);
 void rb_yjit_collect_binding_alloc(void);
 void rb_yjit_collect_binding_set(void);
 bool rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec);
-void rb_yjit_init(struct rb_yjit_options *options);
-void rb_yjit_bop_redefined(VALUE klass, const rb_method_entry_t *me, enum ruby_basic_operators bop);
-void rb_yjit_constant_state_changed(void);
-void rb_yjit_iseq_mark(const struct rb_iseq_constant_body *body);
-void rb_yjit_iseq_update_references(const struct rb_iseq_constant_body *body);
-void rb_yjit_iseq_free(const struct rb_iseq_constant_body *body);
+void rb_yjit_init(void);
+void rb_yjit_bop_redefined(int redefined_flag, enum ruby_basic_operators bop);
+void rb_yjit_constant_state_changed(ID id);
+void rb_yjit_iseq_mark(void *payload);
+void rb_yjit_iseq_update_references(void *payload);
+void rb_yjit_iseq_free(void *payload);
 void rb_yjit_before_ractor_spawn(void);
-void rb_yjit_constant_ic_update(const rb_iseq_t *iseq, IC ic);
+void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic, unsigned insn_idx);
 void rb_yjit_tracing_invalidate_all(void);
+
+#else
+// !USE_YJIT
+// In these builds, YJIT could never be turned on. Provide dummy implementations.
+
+static inline bool rb_yjit_enabled_p(void) { return false; }
+static inline unsigned rb_yjit_call_threshold(void) { return UINT_MAX; }
+static inline void rb_yjit_invalidate_all_method_lookup_assumptions(void) {}
+static inline void rb_yjit_cme_invalidate(rb_callable_method_entry_t *cme) {}
+static inline void rb_yjit_collect_vm_usage_insn(int insn) {}
+static inline void rb_yjit_collect_binding_alloc(void) {}
+static inline void rb_yjit_collect_binding_set(void) {}
+static inline bool rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec) { return false; }
+static inline void rb_yjit_init(void) {}
+static inline void rb_yjit_bop_redefined(int redefined_flag, enum ruby_basic_operators bop) {}
+static inline void rb_yjit_constant_state_changed(ID id) {}
+static inline void rb_yjit_iseq_mark(void *payload) {}
+static inline void rb_yjit_iseq_update_references(void *payload) {}
+static inline void rb_yjit_iseq_free(void *payload) {}
+static inline void rb_yjit_before_ractor_spawn(void) {}
+static inline void rb_yjit_constant_ic_update(const rb_iseq_t *const iseq, IC ic, unsigned insn_idx) {}
+static inline void rb_yjit_tracing_invalidate_all(void) {}
+
+#endif // #if USE_YJIT
 
 #endif // #ifndef YJIT_H

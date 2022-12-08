@@ -352,7 +352,7 @@ RSpec.describe "major deprecations" do
       G
 
       expect(warnings).to include(
-        "Multiple gemfiles (gems.rb and Gemfile) detected. Make sure you remove Gemfile and Gemfile.lock since bundler is ignoring them in favor of gems.rb and gems.rb.locked."
+        "Multiple gemfiles (gems.rb and Gemfile) detected. Make sure you remove Gemfile and Gemfile.lock since bundler is ignoring them in favor of gems.rb and gems.locked."
       )
 
       expect(the_bundle).not_to include_gem "rack 1.0"
@@ -414,7 +414,7 @@ RSpec.describe "major deprecations" do
 
     it "shows a deprecation", :bundler => "< 3" do
       expect(deprecations).to include(
-        "Your Gemfile contains multiple primary sources. " \
+        "Your Gemfile contains multiple global sources. " \
         "Using `source` more than once without a block is a security risk, and " \
         "may result in installing unexpected gems. To resolve this warning, use " \
         "a block to indicate which gems should come from the secondary source."
@@ -425,7 +425,7 @@ RSpec.describe "major deprecations" do
       bundle "install"
 
       expect(deprecations).to include(
-        "Your Gemfile contains multiple primary sources. " \
+        "Your Gemfile contains multiple global sources. " \
         "Using `source` more than once without a block is a security risk, and " \
         "may result in installing unexpected gems. To resolve this warning, use " \
         "a block to indicate which gems should come from the secondary source."
@@ -438,7 +438,7 @@ RSpec.describe "major deprecations" do
       bundle "install"
 
       expect(deprecations).to include(
-        "Your Gemfile contains multiple primary sources. " \
+        "Your Gemfile contains multiple global sources. " \
         "Using `source` more than once without a block is a security risk, and " \
         "may result in installing unexpected gems. To resolve this warning, use " \
         "a block to indicate which gems should come from the secondary source."
@@ -512,7 +512,7 @@ RSpec.describe "major deprecations" do
 
     it "should print a single deprecation warning" do
       expect(warnings).to include(
-        "Multiple gemfiles (gems.rb and Gemfile) detected. Make sure you remove Gemfile and Gemfile.lock since bundler is ignoring them in favor of gems.rb and gems.rb.locked."
+        "Multiple gemfiles (gems.rb and Gemfile) detected. Make sure you remove Gemfile and Gemfile.lock since bundler is ignoring them in favor of gems.rb and gems.locked."
       )
     end
   end
@@ -532,75 +532,6 @@ RSpec.describe "major deprecations" do
     end
 
     pending "fails with a helpful error", :bundler => "3"
-  end
-
-  describe Bundler::Dsl do
-    before do
-      @rubygems = double("rubygems")
-      allow(Bundler::Source::Rubygems).to receive(:new) { @rubygems }
-    end
-
-    context "with github gems" do
-      it "does not warn about removal", :bundler => "< 3" do
-        expect(Bundler.ui).not_to receive(:warn)
-        subject.gem("sparks", :github => "indirect/sparks")
-        github_uri = "https://github.com/indirect/sparks.git"
-        expect(subject.dependencies.first.source.uri).to eq(github_uri)
-      end
-
-      it "warns about removal", :bundler => "3" do
-        msg = <<-EOS
-The :github git source is deprecated, and will be removed in the future. Change any "reponame" :github sources to "username/reponame". Add this code to the top of your Gemfile to ensure it continues to work:
-
-    git_source(:github) {|repo_name| "https://github.com/\#{repo_name}.git" }
-
-        EOS
-        expect(Bundler.ui).to receive(:warn).with("[DEPRECATED] #{msg}")
-        subject.gem("sparks", :github => "indirect/sparks")
-        github_uri = "https://github.com/indirect/sparks.git"
-        expect(subject.dependencies.first.source.uri).to eq(github_uri)
-      end
-    end
-
-    context "with bitbucket gems" do
-      it "does not warn about removal", :bundler => "< 3" do
-        expect(Bundler.ui).not_to receive(:warn)
-        subject.gem("not-really-a-gem", :bitbucket => "mcorp/flatlab-rails")
-      end
-
-      it "warns about removal", :bundler => "3" do
-        msg = <<-EOS
-The :bitbucket git source is deprecated, and will be removed in the future. Add this code to the top of your Gemfile to ensure it continues to work:
-
-    git_source(:bitbucket) do |repo_name|
-      user_name, repo_name = repo_name.split("/")
-      repo_name ||= user_name
-      "https://\#{user_name}@bitbucket.org/\#{user_name}/\#{repo_name}.git"
-    end
-
-        EOS
-        expect(Bundler.ui).to receive(:warn).with("[DEPRECATED] #{msg}")
-        subject.gem("not-really-a-gem", :bitbucket => "mcorp/flatlab-rails")
-      end
-    end
-
-    context "with gist gems" do
-      it "does not warn about removal", :bundler => "< 3" do
-        expect(Bundler.ui).not_to receive(:warn)
-        subject.gem("not-really-a-gem", :gist => "1234")
-      end
-
-      it "warns about removal", :bundler => "3" do
-        msg = <<-EOS
-The :gist git source is deprecated, and will be removed in the future. Add this code to the top of your Gemfile to ensure it continues to work:
-
-    git_source(:gist) {|repo_name| "https://gist.github.com/\#{repo_name}.git" }
-
-        EOS
-        expect(Bundler.ui).to receive(:warn).with("[DEPRECATED] #{msg}")
-        subject.gem("not-really-a-gem", :gist => "1234")
-      end
-    end
   end
 
   context "bundle show" do
@@ -665,7 +596,7 @@ The :gist git source is deprecated, and will be removed in the future. Add this 
     end
 
     it "prints a deprecation warning", :bundler => "< 3" do
-      expect(deprecations).to include "The `viz` command has been moved to the `bundle-viz` gem, see https://github.com/rubygems/bundler-graph"
+      expect(deprecations).to include "The `viz` command has been renamed to `graph` and moved to a plugin. See https://github.com/rubygems/bundler-graph"
     end
 
     pending "fails with a helpful message", :bundler => "3"
