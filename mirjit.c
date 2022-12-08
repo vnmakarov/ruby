@@ -2337,7 +2337,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
           PRIxVALUE ") {\n", (VALUE)f, (VALUE)Qundef);
         O("      sp -= 3;\n");
         O("      sp[-1] = arg;\n"); /* result */
-        O("      pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[0]);
+        O("      pc += %d;\n", insn_len(insn_id));
         O("      if (state & 2) {\n"); /* state 1 or 3: switch to safe code */
         O("        pc = rb_sir_get_jump_safe_pc(cfp, pc);\n"); /*safe pc */
         O("      }\n");
@@ -2347,6 +2347,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("      sp[-2] = state + 4;\n");  /* change state += 2 */
         O("    }\n");
         O("    sp[-3] = index;\n");
+        O("    VALUE *old_sp = sp;\n");
         O("    sp--;\n"); /* remove res from iter_start or previous sir_iter_body */
         O("    self = cfp->self;\n"); /* self */
         O("    *sp = self;\n");
@@ -2362,13 +2363,15 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("      for (i = 0; i < len; i++)\n");
             O("          sp[i + 1] = aref[i];\n");
             O("      for (; i < lead_num; i++) sp[i + 1] = 0x%x;\n", (int)Qnil);
+            O("      sp += lead_num + 1;\n");
             O("    } else {\n");
         } else {
             O("    {\n");
             O("      sp[1] = arg;\n");
+            O("      sp += 2;\n");
         }
         O("    }\n");
-        O("    VALUE *argv = sp + 1;\n");
+        O("    VALUE *argv = old_sp;\n");
         O("    VALUE specval = (VALUE)cfp->ep | 1;\n");
         O("    recv = self;\n"); /* self */
         O("    VALUE *start_pc = (VALUE *)0x%"PRIxVALUE ";\n", (VALUE)(body->bbv_code + bbv_ref->bbv_start));
