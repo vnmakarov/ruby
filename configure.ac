@@ -1350,7 +1350,7 @@ AC_ARG_WITH([mir],
   [with_mir=yes])
 AS_IF([test "x$with_mir" != xno],
   [AC_CHECK_HEADERS(mir.h)
-   AS_IF([test "x$ac_cv_header_mir_h" != xno && test x"$enable_pthread" = xyes],
+   AS_IF([test "x$ac_cv_header_mir_h" != xno],
      AC_CHECK_LIB([mir], [MIR_gen_init],
        [AC_DEFINE(HAVE_LIBMIR, 1)
         LIBS="$LIBS -lmir"], [], [-lpthread]))])
