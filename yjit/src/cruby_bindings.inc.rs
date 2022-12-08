@@ -1105,7 +1105,7 @@ pub struct rb_builtin_function {
         ),
     >,
 }
-pub const VM_INSTRUCTION_SIZE: ruby_vminsn_type = 1722;
+pub const VM_INSTRUCTION_SIZE: ruby_vminsn_type = 1720;
 pub const YARVINSN_nop: ruby_vminsn_type = 0;
 pub const YARVINSN_getlocal: ruby_vminsn_type = 1;
 pub const YARVINSN_setlocal: ruby_vminsn_type = 2;
@@ -1201,12 +1201,12 @@ pub const YARVINSN_opt_regexpmatch2: ruby_vminsn_type = 91;
 pub const YARVINSN_invokebuiltin: ruby_vminsn_type = 92;
 pub const YARVINSN_opt_invokebuiltin_delegate: ruby_vminsn_type = 93;
 pub const YARVINSN_opt_invokebuiltin_delegate_leave: ruby_vminsn_type = 94;
-pub const YARVINSN_getlocal_WC_0: ruby_vminsn_type = 855;
-pub const YARVINSN_getlocal_WC_1: ruby_vminsn_type = 856;
-pub const YARVINSN_setlocal_WC_0: ruby_vminsn_type = 857;
-pub const YARVINSN_setlocal_WC_1: ruby_vminsn_type = 858;
-pub const YARVINSN_putobject_INT2FIX_0_: ruby_vminsn_type = 859;
-pub const YARVINSN_putobject_INT2FIX_1_: ruby_vminsn_type = 860;
+pub const YARVINSN_getlocal_WC_0: ruby_vminsn_type = 854;
+pub const YARVINSN_getlocal_WC_1: ruby_vminsn_type = 855;
+pub const YARVINSN_setlocal_WC_0: ruby_vminsn_type = 856;
+pub const YARVINSN_setlocal_WC_1: ruby_vminsn_type = 857;
+pub const YARVINSN_putobject_INT2FIX_0_: ruby_vminsn_type = 858;
+pub const YARVINSN_putobject_INT2FIX_1_: ruby_vminsn_type = 859;
 pub const YARVINSN_trace_nop: ruby_vminsn_type = YARVINSN_nop + VM_INSTRUCTION_SIZE / 2;
 pub const YARVINSN_trace_getlocal: ruby_vminsn_type = YARVINSN_getlocal + VM_INSTRUCTION_SIZE / 2;
 pub const YARVINSN_trace_setlocal: ruby_vminsn_type = YARVINSN_setlocal + VM_INSTRUCTION_SIZE / 2;
