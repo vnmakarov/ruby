@@ -1,3 +1,5 @@
+# **Update Dec 2022**: sir-mirjit-base and sir-mirjit branches were merged with Dec 2022 ruby trunk.
+
 # What's the branch about
 
 * The branch `sir-mirjit` is used for development of **specialized** VM insns (specialized IR or **SIR** in brief),
