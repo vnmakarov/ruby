@@ -2621,6 +2621,11 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
     if (rejit_p) {
         assert(BIN(sir_rejit_bbv) == rb_mirjit_insn_decode(&body->bbv_code[bbv->bbv_start]));
         body->bbv_code[bbv->bbv_start] = (VALUE)sir_dispatch_table[BIN(sir_bbv_start)];
+        for (pc = bbv->bbv_start; pc < bbv->bbv_bound; pc += insn_len(insn_id)) {
+            insn_id = rb_mirjit_insn_decode(&body->bbv_code[pc]);
+            if (insn_id == BIN(sir_bbv_cont))
+                body->bbv_code[pc] = (VALUE)sir_dispatch_table[BIN(sir_bbv_cont)];
+        }
         if (mirjit_debug_level >= 1) {
             fprintf (stderr, "## Rejitting BBV 0x%llx\n", (unsigned long long)bbv);
             rb_sir_print_bbv(bbv);
