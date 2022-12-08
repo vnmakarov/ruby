@@ -12,6 +12,7 @@
 #include "internal/class.h"
 #include "internal/numeric.h"
 #include "vm_callinfo.h"
+#include "shape.h"
 #define YJIT_STATS 0 /* used in vm_insnhelper.h */
 #include "vm_insnhelper.h"
 
@@ -112,6 +113,17 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "typedef double DBL;\n"
     "typedef unsigned long lindex_t;\n"
     "typedef unsigned long rb_num_t;\n"
+#if SIZEOF_SHAPE_T == 4
+#if SIZEOF_INT != 4
+# error ---->> mirjit requires int of size 4
+#endif
+    "typedef unsigned int shape_id_t;\n"
+#else
+#if SIZEOF_SHORT != 2
+# error ---->> mirjit requires short of size 2
+#endif
+    "typedef unsigned short shape_id_t;\n"
+#endif
 #if defined(_WIN32)
     "typdef long rb_atomic_t;\n"
 #else
@@ -336,6 +348,11 @@ static void gen_pop_frame(VARR(char) *buff, int res_on_stack_p) {
     /* Put interrupt check here to have non-zero pc after cfunc return: */
     O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
       (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
+}
+
+static void gen_obj_shape(VARR(char) *buff, const char *shape, const char *obj){
+    O("  %s = (shape_id_t)((*((VALUE *)((char *)%s + %d)) >> 0x%x) & 0x%lx);\n",
+      shape, obj, (int)offsetof(struct RBasic, flags), (int)SHAPE_FLAG_SHIFT, (unsigned long)SHAPE_MASK);
 }
 
 static int
@@ -2175,45 +2192,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  else\n");
         O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* false label */
         break;
-    case BIN(sir_getinlinecache):
-    case BIN(sir_spec_getinlinecache):
-#if SIZEOF_SERIAL_T > SIZEOF_VALUE
-        return FALSE;
-#else
-#define IMEMO_CONST_CACHE_SHAREABLE IMEMO_FL_USER0
-        /* struct iseq_inline_constant_cache_entry *ice = ic->entry;
-           if (ice && GET_IC_SERIAL(ice) == GET_GLOBAL_CONSTANT_STATE()
-               && ((ice->flags & IMEMO_CONST_CACHE_SHAREABLE)
-                   || (th = ec->thread_ptr) == NULL || th->ractor == th->vm->ractor.main_ractor)) {
-             if (ice->ic_cref != NULL) goto restart;
-             *sp++ = ice->value;
-             JUMP(dst);
-          } else {
-             *sp++ = Qnil;
-             JUMP(dst2);
-          } */
-        gen_insn_stat(buff, insn_id);
-        O("  pv = *(VALUE **)((char *)0x%"PRIxVALUE " + %d);\n", /* pv is ice */
-          operands[2], (int)offsetof(struct iseq_inline_constant_cache, entry));
-        O("  if (pv && *(VALUE **)((char *)pv + %d) == *(VALUE *)0x%"PRIxVALUE
-          " && ((*(VALUE *)((char *)pv + %d) & 0x%"PRIxVALUE ") || ",
-          (int)offsetof(struct iseq_inline_constant_cache_entry, ic_serial.raw),
-          (VALUE)&ruby_vm_global_constant_state,
-          (int)offsetof(struct iseq_inline_constant_cache_entry, flags),
-          (VALUE)IMEMO_CONST_CACHE_SHAREABLE);
-        gen_rb_ractor_main_p(buff, "pv2");
-        O(")) {\n");
-        O("    if (*(VALUE **)((char *)pv + %d)) goto restart;\n", /* complex case involving vm_get_cref */
-          (int)offsetof(struct iseq_inline_constant_cache_entry, ic_cref));
-        O("    *sp++ = *(VALUE **)((char *)pv + %d);\n",
-          (int)offsetof(struct iseq_inline_constant_cache_entry, value));
-        O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[0]); /* dst */
-        O("  } else {\n");
-        O("    *sp++ = 0x%x;\n", (int)Qnil);
-        O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* dst2 */
-        O("  }\n");
-        break;
-#endif
     case BIN(leave):
         gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
@@ -2250,28 +2228,22 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         // ??? general rtl insns
     case BIN(sir_getivar):
     case BIN(sir_setivar): {
-#if SIZEOF_SERIAL_T != SIZEOF_VALUE
-        return FALSE;
-#else
-        rb_serial_t class_serial = (rb_serial_t)operands[1];
+        shape_id_t shape_id = (lindex_t)operands[1];
         uint32_t index = (uint32_t)operands[0];
 
         gen_insn_stat(buff, insn_id);
         O("  val = cfp->self;\n");
-        O("  val2 = *(VALUE *)((char *)val + %d);\n", (int)offsetof(struct RBasic, klass)); /* self class */
-        O("  if (*(VALUE *)((char *)val2 + %d) != 0x%"PRIxVALUE ") goto restart;\n",
-          (int)offsetof(struct RClass, class_serial), (VALUE)class_serial);
+        O("  {\n");
+        O("    shape_id_t obj_shape_id;\n");
+        gen_obj_shape(buff, "  obj_shape_id", "val");
+        O("    if (obj_shape_id != 0x%"PRIxVALUE ") goto restart;\n", (VALUE)shape_id);
+        O("  }\n");
         if (insn_id == BIN(sir_setivar)) gen_obj_frozen(buff, "val");
         O("  if (*((VALUE *)((char *)val + %d)) & 0x%"PRIxVALUE ") {\n", /* if (RB_FL_ANY_RAW(obj, ROBJECT_EMBED)) */
           (int)offsetof(struct RBasic, flags), (VALUE)ROBJECT_EMBED);
-        /* if (index >= ROBJECT_NUMIV(val)) goto restart; pv = &ROBJECT_IVPTR(val)[index] */
-        O("    if (__builtin_expect(%u >= %u, 0)) goto restart;\n",
-          (unsigned)index, (unsigned)ROBJECT_EMBED_LEN_MAX);
         O("    pv = &((VALUE *)((char *)val + %d))[%u];\n",
           (int)offsetof(struct RObject, as.ary), (unsigned)index);
         O("  } else {\n");
-        O("    if (__builtin_expect(%u >= *(uint32_t *)((char *)val + %d), 0)) goto restart;\n",
-          (unsigned)index, (int)offsetof(struct RObject, as.heap.numiv));
         O("    pv = &(*(VALUE **)((char *)val + %d))[%u];\n",
           (int)offsetof(struct RObject, as.heap.ivptr), (unsigned)index);
         O("  }\n");
@@ -2282,44 +2254,36 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             gen_write_barrier(buff, "val", "r");
         } else {
             O("  r = *pv;\n");
-            O("  if (__builtin_expect(r == 0x%x, 0)) r = 0x%x;\n", (int)Qundef, (int)Qnil);
             O("  *sp++= r;\n");
             O("  pc += %d;\n", insn_len(insn_id));
         }
         break;
-#endif
     }
     case BIN(sir_send_ivget):
     case BIN(sir_send_ivset): {
-#if SIZEOF_SERIAL_T != SIZEOF_VALUE
-        return FALSE;
-#else
-        VALUE klass = operands[0];
+        shape_id_t shape_id = (lindex_t)operands[0];
         unsigned index = (unsigned)(lindex_t)operands[1];
         gen_insn_stat(buff, insn_id);
         O("  val = sp[%d];\n", insn_id == BIN(sir_send_ivset) ? -2 : -1); /* recv */
-        gen_class_of(buff, "val2", "val");
-        O("  if (__builtin_expect(val2 != 0x%"PRIxVALUE ", 0)) goto restart;\n", klass);
+        O("  {\n");
+        O("    shape_id_t obj_shape_id;\n");
+        gen_obj_shape(buff, "  obj_shape_id", "val");
+        O("    if (obj_shape_id != 0x%"PRIxVALUE ") goto restart;\n", (VALUE)shape_id);
+        O("  }\n");
         if (insn_id == BIN(sir_send_ivset)) {
             O("  r = sp[-1];\n"); /* val */
             gen_obj_frozen(buff, "val");
         }
         O("  if (*((VALUE *)((char *)val + %d)) & 0x%"PRIxVALUE ") {\n", /* if (RB_FL_ANY_RAW(obj, ROBJECT_EMBED)) */
           (int)offsetof(struct RBasic, flags), (VALUE)ROBJECT_EMBED);
-        /* if (index >= ROBJECT_NUMIV(val)) goto restart; pv = &ROBJECT_IVPTR(val)[index] */
-        O("    if (__builtin_expect(%u >= %u, 0)) goto restart;\n",
-          (unsigned)index, (unsigned)ROBJECT_EMBED_LEN_MAX);
         O("    pv = &((VALUE *)((char *)val + %d))[%u];\n",
           (int)offsetof(struct RObject, as.ary), (unsigned)index);
         O("  } else {\n");
-        O("    if (__builtin_expect(%u >= *(uint32_t *)((char *)val + %d), 0)) goto restart;\n",
-          (unsigned)index, (int)offsetof(struct RObject, as.heap.numiv));
         O("    pv = &(*(VALUE **)((char *)val + %d))[%u];\n",
           (int)offsetof(struct RObject, as.heap.ivptr), (unsigned)index);
         O("  }\n");
         if (insn_id == BIN(sir_send_ivget)) {
             O("  r = *pv;\n");
-            O("  if (__builtin_expect(r == 0x%x, 0)) r = 0x%x;\n", (int)Qundef, (int)Qnil);
             O("  sp[-1] = r;\n");
             O("  pc += %d;\n", insn_len(insn_id));
         } else {
@@ -2330,7 +2294,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             gen_write_barrier(buff, "val", "r");
         }
         break;
-#endif
     }
 #ifdef MIRJIT_ITER_INSNS
     case BIN(sir_iter_start): {
