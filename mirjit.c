@@ -2327,6 +2327,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         VALUE (*f)(VALUE, VALUE, VALUE, VALUE *) = (void *)operands[1];
         long argc = 1;
 
+        if (param_size > 1 && argc == 1) return false;
         gen_insn_stat(buff, insn_id);
         O("  {\n");
         O("    VALUE self, recv, index, state, arg, ary;\n");
@@ -2359,17 +2360,16 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             gen_array_aref_len(buff, "aref", "len", "ary");
             /* CHECK_VM_STACK_OVERFLOW(GET_CFP(), lead_num): */
             gen_check_overflow0(buff, "cfp", "sp", lead_num);
-            O("      if (len > lead_num) len = %d;\n", lead_num);
+            O("      if (len > %d) len = %d;\n", lead_num, lead_num);
             O("      for (i = 0; i < len; i++)\n");
             O("          sp[i + 1] = aref[i];\n");
-            O("      for (; i < lead_num; i++) sp[i + 1] = 0x%x;\n", (int)Qnil);
-            O("      sp += lead_num + 1;\n");
-            O("    } else {\n");
-        } else {
-            O("    {\n");
-            O("      sp[1] = arg;\n");
-            O("      sp += 2;\n");
+            O("      for (; i < %d; i++) sp[i + 1] = 0x%x;\n", lead_num, (int)Qnil);
+            O("      sp += %d;\n", lead_num + 1);
+            O("    } else");
         }
+        O("    {\n");
+        O("      sp[1] = arg;\n");
+        O("      sp += 2;\n");
         O("    }\n");
         O("    VALUE *argv = old_sp;\n");
         O("    VALUE specval = (VALUE)cfp->ep | 1;\n");
