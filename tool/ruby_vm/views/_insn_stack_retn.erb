@@ -36,7 +36,7 @@ insn_stack_retn(enum ruby_vminsn_type insn, const VALUE *opes)
 %   attr_function = "attr_retn_#{i.name}"
     case <%= i.bin %>:
         return <%= attr_function %>(<%=
-          i.opes.map.with_index do |v, j|
+          i.operands.map.with_index do |v, j|
             "(" + v[:type] + ")opes[#{j}]"
           end.join(", ")
         %>);

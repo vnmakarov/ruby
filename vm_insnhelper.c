@@ -5481,31 +5481,6 @@ vm_invokeblock_i(struct rb_execution_context_struct *ec,
     }
 }
 
-static const struct rb_callcache *
-vm_search_method_wrap(const struct rb_control_frame_struct *reg_cfp, struct rb_call_data *cd, VALUE recv)
-{
-    return vm_search_method((VALUE)reg_cfp->iseq, cd, recv);
-}
-
-static const struct rb_callcache *
-vm_search_invokeblock(const struct rb_control_frame_struct *reg_cfp, struct rb_call_data *cd, VALUE recv)
-{
-    static const struct rb_callcache cc = {
-        .flags = T_IMEMO | (imemo_callcache << FL_USHIFT) | VM_CALLCACHE_UNMARKABLE,
-        .klass = 0,
-        .cme_  = 0,
-        .call_ = vm_invokeblock_i,
-        .aux_  = {0},
-    };
-    return &cc;
-}
-
-enum method_explorer_type {
-    mexp_search_method,
-    mexp_search_invokeblock,
-    mexp_search_super,
-};
-
 static inline VALUE
 vm_sendish(
     struct rb_execution_context_struct *ec,

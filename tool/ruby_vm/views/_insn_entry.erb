@@ -20,7 +20,7 @@ INSN_ENTRY(<%= insn.name %>)
 <%= render_c_expr konst -%>
 % end
 %
-% insn.opes.each_with_index do |ope, i|
+% insn.operands.each_with_index do |ope, i|
 %   if ope[:type] == "DBL"
       <%= ope[:decl] %> = sir_val2dbl(GET_OPERAND(<%= i + 1 %>));
 %   else

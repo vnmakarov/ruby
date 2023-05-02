@@ -291,7 +291,7 @@ rb_iseq_mark_and_move_each_value(const rb_iseq_t *iseq, VALUE *original_iseq)
         code = body->bbv_code;
         for (unsigned int i = 0; i < ISEQ_MBITS_BUFLEN(size); i++) {
             iseq_bits_t bits = body->bbv_ref_bits[i];
-            iseq_scan_bits(i, bits, code, data);
+            iseq_scan_bits(i, bits, code, original_iseq); // ???
         }
     }
 }

@@ -111,8 +111,6 @@ COMMONOBJS    = array.$(OBJEXT) \
 		math.$(OBJEXT) \
 		memory_view.$(OBJEXT) \
 		mirjit.$(OBJEXT) \
-		mjit.$(OBJEXT) \
-		mjit_c.$(OBJEXT) \
 		rjit.$(OBJEXT) \
 		rjit_c.$(OBJEXT) \
 		node.$(OBJEXT) \
@@ -9944,6 +9942,7 @@ mirjit.$(OBJEXT): $(CCAN_DIR)/list/list.h
 mirjit.$(OBJEXT): $(CCAN_DIR)/str/str.h
 mirjit.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/array.h
+mirjit.$(OBJEXT): $(top_srcdir)/internal/basic_operators.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/bignum.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/bits.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/class.h
@@ -9955,6 +9954,7 @@ mirjit.$(OBJEXT): $(top_srcdir)/internal/imemo.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/numeric.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/serial.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/static_assert.h
+mirjit.$(OBJEXT): $(top_srcdir)/internal/variable.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/vm.h
 mirjit.$(OBJEXT): $(top_srcdir)/internal/warnings.h
 mirjit.$(OBJEXT): {$(VPATH)}assert.h
@@ -9970,7 +9970,7 @@ mirjit.$(OBJEXT): {$(VPATH)}backward/2/stdalign.h
 mirjit.$(OBJEXT): {$(VPATH)}backward/2/stdarg.h
 mirjit.$(OBJEXT): {$(VPATH)}builtin.h
 mirjit.$(OBJEXT): {$(VPATH)}config.h
-mirjit.$(OBJEXT): {$(VPATH)}darray.h
+mirjit.$(OBJEXT): {$(VPATH)}constant.h
 mirjit.$(OBJEXT): {$(VPATH)}debug_counter.h
 mirjit.$(OBJEXT): {$(VPATH)}defines.h
 mirjit.$(OBJEXT): {$(VPATH)}id.h
@@ -10018,6 +10018,7 @@ mirjit.$(OBJEXT): {$(VPATH)}internal/attr/noexcept.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/attr/noinline.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/attr/nonnull.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/attr/noreturn.h
+mirjit.$(OBJEXT): {$(VPATH)}internal/attr/packed_struct.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/attr/pure.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/attr/restrict.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/attr/returns_nonnull.h
@@ -10077,7 +10078,6 @@ mirjit.$(OBJEXT): {$(VPATH)}internal/intern/enumerator.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/intern/error.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/intern/eval.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/intern/file.h
-mirjit.$(OBJEXT): {$(VPATH)}internal/intern/gc.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/intern/hash.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/intern/io.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/intern/load.h
@@ -10108,7 +10108,6 @@ mirjit.$(OBJEXT): {$(VPATH)}internal/memory.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/method.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/module.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/newobj.h
-mirjit.$(OBJEXT): {$(VPATH)}internal/rgengc.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/scan_args.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/special_consts.h
 mirjit.$(OBJEXT): {$(VPATH)}internal/static_assert.h
@@ -10538,7 +10537,6 @@ numeric.$(OBJEXT): {$(VPATH)}thread_native.h
 numeric.$(OBJEXT): {$(VPATH)}util.h
 numeric.$(OBJEXT): {$(VPATH)}vm_core.h
 numeric.$(OBJEXT): {$(VPATH)}vm_opts.h
-object.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 object.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 object.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 object.$(OBJEXT): $(CCAN_DIR)/list/list.h
@@ -12026,11 +12024,14 @@ random.$(OBJEXT): {$(VPATH)}siphash.c
 random.$(OBJEXT): {$(VPATH)}siphash.h
 random.$(OBJEXT): {$(VPATH)}st.h
 random.$(OBJEXT): {$(VPATH)}subst.h
+random.$(OBJEXT): {$(VPATH)}thread_$(THREAD_MODEL).h
+random.$(OBJEXT): {$(VPATH)}thread_native.h
+random.$(OBJEXT): {$(VPATH)}vm_core.h
+random.$(OBJEXT): {$(VPATH)}vm_opts.h
 range.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 range.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 range.$(OBJEXT): $(CCAN_DIR)/list/list.h
 range.$(OBJEXT): $(CCAN_DIR)/str/str.h
-range.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 range.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 range.$(OBJEXT): $(top_srcdir)/internal/array.h
 range.$(OBJEXT): $(top_srcdir)/internal/basic_operators.h
@@ -12238,7 +12239,6 @@ rational.$(OBJEXT): $(CCAN_DIR)/check_type/check_type.h
 rational.$(OBJEXT): $(CCAN_DIR)/container_of/container_of.h
 rational.$(OBJEXT): $(CCAN_DIR)/list/list.h
 rational.$(OBJEXT): $(CCAN_DIR)/str/str.h
-rational.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 rational.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 rational.$(OBJEXT): $(top_srcdir)/internal/array.h
 rational.$(OBJEXT): $(top_srcdir)/internal/basic_operators.h
@@ -13811,6 +13811,7 @@ rjit.$(OBJEXT): {$(VPATH)}internal/warning_push.h
 rjit.$(OBJEXT): {$(VPATH)}internal/xmalloc.h
 rjit.$(OBJEXT): {$(VPATH)}iseq.h
 rjit.$(OBJEXT): {$(VPATH)}method.h
+rjit.$(OBJEXT): {$(VPATH)}mirjit.h
 rjit.$(OBJEXT): {$(VPATH)}missing.h
 rjit.$(OBJEXT): {$(VPATH)}node.h
 rjit.$(OBJEXT): {$(VPATH)}onigmo.h
@@ -13824,6 +13825,7 @@ rjit.$(OBJEXT): {$(VPATH)}rjit_c.h
 rjit.$(OBJEXT): {$(VPATH)}ruby_assert.h
 rjit.$(OBJEXT): {$(VPATH)}ruby_atomic.h
 rjit.$(OBJEXT): {$(VPATH)}shape.h
+rjit.$(OBJEXT): {$(VPATH)}sir.h
 rjit.$(OBJEXT): {$(VPATH)}st.h
 rjit.$(OBJEXT): {$(VPATH)}subst.h
 rjit.$(OBJEXT): {$(VPATH)}thread.h
@@ -15076,13 +15078,12 @@ sir.$(OBJEXT): $(CCAN_DIR)/list/list.h
 sir.$(OBJEXT): $(CCAN_DIR)/str/str.h
 sir.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 sir.$(OBJEXT): $(top_srcdir)/internal/array.h
+sir.$(OBJEXT): $(top_srcdir)/internal/basic_operators.h
 sir.$(OBJEXT): $(top_srcdir)/internal/compilers.h
-sir.$(OBJEXT): $(top_srcdir)/internal/gc.h
 sir.$(OBJEXT): $(top_srcdir)/internal/imemo.h
 sir.$(OBJEXT): $(top_srcdir)/internal/serial.h
 sir.$(OBJEXT): $(top_srcdir)/internal/static_assert.h
 sir.$(OBJEXT): $(top_srcdir)/internal/vm.h
-sir.$(OBJEXT): $(top_srcdir)/internal/warnings.h
 sir.$(OBJEXT): {$(VPATH)}assert.h
 sir.$(OBJEXT): {$(VPATH)}atomic.h
 sir.$(OBJEXT): {$(VPATH)}backward/2/assume.h
@@ -15095,7 +15096,6 @@ sir.$(OBJEXT): {$(VPATH)}backward/2/long_long.h
 sir.$(OBJEXT): {$(VPATH)}backward/2/stdalign.h
 sir.$(OBJEXT): {$(VPATH)}backward/2/stdarg.h
 sir.$(OBJEXT): {$(VPATH)}config.h
-sir.$(OBJEXT): {$(VPATH)}darray.h
 sir.$(OBJEXT): {$(VPATH)}defines.h
 sir.$(OBJEXT): {$(VPATH)}id.h
 sir.$(OBJEXT): {$(VPATH)}intern.h
@@ -15138,6 +15138,7 @@ sir.$(OBJEXT): {$(VPATH)}internal/attr/noexcept.h
 sir.$(OBJEXT): {$(VPATH)}internal/attr/noinline.h
 sir.$(OBJEXT): {$(VPATH)}internal/attr/nonnull.h
 sir.$(OBJEXT): {$(VPATH)}internal/attr/noreturn.h
+sir.$(OBJEXT): {$(VPATH)}internal/attr/packed_struct.h
 sir.$(OBJEXT): {$(VPATH)}internal/attr/pure.h
 sir.$(OBJEXT): {$(VPATH)}internal/attr/restrict.h
 sir.$(OBJEXT): {$(VPATH)}internal/attr/returns_nonnull.h
@@ -15197,7 +15198,6 @@ sir.$(OBJEXT): {$(VPATH)}internal/intern/enumerator.h
 sir.$(OBJEXT): {$(VPATH)}internal/intern/error.h
 sir.$(OBJEXT): {$(VPATH)}internal/intern/eval.h
 sir.$(OBJEXT): {$(VPATH)}internal/intern/file.h
-sir.$(OBJEXT): {$(VPATH)}internal/intern/gc.h
 sir.$(OBJEXT): {$(VPATH)}internal/intern/hash.h
 sir.$(OBJEXT): {$(VPATH)}internal/intern/io.h
 sir.$(OBJEXT): {$(VPATH)}internal/intern/load.h
@@ -15228,7 +15228,6 @@ sir.$(OBJEXT): {$(VPATH)}internal/memory.h
 sir.$(OBJEXT): {$(VPATH)}internal/method.h
 sir.$(OBJEXT): {$(VPATH)}internal/module.h
 sir.$(OBJEXT): {$(VPATH)}internal/newobj.h
-sir.$(OBJEXT): {$(VPATH)}internal/rgengc.h
 sir.$(OBJEXT): {$(VPATH)}internal/scan_args.h
 sir.$(OBJEXT): {$(VPATH)}internal/special_consts.h
 sir.$(OBJEXT): {$(VPATH)}internal/static_assert.h
@@ -15245,7 +15244,6 @@ sir.$(OBJEXT): {$(VPATH)}missing.h
 sir.$(OBJEXT): {$(VPATH)}node.h
 sir.$(OBJEXT): {$(VPATH)}ruby_assert.h
 sir.$(OBJEXT): {$(VPATH)}ruby_atomic.h
-sir.$(OBJEXT): {$(VPATH)}shape.h
 sir.$(OBJEXT): {$(VPATH)}sir.c
 sir.$(OBJEXT): {$(VPATH)}sir.h
 sir.$(OBJEXT): {$(VPATH)}st.h
@@ -15260,6 +15258,7 @@ sir_gen.$(OBJEXT): $(CCAN_DIR)/list/list.h
 sir_gen.$(OBJEXT): $(CCAN_DIR)/str/str.h
 sir_gen.$(OBJEXT): $(hdrdir)/ruby/ruby.h
 sir_gen.$(OBJEXT): $(top_srcdir)/internal/array.h
+sir_gen.$(OBJEXT): $(top_srcdir)/internal/basic_operators.h
 sir_gen.$(OBJEXT): $(top_srcdir)/internal/class.h
 sir_gen.$(OBJEXT): $(top_srcdir)/internal/compile.h
 sir_gen.$(OBJEXT): $(top_srcdir)/internal/compilers.h
@@ -15285,7 +15284,6 @@ sir_gen.$(OBJEXT): {$(VPATH)}backward/2/stdarg.h
 sir_gen.$(OBJEXT): {$(VPATH)}builtin.h
 sir_gen.$(OBJEXT): {$(VPATH)}config.h
 sir_gen.$(OBJEXT): {$(VPATH)}constant.h
-sir_gen.$(OBJEXT): {$(VPATH)}darray.h
 sir_gen.$(OBJEXT): {$(VPATH)}debug_counter.h
 sir_gen.$(OBJEXT): {$(VPATH)}defines.h
 sir_gen.$(OBJEXT): {$(VPATH)}id.h
@@ -15333,6 +15331,7 @@ sir_gen.$(OBJEXT): {$(VPATH)}internal/attr/noexcept.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/attr/noinline.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/attr/nonnull.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/attr/noreturn.h
+sir_gen.$(OBJEXT): {$(VPATH)}internal/attr/packed_struct.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/attr/pure.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/attr/restrict.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/attr/returns_nonnull.h
@@ -15392,7 +15391,6 @@ sir_gen.$(OBJEXT): {$(VPATH)}internal/intern/enumerator.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/intern/error.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/intern/eval.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/intern/file.h
-sir_gen.$(OBJEXT): {$(VPATH)}internal/intern/gc.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/intern/hash.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/intern/io.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/intern/load.h
@@ -15423,7 +15421,6 @@ sir_gen.$(OBJEXT): {$(VPATH)}internal/memory.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/method.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/module.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/newobj.h
-sir_gen.$(OBJEXT): {$(VPATH)}internal/rgengc.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/scan_args.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/special_consts.h
 sir_gen.$(OBJEXT): {$(VPATH)}internal/static_assert.h
