@@ -17,7 +17,7 @@ jobs:
       && github.event.check_suite.head_branch == 'master'
     runs-on: ubuntu-latest
     steps:
-      - uses: octokit/request-action@4579f9e1e690974421f9f6928a30fb448e967c60 # v2.x
+      - uses: octokit/request-action@89a1754fe82ca777b044ca8e79e9881a42f15a93 # v2.1.7
         id: get_failed_check_run
         with:
           route: GET /repos/${{ github.repository }}/check-suites/${{ github.event.check_suite.id }}/check-runs?status=completed
@@ -32,7 +32,7 @@ jobs:
         env:
           CHECK_RUNS: ${{ steps.get_failed_check_run.outputs.data }}
         run: echo "$CHECK_RUNS"
-      - uses: ruby/action-slack@b6882ea6ef8f556f9f9af9ec1220d3f1ced74acf # v3.0.0
+      - uses: ruby/action-slack@0bd85c72233cdbb6a0fe01d37aaeff1d21b5fce1 # v3.2.1
         with:
           payload: |
             {

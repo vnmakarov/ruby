@@ -111,7 +111,6 @@ RUBY_SYMBOL_EXPORT_BEGIN
 /* numeric.c (export) */
 RUBY_SYMBOL_EXPORT_END
 
-MJIT_SYMBOL_EXPORT_BEGIN
 VALUE rb_flo_div_flo(VALUE x, VALUE y);
 double ruby_float_div(double x, double y);
 double ruby_float_mod(double x, double y);
@@ -126,7 +125,6 @@ VALUE rb_int_abs(VALUE num);
 VALUE rb_int_bit_length(VALUE num);
 VALUE rb_int_uminus(VALUE num);
 VALUE rb_int_comp(VALUE num);
-MJIT_SYMBOL_EXPORT_END
 
 static inline bool
 INT_POSITIVE_P(VALUE num)

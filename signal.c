@@ -1085,16 +1085,6 @@ rb_vm_trap_exit(rb_vm_t *vm)
     }
 }
 
-void ruby_waitpid_all(rb_vm_t *); /* process.c */
-
-void
-ruby_sigchld_handler(rb_vm_t *vm)
-{
-    if (SIGCHLD_LOSSY || GET_SIGCHLD_HIT()) {
-        ruby_waitpid_all(vm);
-    }
-}
-
 /* returns true if a trap handler was run, false otherwise */
 int
 rb_signal_exec(rb_thread_t *th, int sig)
@@ -1383,7 +1373,7 @@ reserved_signal_p(int signo)
  *     Signal.trap("CLD")  { puts "Child died" }
  *     fork && Process.wait
  *
- * produces:
+ * <em>produces:</em>
  *     Terminating: 27461
  *     Child died
  *     Terminating: 27460
@@ -1535,10 +1525,10 @@ int ruby_enable_coredump = 0;
  *     # ...
  *     Process.kill("TERM", pid)
  *
- * produces:
+ * <em>produces:</em>
  *     Debug now: true
  *     Debug now: false
- *    Terminating...
+ *     Terminating...
  *
  * The list of available signal names and their interpretation is
  * system dependent. Signal delivery semantics may also vary between
@@ -1623,33 +1613,5 @@ fake_grantfd(int masterfd)
 int
 rb_grantpt(int masterfd)
 {
-    if (RUBY_SIGCHLD) {
-        rb_vm_t *vm = GET_VM();
-        int ret, e;
-
-        /*
-         * Prevent waitpid calls from Ruby by taking waitpid_lock.
-         * Pedantically, grantpt(3) is undefined if a non-default
-         * SIGCHLD handler is defined, but preventing conflicting
-         * waitpid calls ought to be sufficient.
-         *
-         * We could install the default sighandler temporarily, but that
-         * could cause SIGCHLD to be missed by other threads.  Blocking
-         * SIGCHLD won't work here, either, unless we stop and restart
-         * timer-thread (as only timer-thread sees SIGCHLD), but that
-         * seems like overkill.
-         */
-        rb_nativethread_lock_lock(&vm->waitpid_lock);
-        {
-            ret = grantpt(masterfd); /* may spawn `pt_chown' and wait on it */
-            if (ret < 0) e = errno;
-        }
-        rb_nativethread_lock_unlock(&vm->waitpid_lock);
-
-        if (ret < 0) errno = e;
-        return ret;
-    }
-    else {
-        return grantpt(masterfd);
-    }
+    return grantpt(masterfd);
 }

@@ -1,11 +1,11 @@
 # frozen_string_literal: true
+
 require_relative "deprecate"
 
 ##
 # This module contains various utility methods as module methods.
 
 module Gem::Util
-
   ##
   # Zlib::GzipReader wrapper that unzips +data+.
 
@@ -84,7 +84,11 @@ module Gem::Util
 
     here = File.expand_path directory
     loop do
-      Dir.chdir here, &block rescue Errno::EACCES
+      begin
+        Dir.chdir here, &block
+      rescue StandardError
+        Errno::EACCES
+      end
 
       new_here = File.expand_path("..", here)
       return if new_here == here # toplevel
@@ -97,11 +101,7 @@ module Gem::Util
   # returning absolute paths to the matching files.
 
   def self.glob_files_in_dir(glob, base_path)
-    if RUBY_VERSION >= "2.5"
-      Dir.glob(glob, base: base_path).map! {|f| File.expand_path(f, base_path) }
-    else
-      Dir.glob(File.expand_path(glob, base_path))
-    end
+    Dir.glob(glob, base: base_path).map! {|f| File.expand_path(f, base_path) }
   end
 
   ##
@@ -115,5 +115,4 @@ module Gem::Util
       path
     end
   end
-
 end

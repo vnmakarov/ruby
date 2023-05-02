@@ -36,7 +36,7 @@ RSpec.describe "bundle install" do
         gem "bundler", "0.9.1"
       G
 
-      nice_error = <<-E.strip.gsub(/^ {8}/, "")
+      nice_error = <<~E.strip
         Could not find compatible versions
 
         Because the current Bundler version (#{Bundler::VERSION}) does not satisfy bundler = 0.9.1
@@ -56,7 +56,7 @@ RSpec.describe "bundle install" do
         gem "bundler", "~> 0.8"
       G
 
-      nice_error = <<-E.strip.gsub(/^ {8}/, "")
+      nice_error = <<~E.strip
         Could not find compatible versions
 
         Because rails >= 3.0 depends on bundler >= 0.9.0.pre
@@ -79,7 +79,7 @@ RSpec.describe "bundle install" do
         gem "bundler", "0.9.2"
       G
 
-      nice_error = <<-E.strip.gsub(/^ {8}/, "")
+      nice_error = <<~E.strip
         Could not find compatible versions
 
         Because the current Bundler version (#{Bundler::VERSION}) does not satisfy bundler = 0.9.2
@@ -149,7 +149,7 @@ RSpec.describe "bundle install" do
         gem "rails_pinned_to_old_activesupport"
       G
 
-      nice_error = <<-E.strip.gsub(/^ {8}/, "")
+      nice_error = <<~E.strip
         Could not find compatible versions
 
         Because every version of rails_pinned_to_old_activesupport depends on activesupport = 1.2.3
@@ -177,7 +177,7 @@ RSpec.describe "bundle install" do
         gem "activesupport", "2.3.5"
       G
 
-      nice_error = <<-E.strip.gsub(/^ {8}/, "")
+      nice_error = <<~E.strip
         Could not find compatible versions
 
         Because every version of rails_pinned_to_old_activesupport depends on activesupport = 1.2.3
@@ -207,6 +207,33 @@ RSpec.describe "bundle install" do
       G
 
       expect(out).to include("Installing activesupport 1.2.3 (was 2.3.2)")
+      expect(err).to be_empty
+    end
+
+    it "prints the previous version when switching to a previously downloaded gem" do
+      build_repo4 do
+        build_gem "rails", "7.0.3"
+        build_gem "rails", "7.0.4"
+      end
+
+      bundle "config set path.system true"
+
+      install_gemfile <<-G
+        source "#{file_uri_for(gem_repo4)}"
+        gem 'rails', "7.0.4"
+      G
+
+      install_gemfile <<-G
+        source "#{file_uri_for(gem_repo4)}"
+        gem 'rails', "7.0.3"
+      G
+
+      install_gemfile <<-G
+        source "#{file_uri_for(gem_repo4)}"
+        gem 'rails', "7.0.4"
+      G
+
+      expect(out).to include("Using rails 7.0.4 (was 7.0.3)")
       expect(err).to be_empty
     end
 

@@ -587,10 +587,9 @@ RSpec.describe "major deprecations" do
     pending "fails with a helpful message", :bundler => "3"
   end
 
-  context "bundle viz" do
+  context "bundle viz", :realworld do
     before do
-      graphviz_version = RUBY_VERSION >= "2.4" ? "1.2.5" : "1.2.4"
-      realworld_system_gems "ruby-graphviz --version #{graphviz_version}"
+      realworld_system_gems "ruby-graphviz --version 1.2.5"
       create_file "gems.rb", "source \"#{file_uri_for(gem_repo1)}\""
       bundle "viz"
     end

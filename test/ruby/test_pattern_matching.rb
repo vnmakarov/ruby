@@ -9,14 +9,14 @@ class TestPatternMatching < Test::Unit::TestCase
   end
 
   def setup
-    if defined?(DidYouMean)
+    if defined?(DidYouMean.formatter=nil)
       @original_formatter = DidYouMean.formatter
       DidYouMean.formatter = NullFormatter.new
     end
   end
 
   def teardown
-    if defined?(DidYouMean)
+    if defined?(DidYouMean.formatter=nil)
       DidYouMean.formatter = @original_formatter
     end
   end
@@ -464,6 +464,8 @@ END
         true
       end
     end
+
+    assert_valid_syntax("1 in ^(1\n)")
   end
 
   def test_array_pattern
@@ -798,6 +800,10 @@ END
         true
       end
     end
+
+    assert_syntax_error(%q{
+      0 => [a, *a]
+    }, /duplicated variable name/)
   end
 
   def test_find_pattern
@@ -866,6 +872,10 @@ END
         false
       end
     end
+
+    assert_syntax_error(%q{
+      0 => [*a, a, b, *b]
+    }, /duplicated variable name/)
   end
 
   def test_hash_pattern

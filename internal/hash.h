@@ -73,6 +73,8 @@ VALUE rb_hash_default_value(VALUE hash, VALUE key);
 VALUE rb_hash_set_default_proc(VALUE hash, VALUE proc);
 long rb_dbl_long_hash(double d);
 st_table *rb_init_identtable(void);
+st_index_t rb_any_hash(VALUE a);
+int rb_any_cmp(VALUE a, VALUE b);
 VALUE rb_to_hash_type(VALUE obj);
 VALUE rb_hash_key_str(VALUE);
 VALUE rb_hash_values(VALUE hash);
@@ -82,7 +84,6 @@ VALUE rb_hash_set_pair(VALUE hash, VALUE pair);
 int rb_hash_stlike_delete(VALUE hash, st_data_t *pkey, st_data_t *pval);
 int rb_hash_stlike_foreach_with_replace(VALUE hash, st_foreach_check_callback_func *func, st_update_callback_func *replace, st_data_t arg);
 int rb_hash_stlike_update(VALUE hash, st_data_t key, st_update_callback_func *func, st_data_t arg);
-extern st_table *rb_hash_st_table(VALUE hash);
 VALUE rb_ident_hash_new_with_size(st_index_t size);
 
 static inline unsigned RHASH_AR_TABLE_SIZE_RAW(VALUE h);
@@ -106,7 +107,6 @@ VALUE rb_ident_hash_new(void);
 int rb_hash_stlike_foreach(VALUE hash, st_foreach_callback_func *func, st_data_t arg);
 RUBY_SYMBOL_EXPORT_END
 
-MJIT_SYMBOL_EXPORT_BEGIN
 VALUE rb_hash_new_with_size(st_index_t size);
 VALUE rb_hash_resurrect(VALUE hash);
 int rb_hash_stlike_lookup(VALUE hash, st_data_t key, st_data_t *pval);
@@ -116,33 +116,8 @@ VALUE rb_hash_compare_by_id_p(VALUE hash);
 
 st_table *rb_hash_tbl_raw(VALUE hash, const char *file, int line);
 #define RHASH_TBL_RAW(h) rb_hash_tbl_raw(h, __FILE__, __LINE__)
-MJIT_SYMBOL_EXPORT_END
 
 VALUE rb_hash_compare_by_id(VALUE hash);
-
-#if 0 /* for debug */
-
-static inline bool
-RHASH_AR_TABLE_P(VALUE h)
-{
-    extern int rb_hash_ar_table_p(VALUE hash);
-    return rb_hash_ar_table_p(h)
-}
-
-static inline struct ar_table_struct *
-RHASH_AR_TABLE(VALUE h)
-{
-    extern struct ar_table_struct *rb_hash_ar_table(VALUE hash);
-    return rb_hash_ar_table(h)
-}
-
-static inline st_table *
-RHASH_ST_TABLE(VALUE h)
-{
-    return rb_hash_st_table(h)
-}
-
-#else
 
 static inline bool
 RHASH_AR_TABLE_P(VALUE h)
@@ -161,8 +136,6 @@ RHASH_ST_TABLE(VALUE h)
 {
     return RHASH(h)->as.st;
 }
-
-#endif
 
 static inline VALUE
 RHASH_IFNONE(VALUE h)
@@ -202,8 +175,8 @@ RHASH_ST_SIZE(VALUE h)
 static inline void
 RHASH_ST_CLEAR(VALUE h)
 {
+    RHASH(h)->as.st = NULL;
     FL_UNSET_RAW(h, RHASH_ST_TABLE_FLAG);
-    RHASH(h)->as.ar = NULL;
 }
 
 static inline unsigned

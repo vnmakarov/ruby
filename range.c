@@ -534,7 +534,11 @@ range_step(int argc, VALUE *argv, VALUE range)
                 rb_raise(rb_eTypeError, "can't iterate from %s",
                          rb_obj_classname(b));
             }
-            range_each_func(range, step_i, (VALUE)iter);
+            if (!NIL_P(e))
+                range_each_func(range, step_i, (VALUE)iter);
+            else
+                for (;; b = rb_funcallv(b, id_succ, 0, 0))
+                    step_i(b, (VALUE)iter);
         }
     }
     return range;
@@ -837,7 +841,6 @@ range_size(VALUE range)
  *    (1...4).to_a    # => [1, 2, 3]
  *    ('a'..'d').to_a # => ["a", "b", "c", "d"]
  *
- *  Range#entries is an alias for Range#to_a.
  */
 
 static VALUE
@@ -1299,10 +1302,9 @@ range_min(int argc, VALUE *argv, VALUE range)
         return range_first(argc, argv, range);
     }
     else {
-        struct cmp_opt_data cmp_opt = { 0, 0 };
         VALUE b = RANGE_BEG(range);
         VALUE e = RANGE_END(range);
-        int c = NIL_P(e) ? -1 : OPTIMIZED_CMP(b, e, cmp_opt);
+        int c = NIL_P(e) ? -1 : OPTIMIZED_CMP(b, e);
 
         if (c > 0 || (c == 0 && EXCL(range)))
             return Qnil;
@@ -1410,8 +1412,7 @@ range_max(int argc, VALUE *argv, VALUE range)
         return rb_call_super(argc, argv);
     }
     else {
-        struct cmp_opt_data cmp_opt = { 0, 0 };
-        int c = NIL_P(b) ? -1 : OPTIMIZED_CMP(b, e, cmp_opt);
+        int c = NIL_P(b) ? -1 : OPTIMIZED_CMP(b, e);
 
         if (c > 0)
             return Qnil;
@@ -1760,8 +1761,6 @@ range_eqq(VALUE range, VALUE val)
  *    ('a'..'d').cover?('cc')   # => true
  *
  *  Related: Range#cover?.
- *
- *  Range#member? is an alias for Range#include?.
  */
 
 static VALUE
@@ -1772,6 +1771,39 @@ range_include(VALUE range, VALUE val)
     return rb_call_super(1, &val);
 }
 
+static inline bool
+range_integer_edge_p(VALUE beg, VALUE end)
+{
+    return (!NIL_P(rb_check_to_integer(beg, "to_int")) ||
+            !NIL_P(rb_check_to_integer(end, "to_int")));
+}
+
+static inline bool
+range_string_edge_p(VALUE beg, VALUE end)
+{
+    return RB_TYPE_P(beg, T_STRING) || RB_TYPE_P(end, T_STRING);
+}
+
+static inline bool
+range_string_range_p(VALUE beg, VALUE end)
+{
+    return RB_TYPE_P(beg, T_STRING) && RB_TYPE_P(end, T_STRING);
+}
+
+static inline VALUE
+range_include_fallback(VALUE beg, VALUE end, VALUE val)
+{
+    if (NIL_P(beg) && NIL_P(end)) {
+        if (linear_object_p(val)) return Qtrue;
+    }
+
+    if (NIL_P(beg) || NIL_P(end)) {
+        rb_raise(rb_eTypeError, "cannot determine inclusion in beginless/endless ranges");
+    }
+
+    return Qundef;
+}
+
 static VALUE
 range_string_cover_internal(VALUE range, VALUE val)
 {
@@ -1780,13 +1812,11 @@ range_string_cover_internal(VALUE range, VALUE val)
     int nv = FIXNUM_P(beg) || FIXNUM_P(end) ||
              linear_object_p(beg) || linear_object_p(end);
 
-    if (nv ||
-        !NIL_P(rb_check_to_integer(beg, "to_int")) ||
-        !NIL_P(rb_check_to_integer(end, "to_int"))) {
+    if (nv || range_integer_edge_p(beg, end)) {
         return r_cover_p(range, beg, end, val);
     }
-    else if (RB_TYPE_P(beg, T_STRING) || RB_TYPE_P(end, T_STRING)) {
-        if (RB_TYPE_P(beg, T_STRING) && RB_TYPE_P(end, T_STRING)) {
+    else if (range_string_edge_p(beg, end)) {
+        if (range_string_range_p(beg, end)) {
             return r_cover_p(range, beg, end, val);
         }
         if (NIL_P(beg)) {
@@ -1804,11 +1834,7 @@ range_string_cover_internal(VALUE range, VALUE val)
         }
     }
 
-    if (NIL_P(beg) || NIL_P(end)) {
-        rb_raise(rb_eTypeError, "cannot determine inclusion in beginless/endless ranges");
-    }
-
-    return Qundef;
+    return range_include_fallback(beg, end, val);
 }
 
 static VALUE
@@ -1819,20 +1845,14 @@ range_include_internal(VALUE range, VALUE val)
     int nv = FIXNUM_P(beg) || FIXNUM_P(end) ||
              linear_object_p(beg) || linear_object_p(end);
 
-    if (nv ||
-        !NIL_P(rb_check_to_integer(beg, "to_int")) ||
-        !NIL_P(rb_check_to_integer(end, "to_int"))) {
+    if (nv || range_integer_edge_p(beg, end)) {
         return r_cover_p(range, beg, end, val);
     }
-    else if (RB_TYPE_P(beg, T_STRING) && RB_TYPE_P(end, T_STRING)) {
+    else if (range_string_range_p(beg, end)) {
         return rb_str_include_range_p(beg, end, val, RANGE_EXCL(range));
     }
 
-    if (NIL_P(beg) || NIL_P(end)) {
-        rb_raise(rb_eTypeError, "cannot determine inclusion in beginless/endless ranges");
-    }
-
-    return Qundef;
+    return range_include_fallback(beg, end, val);
 }
 
 static int r_cover_range_p(VALUE range, VALUE beg, VALUE end, VALUE val);
@@ -1917,48 +1937,48 @@ static int r_cover_range_p(VALUE range, VALUE beg, VALUE end, VALUE val);
  *  - An internal call to <tt><=></tt> returns +nil+;
  *    that is, the operands are not comparable.
  *
- * Beginless ranges cover all values of the same type before the end,
- * excluding the end for exclusive ranges. Beginless ranges cover
- * ranges that end before the end of the beginless range, or at the
- * end of the beginless range for inclusive ranges.
+ *  Beginless ranges cover all values of the same type before the end,
+ *  excluding the end for exclusive ranges. Beginless ranges cover
+ *  ranges that end before the end of the beginless range, or at the
+ *  end of the beginless range for inclusive ranges.
  *
- *    (..2).cover?(1)     # => true
- *    (..2).cover?(2)     # => true
- *    (..2).cover?(3)     # => false
- *    (...2).cover?(2)    # => false
- *    (..2).cover?("2")   # => false
- *    (..2).cover?(..2)   # => true
- *    (..2).cover?(...2)  # => true
- *    (..2).cover?(.."2") # => false
- *    (...2).cover?(..2)  # => false
+ *     (..2).cover?(1)     # => true
+ *     (..2).cover?(2)     # => true
+ *     (..2).cover?(3)     # => false
+ *     (...2).cover?(2)    # => false
+ *     (..2).cover?("2")   # => false
+ *     (..2).cover?(..2)   # => true
+ *     (..2).cover?(...2)  # => true
+ *     (..2).cover?(.."2") # => false
+ *     (...2).cover?(..2)  # => false
  *
- * Endless ranges cover all values of the same type after the
- * beginning. Endless exclusive ranges do not cover endless
- * inclusive ranges.
+ *  Endless ranges cover all values of the same type after the
+ *  beginning. Endless exclusive ranges do not cover endless
+ *  inclusive ranges.
  *
- *    (2..).cover?(1)     # => false
- *    (2..).cover?(3)     # => true
- *    (2...).cover?(3)    # => true
- *    (2..).cover?(2)     # => true
- *    (2..).cover?("2")   # => false
- *    (2..).cover?(2..)   # => true
- *    (2..).cover?(2...)  # => true
- *    (2..).cover?("2"..) # => false
- *    (2...).cover?(2..)  # => false
- *    (2...).cover?(3...) # => true
- *    (2...).cover?(3..)  # => false
- *    (3..).cover?(2..)   # => false
+ *     (2..).cover?(1)     # => false
+ *     (2..).cover?(3)     # => true
+ *     (2...).cover?(3)    # => true
+ *     (2..).cover?(2)     # => true
+ *     (2..).cover?("2")   # => false
+ *     (2..).cover?(2..)   # => true
+ *     (2..).cover?(2...)  # => true
+ *     (2..).cover?("2"..) # => false
+ *     (2...).cover?(2..)  # => false
+ *     (2...).cover?(3...) # => true
+ *     (2...).cover?(3..)  # => false
+ *     (3..).cover?(2..)   # => false
  *
- * Ranges that are both beginless and endless cover all values and
- * ranges, and return true for all arguments, with the exception that
- * beginless and endless exclusive ranges do not cover endless
- * inclusive ranges.
+ *  Ranges that are both beginless and endless cover all values and
+ *  ranges, and return true for all arguments, with the exception that
+ *  beginless and endless exclusive ranges do not cover endless
+ *  inclusive ranges.
  *
- *    (nil...).cover?(Object.new) # => true
- *    (nil...).cover?(nil...)     # => true
- *    (nil..).cover?(nil...)      # => true
- *    (nil...).cover?(nil..)      # => false
- *    (nil...).cover?(1..)        # => false
+ *     (nil...).cover?(Object.new) # => true
+ *     (nil...).cover?(nil...)     # => true
+ *     (nil..).cover?(nil...)      # => true
+ *     (nil...).cover?(nil..)      # => false
+ *     (nil...).cover?(1..)        # => false
  *
  *  Related: Range#include?.
  *

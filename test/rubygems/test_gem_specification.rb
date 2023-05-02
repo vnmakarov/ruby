@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require "benchmark"
 require_relative "helper"
 require "date"
@@ -10,7 +11,7 @@ require "rubygems/installer"
 require "rubygems/platform"
 
 class TestGemSpecification < Gem::TestCase
-  LEGACY_YAML_SPEC = <<-EOF.freeze
+  LEGACY_YAML_SPEC = <<-EOF
 --- !ruby/object:Gem::Specification
 rubygems_version: "1.0"
 name: keyedlist
@@ -29,7 +30,7 @@ email: flgr@ccan.de
 has_rdoc: true
   EOF
 
-  LEGACY_RUBY_SPEC = <<-EOF.freeze
+  LEGACY_RUBY_SPEC = <<-EOF
 Gem::Specification.new do |s|
   s.name = %q{keyedlist}
   s.version = %q{0.4.0}
@@ -691,7 +692,7 @@ end
       version
     ]
 
-    actual_value = Gem::Specification.attribute_names.map {|a| a.to_s }.sort
+    actual_value = Gem::Specification.attribute_names.map(&:to_s).sort
 
     assert_equal expected_value, actual_value
   end
@@ -804,13 +805,15 @@ dependencies: []
       end
 
       full_path.taint
-      loader = Thread.new { $SAFE = 1; Gem::Specification.load full_path }
+      loader = Thread.new do
+        $SAFE = 1
+        Gem::Specification.load full_path
+      end
       spec = loader.value
 
       @a2.files.clear
 
       assert_equal @a2, spec
-
     ensure
       $SAFE = 0
     end
@@ -962,13 +965,13 @@ dependencies: []
     install_specs @a1
 
     assert_includes Gem::Specification.all_names, "a-1"
-    assert_includes Gem::Specification.stubs.map {|s| s.full_name }, "a-1"
+    assert_includes Gem::Specification.stubs.map(&:full_name), "a-1"
 
     uninstall_gem @a1
     Gem::Specification.reset
 
     refute_includes Gem::Specification.all_names, "a-1"
-    refute_includes Gem::Specification.stubs.map {|s| s.full_name }, "a-1"
+    refute_includes Gem::Specification.stubs.map(&:full_name), "a-1"
   end
 
   def test_self_remove_spec_removed
@@ -983,7 +986,7 @@ dependencies: []
     Gem::Specification.reset
 
     refute_includes Gem::Specification.all_names, "a-1"
-    refute_includes Gem::Specification.stubs.map {|s| s.full_name }, "a-1"
+    refute_includes Gem::Specification.stubs.map(&:full_name), "a-1"
   end
 
   def test_self_stubs_for_lazy_loading
@@ -995,14 +998,14 @@ dependencies: []
     save_gemspec("a-1", "1", dir_standard_specs) {|s| s.name = "a" }
     save_gemspec("b-1", "1", dir_standard_specs) {|s| s.name = "b" }
 
-    assert_equal ["a-1"], Gem::Specification.stubs_for("a").map {|s| s.full_name }
+    assert_equal ["a-1"], Gem::Specification.stubs_for("a").map(&:full_name)
     assert_equal 1, Gem::Specification.class_variable_get(:@@stubs_by_name).length
-    assert_equal ["b-1"], Gem::Specification.stubs_for("b").map {|s| s.full_name }
+    assert_equal ["b-1"], Gem::Specification.stubs_for("b").map(&:full_name)
     assert_equal 2, Gem::Specification.class_variable_get(:@@stubs_by_name).length
 
     assert_equal(
-      Gem::Specification.stubs_for("a").map {|s| s.object_id },
-      Gem::Specification.stubs_for("a").map {|s| s.object_id }
+      Gem::Specification.stubs_for("a").map(&:object_id),
+      Gem::Specification.stubs_for("a").map(&:object_id)
     )
 
     Gem.loaded_specs.delete "a"
@@ -1015,7 +1018,7 @@ dependencies: []
 
     save_gemspec("b-1", "1", File.join(Gem.dir, "specifications")) {|s| s.name = "b" }
 
-    assert_equal [], Gem::Specification.stubs_for("b").map {|s| s.full_name }
+    assert_equal [], Gem::Specification.stubs_for("b").map(&:full_name)
   end
 
   def test_self_stubs_for_mult_platforms
@@ -1034,7 +1037,7 @@ dependencies: []
     v   = "1.1.1"
     platforms = ["x86-mingw32", "x64-mingw32"]
 
-    #create specs
+    # create specs
     platforms.each do |plat|
       spec = Gem::Specification.new(gem, v) {|s| s.platform = plat }
       File.open File.join(user_spec_dir, "#{gem}-#{v}-#{plat}.gemspec"), "w" do |io|
@@ -1199,7 +1202,7 @@ dependencies: []
       s.version = "1"
     end
 
-    spec.instance_variable_set :@licenses, (class << (Object.new);self;end)
+    spec.instance_variable_set :@licenses, (class << Object.new;self;end)
     spec.loaded_from = "/path/to/file"
 
     e = assert_raise Gem::FormatException do
@@ -1252,7 +1255,7 @@ dependencies: []
       awesome.add_dependency :gem_name
     end
 
-    assert_equal %w[true gem_name], gem.dependencies.map {|dep| dep.name }
+    assert_equal %w[true gem_name], gem.dependencies.map(&:name)
   end
 
   def test_add_dependency_from_existing_dependency
@@ -1322,9 +1325,7 @@ dependencies: []
 
     assert_empty @ext.build_args
 
-    File.open @ext.build_info_file, "w" do |io|
-      io.puts
-    end
+    File.open @ext.build_info_file, "w", &:puts
 
     assert_empty @ext.build_args
 
@@ -1444,15 +1445,15 @@ dependencies: []
     end
 
     FileUtils.mkdir_p File.join @ext.base_dir, "extensions"
-    FileUtils.chmod 0555, @ext.base_dir
-    FileUtils.chmod 0555, File.join(@ext.base_dir, "extensions")
+    FileUtils.chmod 0o555, @ext.base_dir
+    FileUtils.chmod 0o555, File.join(@ext.base_dir, "extensions")
 
     @ext.build_extensions
     assert_path_not_exist @ext.extension_dir
   ensure
-    unless ($DEBUG || win_platform? || Process.uid.zero? || Gem.java_platform?)
-      FileUtils.chmod 0755, File.join(@ext.base_dir, "extensions")
-      FileUtils.chmod 0755, @ext.base_dir
+    unless $DEBUG || Gem.win_platform? || Process.uid.zero? || Gem.java_platform?
+      FileUtils.chmod 0o755, File.join(@ext.base_dir, "extensions")
+      FileUtils.chmod 0o755, @ext.base_dir
     end
   end
 
@@ -1477,14 +1478,14 @@ dependencies: []
     end
 
     FileUtils.rm_r File.join @gemhome, "extensions"
-    FileUtils.chmod 0555, @gemhome
+    FileUtils.chmod 0o555, @gemhome
 
     @ext.build_extensions
 
     gem_make_out = File.join @ext.extension_dir, "gem_make.out"
     assert_path_not_exist gem_make_out
   ensure
-    FileUtils.chmod 0755, @gemhome
+    FileUtils.chmod 0o755, @gemhome
   end
 
   def test_build_extensions_none
@@ -1539,7 +1540,7 @@ dependencies: []
       refute @ext.contains_requirable_file? "nonexistent"
     end
 
-    expected = "Ignoring ext-1 because its extensions are not built. " +
+    expected = "Ignoring ext-1 because its extensions are not built. " \
                "Try: gem pristine ext --version 1\n"
 
     assert_equal expected, err
@@ -1592,12 +1593,12 @@ dependencies: []
 
   def test_date_tolerates_hour_sec_zulu
     @a1.date = "2012-01-12 11:22:33.4444444 Z"
-    assert_equal Time.utc(2012,01,12,0,0,0), @a1.date
+    assert_equal Time.utc(2012,1,12,0,0,0), @a1.date
   end
 
   def test_date_tolerates_hour_sec_and_timezone
     @a1.date = "2012-01-12 11:22:33.4444444 +02:33"
-    assert_equal Time.utc(2012,01,12,0,0,0), @a1.date
+    assert_equal Time.utc(2012,1,12,0,0,0), @a1.date
   end
 
   def test_date_use_env_source_date_epoch
@@ -1684,8 +1685,8 @@ dependencies: []
   end
 
   def test_extension_dir
-    enable_shared, RbConfig::CONFIG["ENABLE_SHARED"] =
-      RbConfig::CONFIG["ENABLE_SHARED"], "no"
+    enable_shared = RbConfig::CONFIG["ENABLE_SHARED"]
+    RbConfig::CONFIG["ENABLE_SHARED"] = "no"
 
     ext_spec
 
@@ -1701,11 +1702,11 @@ dependencies: []
   end
 
   def test_extension_dir_override
-    enable_shared, RbConfig::CONFIG["ENABLE_SHARED"] =
-      RbConfig::CONFIG["ENABLE_SHARED"], "no"
+    enable_shared = RbConfig::CONFIG["ENABLE_SHARED"]
+    RbConfig::CONFIG["ENABLE_SHARED"] = "no"
 
     class << Gem
-      alias orig_default_ext_dir_for default_ext_dir_for
+      alias_method :orig_default_ext_dir_for, :default_ext_dir_for
 
       remove_method :default_ext_dir_for
 
@@ -1727,7 +1728,7 @@ dependencies: []
     class << Gem
       remove_method :default_ext_dir_for
 
-      alias default_ext_dir_for orig_default_ext_dir_for
+      alias_method :default_ext_dir_for, :orig_default_ext_dir_for
     end
   end
 
@@ -1839,7 +1840,7 @@ dependencies: []
   end
 
   def test_full_gem_path_double_slash
-    gemhome = @gemhome.to_s.sub(/\w\//, '\&/')
+    gemhome = @gemhome.to_s.sub(%r{\w/}, '\&/')
     @a1.loaded_from = File.join gemhome, "specifications", @a1.spec_name
 
     expected = File.join @gemhome, "gems", @a1.full_name
@@ -1857,7 +1858,7 @@ dependencies: []
     @a1.instance_variable_set :@new_platform, "mswin32"
     assert_equal "a-1-mswin32", @a1.full_name, "legacy"
 
-    return if win_platform?
+    return if Gem.win_platform?
 
     @a1 = Gem::Specification.new "a", 1
     @a1.platform = "current"
@@ -1971,8 +1972,8 @@ dependencies: []
     test_cases = {
       "i386-mswin32" => ["x86", "mswin32", "60"],
       "i386-mswin32_80" => ["x86", "mswin32", "80"],
-      "i386-mingw32" => ["x86", "mingw32", nil ],
-      "x86-darwin8" => ["x86", "darwin", "8" ],
+      "i386-mingw32" => ["x86", "mingw32", nil],
+      "x86-darwin8" => ["x86", "darwin", "8"],
     }
 
     test_cases.each do |arch, expected|
@@ -2186,7 +2187,7 @@ dependencies: []
 
     expected = %w[rake jabber4r pqa]
 
-    assert_equal expected, @c1.runtime_dependencies.map {|d| d.name }
+    assert_equal expected, @c1.runtime_dependencies.map(&:name)
   end
 
   def test_spaceship_name
@@ -2194,7 +2195,7 @@ dependencies: []
     s2 = util_spec "b", "1"
 
     assert_equal(-1, (s1 <=> s2))
-    assert_equal(0, (s1 <=> s1))
+    assert_equal(0, (s1 <=> s1)) # rubocop:disable Lint/BinaryOperatorWithIdenticalOperands
     assert_equal(1, (s2 <=> s1))
   end
 
@@ -2205,7 +2206,7 @@ dependencies: []
     end
 
     assert_equal(-1, (s1 <=> s2))
-    assert_equal(0, (s1 <=> s1))
+    assert_equal(0, (s1 <=> s1)) # rubocop:disable Lint/BinaryOperatorWithIdenticalOperands
     assert_equal(1, (s2 <=> s1))
   end
 
@@ -2214,7 +2215,7 @@ dependencies: []
     s2 = util_spec "a", "2"
 
     assert_equal(-1, (s1 <=> s2))
-    assert_equal(0, (s1 <=> s1))
+    assert_equal(0, (s1 <=> s1)) # rubocop:disable Lint/BinaryOperatorWithIdenticalOperands
     assert_equal(1, (s2 <=> s1))
   end
 
@@ -2379,7 +2380,7 @@ end
 
     expected = <<-SPEC
 # -*- encoding: utf-8 -*-
-# stub: a 1 #{win_platform? ? "x86-mswin32-60" : "x86-darwin-8"} #{stub_require_paths}
+# stub: a 1 #{Gem.win_platform? ? "x86-mswin32-60" : "x86-darwin-8"} #{stub_require_paths}
 # stub: #{extensions}
 
 Gem::Specification.new do |s|
@@ -2438,13 +2439,13 @@ end
 
   def test_to_ruby_nested_hash
     metadata = {}
-    metadata[metadata] = metadata
+    metadata[:metadata] = {}
 
     @a2.metadata = metadata
 
     ruby = @a2.to_ruby
 
-    assert_match %r%^  s\.metadata = \{ "%, ruby
+    assert_match(/^  s\.metadata = \{ "/, ruby)
   end
 
   def test_to_ruby_platform
@@ -2461,7 +2462,7 @@ end
   def test_to_yaml
     yaml_str = @a1.to_yaml
 
-    refute_match %r{!!null}, yaml_str
+    refute_match(/!!null/, yaml_str)
 
     same_spec = Gem::Specification.from_yaml(yaml_str)
 
@@ -2482,7 +2483,7 @@ end
   def test_to_yaml_platform_empty_string
     @a1.instance_variable_set :@original_platform, ""
 
-    assert_match %r{^platform: ruby$}, @a1.to_yaml
+    assert_match(/^platform: ruby$/, @a1.to_yaml)
   end
 
   def test_to_yaml_platform_legacy
@@ -2500,7 +2501,7 @@ end
   def test_to_yaml_platform_nil
     @a1.instance_variable_set :@original_platform, nil
 
-    assert_match %r{^platform: ruby$}, @a1.to_yaml
+    assert_match(/^platform: ruby$/, @a1.to_yaml)
   end
 
   def test_validate
@@ -2511,10 +2512,21 @@ end
     end
   end
 
-  def x(s); s.gsub(/xxx/, ""); end
-  def w; x "WARxxxNING"; end
-  def t; x "TOxxxDO"; end
-  def f; x "FxxxIXME"; end
+  def x(s)
+    s.gsub(/xxx/, "")
+  end
+
+  def w
+    x "WARxxxNING"
+  end
+
+  def t
+    x "TOxxxDO"
+  end
+
+  def f
+    x "FxxxIXME"
+  end
 
   def test_validate_authors
     util_setup_validate
@@ -2598,18 +2610,18 @@ end
 #{w}:  prerelease dependency on c (>= 2.0.rc2, development) is not recommended
 #{w}:  open-ended dependency on i (>= 1.2) is not recommended
   if i is semantically versioned, use:
-    add_runtime_dependency 'i', '~> 1.2'
+    add_runtime_dependency "i", "~> 1.2"
 #{w}:  open-ended dependency on j (>= 1.2.3) is not recommended
   if j is semantically versioned, use:
-    add_runtime_dependency 'j', '~> 1.2', '>= 1.2.3'
+    add_runtime_dependency "j", "~> 1.2", ">= 1.2.3"
 #{w}:  open-ended dependency on k (> 1.2) is not recommended
   if k is semantically versioned, use:
-    add_runtime_dependency 'k', '~> 1.2', '> 1.2'
+    add_runtime_dependency "k", "~> 1.2", "> 1.2"
 #{w}:  open-ended dependency on l (> 1.2.3) is not recommended
   if l is semantically versioned, use:
-    add_runtime_dependency 'l', '~> 1.2', '> 1.2.3'
+    add_runtime_dependency "l", "~> 1.2", "> 1.2.3"
 #{w}:  open-ended dependency on o (>= 0) is not recommended
-  use a bounded requirement, such as '~> x.y'
+  use a bounded requirement, such as "~> x.y"
 #{w}:  See https://guides.rubygems.org/specification-reference/ for help
       EXPECTED
 
@@ -2633,9 +2645,9 @@ end
 
         expected = <<-EXPECTED
 duplicate dependency on b (>= 1.2.3), (~> 1.2) use:
-    add_runtime_dependency 'b', '>= 1.2.3', '~> 1.2'
+    add_runtime_dependency "b", ">= 1.2.3", "~> 1.2"
 duplicate dependency on c (>= 1.2.3, development), (~> 1.2) use:
-    add_development_dependency 'c', '>= 1.2.3', '~> 1.2'
+    add_development_dependency "c", ">= 1.2.3", "~> 1.2"
         EXPECTED
 
         assert_equal expected, e.message
@@ -2677,6 +2689,23 @@ duplicate dependency on c (>= 1.2.3, development), (~> 1.2) use:
     end
   end
 
+  def test_validate_self_referencing_dependencies
+    util_setup_validate
+
+    Dir.chdir @tempdir do
+      @a1.add_runtime_dependency @a1.name, "1"
+
+      use_ui @ui do
+        @a1.validate
+      end
+
+      assert_equal <<-EXPECTED, @ui.error
+#{w}:  Self referencing dependency is unnecessary and strongly discouraged.
+#{w}:  See https://guides.rubygems.org/specification-reference/ for help
+      EXPECTED
+    end
+  end
+
   def test_validate_rake_extension_have_rake_dependency_warning
     util_setup_validate
 
@@ -2705,6 +2734,39 @@ duplicate dependency on c (>= 1.2.3, development), (~> 1.2) use:
       end
 
       refute_match(/add rake as a dependency/, @ui.error)
+    end
+  end
+
+  def test_validate_rust_extension_have_missing_cargo_toml_error
+    util_setup_validate
+
+    Dir.chdir @tempdir do
+      @a1.extensions = ["Cargo.toml"]
+      File.write File.join(@tempdir, "Cargo.toml"), ""
+
+      e = assert_raise Gem::InvalidSpecificationException do
+        use_ui @ui do
+          @a1.validate
+        end
+      end
+
+      assert_match(/but Cargo.lock is not part of the gem files/, e.message)
+    end
+  end
+
+  def test_validate_rust_extension_have_no_missing_cargo_toml_error
+    util_setup_validate
+
+    Dir.chdir @tempdir do
+      @a1.extensions = ["Cargo.toml"]
+      @a1.files << "Cargo.toml"
+      @a1.files << "Cargo.lock"
+      File.write File.join(@tempdir, "Cargo.toml"), ""
+      File.write File.join(@tempdir, "Cargo.lock"), ""
+
+      use_ui @ui do
+        @a1.validate
+      end
     end
   end
 
@@ -2835,7 +2897,7 @@ duplicate dependency on c (>= 1.2.3, development), (~> 1.2) use:
   end
 
   def test_validate_empty_require_paths
-    if win_platform?
+    if Gem.win_platform?
       pend "test_validate_empty_require_paths skipped on MS Windows (symlink)"
     else
       util_setup_validate
@@ -2851,7 +2913,7 @@ duplicate dependency on c (>= 1.2.3, development), (~> 1.2) use:
   end
 
   def test_validate_files
-    pend "test_validate_files skipped on MS Windows (symlink)" if win_platform?
+    pend "test_validate_files skipped on MS Windows (symlink)" if Gem.win_platform?
     util_setup_validate
 
     @a1.files += ["lib", "lib2"]
@@ -2880,7 +2942,7 @@ duplicate dependency on c (>= 1.2.3, development), (~> 1.2) use:
       { b: Gem::Dependency.new("x","1") }
     end
 
-    specification.define_singleton_method(:find_all_by_name) do |dep_name|
+    specification.define_singleton_method(:find_all_by_name) do |_dep_name|
       []
     end
 
@@ -2907,7 +2969,7 @@ Please report a bug if this causes problems.
       { b: Gem::Dependency.new("x","1") }
     end
 
-    specification.define_singleton_method(:find_all_by_name) do |dep_name|
+    specification.define_singleton_method(:find_all_by_name) do |_dep_name|
       [
         specification.new {|s| s.name = "z", s.version = Gem::Version.new("1") },
         specification.new {|s| s.name = "z", s.version = Gem::Version.new("2") },
@@ -2942,7 +3004,7 @@ Please report a bug if this causes problems.
 
   def set_orig(cls)
     s_cls = cls.singleton_class
-    s_cls.send :alias_method, :orig_unresolved_deps , :unresolved_deps
+    s_cls.send :alias_method, :orig_unresolved_deps, :unresolved_deps
     s_cls.send :alias_method, :orig_find_all_by_name, :find_all_by_name
   end
 
@@ -3244,7 +3306,7 @@ Did you mean 'Ruby'?
           spec.validate
         end
 
-        assert_match %r{^#{name}}, e.message
+        assert_match(/^#{name}/, e.message)
       end
     end
   end
@@ -3255,8 +3317,8 @@ Did you mean 'Ruby'?
     util_setup_validate
 
     Dir.chdir @tempdir do
-      File.chmod 0640, File.join("lib", "code.rb")
-      File.chmod 0640, File.join("bin", "exec")
+      File.chmod 0o640, File.join("lib", "code.rb")
+      File.chmod 0o640, File.join("bin", "exec")
 
       use_ui @ui do
         @a1.validate
@@ -3404,7 +3466,7 @@ Did you mean 'Ruby'?
       capture_output do
         Gem::Specification.load(specfile.path)
       end
-    rescue => e
+    rescue StandardError => e
       name_rexp = Regexp.new(Regexp.escape(specfile.path))
       assert e.backtrace.grep(name_rexp).any?
     end
@@ -3676,6 +3738,23 @@ end
     assert Gem::Specification.find_by_name "b", ">1"
   end
 
+  def test_find_by_full_name
+    pl = Gem::Platform.new "x86_64-linux"
+
+    a = util_spec "a", "1"
+    install_specs a
+
+    a_pl = util_spec("a", "1") {|s| s.platform = pl }
+    install_specs a_pl
+
+    assert_equal a, Gem::Specification.find_by_full_name("a-1")
+    assert_equal a_pl, Gem::Specification.find_by_full_name("a-1-x86_64-linux")
+
+    assert_nil Gem::Specification.find_by_full_name("a-2")
+    assert_nil Gem::Specification.find_by_full_name("b-1")
+    assert_nil Gem::Specification.find_by_full_name("a-1-arm64-linux")
+  end
+
   def test_find_by_path
     a = util_spec "foo", "1", nil, "lib/foo.rb"
 
@@ -3733,7 +3812,7 @@ end
         FileUtils.touch File.join("lib", "code.rb")
         FileUtils.touch File.join("test", "suite.rb")
 
-        File.open "bin/exec", "w", 0755 do |fp|
+        File.open "bin/exec", "w", 0o755 do |fp|
           fp.puts "#!#{Gem.ruby}"
         end
       ensure

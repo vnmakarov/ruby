@@ -124,6 +124,20 @@ class TestIOBuffer < Test::Unit::TestCase
     end
   end
 
+  def test_string
+    result = IO::Buffer.string(12) do |buffer|
+      buffer.set_string("Hello World!")
+    end
+
+    assert_equal "Hello World!", result
+  end
+
+  def test_string_negative
+    assert_raise ArgumentError do
+      IO::Buffer.string(-1)
+    end
+  end
+
   def test_resize_mapped
     buffer = IO::Buffer.new
 
@@ -140,6 +154,24 @@ class TestIOBuffer < Test::Unit::TestCase
     buffer.set_string(message)
     buffer.resize(2048)
     assert_equal message, buffer.get_string(0, message.bytesize)
+  end
+
+  def test_resize_zero_internal
+    buffer = IO::Buffer.new(1)
+
+    buffer.resize(0)
+    assert_equal 0, buffer.size
+
+    buffer.resize(1)
+    assert_equal 1, buffer.size
+  end
+
+  def test_resize_zero_external
+    buffer = IO::Buffer.for('1')
+
+    assert_raise IO::Buffer::AccessError do
+      buffer.resize(0)
+    end
   end
 
   def test_compare_same_size
@@ -373,12 +405,41 @@ class TestIOBuffer < Test::Unit::TestCase
     io.close!
   end
 
+  def test_pread_offset
+    io = Tempfile.new
+    io.write("Hello World")
+    io.seek(0)
+
+    buffer = IO::Buffer.new(128)
+    buffer.pread(io, 6, 5, 6)
+
+    assert_equal "World", buffer.get_string(6, 5)
+    assert_equal 0, io.tell
+  ensure
+    io.close!
+  end
+
   def test_pwrite
     io = Tempfile.new
 
     buffer = IO::Buffer.new(128)
     buffer.set_string("World")
     buffer.pwrite(io, 6, 5)
+
+    assert_equal 0, io.tell
+
+    io.seek(6)
+    assert_equal "World", io.read(5)
+  ensure
+    io.close!
+  end
+
+  def test_pwrite_offset
+    io = Tempfile.new
+
+    buffer = IO::Buffer.new(128)
+    buffer.set_string("Hello World")
+    buffer.pwrite(io, 6, 5, 6)
 
     assert_equal 0, io.tell
 

@@ -28,6 +28,7 @@
 #include "internal.h"
 #include "internal/array.h"
 #include "internal/bignum.h"
+#include "internal/basic_operators.h"
 #include "internal/class.h"
 #include "internal/cont.h"
 #include "internal/error.h"
@@ -53,7 +54,7 @@
 #endif
 
 #if HASH_DEBUG
-#include "gc.h"
+#include "internal/gc.h"
 #endif
 
 #define SET_DEFAULT(hash, ifnone) ( \
@@ -93,8 +94,10 @@ rb_hash_freeze(VALUE hash)
 VALUE rb_cHash;
 
 static VALUE envtbl;
-static ID id_hash, id_default, id_flatten_bang;
+static ID id_hash, id_flatten_bang;
 static ID id_hash_iter_lev;
+
+#define id_default idDefault
 
 VALUE
 rb_hash_set_ifnone(VALUE hash, VALUE ifnone)
@@ -103,7 +106,7 @@ rb_hash_set_ifnone(VALUE hash, VALUE ifnone)
     return hash;
 }
 
-static int
+int
 rb_any_cmp(VALUE a, VALUE b)
 {
     if (a == b) return 0;
@@ -218,7 +221,7 @@ obj_any_hash(VALUE obj)
     return FIX2LONG(hval);
 }
 
-static st_index_t
+st_index_t
 rb_any_hash(VALUE a)
 {
     return any_hash(a, obj_any_hash);
@@ -562,32 +565,6 @@ static inline int
 RHASH_TABLE_EMPTY_P(VALUE hash)
 {
     return RHASH_SIZE(hash) == 0;
-}
-
-int
-rb_hash_ar_table_p(VALUE hash)
-{
-    if (FL_TEST_RAW((hash), RHASH_ST_TABLE_FLAG)) {
-        HASH_ASSERT(RHASH(hash)->as.st != NULL);
-        return FALSE;
-    }
-    else {
-        return TRUE;
-    }
-}
-
-ar_table *
-rb_hash_ar_table(VALUE hash)
-{
-    HASH_ASSERT(RHASH_AR_TABLE_P(hash));
-    return RHASH(hash)->as.ar;
-}
-
-st_table *
-rb_hash_st_table(VALUE hash)
-{
-    HASH_ASSERT(!RHASH_AR_TABLE_P(hash));
-    return RHASH(hash)->as.st;
 }
 
 void
@@ -1222,44 +1199,28 @@ static ar_table*
 ar_copy(VALUE hash1, VALUE hash2)
 {
     ar_table *old_tab = RHASH_AR_TABLE(hash2);
+    ar_table *new_tab = RHASH_AR_TABLE(hash1);
 
-    if (old_tab != NULL) {
-        ar_table *new_tab = RHASH_AR_TABLE(hash1);
-        if (new_tab == NULL) {
-            new_tab = (ar_table*) rb_transient_heap_alloc(hash1, sizeof(ar_table));
-            if (new_tab != NULL) {
-                RHASH_SET_TRANSIENT_FLAG(hash1);
-            }
-            else {
-                RHASH_UNSET_TRANSIENT_FLAG(hash1);
-                new_tab = (ar_table*)ruby_xmalloc(sizeof(ar_table));
-            }
+    if (new_tab == NULL) {
+        new_tab = (ar_table*) rb_transient_heap_alloc(hash1, sizeof(ar_table));
+        if (new_tab != NULL) {
+            RHASH_SET_TRANSIENT_FLAG(hash1);
         }
-        *new_tab = *old_tab;
-        RHASH(hash1)->ar_hint.word = RHASH(hash2)->ar_hint.word;
-        RHASH_AR_TABLE_BOUND_SET(hash1, RHASH_AR_TABLE_BOUND(hash2));
-        RHASH_AR_TABLE_SIZE_SET(hash1, RHASH_AR_TABLE_SIZE(hash2));
-        hash_ar_table_set(hash1, new_tab);
-
-        rb_gc_writebarrier_remember(hash1);
-        return new_tab;
-    }
-    else {
-        RHASH_AR_TABLE_BOUND_SET(hash1, RHASH_AR_TABLE_BOUND(hash2));
-        RHASH_AR_TABLE_SIZE_SET(hash1, RHASH_AR_TABLE_SIZE(hash2));
-
-        if (RHASH_TRANSIENT_P(hash1)) {
+        else {
             RHASH_UNSET_TRANSIENT_FLAG(hash1);
+            new_tab = (ar_table*)ruby_xmalloc(sizeof(ar_table));
         }
-        else if (RHASH_AR_TABLE(hash1)) {
-            ruby_xfree(RHASH_AR_TABLE(hash1));
-        }
-
-        hash_ar_table_set(hash1, NULL);
-
-        rb_gc_writebarrier_remember(hash1);
-        return old_tab;
     }
+
+    *new_tab = *old_tab;
+    RHASH(hash1)->ar_hint.word = RHASH(hash2)->ar_hint.word;
+    RHASH_AR_TABLE_BOUND_SET(hash1, RHASH_AR_TABLE_BOUND(hash2));
+    RHASH_AR_TABLE_SIZE_SET(hash1, RHASH_AR_TABLE_SIZE(hash2));
+    hash_ar_table_set(hash1, new_tab);
+
+    rb_gc_writebarrier_remember(hash1);
+
+    return new_tab;
 }
 
 static void
@@ -1406,11 +1367,17 @@ iter_lev_in_ivar_set(VALUE hash, int lev)
     rb_ivar_set_internal(hash, id_hash_iter_lev, INT2FIX(lev));
 }
 
-static int
+static inline int
 iter_lev_in_flags(VALUE hash)
 {
     unsigned int u = (unsigned int)((RBASIC(hash)->flags >> RHASH_LEV_SHIFT) & RHASH_LEV_MAX);
     return (int)u;
+}
+
+static inline void
+iter_lev_in_flags_set(VALUE hash, int lev)
+{
+    RBASIC(hash)->flags = ((RBASIC(hash)->flags & ~RHASH_LEV_MASK) | ((VALUE)lev << RHASH_LEV_SHIFT));
 }
 
 static int
@@ -1436,7 +1403,7 @@ hash_iter_lev_inc(VALUE hash)
     }
     else {
         lev += 1;
-        RBASIC(hash)->flags = ((RBASIC(hash)->flags & ~RHASH_LEV_MASK) | ((VALUE)lev << RHASH_LEV_SHIFT));
+        iter_lev_in_flags_set(hash, lev);
         if (lev == RHASH_LEV_MAX) {
             iter_lev_in_ivar_set(hash, lev);
         }
@@ -1454,7 +1421,7 @@ hash_iter_lev_dec(VALUE hash)
     }
     else {
         HASH_ASSERT(lev > 0);
-        RBASIC(hash)->flags = ((RBASIC(hash)->flags & ~RHASH_LEV_MASK) | ((lev-1) << RHASH_LEV_SHIFT));
+        iter_lev_in_flags_set(hash, lev - 1);
     }
 }
 
@@ -1537,7 +1504,7 @@ static VALUE
 hash_alloc_flags(VALUE klass, VALUE flags, VALUE ifnone)
 {
     const VALUE wb = (RGENGC_WB_PROTECTED_HASH ? FL_WB_PROTECTED : 0);
-    NEWOBJ_OF(hash, struct RHash, klass, T_HASH | wb | flags);
+    NEWOBJ_OF(hash, struct RHash, klass, T_HASH | wb | flags, sizeof(struct RHash), 0);
 
     RHASH_SET_IFNONE((VALUE)hash, ifnone);
 
@@ -1573,7 +1540,7 @@ copy_compare_by_id(VALUE hash, VALUE basis)
     return hash;
 }
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_hash_new_with_size(st_index_t size)
 {
     VALUE ret = rb_hash_new();
@@ -1599,10 +1566,12 @@ static VALUE
 hash_copy(VALUE ret, VALUE hash)
 {
     if (!RHASH_EMPTY_P(hash)) {
-        if (RHASH_AR_TABLE_P(hash))
+        if (RHASH_AR_TABLE_P(hash)) {
             ar_copy(ret, hash);
-        else if (RHASH_ST_TABLE_P(hash))
+        }
+        else {
             RHASH_ST_TABLE_SET(ret, st_copy(RHASH_ST_TABLE(hash)));
+        }
     }
     return ret;
 }
@@ -1631,7 +1600,7 @@ rb_hash_dup(VALUE hash)
     return ret;
 }
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_hash_resurrect(VALUE hash)
 {
     VALUE ret = hash_dup(hash, rb_cHash, 0);
@@ -1644,7 +1613,7 @@ rb_hash_modify_check(VALUE hash)
     rb_check_frozen(hash);
 }
 
-MJIT_FUNC_EXPORTED struct st_table *
+RUBY_FUNC_EXPORTED struct st_table *
 rb_hash_tbl_raw(VALUE hash, const char *file, int line)
 {
     return ar_force_convert_table(hash, file, line);
@@ -1838,6 +1807,8 @@ rb_hash_initialize(int argc, VALUE *argv, VALUE hash)
     return hash;
 }
 
+static VALUE rb_hash_to_a(VALUE hash);
+
 /*
  *  call-seq:
  *    Hash[] -> new_empty_hash
@@ -1881,12 +1852,22 @@ rb_hash_s_create(int argc, VALUE *argv, VALUE klass)
     if (argc == 1) {
         tmp = rb_hash_s_try_convert(Qnil, argv[0]);
         if (!NIL_P(tmp)) {
-            hash = hash_alloc(klass);
-            hash_copy(hash, tmp);
-            return hash;
+            if (!RHASH_EMPTY_P(tmp)  && rb_hash_compare_by_id_p(tmp)) {
+                /* hash_copy for non-empty hash will copy compare_by_identity
+                   flag, but we don't want it copied. Work around by
+                   converting hash to flattened array and using that. */
+                tmp = rb_hash_to_a(tmp);
+            }
+            else {
+                hash = hash_alloc(klass);
+                hash_copy(hash, tmp);
+                return hash;
+            }
+        }
+        else {
+            tmp = rb_check_array_type(argv[0]);
         }
 
-        tmp = rb_check_array_type(argv[0]);
         if (!NIL_P(tmp)) {
             long i;
 
@@ -1924,7 +1905,7 @@ rb_hash_s_create(int argc, VALUE *argv, VALUE klass)
     return hash;
 }
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_to_hash_type(VALUE hash)
 {
     return rb_convert_type_with_id(hash, T_HASH, "Hash", idTo_hash);
@@ -1997,9 +1978,12 @@ static VALUE
 rb_hash_s_ruby2_keywords_hash(VALUE dummy, VALUE hash)
 {
     Check_Type(hash, T_HASH);
-    hash = rb_hash_dup(hash);
-    RHASH(hash)->basic.flags |= RHASH_PASS_AS_KEYWORDS;
-    return hash;
+    VALUE tmp = rb_hash_dup(hash);
+    if (RHASH_EMPTY_P(hash) && rb_hash_compare_by_id_p(hash)) {
+        rb_hash_compare_by_id(tmp);
+    }
+    RHASH(tmp)->basic.flags |= RHASH_PASS_AS_KEYWORDS;
+    return tmp;
 }
 
 struct rehash_arg {
@@ -2070,12 +2054,26 @@ call_default_proc(VALUE proc, VALUE hash, VALUE key)
     return rb_proc_call_with_block(proc, 2, args, Qnil);
 }
 
+static bool
+rb_hash_default_unredefined(VALUE hash)
+{
+    VALUE klass = RBASIC_CLASS(hash);
+    if (LIKELY(klass == rb_cHash)) {
+        return !!BASIC_OP_UNREDEFINED_P(BOP_DEFAULT, HASH_REDEFINED_OP_FLAG);
+    }
+    else {
+        return LIKELY(rb_method_basic_definition_p(klass, id_default));
+    }
+}
+
 VALUE
 rb_hash_default_value(VALUE hash, VALUE key)
 {
-    if (LIKELY(rb_method_basic_definition_p(CLASS_OF(hash), id_default))) {
+    RUBY_ASSERT(RB_TYPE_P(hash, T_HASH));
+
+    if (LIKELY(rb_hash_default_unredefined(hash))) {
         VALUE ifnone = RHASH_IFNONE(hash);
-        if (!FL_TEST(hash, RHASH_PROC_DEFAULT)) return ifnone;
+        if (LIKELY(!FL_TEST_RAW(hash, RHASH_PROC_DEFAULT))) return ifnone;
         if (UNDEF_P(key)) return Qnil;
         return call_default_proc(ifnone, hash, key);
     }
@@ -2093,11 +2091,15 @@ hash_stlike_lookup(VALUE hash, st_data_t key, st_data_t *pval)
         return ar_lookup(hash, key, pval);
     }
     else {
+        extern st_index_t rb_iseq_cdhash_hash(VALUE);
+        RUBY_ASSERT(RHASH_ST_TABLE(hash)->type->hash == rb_any_hash ||
+                    RHASH_ST_TABLE(hash)->type->hash == rb_ident_hash ||
+                    RHASH_ST_TABLE(hash)->type->hash == rb_iseq_cdhash_hash);
         return st_lookup(RHASH_ST_TABLE(hash), key, pval);
     }
 }
 
-MJIT_FUNC_EXPORTED int
+int
 rb_hash_stlike_lookup(VALUE hash, st_data_t key, st_data_t *pval)
 {
     return hash_stlike_lookup(hash, key, pval);
@@ -2764,8 +2766,6 @@ keep_if_i(VALUE key, VALUE value, VALUE hash)
  *    hash.select {|key, value| ... } -> new_hash
  *    hash.select -> new_enumerator
  *
- *  Hash#filter is an alias for Hash#select.
- *
  *  Returns a new \Hash object whose entries are those for which the block returns a truthy value:
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h.select {|key, value| value < 2 } # => {:foo=>0, :bar=>1}
@@ -2793,8 +2793,6 @@ rb_hash_select(VALUE hash)
  *  call-seq:
  *    hash.select! {|key, value| ... } -> self or nil
  *    hash.select! -> new_enumerator
- *
- *  Hash#filter! is an alias for Hash#select!.
  *
  *  Returns +self+, whose entries are those for which the block returns a truthy value:
  *    h = {foo: 0, bar: 1, baz: 2}
@@ -2916,8 +2914,6 @@ NOINSERT_UPDATE_CALLBACK(hash_aset_str)
  *    hash[key] = value -> value
  *    hash.store(key, value)
  *
- *  Hash#store is an alias for Hash#[]=.
-
  *  Associates the given +value+ with the given +key+; returns +value+.
  *
  *  If the given +key+ exists, replaces its value with the given +value+;
@@ -3004,9 +3000,9 @@ rb_hash_replace(VALUE hash, VALUE hash2)
  *     hash.size -> integer
  *
  *  Returns the count of entries in +self+:
+ *
  *    {foo: 0, bar: 1, baz: 2}.length # => 3
  *
- *  Hash#length is an alias for Hash#size.
  */
 
 VALUE
@@ -3137,8 +3133,6 @@ each_pair_i_fast(VALUE key, VALUE value, VALUE _)
  *    hash.each -> new_enumerator
  *    hash.each_pair -> new_enumerator
  *
- *  Hash#each is an alias for Hash#each_pair.
-
  *  Calls the given block with each key-value pair; returns +self+:
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h.each_pair {|key, value| puts "#{key}: #{value}"} # => {:foo=>0, :bar=>1, :baz=>2}
@@ -3470,10 +3464,10 @@ inspect_hash(VALUE hash, VALUE dummy, int recur)
  *    hash.inspect -> new_string
  *
  *  Returns a new \String containing the hash entries:
+
  *    h = {foo: 0, bar: 1, baz: 2}
  *    h.inspect # => "{:foo=>0, :bar=>1, :baz=>2}"
  *
- *  Hash#to_s is an alias for Hash#inspect.
  */
 
 static VALUE
@@ -3577,7 +3571,7 @@ keys_i(VALUE key, VALUE value, VALUE ary)
  *    h.keys # => [:foo, :bar, :baz]
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_hash_keys(VALUE hash)
 {
     st_index_t size = RHASH_SIZE(hash);
@@ -3660,13 +3654,11 @@ rb_hash_values(VALUE hash)
  *    hash.has_key?(key) -> true or false
  *    hash.key?(key) -> true or false
  *    hash.member?(key) -> true or false
-
- *  Methods #has_key?, #key?, and #member? are aliases for \#include?.
  *
  *  Returns +true+ if +key+ is a key in +self+, otherwise +false+.
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_hash_has_key(VALUE hash, VALUE key)
 {
     return RBOOL(hash_stlike_lookup(hash, key, NULL));
@@ -3688,8 +3680,6 @@ rb_hash_search_value(VALUE key, VALUE value, VALUE arg)
  *  call-seq:
  *    hash.has_value?(value) -> true or false
  *    hash.value?(value) -> true or false
- *
- *  Method #value? is an alias for \#has_value?.
  *
  *  Returns +true+ if +value+ is a value in +self+, otherwise +false+.
  */
@@ -3952,8 +3942,6 @@ rb_hash_update_block_i(VALUE key, VALUE value, VALUE hash)
  *  Merges each of +other_hashes+ into +self+; returns +self+.
  *
  *  Each argument in +other_hashes+ must be a \Hash.
- *
- *  \Method #update is an alias for \#merge!.
  *
  *  With arguments and no block:
  *  * Returns +self+, after the given hashes are merged into it.
@@ -4325,15 +4313,6 @@ delete_if_nil(VALUE key, VALUE value, VALUE hash)
     return ST_CONTINUE;
 }
 
-static int
-set_if_not_nil(VALUE key, VALUE value, VALUE hash)
-{
-    if (!NIL_P(value)) {
-        rb_hash_aset(hash, key, value);
-    }
-    return ST_CONTINUE;
-}
-
 /*
  *  call-seq:
  *    hash.compact -> new_hash
@@ -4347,9 +4326,12 @@ set_if_not_nil(VALUE key, VALUE value, VALUE hash)
 static VALUE
 rb_hash_compact(VALUE hash)
 {
-    VALUE result = rb_hash_new();
+    VALUE result = rb_hash_dup(hash);
     if (!RHASH_EMPTY_P(hash)) {
-        rb_hash_foreach(hash, set_if_not_nil, result);
+        rb_hash_foreach(result, delete_if_nil, result);
+    }
+    else if (rb_hash_compare_by_id_p(hash)) {
+        result = rb_hash_compare_by_id(result);
     }
     return result;
 }
@@ -4439,7 +4421,7 @@ rb_hash_compare_by_id(VALUE hash)
  *  Returns +true+ if #compare_by_identity has been called, +false+ otherwise.
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_hash_compare_by_id_p(VALUE hash)
 {
     return RBOOL(RHASH_ST_TABLE_P(hash) && RHASH_ST_TABLE(hash)->type == &identhash);
@@ -4905,9 +4887,7 @@ has_env_with_lock(const char *name)
 static const char TZ_ENV[] = "TZ";
 
 static void *
-get_env_cstr(
-    VALUE str,
-    const char *name)
+get_env_cstr(VALUE str, const char *name)
 {
     char *var;
     rb_encoding *enc = rb_enc_get(str);
@@ -5354,8 +5334,6 @@ ruby_unsetenv(const char *name)
  *   ENV[name] = value      -> value
  *   ENV.store(name, value) -> value
  *
- * ENV.store is an alias for ENV.[]=.
- *
  * Creates, updates, or deletes the named environment variable, returning the value.
  * Both +name+ and +value+ may be instances of String.
  * See {Valid Names and Values}[rdoc-ref:ENV@Valid+Names+and+Values].
@@ -5757,8 +5735,6 @@ env_values_at(int argc, VALUE *argv, VALUE _)
  *   ENV.filter { |name, value| block } -> hash of name/value pairs
  *   ENV.filter                         -> an_enumerator
  *
- * ENV.filter is an alias for ENV.select.
- *
  * Yields each environment variable name and its value as a 2-element Array,
  * returning a Hash of the names and values for which the block returns a truthy value:
  *   ENV.replace('foo' => '0', 'bar' => '1', 'baz' => '2')
@@ -5801,8 +5777,6 @@ env_select(VALUE ehash)
  *   ENV.select!                         -> an_enumerator
  *   ENV.filter! { |name, value| block } -> ENV or nil
  *   ENV.filter!                         -> an_enumerator
- *
- * ENV.filter! is an alias for ENV.select!.
  *
  * Yields each environment variable name and its value as a 2-element Array,
  * deleting each entry for which the block returns +false+ or +nil+,
@@ -6113,8 +6087,6 @@ env_empty_p(VALUE _)
  *   ENV.has_key?(name) -> true or false
  *   ENV.member?(name)  -> true or false
  *   ENV.key?(name)     -> true or false
- *
- * ENV.has_key?, ENV.member?, and ENV.key? are aliases for ENV.include?.
  *
  * Returns +true+ if there is an environment variable with the given +name+:
  *   ENV.replace('foo' => '0', 'bar' => '1')
@@ -6596,8 +6568,6 @@ env_update_block_i(VALUE key, VALUE val, VALUE _)
  *   ENV.merge!(*hashes)                                     -> ENV
  *   ENV.merge!(*hashes) { |name, env_val, hash_val| block } -> ENV
  *
- * ENV.update is an alias for ENV.merge!.
- *
  * Adds to ENV each key/value pair in the given +hash+; returns ENV:
  *   ENV.replace('foo' => '0', 'bar' => '1')
  *   ENV.merge!('baz' => '2', 'bat' => '3') # => {"bar"=>"1", "bat"=>"3", "baz"=>"2", "foo"=>"0"}
@@ -7030,6 +7000,10 @@ static const rb_data_type_t env_data_type = {
  *
  *  Note that setting the default proc will clear the default value and vice versa.
  *
+ *  Be aware that a default proc that modifies the hash is not thread-safe in the
+ *  sense that multiple threads can call into the default proc concurrently for the
+ *  same key.
+ *
  *  === What's Here
  *
  *  First, what's elsewhere. \Class \Hash:
@@ -7164,7 +7138,6 @@ void
 Init_Hash(void)
 {
     id_hash = rb_intern_const("hash");
-    id_default = rb_intern_const("default");
     id_flatten_bang = rb_intern_const("flatten!");
     id_hash_iter_lev = rb_make_internal_id();
 

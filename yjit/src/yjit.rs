@@ -4,6 +4,7 @@ use crate::cruby::*;
 use crate::invariants::*;
 use crate::options::*;
 use crate::stats::YjitExitLocations;
+use crate::stats::incr_counter;
 
 use std::os::raw;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -13,6 +14,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// See <https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html>
 /// See [rb_yjit_enabled_p]
 static YJIT_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// When false, we don't compile new iseqs, but might still service existing branch stubs.
+static COMPILE_NEW_ISEQS: AtomicBool = AtomicBool::new(false);
 
 /// Parse one command-line option.
 /// This is called from ruby.c
@@ -29,6 +33,11 @@ pub extern "C" fn rb_yjit_enabled_p() -> raw::c_int {
     // Note that we might want to call this function from signal handlers so
     // might need to ensure signal-safety(7).
     YJIT_ENABLED.load(Ordering::Acquire).into()
+}
+
+#[no_mangle]
+pub extern "C" fn rb_yjit_compile_new_iseqs() -> bool {
+    COMPILE_NEW_ISEQS.load(Ordering::Acquire).into()
 }
 
 /// Like rb_yjit_enabled_p, but for Rust code.
@@ -50,15 +59,17 @@ pub extern "C" fn rb_yjit_init_rust() {
 
     // Catch panics to avoid UB for unwinding into C frames.
     // See https://doc.rust-lang.org/nomicon/exception-safety.html
-    // TODO: set a panic handler so the we don't print a message
-    //       everytime we panic.
     let result = std::panic::catch_unwind(|| {
         Invariants::init();
         CodegenGlobals::init();
         YjitExitLocations::init();
 
+        rb_bug_panic_hook();
+
         // YJIT enabled and initialized successfully
         YJIT_ENABLED.store(true, Ordering::Release);
+
+        COMPILE_NEW_ISEQS.store(!get_option!(pause), Ordering::Release);
     });
 
     if let Err(_) = result {
@@ -67,10 +78,52 @@ pub extern "C" fn rb_yjit_init_rust() {
     }
 }
 
+/// At the moment, we abort in all cases we panic.
+/// To aid with getting diagnostics in the wild without requiring
+/// people to set RUST_BACKTRACE=1, register a panic hook that crash using rb_bug().
+/// rb_bug() might not be as good at printing a call trace as Rust's stdlib, but
+/// it dumps some other info that might be relevant.
+///
+/// In case we want to start doing fancier exception handling with panic=unwind,
+/// we can revisit this later. For now, this helps to get us good bug reports.
+fn rb_bug_panic_hook() {
+    use std::panic;
+    use std::io::{stderr, Write};
+
+    // Probably the default hook. We do this very early during process boot.
+    let previous_hook = panic::take_hook();
+
+    panic::set_hook(Box::new(move |panic_info| {
+        // Not using `eprintln` to avoid double panic.
+        let _ = stderr().write_all(b"ruby: YJIT has panicked. More info to follow...\n");
+
+        previous_hook(panic_info);
+
+        unsafe { rb_bug(b"YJIT panicked\0".as_ref().as_ptr() as *const raw::c_char); }
+    }));
+}
+
 /// Called from C code to begin compiling a function
 /// NOTE: this should be wrapped in RB_VM_LOCK_ENTER(), rb_vm_barrier() on the C side
 #[no_mangle]
 pub extern "C" fn rb_yjit_iseq_gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> *const u8 {
+    // Reject ISEQs with very large temp stacks,
+    // this will allow us to use u8/i8 values to track stack_size and sp_offset
+    let stack_max = unsafe { rb_get_iseq_body_stack_max(iseq) };
+    if stack_max >= i8::MAX as u32 {
+        incr_counter!(iseq_stack_too_large);
+        return std::ptr::null();
+    }
+
+    // Reject ISEQs that are too long,
+    // this will allow us to use u16 for instruction indices if we want to,
+    // very long ISEQs are also much more likely to be initialization code
+    let iseq_size = unsafe { get_iseq_encoded_size(iseq) };
+    if iseq_size >= u16::MAX as u32 {
+        incr_counter!(iseq_too_long);
+        return std::ptr::null();
+    }
+
     let maybe_code_ptr = gen_entry_point(iseq, ec);
 
     match maybe_code_ptr {
@@ -86,8 +139,21 @@ pub extern "C" fn rb_yjit_code_gc(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
         return Qnil;
     }
 
-    let cb = CodegenGlobals::get_inline_cb();
-    cb.code_gc();
+    with_vm_lock(src_loc!(), || {
+        let cb = CodegenGlobals::get_inline_cb();
+        let ocb = CodegenGlobals::get_outlined_cb();
+        cb.code_gc(ocb);
+    });
+
+    Qnil
+}
+
+#[no_mangle]
+pub extern "C" fn rb_yjit_resume(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
+    if yjit_enabled_p() {
+        COMPILE_NEW_ISEQS.store(true, Ordering::Release);
+    }
+
     Qnil
 }
 

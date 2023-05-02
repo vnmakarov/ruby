@@ -11,7 +11,7 @@ require_relative '../lib/jit_support'
 return unless JITSupport.yjit_supported?
 
 # Tests for YJIT with assertions on compilation and side exits
-# insipired by the MJIT tests in test/ruby/test_mjit.rb
+# insipired by the RJIT tests in test/ruby/test_rjit.rb
 class TestYJIT < Test::Unit::TestCase
   running_with_yjit = defined?(RubyVM::YJIT) && RubyVM::YJIT.enabled?
 
@@ -49,6 +49,29 @@ class TestYJIT < Test::Unit::TestCase
     assert_in_out_err('--yjithello', '', [], /invalid option --yjithello/)
     #assert_in_out_err('--yjit-call-threshold', '', [], /--yjit-call-threshold needs an argument/)
     #assert_in_out_err('--yjit-call-threshold=', '', [], /--yjit-call-threshold needs an argument/)
+  end
+
+  def test_starting_paused
+    program = <<~RUBY
+      def not_compiled = nil
+      def will_compile = nil
+      def compiled_counts = RubyVM::YJIT.runtime_stats[:compiled_iseq_count]
+      counts = []
+      not_compiled
+      counts << compiled_counts
+
+      RubyVM::YJIT.resume
+
+      will_compile
+      counts << compiled_counts
+
+      if counts[0] == 0 && counts[1] > 0
+        p :ok
+      end
+    RUBY
+    assert_in_out_err(%w[--yjit-pause --yjit-stats --yjit-call-threshold=1], program, success: true) do |stdout, stderr|
+      assert_equal([":ok"], stdout)
+    end
   end
 
   def test_yjit_stats_and_v_no_error
@@ -387,6 +410,29 @@ class TestYJIT < Test::Unit::TestCase
     assert_compiles("'foo' =~ /(o)./; $+", insns: %i[getspecial], result: "o")
     assert_compiles("'foo' =~ /(o)./; $1", insns: %i[getspecial], result: "o")
     assert_compiles("'foo' =~ /(o)./; $2", insns: %i[getspecial], result: nil)
+  end
+
+  def test_compile_getconstant
+    assert_compiles(<<~RUBY, insns: %i[getconstant], result: [], call_threshold: 1)
+      def get_argv(klass)
+        klass::ARGV
+      end
+
+      get_argv(Object)
+    RUBY
+  end
+
+  def test_compile_getconstant_with_sp_offset
+    assert_compiles(<<~RUBY, insns: %i[getconstant], result: 2, call_threshold: 1)
+      class Foo
+        Bar = 1
+      end
+
+      2.times do
+        s = Foo # this opt_getconstant_path needs warmup, so 2.times is needed
+        Class.new(Foo).const_set(:Bar, s::Bar)
+      end
+    RUBY
   end
 
   def test_compile_opt_getconstant_path
@@ -731,6 +777,25 @@ class TestYJIT < Test::Unit::TestCase
     RUBY
   end
 
+  def test_super_with_alias
+    assert_compiles(<<~'RUBY', insns: %i[invokesuper opt_plus opt_mult], result: 15)
+      class A
+        def foo = 1 + 2
+      end
+
+      module M
+        def foo = super() * 5
+        alias bar foo
+
+        def foo = :bad
+      end
+
+      A.prepend M
+
+      A.new.bar
+    RUBY
+  end
+
   def test_super_cfunc
     assert_compiles(<<~'RUBY', insns: %i[invokesuper], result: "Hello")
       class Gnirts < String
@@ -951,6 +1016,25 @@ class TestYJIT < Test::Unit::TestCase
     RUBY
   end
 
+  def test_code_gc_partial_last_page
+    # call_threshold: 2 to avoid JIT-ing code_gc itself. If code_gc were JITed right before
+    # code_gc is called, the last page would be on stack.
+    assert_compiles(<<~'RUBY', exits: :any, result: :ok, call_threshold: 2)
+      # Leave a bunch of off-stack pages
+      i = 0
+      while i < 1000
+        eval("x = proc { 1.to_s }; x.call; x.call")
+        i += 1
+      end
+
+      # On Linux, memory page size != code page size. So the last code page could be partially
+      # mapped. This call tests that assertions and other things work fine under the situation.
+      RubyVM::YJIT.code_gc
+
+      :ok
+    RUBY
+  end
+
   def test_trace_script_compiled # not ISEQ_TRACE_EVENTS
     assert_compiles(<<~'RUBY', exits: :any, result: :ok)
       @eval_counter = 0
@@ -996,6 +1080,200 @@ class TestYJIT < Test::Unit::TestCase
       return :"trace_#{@trace_counter}" if @trace_counter != 1
 
       :ok
+    RUBY
+  end
+
+  def test_send_to_call
+    assert_compiles(<<~'RUBY', result: :ok)
+      ->{ :ok }.send(:call)
+    RUBY
+  end
+
+  def test_invokeblock_many_locals
+    # [Bug #19299]
+    assert_compiles(<<~'RUBY', result: :ok)
+      def foo
+        yield
+      end
+
+      foo do
+        a1=a2=a3=a4=a5=a6=a7=a8=a9=a10=a11=a12=a13=a14=a15=a16=a17=a18=a19=a20=a21=a22=a23=a24=a25=a26=a27=a28=a29=a30 = :ok
+        a30
+      end
+    RUBY
+  end
+
+  def test_bug_19316
+    n = 2 ** 64
+    # foo's extra param and the splats are relevant
+    assert_compiles(<<~'RUBY', result: [[n, -n], [n, -n]])
+      def foo(_, a, b, c)
+        [a & b, ~c]
+      end
+
+      n = 2 ** 64
+      args = [0, -n, n, n-1]
+
+      GC.stress = true
+      [foo(*args), foo(*args)]
+    RUBY
+  end
+
+  def test_gc_compact_cyclic_branch
+    assert_compiles(<<~'RUBY', result: 2)
+      def foo
+        i = 0
+        while i < 2
+          i += 1
+        end
+        i
+      end
+
+      foo
+      GC.compact
+      foo
+    RUBY
+  end
+
+  def test_invalidate_cyclic_branch
+    assert_compiles(<<~'RUBY', result: 2)
+      def foo
+        i = 0
+        while i < 2
+          i += 1
+        end
+        i
+      end
+
+      foo
+      class Integer
+        def +(x) = self - -x
+      end
+      foo
+    RUBY
+  end
+
+  def test_tracing_str_uplus
+    assert_compiles(<<~RUBY, frozen_string_literal: true, result: :ok)
+      def str_uplus
+        _ = 1
+        _ = 2
+        ret = [+"frfr", __LINE__]
+        _ = 3
+        _ = 4
+
+        ret
+      end
+
+      str_uplus
+      require 'objspace'
+      ObjectSpace.trace_object_allocations_start
+
+      str, expected_line = str_uplus
+      alloc_line = ObjectSpace.allocation_sourceline(str)
+
+      if expected_line == alloc_line
+        :ok
+      else
+        [expected_line, alloc_line]
+      end
+    RUBY
+  end
+
+  def test_str_uplus_subclass
+    assert_compiles(<<~RUBY, frozen_string_literal: true, result: :subclass)
+      class S < String
+        def encoding
+          :subclass
+        end
+      end
+
+      def test(str)
+        (+str).encoding
+      end
+
+      test ""
+      test S.new
+    RUBY
+  end
+
+  def test_return_to_invalidated_block
+    # [Bug #19463]
+    assert_compiles(<<~RUBY, result: [1, 1, :ugokanai])
+      klass = Class.new do
+        def self.lookup(hash, key) = hash[key]
+
+        def self.foo(a, b) = []
+
+        def self.test(hash, key)
+          [lookup(hash, key), key, "".freeze]
+          # 05 opt_send_without_block :lookup
+          # 07 getlocal_WC_0          :hash
+          # 09 opt_str_freeze         ""
+          # 12 newarray               3
+          # 14 leave
+          #
+          # YJIT will put instructions (07..14) into a block.
+          # When String#freeze is redefined from within lookup(),
+          # the return address to the block is still on-stack. We rely
+          # on invalidation patching the code at the return address
+          # to service this situation correctly.
+        end
+      end
+
+      # get YJIT to compile test()
+      hash = { 1 => [] }
+      31.times { klass.test(hash, 1) }
+
+      # inject invalidation into lookup()
+      evil_hash = Hash.new do |_, key|
+        class String
+          undef :freeze
+          def freeze = :ugokanai
+        end
+
+        key
+      end
+      klass.test(evil_hash, 1)
+    RUBY
+  end
+
+  def test_nested_send
+    #[Bug #19464]
+    assert_compiles(<<~RUBY, result: [:ok, :ok])
+      klass = Class.new do
+        class << self
+          alias_method :my_send, :send
+
+          def bar = :ok
+
+          def foo = bar
+        end
+      end
+
+      with_break = -> { break klass.send(:my_send, :foo) }
+      wo_break = -> { klass.send(:my_send, :foo) }
+
+      [with_break[], wo_break[]]
+    RUBY
+  end
+
+  def test_str_concat_encoding_mismatch
+    assert_compiles(<<~'RUBY', result: "incompatible character encodings: ASCII-8BIT and EUC-JP")
+      def bar(a, b)
+        a << b
+      rescue => e
+        e.message
+      end
+
+      def foo(a, b, h)
+        h[nil]
+        bar(a, b) # Ruby call, not set cfp->pc
+      end
+
+      h = Hash.new { nil }
+      foo("\x80".b, "\xA1A1".force_encoding("EUC-JP"), h)
+      foo("\x80".b, "\xA1A1".force_encoding("EUC-JP"), h)
     RUBY
   end
 
@@ -1119,13 +1397,24 @@ class TestYJIT < Test::Unit::TestCase
     args << "--yjit-exec-mem-size=#{mem_size}" if mem_size
     args << "-e" << script_shell_encode(script)
     stats_r, stats_w = IO.pipe
+    # Separate thread so we don't deadlock when
+    # the child ruby blocks writing the stats to fd 3
+    stats = ''
+    stats_reader = Thread.new do
+      stats = stats_r.read
+      stats_r.close
+    end
     out, err, status = EnvUtil.invoke_ruby(args,
       '', true, true, timeout: timeout, ios: {3 => stats_w}
     )
     stats_w.close
-    stats = stats_r.read
+    stats_reader.join(timeout)
     stats = Marshal.load(stats) if !stats.empty?
-    stats_r.close
     [status, out, err, stats]
+  ensure
+    stats_reader&.kill
+    stats_reader&.join(timeout)
+    stats_r&.close
+    stats_w&.close
   end
 end

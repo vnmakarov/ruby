@@ -229,7 +229,7 @@ cmp_clamp(int argc, VALUE *argv, VALUE x)
         }
     }
     if (!NIL_P(min) && !NIL_P(max) && cmpint(min, max) > 0) {
-        rb_raise(rb_eArgError, "min argument must be smaller than max argument");
+        rb_raise(rb_eArgError, "min argument must be less than or equal to max argument");
     }
 
     if (!NIL_P(min)) {
@@ -289,8 +289,8 @@ cmp_clamp(int argc, VALUE *argv, VALUE x)
  *  - #<: Returns whether +self+ is less than the given object.
  *  - #<=: Returns whether +self+ is less than or equal to the given object.
  *  - #==: Returns whether +self+ is equal to the given object.
- *  - #>: Returns whether +self+ is greater than or equal to the given object.
- *  - #>=: Returns whether +self+ is greater than the given object.
+ *  - #>: Returns whether +self+ is greater than the given object.
+ *  - #>=: Returns whether +self+ is greater than or equal to the given object.
  *  - #between?: Returns +true+ if +self+ is between two given objects.
  *  - #clamp: For given objects +min+ and +max+, or range <tt>(min..max)</tt>, returns:
  *

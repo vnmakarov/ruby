@@ -18,12 +18,12 @@
 #endif
 
 #include "eval_intern.h"
-#include "gc.h"
 #include "internal.h"
 #include "internal/class.h"
 #include "internal/cont.h"
 #include "internal/error.h"
 #include "internal/eval.h"
+#include "internal/gc.h"
 #include "internal/hash.h"
 #include "internal/inits.h"
 #include "internal/io.h"
@@ -32,9 +32,9 @@
 #include "internal/variable.h"
 #include "ruby/fiber/scheduler.h"
 #include "iseq.h"
-#include "mjit.h"
 #include "sir.h"
 #include "mirjit.h"
+#include "rjit.h"
 #include "probes.h"
 #include "probes_helper.h"
 #include "ruby/vm.h"
@@ -259,8 +259,6 @@ rb_ec_cleanup(rb_execution_context_t *ec, enum ruby_tag_type ex)
         }
     }
 
-    mjit_finish(true); // We still need ISeqs here, so it's before rb_ec_finalize().
-
     rb_ec_finalize(ec);
 
 #if defined(HAVE_LIBMIR) && defined(HAVE_PTHREAD_H)
@@ -448,7 +446,7 @@ rb_class_modify_check(VALUE klass)
 
         if (FL_TEST(klass, FL_SINGLETON)) {
             desc = "object";
-            klass = rb_ivar_get(klass, id__attached__);
+            klass = RCLASS_ATTACHED_OBJECT(klass);
             if (!SPECIAL_CONST_P(klass)) {
                 switch (BUILTIN_TYPE(klass)) {
                   case T_MODULE:
@@ -544,12 +542,16 @@ exc_setup_message(const rb_execution_context_t *ec, VALUE mesg, VALUE *cause)
     }
 
     if (!nocircular && !NIL_P(*cause) && !UNDEF_P(*cause) && *cause != mesg) {
+#if 0 /* maybe critical for some cases */
+        rb_exc_check_circular_cause(*cause);
+#else
         VALUE c = *cause;
         while (!NIL_P(c = rb_attr_get(c, id_cause))) {
             if (c == mesg) {
                 rb_raise(rb_eArgError, "circular causes");
             }
         }
+#endif
     }
     return mesg;
 }
@@ -650,6 +652,10 @@ rb_ec_setup_exception(const rb_execution_context_t *ec, VALUE mesg, VALUE cause)
         cause = get_ec_errinfo(ec);
     }
     if (cause != mesg) {
+        if (THROW_DATA_P(cause)) {
+            cause = Qnil;
+        }
+
         rb_ivar_set(mesg, id_cause, cause);
     }
 }

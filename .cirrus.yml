@@ -54,7 +54,6 @@ task:
   make_extract-extlibs_script: make extract-extlibs
   make_incs_script: make incs
   make_script: make
-  make_leaked-globals_script: make leaked-globals
   make_test_script: make test
   make_install_script: make install
   install_gems_for_test_script: $RUBY_PREFIX/bin/gem install --no-doc timezone tzinfo
@@ -131,3 +130,4 @@ yjit_task:
   make_test_script: source $HOME/.cargo/env && make test RUN_OPTS="--yjit-call-threshold=1 --yjit-verify-ctx"
   make_test_all_script: source $HOME/.cargo/env && make test-all RUN_OPTS="--yjit-call-threshold=1 --yjit-verify-ctx" TESTOPTS="$RUBY_TESTOPTS"
   make_test_spec_script: source $HOME/.cargo/env && make test-spec RUN_OPTS="--yjit-call-threshold=1 --yjit-verify-ctx"
+  clippy_script: source $HOME/.cargo/env && cd yjit && cargo clippy --all-targets --all-features

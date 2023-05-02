@@ -59,27 +59,15 @@ USE_RUBYGEMS = $(USE_RUBYGEMS)
 !if defined(ENABLE_DEBUG_ENV)
 ENABLE_DEBUG_ENV = $(ENABLE_DEBUG_ENV)
 !endif
-!if defined(MJIT_SUPPORT)
-MJIT_SUPPORT = $(MJIT_SUPPORT)
+!if defined(RJIT_SUPPORT)
+RJIT_SUPPORT = $(RJIT_SUPPORT)
 !endif
 
 # TOOLS
 <<
 !if defined(BASERUBY)
 	@echo BASERUBY = $(BASERUBY:/=\)>> $(MAKEFILE)
-!else
-	@for %I in (ruby.exe) do @echo BASERUBY = %~s$$PATH:I --disable=gems>> $(MAKEFILE)
 !endif
-	@type << >> $(MAKEFILE)
-$(BANG)if "$$(BASERUBY)" == ""
-BASERUBY = echo executable host ruby is required.  use --with-baseruby option.^& exit 1
-HAVE_BASERUBY = no
-$(BANG)elseif [($$(BASERUBY) -eexit) > nul 2> nul] == 0
-HAVE_BASERUBY = yes
-$(BANG)else
-HAVE_BASERUBY = no
-$(BANG)endif
-<<
 !if "$(RUBY_DEVEL)" == "yes"
 	RUBY_DEVEL = yes
 !endif
@@ -175,9 +163,10 @@ main(void)
 }
 <<
 	@( \
-	  ($(CC) -O2 -DNO_ASSUME $@.c && .\$@ && $(CC) -O2 $@.c) && \
-	  (.\$@ || echo>>$(MAKEFILE) VS2022_FP_BUG=1) \
-	) & $(WIN32DIR:/=\)\rm.bat $@.*
+	  $(CC) -O2 $@.c && .\$@ || \
+	  set bug=%ERRORLEVEL% \
+	  echo This compiler has an optimization bug \
+	) & $(WIN32DIR:/=\)\rm.bat $@.* & exit /b %bug%
 
 -version-: nul verconf.mk
 

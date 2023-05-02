@@ -4,6 +4,8 @@
 #![allow(dead_code)] // Counters are only used with the stats features
 
 use crate::codegen::CodegenGlobals;
+use crate::core::Context;
+use crate::core::for_each_iseq_payload;
 use crate::cruby::*;
 use crate::options::*;
 use crate::yjit::yjit_enabled_p;
@@ -24,7 +26,9 @@ pub struct YjitExitLocations {
     raw_samples: Vec<VALUE>,
     /// Vec to hold line_samples which represent line numbers of
     /// the iseq caller.
-    line_samples: Vec<i32>
+    line_samples: Vec<i32>,
+    /// Number of samples skipped when sampling
+    skipped_samples: usize
 }
 
 /// Private singleton instance of yjit exit locations
@@ -45,7 +49,8 @@ impl YjitExitLocations {
 
         let yjit_exit_locations = YjitExitLocations {
             raw_samples: Vec::new(),
-            line_samples: Vec::new()
+            line_samples: Vec::new(),
+            skipped_samples: 0
         };
 
         // Initialize the yjit exit locations instance
@@ -67,6 +72,11 @@ impl YjitExitLocations {
     /// Get a mutable reference to yjit the line samples Vec.
     pub fn get_line_samples() -> &'static mut Vec<i32> {
         &mut YjitExitLocations::get_instance().line_samples
+    }
+
+    /// Get the number of samples skipped
+    pub fn get_skipped_samples() -> &'static mut usize {
+        &mut YjitExitLocations::get_instance().skipped_samples
     }
 
     /// Mark the data stored in YjitExitLocations::get_raw_samples that needs to be used by
@@ -109,7 +119,7 @@ impl YjitExitLocations {
 
             // Increase index for exit instruction.
             idx += 1;
-            // Increase index for bookeeping value (number of times we've seen this
+            // Increase index for bookkeeping value (number of times we've seen this
             // row in a stack).
             idx += 1;
         }
@@ -123,6 +133,20 @@ macro_rules! make_counters {
         #[derive(Default, Debug)]
         pub struct Counters { $(pub $counter_name: u64),+ }
 
+        /// Enum to represent a counter
+        #[allow(non_camel_case_types)]
+        #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+        pub enum Counter { $($counter_name),+ }
+
+        impl Counter {
+            /// Get a counter name string
+            pub fn get_name(&self) -> String {
+                match self {
+                    $( Counter::$counter_name => stringify!($counter_name).to_string() ),+
+                }
+            }
+        }
+
         /// Global counters instance, initialized to zero
         pub static mut COUNTERS: Counters = Counters { $($counter_name: 0),+ };
 
@@ -130,7 +154,7 @@ macro_rules! make_counters {
         const COUNTER_NAMES: &'static [&'static str] = &[ $(stringify!($counter_name)),+ ];
 
         /// Map a counter name string to a counter pointer
-        fn get_counter_ptr(name: &str) -> *mut u64 {
+        pub fn get_counter_ptr(name: &str) -> *mut u64 {
             match name {
                 $( stringify!($counter_name) => { ptr_to_counter!($counter_name) } ),+
                 _ => panic!()
@@ -138,6 +162,19 @@ macro_rules! make_counters {
         }
     }
 }
+
+/// Macro to increase a counter by name and count
+macro_rules! incr_counter_by {
+    // Unsafe is ok here because options are initialized
+    // once before any Ruby code executes
+    ($counter_name:ident, $count:expr) => {
+        #[allow(unused_unsafe)]
+        {
+            unsafe { $crate::stats::COUNTERS.$counter_name += $count as u64 }
+        }
+    };
+}
+pub(crate) use incr_counter_by;
 
 /// Macro to increment a counter by name
 macro_rules! incr_counter {
@@ -168,6 +205,7 @@ make_counters! {
     exec_instruction,
 
     send_keywords,
+    send_klass_megamorphic,
     send_kw_splat,
     send_args_splat_super,
     send_iseq_zsuper,
@@ -188,21 +226,42 @@ make_counters! {
     send_cfunc_toomany_args,
     send_cfunc_tracing,
     send_cfunc_kwargs,
+    send_cfunc_splat_with_kw,
+    send_cfunc_splat_send,
     send_attrset_kwargs,
     send_iseq_tailcall,
     send_iseq_arity_error,
     send_iseq_only_keywords,
     send_iseq_kwargs_req_and_opt_missing,
     send_iseq_kwargs_mismatch,
-    send_iseq_complex_callee,
+    send_iseq_has_post,
+    send_iseq_has_kwrest,
+    send_iseq_has_no_kw,
+    send_iseq_accepts_no_kwarg,
+    send_iseq_materialized_block,
+    send_iseq_splat_with_opt,
+    send_iseq_splat_with_kw,
+    send_iseq_missing_optional_kw,
+    send_iseq_too_many_kwargs,
     send_not_implemented_method,
     send_getter_arity,
     send_se_cf_overflow,
     send_se_protected_check_failed,
     send_splatarray_length_not_equal,
+    send_splatarray_last_ruby_2_keywords,
     send_splat_not_array,
     send_args_splat_non_iseq,
-    send_args_splat_cfunc,
+    send_args_splat_ivar,
+    send_args_splat_attrset,
+    send_args_splat_bmethod,
+    send_args_splat_aref,
+    send_args_splat_aset,
+    send_args_splat_opt_call,
+    send_args_splat_cfunc_var_args,
+    send_args_splat_cfunc_zuper,
+    send_args_splat_cfunc_ruby2_keywords,
+    send_iseq_splat_arity_error,
+    send_splat_too_long,
     send_iseq_ruby2_keywords,
     send_send_not_imm,
     send_send_wrong_args,
@@ -216,6 +275,17 @@ make_counters! {
     send_send_chain_not_string_or_sym,
     send_send_getter,
     send_send_builtin,
+    send_iseq_has_rest_and_captured,
+    send_iseq_has_rest_and_send,
+    send_iseq_has_rest_and_kw_supplied,
+    send_iseq_has_rest_opt_and_block,
+    send_iseq_has_rest_and_splat_not_equal,
+    send_is_a_class_mismatch,
+    send_instance_of_class_mismatch,
+    send_interrupted,
+    send_not_fixnums,
+    send_not_string,
+    send_mid_mismatch,
 
     send_bmethod_ractor,
     send_bmethod_block_arg,
@@ -226,30 +296,54 @@ make_counters! {
     invokesuper_block,
 
     invokeblock_none,
-    invokeblock_iseq_arg0_splat,
+    invokeblock_iseq_arg0_has_kw,
+    invokeblock_iseq_arg0_args_splat,
+    invokeblock_iseq_arg0_not_array,
+    invokeblock_iseq_arg0_wrong_len,
     invokeblock_iseq_block_changed,
-    invokeblock_iseq_tag_changed,
-    invokeblock_ifunc,
+    invokeblock_tag_changed,
+    invokeblock_ifunc_args_splat,
+    invokeblock_ifunc_kw_splat,
     invokeblock_proc,
     invokeblock_symbol,
 
     leave_se_interrupt,
     leave_interp_return,
-    leave_start_pc_non_zero,
 
     getivar_se_self_not_heap,
     getivar_idx_out_of_range,
     getivar_megamorphic,
+    getivar_not_heap,
 
     setivar_se_self_not_heap,
     setivar_idx_out_of_range,
     setivar_val_heapobject,
     setivar_name_not_mapped,
-    setivar_not_object,
+    setivar_not_heap,
     setivar_frozen,
+    setivar_megamorphic,
 
-    oaref_argc_not_one,
-    oaref_arg_not_fixnum,
+    definedivar_not_heap,
+    definedivar_megamorphic,
+
+    setlocal_wb_required,
+
+    opt_plus_overflow,
+    opt_minus_overflow,
+
+    opt_mod_zero,
+    opt_div_zero,
+
+    opt_aref_argc_not_one,
+    opt_aref_arg_not_fixnum,
+    opt_aref_not_array,
+    opt_aref_not_hash,
+
+    opt_aset_not_array,
+    opt_aset_not_fixnum,
+    opt_aset_not_hash,
+
+    opt_case_dispatch_megamorphic,
 
     opt_getinlinecache_miss,
 
@@ -258,19 +352,33 @@ make_counters! {
     expandarray_not_array,
     expandarray_rhs_too_small,
 
+    gbp_wb_required,
     gbpp_block_param_modified,
+    gbpp_block_handler_not_none,
     gbpp_block_handler_not_iseq,
+
+    branchif_interrupted,
+    branchunless_interrupted,
+    branchnil_interrupted,
+    jump_interrupted,
+
+    objtostring_not_string,
 
     binding_allocations,
     binding_set,
 
     vm_insns_count,
     compiled_iseq_count,
+    compiled_blockid_count,
     compiled_block_count,
     compiled_branch_count,
     compilation_failure,
     block_next_count,
     defer_count,
+    defer_empty_count,
+    branch_insn_count,
+    branch_known_count,
+
     freed_iseq_count,
 
     exit_from_branch_stub,
@@ -284,11 +392,27 @@ make_counters! {
 
     constant_state_bumps,
 
+    // Not using "getivar_" to exclude this from exit reasons
+    get_ivar_max_depth,
+
     // Currently, it's out of the ordinary (might be impossible) for YJIT to leave gaps in
     // executable memory, so this should be 0.
     exec_mem_non_bump_alloc,
 
     num_gc_obj_refs,
+
+    num_send,
+    num_send_known_class,
+    num_send_polymorphic,
+    num_send_x86_rel32,
+    num_send_x86_reg,
+
+    iseq_stack_too_large,
+    iseq_too_long,
+
+    temp_reg_opnd,
+    temp_mem_opnd,
+    temp_spill,
 }
 
 //===========================================================================
@@ -308,8 +432,8 @@ pub extern "C" fn rb_yjit_stats_enabled_p(_ec: EcPtr, _ruby_self: VALUE) -> VALU
 /// Primitive called in yjit.rb.
 /// Export all YJIT statistics as a Ruby hash.
 #[no_mangle]
-pub extern "C" fn rb_yjit_get_stats(_ec: EcPtr, _ruby_self: VALUE) -> VALUE {
-    with_vm_lock(src_loc!(), || rb_yjit_gen_stats_dict())
+pub extern "C" fn rb_yjit_get_stats(_ec: EcPtr, _ruby_self: VALUE, context: VALUE) -> VALUE {
+    with_vm_lock(src_loc!(), || rb_yjit_gen_stats_dict(context == Qtrue))
 }
 
 /// Primitive called in yjit.rb
@@ -364,7 +488,7 @@ pub extern "C" fn rb_yjit_get_exit_locations(_ec: EcPtr, _ruby_self: VALUE) -> V
 }
 
 /// Export all YJIT statistics as a Ruby hash.
-fn rb_yjit_gen_stats_dict() -> VALUE {
+fn rb_yjit_gen_stats_dict(context: bool) -> VALUE {
     // If YJIT is not enabled, return Qnil
     if !yjit_enabled_p() {
         return Qnil;
@@ -411,6 +535,15 @@ fn rb_yjit_gen_stats_dict() -> VALUE {
         // Rust global allocations in bytes
         #[cfg(feature="stats")]
         hash_aset_usize!(hash, "yjit_alloc_size", global_allocation_size());
+
+        // `context` is true at RubyVM::YJIT._print_stats for --yjit-stats. It's false by default
+        // for RubyVM::YJIT.runtime_stats because counting all Contexts could be expensive.
+        if context {
+            let live_context_count = get_live_context_count();
+            let context_size = std::mem::size_of::<Context>();
+            hash_aset_usize!(hash, "live_context_count", live_context_count);
+            hash_aset_usize!(hash, "live_context_size", live_context_count * context_size);
+        }
     }
 
     // If we're not generating stats, the hash is done
@@ -433,7 +566,7 @@ fn rb_yjit_gen_stats_dict() -> VALUE {
             #[cfg(not(feature = "stats"))]
             if counter_name == &"vm_insns_count" {
                 // If the stats feature is disabled, we don't have vm_insns_count
-                // so we are going to exlcude the key
+                // so we are going to exclude the key
                 continue;
             }
 
@@ -455,6 +588,21 @@ fn rb_yjit_gen_stats_dict() -> VALUE {
     }
 
     hash
+}
+
+fn get_live_context_count() -> usize {
+    let mut count = 0;
+    for_each_iseq_payload(|iseq_payload| {
+        for blocks in iseq_payload.version_map.iter() {
+            for block in blocks.iter() {
+                count += unsafe { block.as_ref() }.get_ctx_count();
+            }
+        }
+        for block in iseq_payload.dead_blocks.iter() {
+            count += unsafe { block.as_ref() }.get_ctx_count();
+        }
+    });
+    count
 }
 
 /// Record the backtrace when a YJIT exit occurs. This functionality requires
@@ -479,6 +627,15 @@ pub extern "C" fn rb_yjit_record_exit_stack(exit_pc: *const VALUE)
     // Return if --yjit-trace-exits isn't enabled
     if !get_option!(gen_trace_exits) {
         return;
+    }
+
+    if get_option!(trace_exits_sample_rate) > 0 {
+        if get_option!(trace_exits_sample_rate) <= *YjitExitLocations::get_skipped_samples() {
+            YjitExitLocations::get_instance().skipped_samples = 0;
+        } else {
+            YjitExitLocations::get_instance().skipped_samples += 1;
+            return;
+        }
     }
 
     // rb_vm_insn_addr2opcode won't work in cargo test --all-features
@@ -517,7 +674,7 @@ pub extern "C" fn rb_yjit_record_exit_stack(exit_pc: *const VALUE)
             let mut prev_frame_idx = 0;
             let mut seen_already = true;
 
-            // If the previous stack lenght and current stack length are equal,
+            // If the previous stack length and current stack length are equal,
             // loop and compare the current frame to the previous frame. If they are
             // not equal, set seen_already to false and break out of the loop.
             if prev_stack_len == stack_length as i64 {
@@ -568,10 +725,8 @@ pub extern "C" fn rb_yjit_record_exit_stack(exit_pc: *const VALUE)
         // Push the insn value into the yjit_raw_samples Vec.
         yjit_raw_samples.push(VALUE(insn as usize));
 
-        // Push the current line onto the yjit_line_samples Vec. This
-        // points to the line in insns.def.
-        let line = yjit_line_samples.len() - 1;
-        yjit_line_samples.push(line as i32);
+        // We don't know the line
+        yjit_line_samples.push(0);
 
         // Push number of times seen onto the stack, which is 1
         // because it's the first time we've seen it.

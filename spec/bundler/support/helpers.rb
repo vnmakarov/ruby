@@ -290,7 +290,7 @@ module Spec
           if gem_name.start_with?("bundler")
             version = gem_name.match(/\Abundler-(?<version>.*)\z/)[:version] if gem_name != "bundler"
             with_built_bundler(version) {|gem_path| install_gem(gem_path, default) }
-          elsif gem_name =~ %r{\A(?:[a-zA-Z]:)?/.*\.gem\z}
+          elsif %r{\A(?:[a-zA-Z]:)?/.*\.gem\z}.match?(gem_name)
             install_gem(gem_name, default)
           else
             install_gem("#{gem_repo}/gems/#{gem_name}.gem", default)
@@ -414,14 +414,14 @@ module Spec
       end
     end
 
-    def cache_gems(*gems)
+    def cache_gems(*gems, gem_repo: gem_repo1)
       gems = gems.flatten
 
       FileUtils.rm_rf("#{bundled_app}/vendor/cache")
       FileUtils.mkdir_p("#{bundled_app}/vendor/cache")
 
       gems.each do |g|
-        path = "#{gem_repo1}/gems/#{g}.gem"
+        path = "#{gem_repo}/gems/#{g}.gem"
         raise "OMG `#{path}` does not exist!" unless File.exist?(path)
         FileUtils.cp(path, "#{bundled_app}/vendor/cache")
       end
@@ -483,13 +483,23 @@ module Spec
     end
 
     def next_ruby_minor
-      Gem.ruby_version.segments[0..1].map.with_index {|s, i| i == 1 ? s + 1 : s }.join(".")
+      ruby_major_minor.map.with_index {|s, i| i == 1 ? s + 1 : s }.join(".")
     end
 
-    # versions providing a bundler version finder but not including
+    def previous_ruby_minor
+      return "2.7" if ruby_major_minor == [3, 0]
+
+      ruby_major_minor.map.with_index {|s, i| i == 1 ? s - 1 : s }.join(".")
+    end
+
+    def ruby_major_minor
+      Gem.ruby_version.segments[0..1]
+    end
+
+    # versions not including
     # https://github.com/rubygems/rubygems/commit/929e92d752baad3a08f3ac92eaec162cb96aedd1
     def rubygems_version_failing_to_activate_bundler_prereleases
-      Gem.rubygems_version < Gem::Version.new("3.1.0.pre.1") && Gem.rubygems_version >= Gem::Version.new("2.7.0")
+      Gem.rubygems_version < Gem::Version.new("3.1.0.pre.1")
     end
 
     def revision_for(path)

@@ -4,19 +4,24 @@ on: [workflow_dispatch] # switched off because of failure in download for MSP-Gr
   push:
     paths-ignore:
       - 'doc/**'
+      - '**/man'
       - '**.md'
       - '**.rdoc'
       - '**/.document'
-      - '**.[1-8]'
-      - '**.ronn'
   pull_request:
     paths-ignore:
       - 'doc/**'
+      - '**/man'
       - '**.md'
       - '**.rdoc'
       - '**/.document'
-      - '**.[1-8]'
-      - '**.ronn'
+  merge_group:
+    paths-ignore:
+      - 'doc/**'
+      - '**/man'
+      - '**.md'
+      - '**.rdoc'
+      - '**/.document'
 
 concurrency:
   group: ${{ github.workflow }} / ${{ startsWith(github.event_name, 'pull') && github.ref_name || github.sha }}
@@ -47,11 +52,6 @@ env:
     --without-jemalloc
     --without-gmp
 
-  UPDATE_UNICODE: >-
-    UNICODE_FILES=.
-    UNICODE_PROPERTY_FILES=.
-    UNICODE_AUXILIARY_FILES=.
-    UNICODE_EMOJI_FILES=.
   CONFIGURE_TTY: never
   GITPULLOPTIONS: --no-tags origin ${{github.ref}}
   RUBY_DEBUG: ci rgengc
@@ -87,17 +87,6 @@ jobs:
               optflags: '-O2'
             shared: disable
             # check: true
-          - name: 'gcc-11 annocheck'
-            container: gcc-11
-            env:
-              # Minimal flags to pass the check.
-              default_cc: 'gcc-11 -O2 -fcf-protection -Wa,--generate-missing-build-notes=yes'
-              LDFLAGS: '-Wl,-z,now'
-              # FIXME: Drop skipping options
-              # https://bugs.ruby-lang.org/issues/18061
-              # https://sourceware.org/annobin/annobin.html/Test-pie.html
-              TEST_ANNOCHECK_OPTS: "--skip-pie"
-            check: true
           - { name: clang-16,  env: { default_cc: clang-16 } }
           - { name: clang-15,  env: { default_cc: clang-15 } }
           - { name: clang-14,  env: { default_cc: clang-14 } }
@@ -119,6 +108,8 @@ jobs:
               optflags: '-O2'
             shared: disable
             # check: true
+
+          - { name: ext/Setup }
 
 #         - { name: aarch64-linux-gnu,     crosshost: aarch64-linux-gnu, container: crossbuild-essential-arm64 }
 #         - { name: arm-linux-gnueabi,     crosshost: arm-linux-gnueabi }
@@ -184,13 +175,10 @@ jobs:
           - { name: USE_FLONUM=0,                   env: { cppflags: '-DUSE_FLONUM=0' } }
 #         - { name: USE_GC_MALLOC_OBJ_INFO_DETAILS, env: { cppflags: '-DUSE_GC_MALLOC_OBJ_INFO_DETAILS' } }
           - { name: USE_LAZY_LOAD,                  env: { cppflags: '-DUSE_LAZY_LOAD' } }
-#         - { name: USE_RINCGC=0,                   env: { cppflags: '-DUSE_RINCGC=0' } }
 #         - { name: USE_SYMBOL_GC=0,                env: { cppflags: '-DUSE_SYMBOL_GC=0' } }
 #         - { name: USE_THREAD_CACHE=0,             env: { cppflags: '-DUSE_THREAD_CACHE=0' } }
 #         - { name: USE_TRANSIENT_HEAP=0,           env: { cppflags: '-DUSE_TRANSIENT_HEAP=0' } }
-#         - { name: USE_RUBY_DEBUG_LOG=1,           env: { cppflags: '-DUSE_RUBY_DEBUG_LOG=1' } }
-          - { name: USE_RVARGC=0,                   env: { cppflags: '-DUSE_RVARGC=0' } }
-#         - { name: USE_RVARGC=1,                   env: { cppflags: '-DUSE_RVARGC=1' } }
+          - { name: USE_RUBY_DEBUG_LOG=1,           env: { cppflags: '-DUSE_RUBY_DEBUG_LOG=1' } }
 #         - { name: USE_DEBUG_COUNTER,              env: { cppflags: '-DUSE_DEBUG_COUNTER=1', RUBY_DEBUG_COUNTER_DISABLE: '1' } }
 
           - { name: DEBUG_FIND_TIME_NUMGUESS,       env: { cppflags: '-DDEBUG_FIND_TIME_NUMGUESS' } }
@@ -216,8 +204,10 @@ jobs:
 #         - { name: VM_DEBUG_BP_CHECK,              env: { cppflags: '-DVM_DEBUG_BP_CHECK' } }
 #         - { name: VM_DEBUG_VERIFY_METHOD_CACHE,   env: { cppflags: '-DVM_DEBUG_VERIFY_METHOD_CACHE' } }
 
-          - { name: MJIT_FORCE_ENABLE,              env: { cppflags: '-DMJIT_FORCE_ENABLE' } }
-          - { name: YJIT_FORCE_ENABLE,              env: { cppflags: '-DYJIT_FORCE_ENABLE' } }
+          - { name: enable-yjit,                    env: { append_configure: '--enable-yjit --disable-rjit' }, rust: true }
+          - { name: enable-rjit,                    env: { append_configure: '--enable-rjit --disable-yjit' } }
+          - { name: YJIT_FORCE_ENABLE,              env: { cppflags: '-DYJIT_FORCE_ENABLE' }, rust: true }
+#         - { name: RJIT_FORCE_ENABLE,              env: { cppflags: '-DRJIT_FORCE_ENABLE' } }
 
     name: ${{ matrix.entry.name }}
     runs-on: ubuntu-latest
@@ -234,14 +224,22 @@ jobs:
       - name: setenv
         run: |
           echo "GNUMAKEFLAGS=-sj$((1 + $(nproc --all)))" >> $GITHUB_ENV
-      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
         with:
           path: src
-      - uses: actions/cache@9b0c1fce7a93df8e3bb8926b0d6e9d89e92f20a7 # v3.0.11
+      - uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
         with:
           path: src/.downloaded-cache
           key: downloaded-cache
-      - run: ./autogen.sh
+      - name: Install Rust
+        if: ${{ matrix.entry.rust }}
+        run: sudo apt-get update && sudo apt install -y rustc
+      - name: autogen
+        run: |
+          if [ ! -f ./autogen.sh ]; then
+            ls -la
+          fi
+          ./autogen.sh
         working-directory: src
       - name: Run configure
         run: >
@@ -252,11 +250,13 @@ jobs:
             matrix.entry.crosshost || '"${default_cc}${append_cc:+ $append_cc}"'
           }}
           --${{ matrix.entry.shared || 'enable' }}-shared
+      - name: Add to ext/Setup # statically link just the etc extension
+        run: mkdir ext && echo etc >> ext/Setup
+        if: ${{ matrix.entry.name == 'ext/Setup' }}
       - run: make extract-extlibs
       - run: make incs
       - run: make showflags
       - run: make
-      - run: make leaked-globals
       - run: make test
       - run: make install
         if: ${{ matrix.entry.check }}
@@ -271,7 +271,7 @@ jobs:
       - run: make test-annocheck
         if: ${{ matrix.entry.check && endsWith(matrix.entry.name, 'annocheck') }}
 
-      - uses: ruby/action-slack@b6882ea6ef8f556f9f9af9ec1220d3f1ced74acf # v3.0.0
+      - uses: ruby/action-slack@0bd85c72233cdbb6a0fe01d37aaeff1d21b5fce1 # v3.2.1
         with:
           payload: |
             {

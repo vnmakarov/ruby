@@ -23,6 +23,17 @@ describe "IO.read" do
     IO.read(p)
   end
 
+  ruby_version_is "3.0" do
+    # https://bugs.ruby-lang.org/issues/19354
+    it "accepts options as keyword arguments" do
+      IO.read(@fname, 3, 0, mode: "r+").should == @contents[0, 3]
+
+      -> {
+        IO.read(@fname, 3, 0, {mode: "r+"})
+      }.should raise_error(ArgumentError, /wrong number of arguments/)
+    end
+  end
+
   it "accepts an empty options Hash" do
     IO.read(@fname, **{}).should == @contents
   end
@@ -53,6 +64,33 @@ describe "IO.read" do
 
   it "reads the file if the options Hash includes read/write append mode" do
     IO.read(@fname, mode: "a+").should == @contents
+  end
+
+  platform_is_not :windows do
+    ruby_version_is ""..."3.3" do
+      it "uses an :open_args option" do
+        string = IO.read(@fname, nil, 0, open_args: ["r", nil, {encoding: Encoding::US_ASCII}])
+        string.encoding.should == Encoding::US_ASCII
+
+        string = IO.read(@fname, nil, 0, open_args: ["r", nil, {}])
+        string.encoding.should == Encoding::UTF_8
+      end
+    end
+  end
+
+  it "disregards other options if :open_args is given" do
+    string = IO.read(@fname,mode: "w", encoding: Encoding::UTF_32LE, open_args: ["r", encoding: Encoding::UTF_8])
+    string.encoding.should == Encoding::UTF_8
+  end
+
+  it "doesn't require mode to be specified in :open_args" do
+    string = IO.read(@fname, nil, 0, open_args: [{encoding: Encoding::US_ASCII}])
+    string.encoding.should == Encoding::US_ASCII
+  end
+
+  it "doesn't require mode to be specified in :open_args even if flags option passed" do
+    string = IO.read(@fname, nil, 0, open_args: [{encoding: Encoding::US_ASCII, flags: File::CREAT}])
+    string.encoding.should == Encoding::US_ASCII
   end
 
   it "treats second nil argument as no length limit" do
@@ -90,9 +128,18 @@ describe "IO.read" do
     -> { IO.read @fname, -1 }.should raise_error(ArgumentError)
   end
 
-  it "raises an Errno::EINVAL when not passed a valid offset" do
-    -> { IO.read @fname, 0, -1  }.should raise_error(Errno::EINVAL)
-    -> { IO.read @fname, -1, -1 }.should raise_error(Errno::EINVAL)
+  ruby_version_is ''...'3.3' do
+    it "raises an Errno::EINVAL when not passed a valid offset" do
+      -> { IO.read @fname, 0, -1  }.should raise_error(Errno::EINVAL)
+      -> { IO.read @fname, -1, -1 }.should raise_error(Errno::EINVAL)
+    end
+  end
+
+  ruby_version_is '3.3' do
+    it "raises an ArgumentError when not passed a valid offset" do
+      -> { IO.read @fname, 0, -1  }.should raise_error(ArgumentError)
+      -> { IO.read @fname, -1, -1 }.should raise_error(ArgumentError)
+    end
   end
 
   it "uses the external encoding specified via the :external_encoding option" do

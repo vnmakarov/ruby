@@ -459,7 +459,7 @@ RSpec.describe "bundle install with platform conditionals" do
           tzinfo (2.0.4)
 
       PLATFORMS
-        #{specific_local_platform}
+        #{local_platform}
 
       DEPENDENCIES
         activesupport
@@ -550,7 +550,7 @@ RSpec.describe "bundle install with platform conditionals" do
     gemfile <<-G
       source "#{file_uri_for(gem_repo1)}"
 
-      gem "rack", :platform => [:windows, :mingw, :mswin, :x64_mingw, :jruby]
+      gem "rack", :platform => [:windows, :mswin, :mswin64, :mingw, :x64_mingw, :jruby]
     G
 
     bundle "install"
@@ -571,6 +571,26 @@ RSpec.describe "bundle install with platform conditionals" do
       BUNDLED WITH
          #{Bundler::VERSION}
     L
+  end
+
+  it "resolves fine when a dependency is unused on a platform different from the current one, but reintroduced transitively" do
+    bundle "config set --local force_ruby_platform true"
+
+    build_repo4 do
+      build_gem "listen", "3.7.1" do |s|
+        s.add_dependency "ffi"
+      end
+
+      build_gem "ffi", "1.15.5"
+    end
+
+    install_gemfile <<~G
+      source "#{file_uri_for(gem_repo4)}"
+
+      gem "listen"
+      gem "ffi", :platform => :windows
+    G
+    expect(err).to be_empty
   end
 end
 

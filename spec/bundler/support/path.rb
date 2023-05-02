@@ -71,10 +71,6 @@ module Spec
       @spec_dir ||= source_root.join(ruby_core? ? "spec/bundler" : "spec")
     end
 
-    def api_request_limit_hack_file
-      spec_dir.join("support/api_request_limit_hax.rb")
-    end
-
     def man_dir
       @man_dir ||= lib_dir.join("bundler/man")
     end
@@ -115,6 +111,14 @@ module Spec
         local_gem_path(*path)
       else
         system_gem_path(*path)
+      end
+    end
+
+    def default_cache_path(*path)
+      if Bundler.feature_flag.global_gem_cache?
+        home(".bundle/cache", *path)
+      else
+        default_bundle_path("cache/bundler", *path)
       end
     end
 
@@ -287,25 +291,11 @@ module Spec
     end
 
     def rubocop_gemfile_basename
-      filename = if RUBY_VERSION.start_with?("2.3")
-        "rubocop23_gems"
-      elsif RUBY_VERSION.start_with?("2.4")
-        "rubocop24_gems"
-      else
-        "rubocop_gems"
-      end
-      tool_dir.join("#{filename}.rb")
+      source_root.join("tool/bundler/rubocop_gems.rb")
     end
 
     def standard_gemfile_basename
-      filename = if RUBY_VERSION.start_with?("2.3")
-        "standard23_gems"
-      elsif RUBY_VERSION.start_with?("2.4")
-        "standard24_gems"
-      else
-        "standard_gems"
-      end
-      tool_dir.join("#{filename}.rb")
+      source_root.join("tool/bundler/standard_gems.rb")
     end
 
     def tool_dir

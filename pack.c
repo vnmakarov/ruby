@@ -154,6 +154,7 @@ associated_pointer(VALUE associates, const char *t)
     UNREACHABLE_RETURN(Qnil);
 }
 
+RBIMPL_ATTR_NORETURN()
 static void
 unknown_directive(const char *mode, char type, VALUE fmt)
 {
@@ -167,8 +168,8 @@ unknown_directive(const char *mode, char type, VALUE fmt)
         snprintf(unknown, sizeof(unknown), "\\x%.2x", type & 0xff);
     }
     fmt = rb_str_quote_unprintable(fmt);
-    rb_warning("unknown %s directive '%s' in '%"PRIsVALUE"'",
-               mode, unknown, fmt);
+    rb_raise(rb_eArgError, "unknown %s directive '%s' in '%"PRIsVALUE"'",
+            mode, unknown, fmt);
 }
 
 static float
@@ -536,7 +537,7 @@ pack_pack(rb_execution_context_t *ec, VALUE ary, VALUE fmt, VALUE buffer)
                 bigendian_p = explicit_endian == '>';
             }
             if (integer_size > MAX_INTEGER_PACK_SIZE)
-                rb_bug("unexpected intger size for pack: %d", integer_size);
+                rb_bug("unexpected integer size for pack: %d", integer_size);
             while (len-- > 0) {
                 char intbuf[MAX_INTEGER_PACK_SIZE];
 

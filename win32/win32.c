@@ -544,7 +544,7 @@ rb_w32_system_tmpdir(WCHAR *path, UINT len)
   afterwards with xfree.
 
   Try:
-  HOME, HOMEDRIVE + HOMEPATH and USERPROFILE environment variables
+  HOME, USERPROFILE, HOMEDRIVE + HOMEPATH environment variables
   Special Folders - Profile and Personal
 */
 WCHAR *
@@ -553,12 +553,16 @@ rb_w32_home_dir(void)
     WCHAR *buffer = NULL;
     size_t buffer_len = MAX_PATH, len = 0;
     enum {
-        HOME_NONE, ENV_HOME, ENV_DRIVEPATH, ENV_USERPROFILE
+        HOME_NONE, ENV_HOME, ENV_USERPROFILE, ENV_DRIVEPATH
     } home_type = HOME_NONE;
 
     if ((len = GetEnvironmentVariableW(L"HOME", NULL, 0)) != 0) {
         buffer_len = len;
         home_type = ENV_HOME;
+    }
+    else if ((len = GetEnvironmentVariableW(L"USERPROFILE", NULL, 0)) != 0) {
+        buffer_len = len;
+        home_type = ENV_USERPROFILE;
     }
     else if ((len = GetEnvironmentVariableW(L"HOMEDRIVE", NULL, 0)) != 0) {
         buffer_len = len;
@@ -566,10 +570,6 @@ rb_w32_home_dir(void)
             buffer_len += len;
             home_type = ENV_DRIVEPATH;
         }
-    }
-    else if ((len = GetEnvironmentVariableW(L"USERPROFILE", NULL, 0)) != 0) {
-        buffer_len = len;
-        home_type = ENV_USERPROFILE;
     }
 
     /* allocate buffer */
@@ -579,12 +579,12 @@ rb_w32_home_dir(void)
       case ENV_HOME:
         GetEnvironmentVariableW(L"HOME", buffer, buffer_len);
         break;
+      case ENV_USERPROFILE:
+        GetEnvironmentVariableW(L"USERPROFILE", buffer, buffer_len);
+        break;
       case ENV_DRIVEPATH:
         len = GetEnvironmentVariableW(L"HOMEDRIVE", buffer, buffer_len);
         GetEnvironmentVariableW(L"HOMEPATH", buffer + len, buffer_len - len);
-        break;
-      case ENV_USERPROFILE:
-        GetEnvironmentVariableW(L"USERPROFILE", buffer, buffer_len);
         break;
       default:
         if (!get_special_folder(CSIDL_PROFILE, buffer, buffer_len) &&
@@ -1352,10 +1352,10 @@ is_batch(const char *cmd)
 #define wstr_to_utf8(str, plen) wstr_to_mbstr(CP_UTF8, str, -1, plen)
 
 /* License: Ruby's */
-MJIT_FUNC_EXPORTED HANDLE
+HANDLE
 rb_w32_start_process(const char *abspath, char *const *argv, int out_fd)
 {
-    /* NOTE: This function is used by MJIT worker, so it can be used parallelly with
+    /* NOTE: This function is used by RJIT worker, so it can be used parallelly with
        Ruby's main thread. So functions touching things shared with main thread can't
        be used, like `ALLOCV` that may trigger GC or `FindFreeChildSlot` that finds
        a slot from shared memory without atomic locks. */
@@ -2222,7 +2222,7 @@ rb_w32_wstr_to_mbstr(UINT cp, const WCHAR *wstr, int clen, long *plen)
 WCHAR *
 rb_w32_mbstr_to_wstr(UINT cp, const char *str, int clen, long *plen)
 {
-    /* This is used by MJIT worker. Do not trigger GC or call Ruby method here. */
+    /* This is used by RJIT worker. Do not trigger GC or call Ruby method here. */
     WCHAR *ptr;
     int len = MultiByteToWideChar(cp, 0, str, clen, NULL, 0);
     if (!(ptr = malloc(sizeof(WCHAR) * len))) return 0;
@@ -2584,6 +2584,18 @@ set_pioinfo_extra(void)
 #  define UCRTBASE "ucrtbase.dll"
 # endif
     /* get __pioinfo addr with _isatty */
+    /*
+     * Why Ruby depends to _pioinfo is
+     * * to associate socket and fd: CRuby creates fd with dummy file handle
+     *   and set socket to emulate Unix-like behavior. Without __pioinfo
+     *   we need something which manages the fd number allocation
+     * * to implement overlapped I/O for Windows 2000/XP
+     * * to emulate fcntl(2)
+     *
+     * see also
+     * * https://bugs.ruby-lang.org/issues/11118
+     * * https://bugs.ruby-lang.org/issues/18605
+     */
     char *p = (char*)get_proc_address(UCRTBASE, "_isatty", NULL);
     char *pend = p;
     /* _osfile(fh) & FDEV */
@@ -5882,11 +5894,13 @@ winnt_stat(const WCHAR *path, struct stati128 *st, BOOL lstat)
                 if (e && attr_info.ReparseTag == IO_REPARSE_TAG_AF_UNIX) {
                     st->st_size = 0;
                     mode |= S_IFSOCK;
-                } else if (rb_w32_reparse_symlink_p(path)) {
+                }
+                else if (rb_w32_reparse_symlink_p(path)) {
                     /* TODO: size in which encoding? */
                     st->st_size = 0;
                     mode |= S_IFLNK | S_IEXEC;
-                } else {
+                }
+                else {
                     mode |= S_IFDIR | S_IEXEC;
                 }
             }

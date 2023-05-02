@@ -86,7 +86,7 @@ class Integer
   #
   # Returns +int+, negated.
   def -@
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_int_uminus(self)'
   end
 
@@ -102,7 +102,7 @@ class Integer
   #
   #   sprintf("%X", ~0x1122334455)    #=> "..FEEDDCCBBAA"
   def ~
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_int_comp(self)'
   end
 
@@ -116,9 +116,8 @@ class Integer
   #    -12345.abs     #=> 12345
   #    12345.abs      #=> 12345
   #
-  # Integer#magnitude is an alias for Integer#abs.
   def abs
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_int_abs(self)'
   end
 
@@ -164,7 +163,7 @@ class Integer
   #      raise "overflow"
   #    end
   def bit_length
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_int_bit_length(self)'
   end
 
@@ -173,7 +172,7 @@ class Integer
   #
   #  Returns +true+ if +int+ is an even number.
   def even?
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_int_even_p(self)'
   end
 
@@ -186,19 +185,13 @@ class Integer
   end
 
   alias magnitude abs
-=begin
-  def magnitude
-    Primitive.attr! 'inline'
-    Primitive.cexpr! 'rb_int_abs(self)'
-  end
-=end
 
   #  call-seq:
   #     int.odd?  ->  true or false
   #
   #  Returns +true+ if +int+ is an odd number.
   def odd?
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_int_odd_p(self)'
   end
 
@@ -217,8 +210,6 @@ class Integer
     self
   end
 
-  #
-  #  Document-method: Integer#size
   #  call-seq:
   #     int.size  ->  int
   #
@@ -233,7 +224,7 @@ class Integer
   #     (256**40 - 1).size   #=> 40
   #
   def size
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_int_size(self)'
   end
 
@@ -241,8 +232,6 @@ class Integer
   #     int.to_i    ->  integer
   #
   #  Since +int+ is already an Integer, returns +self+.
-  #
-  #  #to_int is an alias for #to_i.
   def to_i
     self
   end
@@ -260,7 +249,7 @@ class Integer
   #
   # Returns +true+ if +int+ has a zero value.
   def zero?
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_int_zero_p(self)'
   end
 
@@ -278,7 +267,7 @@ class Integer
   #
   #    3.ceildiv(1.2) # => 3
   def ceildiv(other)
-    -div(-other)
+    -div(0 - other)
   end
 
   #
@@ -302,28 +291,6 @@ class Integer
   end
 end
 
-#  call-seq:
-#    Integer.try_convert(object) -> object, integer, or nil
-#
-#  If +object+ is an \Integer object, returns +object+.
-#    Integer.try_convert(1) # => 1
-#
-#  Otherwise if +object+ responds to <tt>:to_int</tt>,
-#  calls <tt>object.to_int</tt> and returns the result.
-#    Integer.try_convert(1.25) # => 1
-#
-#  Returns +nil+ if +object+ does not respond to <tt>:to_int</tt>
-#    Integer.try_convert([]) # => nil
-#
-#  Raises an exception unless <tt>object.to_int</tt> returns an \Integer object.
-#
-def Integer.try_convert(num)
-=begin
-  Primitive.attr! 'inline'
-  Primitive.cexpr! 'rb_check_integer_type(num)'
-=end
-end if false
-
 class Float
   #
   # call-seq:
@@ -346,15 +313,13 @@ class Float
   #     -34.56.abs     #=> 34.56
   #     34.56.abs      #=> 34.56
   #
-  #  Float#magnitude is an alias for Float#abs.
-  #
   def abs
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_float_abs(self)'
   end
 
   def magnitude
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_float_abs(self)'
   end
 
@@ -365,7 +330,7 @@ class Float
   # Returns +float+, negated.
   #
   def -@
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'rb_float_uminus(self)'
   end
 
@@ -376,7 +341,7 @@ class Float
   #  Returns +true+ if +float+ is 0.0.
   #
   def zero?
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'RBOOL(FLOAT_ZERO_P(self))'
   end
 
@@ -387,7 +352,7 @@ class Float
   #  Returns +true+ if +float+ is greater than 0.
   #
   def positive?
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'RBOOL(RFLOAT_VALUE(self) > 0.0)'
   end
 
@@ -398,7 +363,7 @@ class Float
   #  Returns +true+ if +float+ is less than 0.
   #
   def negative?
-    Primitive.attr! 'inline'
+    Primitive.attr! :leaf
     Primitive.cexpr! 'RBOOL(RFLOAT_VALUE(self) < 0.0)'
   end
 

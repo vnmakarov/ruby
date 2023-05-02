@@ -1,8 +1,6 @@
 # frozen_string_literal: false
 #
 #   irb/completion.rb -
-#   	$Release Version: 0.9$
-#   	$Revision$
 #   	by Keiju ISHITSUKA(keiju@ishitsuka.com)
 #       From Original Idea of shugo@ruby-lang.org
 #
@@ -60,19 +58,11 @@ module IRB
 
     BASIC_WORD_BREAK_CHARACTERS = " \t\n`><=;|&{("
 
-    def self.absolute_path?(p) # TODO Remove this method after 2.6 EOL.
-      if File.respond_to?(:absolute_path?)
-        File.absolute_path?(p)
-      else
-        File.absolute_path(p) == p
-      end
-    end
-
     GEM_PATHS =
       if defined?(Gem::Specification)
         Gem::Specification.latest_specs(true).map { |s|
           s.require_paths.map { |p|
-            if absolute_path?(p)
+            if File.absolute_path?(p)
               p
             else
               File.join(s.full_gem_path, p)
@@ -168,10 +158,12 @@ module IRB
 
     def self.retrieve_completion_data(input, bind: IRB.conf[:MAIN_CONTEXT].workspace.binding, doc_namespace: false)
       case input
-      when /^((["'`]).*\2)\.([^.]*)$/
+      # this regexp only matches the closing character because of irb's Reline.completer_quote_characters setting
+      # details are described in: https://github.com/ruby/irb/pull/523
+      when /^(.*["'`])\.([^.]*)$/
         # String
         receiver = $1
-        message = $3
+        message = $2
 
         if doc_namespace
           "String.#{message}"
@@ -180,7 +172,9 @@ module IRB
           select_message(receiver, message, candidates)
         end
 
-      when /^(\/[^\/]*\/)\.([^.]*)$/
+      # this regexp only matches the closing character because of irb's Reline.completer_quote_characters setting
+      # details are described in: https://github.com/ruby/irb/pull/523
+      when /^(.*\/)\.([^.]*)$/
         # Regexp
         receiver = $1
         message = $2
@@ -217,7 +211,7 @@ module IRB
           select_message(receiver, message, proc_candidates | hash_candidates)
         end
 
-      when /^(:[^:.]*)$/
+      when /^(:[^:.]+)$/
         # Symbol
         if doc_namespace
           nil
@@ -358,14 +352,6 @@ module IRB
         else
           # func1.func2
           candidates = []
-          to_ignore = ignored_modules
-          ObjectSpace.each_object(Module){|m|
-            next if (to_ignore.include?(m) rescue true)
-            next unless m.respond_to?(:instance_methods) # JRuby has modules that represent java packages. They don't include many common ruby methods
-            candidates.concat m.instance_methods(false).collect{|x| x.to_s}
-          }
-          candidates.sort!
-          candidates.uniq!
         end
 
         if doc_namespace
@@ -455,31 +441,6 @@ module IRB
           #receiver + " " + e
         end
       end
-    end
-
-    def self.ignored_modules
-      # We could cache the result, but this is very fast already.
-      # By using this approach, we avoid Module#name calls, which are
-      # relatively slow when there are a lot of anonymous modules defined.
-      s = {}
-
-      scanner = lambda do |m|
-        next if s.include?(m) # IRB::ExtendCommandBundle::EXCB recurses.
-        s[m] = true
-        m.constants(false).each do |c|
-          value = m.const_get(c)
-          scanner.call(value) if value.is_a?(Module)
-        end
-      end
-
-      %i(IRB RubyLex).each do |sym|
-        next unless Object.const_defined?(sym)
-        scanner.call(Object.const_get(sym))
-      end
-
-      s.delete(IRB::Context) if defined?(IRB::Context)
-
-      s
     end
   end
 end

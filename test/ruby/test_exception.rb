@@ -1266,7 +1266,7 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
     begin;
       class Bug < RuntimeError
         def backtrace
-          IO.readlines(IO::NULL)
+          File.readlines(IO::NULL)
         end
       end
       bug = Bug.new '[ruby-core:85939] [Bug #14577]'
@@ -1412,6 +1412,18 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
     end;
   end
 
+  def test_marshal_circular_cause
+    begin
+      raise RuntimeError, "err", [], cause: Exception.new
+    rescue => e
+    end
+    dump = Marshal.dump(e).sub(/o:\x0EException\x08;.0;.0;.0/, "@\x05")
+    assert_raise_with_message(ArgumentError, /circular cause/, ->{dump.inspect}) do
+      e = Marshal.load(dump)
+      assert_same(e, e.cause)
+    end
+  end
+
   def test_super_in_method_missing
     assert_separately([], "#{<<~"begin;"}\n#{<<~'end;'}")
     begin;
@@ -1456,6 +1468,19 @@ $stderr = $stdout; raise "\x82\xa0"') do |outs, errs, status|
     end
     assert_match("BOO!", e.full_message.lines.first)
     assert_equal({ highlight: Exception.to_tty? }, opt_)
+  end
+
+  def test_full_message_with_encoding
+    message = "\u{dc}bersicht"
+    begin
+      begin
+        raise message
+      rescue => e
+        raise "\n#{e.message}"
+      end
+    rescue => e
+    end
+    assert_include(e.full_message, message)
   end
 
   def test_syntax_error_detailed_message

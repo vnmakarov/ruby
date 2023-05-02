@@ -3023,7 +3023,8 @@ rb_big_resize(VALUE big, size_t len)
 static VALUE
 bignew_1(VALUE klass, size_t len, int sign)
 {
-    NEWOBJ_OF(big, struct RBignum, klass, T_BIGNUM | (RGENGC_WB_PROTECTED_BIGNUM ? FL_WB_PROTECTED : 0));
+    NEWOBJ_OF(big, struct RBignum, klass,
+            T_BIGNUM | (RGENGC_WB_PROTECTED_BIGNUM ? FL_WB_PROTECTED : 0), sizeof(struct RBignum), 0);
     VALUE bigv = (VALUE)big;
     BIGNUM_SET_SIGN(bigv, sign);
     if (len <= BIGNUM_EMBED_LEN_MAX) {
@@ -4184,7 +4185,6 @@ rb_int_parse_cstr(const char *str, ssize_t len, char **endp, size_t *ndigits,
         }
         if (!c || ISSPACE(c)) --str;
         if (end) len = end - str;
-        ASSERT_LEN();
     }
     c = *str;
     c = conv_digit(c);
@@ -4542,7 +4542,7 @@ rb_uint128t2big(uint128_t n)
     return big;
 }
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_int128t2big(int128_t n)
 {
     int neg = 0;
@@ -4587,11 +4587,14 @@ big_shift3(VALUE x, int lshift_p, size_t shift_numdigits, int shift_numbits)
 
     if (lshift_p) {
         if (LONG_MAX < shift_numdigits) {
-            rb_raise(rb_eArgError, "too big number");
+          too_big:
+            rb_raise(rb_eRangeError, "shift width too big");
         }
         s1 = shift_numdigits;
         s2 = shift_numbits;
+        if ((size_t)s1 != shift_numdigits) goto too_big;
         xn = BIGNUM_LEN(x);
+        if (LONG_MAX/SIZEOF_BDIGIT <= xn+s1) goto too_big;
         z = bignew(xn+s1+1, BIGNUM_SIGN(x));
         zds = BDIGITS(z);
         BDIGITS_ZERO(zds, s1);

@@ -77,6 +77,7 @@ static ID id_warn;
 static ID id_category;
 static ID id_deprecated;
 static ID id_experimental;
+static ID id_performance;
 static VALUE sym_category;
 static VALUE sym_highlight;
 static struct {
@@ -148,8 +149,8 @@ rb_syntax_error_append(VALUE exc, VALUE file, int line, int column,
 }
 
 static unsigned int warning_disabled_categories = (
-    1U << RB_WARN_CATEGORY_DEPRECATED |
-    0);
+    (1U << RB_WARN_CATEGORY_DEPRECATED) |
+    ~RB_WARN_CATEGORY_DEFAULT_BITS);
 
 static unsigned int
 rb_warning_category_mask(VALUE category)
@@ -187,7 +188,7 @@ rb_warning_category_update(unsigned int mask, unsigned int bits)
     warning_disabled_categories |= mask & ~bits;
 }
 
-MJIT_FUNC_EXPORTED bool
+bool
 rb_warning_category_enabled_p(rb_warning_category_t category)
 {
     return !(warning_disabled_categories & (1U << category));
@@ -867,7 +868,7 @@ rb_report_bug_valist(VALUE file, int line, const char *fmt, va_list args)
     report_bug_valist(RSTRING_PTR(file), line, fmt, NULL, args);
 }
 
-MJIT_FUNC_EXPORTED void
+void
 rb_assert_failure(const char *file, int line, const char *name, const char *expr)
 {
     FILE *out = stderr;
@@ -1582,7 +1583,7 @@ exc_set_backtrace(VALUE exc, VALUE bt)
     return rb_ivar_set(exc, id_bt, rb_check_backtrace(bt));
 }
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_exc_set_backtrace(VALUE exc, VALUE bt)
 {
     return exc_set_backtrace(exc, bt);
@@ -2065,43 +2066,83 @@ name_err_mesg_to_str(VALUE obj)
     mesg = ptr[NAME_ERR_MESG__MESG];
     if (NIL_P(mesg)) return Qnil;
     else {
-        struct RString s_str, d_str;
-        VALUE c, s, d = 0, args[4];
-        int state = 0, singleton = 0;
+        struct RString s_str, c_str, d_str;
+        VALUE c, s, d = 0, args[4], c2;
+        int state = 0;
         rb_encoding *usascii = rb_usascii_encoding();
 
 #define FAKE_CSTR(v, str) rb_setup_fake_str((v), (str), rb_strlen_lit(str), usascii)
+        c = s = FAKE_CSTR(&s_str, "");
         obj = ptr[NAME_ERR_MESG__RECV];
         switch (obj) {
           case Qnil:
-            d = FAKE_CSTR(&d_str, "nil");
+            c = d = FAKE_CSTR(&d_str, "nil");
             break;
           case Qtrue:
-            d = FAKE_CSTR(&d_str, "true");
+            c = d = FAKE_CSTR(&d_str, "true");
             break;
           case Qfalse:
-            d = FAKE_CSTR(&d_str, "false");
+            c = d = FAKE_CSTR(&d_str, "false");
             break;
           default:
-            d = rb_protect(name_err_mesg_receiver_name, obj, &state);
-            if (state || NIL_OR_UNDEF_P(d))
-                d = rb_protect(rb_inspect, obj, &state);
+            if (strstr(RSTRING_PTR(mesg), "%2$s")) {
+                d = rb_protect(name_err_mesg_receiver_name, obj, &state);
+                if (state || NIL_OR_UNDEF_P(d))
+                    d = rb_protect(rb_inspect, obj, &state);
+                if (state) {
+                    rb_set_errinfo(Qnil);
+                }
+                d = rb_check_string_type(d);
+                if (NIL_P(d)) {
+                    d = rb_any_to_s(obj);
+                }
+            }
+
+            if (!RB_SPECIAL_CONST_P(obj)) {
+                switch (RB_BUILTIN_TYPE(obj)) {
+                  case T_MODULE:
+                    s = FAKE_CSTR(&s_str, "module ");
+                    c = obj;
+                    break;
+                  case T_CLASS:
+                    s = FAKE_CSTR(&s_str, "class ");
+                    c = obj;
+                    break;
+                  default:
+                    goto object;
+                }
+            }
+            else {
+                VALUE klass;
+              object:
+                klass = CLASS_OF(obj);
+                if (RB_TYPE_P(klass, T_CLASS) && FL_TEST(klass, FL_SINGLETON)) {
+                    s = FAKE_CSTR(&s_str, "");
+                    if (obj == rb_vm_top_self()) {
+                        c = FAKE_CSTR(&c_str, "main");
+                    }
+                    else {
+                        c = rb_any_to_s(obj);
+                    }
+                    break;
+                }
+                else {
+                    s = FAKE_CSTR(&s_str, "an instance of ");
+                    c = rb_class_real(klass);
+                }
+            }
+            c2 = rb_protect(name_err_mesg_receiver_name, c, &state);
+            if (state || NIL_OR_UNDEF_P(c2))
+                c2 = rb_protect(rb_inspect, c, &state);
             if (state) {
                 rb_set_errinfo(Qnil);
             }
-            d = rb_check_string_type(d);
-            if (NIL_P(d)) {
-                d = rb_any_to_s(obj);
+            c2 = rb_check_string_type(c2);
+            if (NIL_P(c2)) {
+                c2 = rb_any_to_s(c);
             }
-            singleton = (RSTRING_LEN(d) > 0 && RSTRING_PTR(d)[0] == '#');
+            c = c2;
             break;
-        }
-        if (!singleton) {
-            s = FAKE_CSTR(&s_str, ":");
-            c = rb_class_name(CLASS_OF(obj));
-        }
-        else {
-            c = s = FAKE_CSTR(&s_str, "");
         }
         args[0] = rb_obj_as_string(ptr[NAME_ERR_MESG__NAME]);
         args[1] = d;
@@ -2959,6 +3000,8 @@ ivar_copy_i(st_data_t key, st_data_t val, st_data_t exc)
     return ST_CONTINUE;
 }
 
+void rb_exc_check_circular_cause(VALUE exc);
+
 static VALUE
 exception_loader(VALUE exc, VALUE obj)
 {
@@ -2972,6 +3015,8 @@ exception_loader(VALUE exc, VALUE obj)
     if (RB_TYPE_P(exc, T_CLASS)) return obj; // maybe called from Marshal's TYPE_USERDEF
 
     rb_ivar_foreach(obj, ivar_copy_i, exc);
+
+    rb_exc_check_circular_cause(exc);
 
     if (rb_attr_get(exc, id_bt) == rb_attr_get(exc, id_bt_locations)) {
         rb_ivar_set(exc, id_bt_locations, Qnil);
@@ -3024,14 +3069,16 @@ Init_Exception(void)
     rb_eSyntaxError = rb_define_class("SyntaxError", rb_eScriptError);
     rb_define_method(rb_eSyntaxError, "initialize", syntax_error_initialize, -1);
 
-    ID id_path = rb_intern_const("path");
+    /* RDoc will use literal name value while parsing rb_attr,
+    *  and will render `idPath` as an attribute name without this trick */
+    ID path = idPath;
 
     /* the path failed to parse */
-    rb_attr(rb_eSyntaxError, id_path, TRUE, FALSE, FALSE);
+    rb_attr(rb_eSyntaxError, path, TRUE, FALSE, FALSE);
 
     rb_eLoadError   = rb_define_class("LoadError", rb_eScriptError);
     /* the path failed to load */
-    rb_attr(rb_eLoadError, id_path, TRUE, FALSE, FALSE);
+    rb_attr(rb_eLoadError, path, TRUE, FALSE, FALSE);
 
     rb_eNotImpError = rb_define_class("NotImplementedError", rb_eScriptError);
 
@@ -3101,6 +3148,7 @@ Init_Exception(void)
     id_category = rb_intern_const("category");
     id_deprecated = rb_intern_const("deprecated");
     id_experimental = rb_intern_const("experimental");
+    id_performance = rb_intern_const("performance");
     id_top = rb_intern_const("top");
     id_bottom = rb_intern_const("bottom");
     id_iseq = rb_make_internal_id();
@@ -3112,11 +3160,13 @@ Init_Exception(void)
     warning_categories.id2enum = rb_init_identtable();
     st_add_direct(warning_categories.id2enum, id_deprecated, RB_WARN_CATEGORY_DEPRECATED);
     st_add_direct(warning_categories.id2enum, id_experimental, RB_WARN_CATEGORY_EXPERIMENTAL);
+    st_add_direct(warning_categories.id2enum, id_performance, RB_WARN_CATEGORY_PERFORMANCE);
 
     warning_categories.enum2id = rb_init_identtable();
     st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_NONE, 0);
     st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_DEPRECATED, id_deprecated);
     st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_EXPERIMENTAL, id_experimental);
+    st_add_direct(warning_categories.enum2id, RB_WARN_CATEGORY_PERFORMANCE, id_performance);
 }
 
 void

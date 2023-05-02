@@ -162,6 +162,60 @@ VALUE io_spec_rb_io_wait_writable(VALUE self, VALUE io) {
   return ret ? Qtrue : Qfalse;
 }
 
+#ifdef RUBY_VERSION_IS_3_1
+VALUE io_spec_rb_io_maybe_wait_writable(VALUE self, VALUE error, VALUE io, VALUE timeout) {
+  int ret = rb_io_maybe_wait_writable(NUM2INT(error), io, timeout);
+  return INT2NUM(ret);
+}
+#endif
+
+#ifdef RUBY_VERSION_IS_3_1
+VALUE io_spec_rb_io_maybe_wait_readable(VALUE self, VALUE error, VALUE io, VALUE timeout, VALUE read_p) {
+  int fd = io_spec_get_fd(io);
+#ifndef SET_NON_BLOCKING_FAILS_ALWAYS
+  char buf[RB_IO_WAIT_READABLE_BUF];
+  int ret, saved_errno;
+#endif
+
+  if (set_non_blocking(fd) == -1)
+    rb_sys_fail("set_non_blocking failed");
+
+#ifndef SET_NON_BLOCKING_FAILS_ALWAYS
+  if(RTEST(read_p)) {
+    if (read(fd, buf, RB_IO_WAIT_READABLE_BUF) != -1) {
+      return Qnil;
+    }
+    saved_errno = errno;
+    rb_ivar_set(self, rb_intern("@write_data"), Qtrue);
+    errno = saved_errno;
+  }
+
+  // main part
+  ret = rb_io_maybe_wait_readable(NUM2INT(error), io, timeout);
+
+  if(RTEST(read_p)) {
+    ssize_t r = read(fd, buf, RB_IO_WAIT_READABLE_BUF);
+    if (r != RB_IO_WAIT_READABLE_BUF) {
+      perror("read");
+      return SSIZET2NUM(r);
+    }
+    rb_ivar_set(self, rb_intern("@read_data"),
+        rb_str_new(buf, RB_IO_WAIT_READABLE_BUF));
+  }
+
+  return INT2NUM(ret);
+#else
+  UNREACHABLE;
+#endif
+}
+#endif
+
+#ifdef RUBY_VERSION_IS_3_1
+VALUE io_spec_rb_io_maybe_wait(VALUE self, VALUE error, VALUE io, VALUE events, VALUE timeout) {
+  return rb_io_maybe_wait(NUM2INT(error), io, events, timeout);
+}
+#endif
+
 VALUE io_spec_rb_thread_wait_fd(VALUE self, VALUE io) {
   rb_thread_wait_fd(io_spec_get_fd(io));
   return Qnil;
@@ -180,6 +234,46 @@ VALUE io_spec_rb_wait_for_single_fd(VALUE self, VALUE io, VALUE events, VALUE se
 VALUE io_spec_rb_thread_fd_writable(VALUE self, VALUE io) {
   rb_thread_fd_writable(io_spec_get_fd(io));
   return Qnil;
+}
+
+VALUE io_spec_rb_thread_fd_select_read(VALUE self, VALUE io) {
+  int fd = io_spec_get_fd(io);
+
+  rb_fdset_t fds;
+  rb_fd_init(&fds);
+  rb_fd_set(fd, &fds);
+
+  int r = rb_thread_fd_select(fd + 1, &fds, NULL, NULL, NULL);
+  rb_fd_term(&fds);
+  return INT2FIX(r);
+}
+
+VALUE io_spec_rb_thread_fd_select_write(VALUE self, VALUE io) {
+  int fd = io_spec_get_fd(io);
+
+  rb_fdset_t fds;
+  rb_fd_init(&fds);
+  rb_fd_set(fd, &fds);
+
+  int r = rb_thread_fd_select(fd + 1, NULL, &fds, NULL, NULL);
+  rb_fd_term(&fds);
+  return INT2FIX(r);
+}
+
+VALUE io_spec_rb_thread_fd_select_timeout(VALUE self, VALUE io) {
+  int fd = io_spec_get_fd(io);
+
+  struct timeval timeout;
+  timeout.tv_sec = 10;
+  timeout.tv_usec = 20;
+
+  rb_fdset_t fds;
+  rb_fd_init(&fds);
+  rb_fd_set(fd, &fds);
+
+  int r = rb_thread_fd_select(fd + 1, NULL, &fds, NULL, &timeout);
+  rb_fd_term(&fds);
+  return INT2FIX(r);
 }
 
 VALUE io_spec_rb_io_binmode(VALUE self, VALUE io) {
@@ -254,8 +348,16 @@ void Init_io_spec(void) {
   rb_define_method(cls, "rb_io_taint_check", io_spec_rb_io_taint_check, 1);
   rb_define_method(cls, "rb_io_wait_readable", io_spec_rb_io_wait_readable, 2);
   rb_define_method(cls, "rb_io_wait_writable", io_spec_rb_io_wait_writable, 1);
+#ifdef RUBY_VERSION_IS_3_1
+  rb_define_method(cls, "rb_io_maybe_wait_writable", io_spec_rb_io_maybe_wait_writable, 3);
+  rb_define_method(cls, "rb_io_maybe_wait_readable", io_spec_rb_io_maybe_wait_readable, 4);
+  rb_define_method(cls, "rb_io_maybe_wait", io_spec_rb_io_maybe_wait, 4);
+#endif
   rb_define_method(cls, "rb_thread_wait_fd", io_spec_rb_thread_wait_fd, 1);
   rb_define_method(cls, "rb_thread_fd_writable", io_spec_rb_thread_fd_writable, 1);
+  rb_define_method(cls, "rb_thread_fd_select_read", io_spec_rb_thread_fd_select_read, 1);
+  rb_define_method(cls, "rb_thread_fd_select_write", io_spec_rb_thread_fd_select_write, 1);
+  rb_define_method(cls, "rb_thread_fd_select_timeout", io_spec_rb_thread_fd_select_timeout, 1);
   rb_define_method(cls, "rb_wait_for_single_fd", io_spec_rb_wait_for_single_fd, 4);
   rb_define_method(cls, "rb_io_binmode", io_spec_rb_io_binmode, 1);
   rb_define_method(cls, "rb_fd_fix_cloexec", io_spec_rb_fd_fix_cloexec, 1);

@@ -523,7 +523,7 @@ hash_each(VALUE key, VALUE value, VALUE v)
 
 #define SINGLETON_DUMP_UNABLE_P(klass) \
     (rb_id_table_size(RCLASS_M_TBL(klass)) > 0 || \
-     rb_ivar_count(klass) > 1)
+     rb_ivar_count(klass) > 0)
 
 static void
 w_extended(VALUE klass, struct dump_arg *arg, int check)
@@ -721,13 +721,23 @@ w_ivar_each(VALUE obj, st_index_t num, struct dump_call_arg *arg)
     struct w_ivar_arg ivarg = {arg, num};
     if (!num) return;
     rb_ivar_foreach(obj, w_obj_each, (st_data_t)&ivarg);
-    if (ivarg.num_ivar) {
-        rb_raise(rb_eRuntimeError, "instance variable removed from %"PRIsVALUE" instance",
-                 CLASS_OF(arg->obj));
-    }
+
     if (shape_id != rb_shape_get_shape_id(arg->obj)) {
-        rb_raise(rb_eRuntimeError, "instance variable added to %"PRIsVALUE" instance",
-                 CLASS_OF(arg->obj));
+        rb_shape_t * expected_shape = rb_shape_get_shape_by_id(shape_id);
+        rb_shape_t * actual_shape = rb_shape_get_shape(arg->obj);
+
+        // If the shape tree got _shorter_ then we probably removed an IV
+        // If the shape tree got longer, then we probably added an IV.
+        // The exception message might not be accurate when someone adds and
+        // removes the same number of IVs, but they will still get an exception
+        if (rb_shape_depth(expected_shape) > rb_shape_depth(actual_shape)) {
+            rb_raise(rb_eRuntimeError, "instance variable removed from %"PRIsVALUE" instance",
+                    CLASS_OF(arg->obj));
+        }
+        else {
+            rb_raise(rb_eRuntimeError, "instance variable added to %"PRIsVALUE" instance",
+                    CLASS_OF(arg->obj));
+        }
     }
 }
 
@@ -1793,6 +1803,20 @@ r_object0(struct load_arg *arg, bool partial, int *ivp, VALUE extmod)
     return r_object_for(arg, partial, ivp, extmod, type);
 }
 
+static int
+r_move_ivar(st_data_t k, st_data_t v, st_data_t d)
+{
+    ID key = (ID)k;
+    VALUE value = (VALUE)v;
+    VALUE dest = (VALUE)d;
+
+    if (rb_is_instance_id(key)) {
+        rb_ivar_set(dest, key, value);
+        return ST_DELETE;
+    }
+    return ST_CONTINUE;
+}
+
 static VALUE
 r_object_for(struct load_arg *arg, bool partial, int *ivp, VALUE extmod, int type)
 {
@@ -1816,7 +1840,6 @@ r_object_for(struct load_arg *arg, bool partial, int *ivp, VALUE extmod, int typ
       case TYPE_IVAR:
         {
             int ivar = TRUE;
-
             v = r_object0(arg, true, &ivar, extmod);
             if (ivar) r_ivar(v, NULL, arg);
             v = r_leave(v, arg, partial);
@@ -1855,6 +1878,7 @@ r_object_for(struct load_arg *arg, bool partial, int *ivp, VALUE extmod, int typ
                     rb_extend_object(v, m);
                 }
             }
+            v = r_leave(v, arg, partial);
         }
         break;
 
@@ -2009,7 +2033,10 @@ r_object_for(struct load_arg *arg, bool partial, int *ivp, VALUE extmod, int typ
                 }
                 rb_str_set_len(str, dst - ptr);
             }
-            v = r_entry0(rb_reg_new_str(str, options), idx, arg);
+            VALUE regexp = rb_reg_new_str(str, options);
+            rb_ivar_foreach(str, r_move_ivar, regexp);
+
+            v = r_entry0(regexp, idx, arg);
             v = r_leave(v, arg, partial);
         }
         break;
@@ -2128,7 +2155,12 @@ r_object_for(struct load_arg *arg, bool partial, int *ivp, VALUE extmod, int typ
                 marshal_compat_t *compat = (marshal_compat_t*)d;
                 v = compat->loader(klass, v);
             }
-            if (!partial) v = r_post_proc(v, arg);
+            if (!partial) {
+                if (arg->freeze) {
+                    OBJ_FREEZE(v);
+                }
+                v = r_post_proc(v, arg);
+            }
         }
         break;
 
@@ -2153,6 +2185,9 @@ r_object_for(struct load_arg *arg, bool partial, int *ivp, VALUE extmod, int typ
             load_funcall(arg, v, s_mload, 1, &data);
             v = r_fixup_compat(v, arg);
             v = r_copy_ivar(v, data);
+            if (arg->freeze) {
+                OBJ_FREEZE(v);
+            }
             v = r_post_proc(v, arg);
             if (!NIL_P(extmod)) {
                 if (oldclass) append_extmod(v, extmod);

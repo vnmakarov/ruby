@@ -40,19 +40,6 @@ class TestRegexp < Test::Unit::TestCase
     assert_equal("a".gsub(/a\Z/, ""), "")
   end
 
-  def test_yoshidam_net_20041111_1
-    s = "[\xC2\xA0-\xC3\xBE]"
-    r = assert_deprecated_warning(/ignored/) {Regexp.new(s, nil, "u")}
-    assert_match(r, "\xC3\xBE")
-  end
-
-  def test_yoshidam_net_20041111_2
-    assert_raise(RegexpError) do
-      s = "[\xFF-\xFF]".force_encoding("utf-8")
-      assert_warning(/ignored/) {Regexp.new(s, nil, "u")}
-    end
-  end
-
   def test_ruby_dev_31309
     assert_equal('Ruby', 'Ruby'.sub(/[^a-z]/i, '-'))
   end
@@ -142,6 +129,69 @@ class TestRegexp < Test::Unit::TestCase
     assert_raise(SyntaxError) {eval "/[\\users]/x"}
     assert_raise(SyntaxError) {eval "/(?<\\users)/x"}
     assert_raise(SyntaxError) {eval "/# \\users/"}
+  end
+
+  def test_nonextended_section_of_extended_regexp_bug_19379
+    assert_separately([], <<-'RUBY')
+      re = /(?-x:#)/x
+      assert_match(re, '#')
+      assert_not_match(re, '-')
+
+      re = /(?xi:#
+      y)/
+      assert_match(re, 'Y')
+      assert_not_match(re, '-')
+
+      re = /(?mix:#
+      y)/
+      assert_match(re, 'Y')
+      assert_not_match(re, '-')
+
+      re = /(?x-im:#
+      y)/i
+      assert_match(re, 'y')
+      assert_not_match(re, 'Y')
+
+      re = /(?-imx:(?xim:#
+      y))/x
+      assert_match(re, 'y')
+      assert_not_match(re, '-')
+
+      re = /(?x)#
+      y/
+      assert_match(re, 'y')
+      assert_not_match(re, 'Y')
+
+      re = /(?mx-i)#
+      y/i
+      assert_match(re, 'y')
+      assert_not_match(re, 'Y')
+
+      re = /(?-imx:(?xim:#
+      (?-x)y#))/x
+      assert_match(re, 'Y#')
+      assert_not_match(re, '-#')
+
+      re = /(?imx:#
+      (?-xim:#(?im)#(?x)#
+      )#
+      (?x)#
+      y)/
+      assert_match(re, '###Y')
+      assert_not_match(re, '###-')
+
+      re = %r{#c-\w+/comment/[\w-]+}
+      re = %r{https?://[^/]+#{re}}x
+      assert_match(re, 'http://foo#c-x/comment/bar')
+      assert_not_match(re, 'http://foo#cx/comment/bar')
+    RUBY
+  end
+
+  def test_utf8_comment_in_usascii_extended_regexp_bug_19455
+    assert_separately([], <<-RUBY)
+      assert_equal(Encoding::UTF_8, /(?#\u1000)/x.encoding)
+      assert_equal(Encoding::UTF_8, /#\u1000/x.encoding)
+    RUBY
   end
 
   def test_union
@@ -260,6 +310,9 @@ class TestRegexp < Test::Unit::TestCase
     assert_equal({'a' => '1', 'b' => '2', 'c' => nil}, /^(?<a>.)(?<b>.)(?<c>.)?/.match('12').named_captures)
     assert_equal({'a' => '1', 'b' => '2', 'c' => '3'}, /^(?<a>.)(?<b>.)(?<c>.)?/.match('123').named_captures)
     assert_equal({'a' => '1', 'b' => '2', 'c' => ''}, /^(?<a>.)(?<b>.)(?<c>.?)/.match('12').named_captures)
+
+    assert_equal({a: '1', b: '2', c: ''}, /^(?<a>.)(?<b>.)(?<c>.?)/.match('12').named_captures(symbolize_names: true))
+    assert_equal({'a' => '1', 'b' => '2', 'c' => ''}, /^(?<a>.)(?<b>.)(?<c>.?)/.match('12').named_captures(symbolize_names: false))
 
     assert_equal({'a' => 'x'}, /(?<a>x)|(?<a>y)/.match('x').named_captures)
     assert_equal({'a' => 'y'}, /(?<a>x)|(?<a>y)/.match('y').named_captures)
@@ -646,13 +699,23 @@ class TestRegexp < Test::Unit::TestCase
     assert_equal(/foo/, assert_no_warning(/ignored/) {Regexp.new(/foo/)})
     assert_equal(/foo/, assert_no_warning(/ignored/) {Regexp.new(/foo/, timeout: nil)})
 
-    assert_equal(Encoding.find("US-ASCII"), Regexp.new("b..", nil, "n").encoding)
-    assert_equal("bar", "foobarbaz"[Regexp.new("b..", nil, "n")])
-    assert_equal(//n, Regexp.new("", nil, "n"))
+    arg_encoding_none = //n.options # ARG_ENCODING_NONE is implementation defined value
 
-    arg_encoding_none = 32 # ARG_ENCODING_NONE is implementation defined value
-    assert_equal(arg_encoding_none, Regexp.new("", nil, "n").options)
-    assert_equal(arg_encoding_none, Regexp.new("", nil, "N").options)
+    assert_deprecated_warning('') do
+      assert_equal(Encoding.find("US-ASCII"), Regexp.new("b..", Regexp::NOENCODING).encoding)
+      assert_equal("bar", "foobarbaz"[Regexp.new("b..", Regexp::NOENCODING)])
+      assert_equal(//, Regexp.new(""))
+      assert_equal(//, Regexp.new("", timeout: 1))
+      assert_equal(//n, Regexp.new("", Regexp::NOENCODING))
+      assert_equal(//n, Regexp.new("", Regexp::NOENCODING, timeout: 1))
+
+      assert_equal(arg_encoding_none, Regexp.new("", Regexp::NOENCODING).options)
+
+      assert_nil(Regexp.new("").timeout)
+      assert_equal(1.0, Regexp.new("", timeout: 1.0).timeout)
+      assert_nil(Regexp.compile("").timeout)
+      assert_equal(1.0, Regexp.compile("", timeout: 1.0).timeout)
+    end
 
     assert_raise(RegexpError) { Regexp.new(")(") }
     assert_raise(RegexpError) { Regexp.new('[\\40000000000') }
@@ -1525,6 +1588,9 @@ class TestRegexp < Test::Unit::TestCase
 
     assert_equal(0, /(?~(a)c)/ =~ "abb")
     assert_nil($1)
+
+    assert_equal(0, /(?~(a))/ =~ "")
+    assert_nil($1)
   end
 
   def test_backref_overrun
@@ -1674,7 +1740,7 @@ class TestRegexp < Test::Unit::TestCase
     end;
   end
 
-  def test_cache_optimization_exponential
+  def test_match_cache_exponential
     assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
       timeout = #{ EnvUtil.apply_timeout_scale(10).inspect }
     begin;
@@ -1684,7 +1750,7 @@ class TestRegexp < Test::Unit::TestCase
     end;
   end
 
-  def test_cache_optimization_square
+  def test_match_cache_square
     assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
       timeout = #{ EnvUtil.apply_timeout_scale(10).inspect }
     begin;
@@ -1692,5 +1758,59 @@ class TestRegexp < Test::Unit::TestCase
 
       assert_nil(/^a*b?a*$/ =~ "a" * 1000000 + "x")
     end;
+  end
+
+  def test_cache_opcodes_initialize
+    str = 'test1-test2-test3-test4-test_5'
+    re = '^([0-9a-zA-Z\-/]*){1,256}$'
+    100.times do
+      assert !Regexp.new(re).match?(str)
+    end
+  end
+
+  def test_bug_19273 # [Bug #19273]
+    pattern = /(?:(?:-?b)|(?:-?(?:1_?(?:0_?)*)?0))(?::(?:(?:-?b)|(?:-?(?:1_?(?:0_?)*)?0))){0,3}/
+    assert_equal("10:0:0".match(pattern)[0], "10:0:0")
+  end
+
+  def test_bug_19467
+    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
+      timeout = #{ EnvUtil.apply_timeout_scale(10).inspect }
+    begin;
+      Regexp.timeout = timeout
+
+      assert_nil(/\A.*a.*z\z/ =~ "a" * 1000000 + "y")
+    end;
+  end
+
+  def test_bug_19476 # [Bug #19476]
+    assert_equal("123456789".match(/(?:x?\dx?){2,10}/)[0], "123456789")
+    assert_equal("123456789".match(/(?:x?\dx?){2,}/)[0], "123456789")
+  end
+
+  def test_bug_19537
+    str = 'aac'
+    re = '^([ab]{1,3})(a?)*$'
+    100.times do
+      assert !Regexp.new(re).match?(str)
+    end
+  end
+
+  def test_linear_time_p
+    assert_send [Regexp, :linear_time?, /a/]
+    assert_send [Regexp, :linear_time?, 'a']
+    assert_send [Regexp, :linear_time?, 'a', Regexp::IGNORECASE]
+    assert_not_send [Regexp, :linear_time?, /(a)\1/]
+    assert_not_send [Regexp, :linear_time?, "(a)\\1"]
+
+    assert_raise(TypeError) {Regexp.linear_time?(nil)}
+    assert_raise(TypeError) {Regexp.linear_time?(Regexp.allocate)}
+  end
+
+  def test_linear_performance
+    pre = ->(n) {[Regexp.new("a?" * n + "a" * n), "a" * n]}
+    assert_linear_performance([10, 29], pre: pre) do |re, s|
+      re =~ s
+    end
   end
 end

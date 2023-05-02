@@ -202,6 +202,11 @@ static VALUE
 node_id_for_backtrace_location(rb_execution_context_t *ec, VALUE module, VALUE location)
 {
     int node_id;
+
+    if (!rb_frame_info_p(location)) {
+        rb_raise(rb_eTypeError, "Thread::Backtrace::Location object expected");
+    }
+
     node_id = rb_get_node_id_from_frame_info(location);
     if (node_id == -1) {
         return Qnil;
@@ -372,7 +377,7 @@ rest_arg(rb_ast_t *ast, const NODE *rest_arg)
 static VALUE
 node_children(rb_ast_t *ast, const NODE *node)
 {
-    char name[DECIMAL_SIZE_OF_BITS(sizeof(long) * CHAR_BIT) + 2]; /* including '$' */
+    char name[sizeof("$") + DECIMAL_SIZE_OF(long)];
 
     enum node_type type = nd_type(node);
     switch (type) {

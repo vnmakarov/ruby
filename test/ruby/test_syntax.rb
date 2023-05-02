@@ -172,33 +172,11 @@ class TestSyntax < Test::Unit::TestCase
   end
 
   def test_argument_forwarding_with_anon_rest_kwrest_and_block
-    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
-    begin;
-        def args(*args); args end
-        def kw(**kw); kw end
-        def block(&block); block end
-        def deconstruct(...); [args(*), kw(**), block(&)&.call] end
-        assert_equal([[], {}, nil], deconstruct)
-        assert_equal([[1], {}, nil], deconstruct(1))
-        assert_equal([[1, 2], {}, nil], deconstruct(1, 2))
-        assert_equal([[], {x: 1}, nil], deconstruct(x: 1))
-        assert_equal([[], {x: 1, y: 2}, nil], deconstruct(x: 1, y: 2))
-        assert_equal([[], {}, 1], deconstruct { 1 })
-        assert_equal([[1, 2], {x: 3, y: 4}, 5], deconstruct(1, 2, x: 3, y: 4) { 5 })
-    end;
-
-    assert_separately([], "#{<<-"begin;"}\n#{<<-'end;'}")
-    begin;
-        def deconstruct(*args, **kw, &block); [args, kw, block&.call] end
-        def deconstruct2(*, **, &); deconstruct(...); end
-        assert_equal([[], {}, nil], deconstruct2)
-        assert_equal([[1], {}, nil], deconstruct2(1))
-        assert_equal([[1, 2], {}, nil], deconstruct2(1, 2))
-        assert_equal([[], {x: 1}, nil], deconstruct2(x: 1))
-        assert_equal([[], {x: 1, y: 2}, nil], deconstruct2(x: 1, y: 2))
-        assert_equal([[], {}, 1], deconstruct2 { 1 })
-        assert_equal([[1, 2], {x: 3, y: 4}, 5], deconstruct2(1, 2, x: 3, y: 4) { 5 })
-    end;
+    assert_syntax_error("def f(*, **, &); g(...); end", /unexpected \.\.\./)
+    assert_syntax_error("def f(...); g(*); end", /no anonymous rest parameter/)
+    assert_syntax_error("def f(...); g(0, *); end", /no anonymous rest parameter/)
+    assert_syntax_error("def f(...); g(**); end", /no anonymous keyword rest parameter/)
+    assert_syntax_error("def f(...); g(x: 1, **); end", /no anonymous keyword rest parameter/)
   end
 
   def test_newline_in_block_parameters
@@ -1012,7 +990,7 @@ eom
      ["p ", ""],                # no-pop
      ["", "p Foo::Bar"],        # pop
     ].each do |p1, p2|
-      src = <<-EOM.gsub(/^\s*\n/, '')
+      src = <<~EOM
       class Foo
         #{"Bar = " + preset if preset}
       end
@@ -1044,7 +1022,7 @@ eom
      ["p ", ""],                # no-pop
      ["", "p ::Bar"],           # pop
     ].each do |p1, p2|
-      src = <<-EOM.gsub(/^\s*\n/, '')
+      src = <<~EOM
       #{"Bar = " + preset if preset}
       class Foo
         #{p1}::Bar #{op}= 42

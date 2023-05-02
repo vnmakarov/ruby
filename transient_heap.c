@@ -7,7 +7,6 @@
 **********************************************************************/
 
 #include "debug_counter.h"
-#include "gc.h"
 #include "internal.h"
 #include "internal/array.h"
 #include "internal/gc.h"
@@ -599,6 +598,7 @@ transient_heap_ptr(VALUE obj, int error)
         break;
       case T_OBJECT:
         if (ROBJ_TRANSIENT_P(obj)) {
+            RUBY_ASSERT(!rb_shape_obj_too_complex(obj));
             ptr = ROBJECT_IVPTR(obj);
         }
         break;

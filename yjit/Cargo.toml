@@ -30,10 +30,11 @@ debug = true
 debug-assertions = true
 overflow-checks = true
 
-[profile.stats]
-inherits = "release"
-
 [profile.dev_nodebug]
+inherits = "dev"
+debug = false
+
+[profile.stats]
 inherits = "release"
 
 [profile.release]
@@ -43,3 +44,7 @@ opt-level = 3
 # The extra robustness that comes from checking for arithmetic overflow is
 # worth the performance cost for the compiler.
 overflow-checks = true
+# Generate debug info
+debug = true
+# Use ThinLTO. Much smaller output for a small amount of build time increase.
+lto = "thin"

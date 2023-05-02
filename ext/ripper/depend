@@ -50,6 +50,7 @@ ripper.o: $(RUBY_EXTCONF_H)
 ripper.o: $(arch_hdrdir)/ruby/config.h
 ripper.o: $(hdrdir)/ruby.h
 ripper.o: $(hdrdir)/ruby/assert.h
+ripper.o: $(hdrdir)/ruby/atomic.h
 ripper.o: $(hdrdir)/ruby/backward.h
 ripper.o: $(hdrdir)/ruby/backward/2/assume.h
 ripper.o: $(hdrdir)/ruby/backward/2/attributes.h
@@ -101,6 +102,7 @@ ripper.o: $(hdrdir)/ruby/internal/attr/noexcept.h
 ripper.o: $(hdrdir)/ruby/internal/attr/noinline.h
 ripper.o: $(hdrdir)/ruby/internal/attr/nonnull.h
 ripper.o: $(hdrdir)/ruby/internal/attr/noreturn.h
+ripper.o: $(hdrdir)/ruby/internal/attr/packed_struct.h
 ripper.o: $(hdrdir)/ruby/internal/attr/pure.h
 ripper.o: $(hdrdir)/ruby/internal/attr/restrict.h
 ripper.o: $(hdrdir)/ruby/internal/attr/returns_nonnull.h
@@ -169,7 +171,6 @@ ripper.o: $(hdrdir)/ruby/internal/intern/enumerator.h
 ripper.o: $(hdrdir)/ruby/internal/intern/error.h
 ripper.o: $(hdrdir)/ruby/internal/intern/eval.h
 ripper.o: $(hdrdir)/ruby/internal/intern/file.h
-ripper.o: $(hdrdir)/ruby/internal/intern/gc.h
 ripper.o: $(hdrdir)/ruby/internal/intern/hash.h
 ripper.o: $(hdrdir)/ruby/internal/intern/io.h
 ripper.o: $(hdrdir)/ruby/internal/intern/load.h
@@ -200,7 +201,6 @@ ripper.o: $(hdrdir)/ruby/internal/memory.h
 ripper.o: $(hdrdir)/ruby/internal/method.h
 ripper.o: $(hdrdir)/ruby/internal/module.h
 ripper.o: $(hdrdir)/ruby/internal/newobj.h
-ripper.o: $(hdrdir)/ruby/internal/rgengc.h
 ripper.o: $(hdrdir)/ruby/internal/scan_args.h
 ripper.o: $(hdrdir)/ruby/internal/special_consts.h
 ripper.o: $(hdrdir)/ruby/internal/static_assert.h
@@ -221,11 +221,17 @@ ripper.o: $(hdrdir)/ruby/regex.h
 ripper.o: $(hdrdir)/ruby/ruby.h
 ripper.o: $(hdrdir)/ruby/st.h
 ripper.o: $(hdrdir)/ruby/subst.h
+ripper.o: $(hdrdir)/ruby/thread_native.h
 ripper.o: $(hdrdir)/ruby/util.h
+ripper.o: $(top_srcdir)/ccan/check_type/check_type.h
+ripper.o: $(top_srcdir)/ccan/container_of/container_of.h
+ripper.o: $(top_srcdir)/ccan/list/list.h
+ripper.o: $(top_srcdir)/ccan/str/str.h
 ripper.o: $(top_srcdir)/constant.h
 ripper.o: $(top_srcdir)/id_table.h
 ripper.o: $(top_srcdir)/internal.h
 ripper.o: $(top_srcdir)/internal/array.h
+ripper.o: $(top_srcdir)/internal/basic_operators.h
 ripper.o: $(top_srcdir)/internal/bignum.h
 ripper.o: $(top_srcdir)/internal/bits.h
 ripper.o: $(top_srcdir)/internal/compile.h
@@ -250,11 +256,16 @@ ripper.o: $(top_srcdir)/internal/thread.h
 ripper.o: $(top_srcdir)/internal/variable.h
 ripper.o: $(top_srcdir)/internal/vm.h
 ripper.o: $(top_srcdir)/internal/warnings.h
+ripper.o: $(top_srcdir)/method.h
 ripper.o: $(top_srcdir)/node.h
 ripper.o: $(top_srcdir)/regenc.h
 ripper.o: $(top_srcdir)/ruby_assert.h
+ripper.o: $(top_srcdir)/ruby_atomic.h
 ripper.o: $(top_srcdir)/shape.h
 ripper.o: $(top_srcdir)/symbol.h
+ripper.o: $(top_srcdir)/thread_pthread.h
+ripper.o: $(top_srcdir)/vm_core.h
+ripper.o: $(top_srcdir)/vm_opts.h
 ripper.o: ../../probes.h
 ripper.o: eventids2.c
 ripper.o: ripper.y

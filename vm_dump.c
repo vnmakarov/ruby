@@ -29,8 +29,8 @@
 #endif
 
 #include "addr2line.h"
-#include "gc.h"
 #include "internal.h"
+#include "internal/gc.h"
 #include "internal/variable.h"
 #include "internal/vm.h"
 #include "iseq.h"
@@ -497,6 +497,7 @@ backtrace(void **trace, int size)
 
     unw_getcontext(&uc);
     unw_init_local(&cursor, &uc);
+#  if defined(__x86_64__)
     while (unw_step(&cursor) > 0) {
         unw_get_reg(&cursor, UNW_REG_IP, &ip);
         trace[n++] = (void *)ip;
@@ -512,7 +513,6 @@ backtrace(void **trace, int size)
 darwin_sigtramp:
     /* darwin's bundled libunwind doesn't support signal trampoline */
     {
-#if defined(__x86_64__)
         ucontext_t *uctx;
         char vec[1];
         int r;
@@ -573,7 +573,6 @@ darwin_sigtramp:
             trace[n++] = (void *)ip;
             ip = *(unw_word_t*)uctx->uc_mcontext->MCTX_SS_REG(rsp);
         }
-#endif
 
         trace[n++] = (void *)ip;
         unw_set_reg(&cursor, UNW_REG_IP, ip);
@@ -583,6 +582,22 @@ darwin_sigtramp:
         trace[n++] = (void *)ip;
     }
     return n;
+
+#  else /* defined(__arm64__) */
+    /* Since Darwin arm64's _sigtramp is implemented as normal function,
+     * unwind can unwind frames without special code.
+     * https://github.com/apple/darwin-libplatform/blob/215b09856ab5765b7462a91be7076183076600df/src/setjmp/generic/sigtramp.c
+     */
+    while (unw_step(&cursor) > 0) {
+        unw_get_reg(&cursor, UNW_REG_IP, &ip);
+        // Strip Arm64's pointer authentication.
+        // https://developer.apple.com/documentation/security/preparing_your_app_to_work_with_pointer_authentication
+        // I wish I could use "ptrauth_strip()" but I get an error:
+        // "this target does not support pointer authentication"
+        trace[n++] = (void *)(ip & 0x7fffffffffffull);
+    }
+    return n;
+#  endif
 }
 # elif defined(BROKEN_BACKTRACE)
 #  undef USE_BACKTRACE
@@ -794,16 +809,20 @@ rb_print_backtrace(void)
 #endif
 
 #if defined __linux__
-# if defined __x86_64__ || defined __i386__ || defined __aarch64__ || defined __arm__ || defined __riscv
-#  define HAVE_PRINT_MACHINE_REGISTERS 1
+# if defined(__x86_64__) || defined(__i386__)
+#   define dump_machine_register(reg) (col_count = print_machine_register(mctx->gregs[REG_##reg], #reg, col_count, 80))
+# elif defined(__aarch64__) || defined(__arm__) || defined(__riscv) || defined(__loongarch64)
+#   define dump_machine_register(reg, regstr) (col_count = print_machine_register(reg, regstr, col_count, 80))
 # endif
 #elif defined __APPLE__
-# if defined __x86_64__ || defined __i386__ || defined __aarch64__
-#  define HAVE_PRINT_MACHINE_REGISTERS 1
+# if defined(__aarch64__)
+#   define dump_machine_register(reg, regstr) (col_count = print_machine_register(mctx->MCTX_SS_REG(reg), regstr, col_count, 80))
+# else
+#   define dump_machine_register(reg) (col_count = print_machine_register(mctx->MCTX_SS_REG(reg), #reg, col_count, 80))
 # endif
 #endif
 
-#ifdef HAVE_PRINT_MACHINE_REGISTERS
+#ifdef dump_machine_register
 static int
 print_machine_register(size_t reg, const char *reg_name, int col_count, int max_col)
 {
@@ -820,19 +839,6 @@ print_machine_register(size_t reg, const char *reg_name, int col_count, int max_
     fputs(buf, stderr);
     return col_count;
 }
-# ifdef __linux__
-#   if defined(__x86_64__) || defined(__i386__)
-#       define dump_machine_register(reg) (col_count = print_machine_register(mctx->gregs[REG_##reg], #reg, col_count, 80))
-#   elif defined(__aarch64__) || defined(__arm__) || defined(__riscv)
-#       define dump_machine_register(reg, regstr) (col_count = print_machine_register(reg, regstr, col_count, 80))
-#   endif
-# elif defined __APPLE__
-#   if defined(__aarch64__)
-#     define dump_machine_register(reg, regstr) (col_count = print_machine_register(mctx->MCTX_SS_REG(reg), regstr, col_count, 80))
-#   else
-#     define dump_machine_register(reg) (col_count = print_machine_register(mctx->MCTX_SS_REG(reg), #reg, col_count, 80))
-#   endif
-# endif
 
 static void
 rb_dump_machine_register(const ucontext_t *ctx)
@@ -944,6 +950,28 @@ rb_dump_machine_register(const ucontext_t *ctx)
         dump_machine_register(mctx->__gregs[REG_S2+7], "s9");
         dump_machine_register(mctx->__gregs[REG_S2+8], "s10");
         dump_machine_register(mctx->__gregs[REG_S2+9], "s11");
+#   elif defined __loongarch64
+        dump_machine_register(mctx->__gregs[LARCH_REG_SP], "sp");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0], "s0");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S1], "s1");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0], "a0");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0+1], "a1");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0+2], "a2");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0+3], "a3");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0+4], "a4");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0+5], "a5");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0+6], "a6");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0+7], "a7");
+        dump_machine_register(mctx->__gregs[LARCH_REG_A0+7], "a7");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0], "s0");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0+1], "s1");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0+2], "s2");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0+3], "s3");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0+4], "s4");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0+5], "s5");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0+6], "s6");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0+7], "s7");
+        dump_machine_register(mctx->__gregs[LARCH_REG_S0+8], "s8");
 #   endif
     }
 # elif defined __APPLE__
@@ -1015,7 +1043,7 @@ rb_dump_machine_register(const ucontext_t *ctx)
 }
 #else
 # define rb_dump_machine_register(ctx) ((void)0)
-#endif /* HAVE_PRINT_MACHINE_REGISTERS */
+#endif /* dump_machine_register */
 
 void
 rb_vm_bugreport(const void *ctx)
@@ -1055,6 +1083,14 @@ rb_vm_bugreport(const void *ctx)
     if (vm && ec) {
         SDR();
         rb_backtrace_print_as_bugreport();
+        fputs("\n", stderr);
+        // If we get here, hopefully things are intact enough that
+        // we can read these two numbers. It is an estimate because
+        // we are reading without synchronization.
+        fprintf(stderr, "-- Threading information "
+                "---------------------------------------------------\n");
+        fprintf(stderr, "Total ractor count: %u\n", vm->ractor.cnt);
+        fprintf(stderr, "Ruby thread count for this ractor: %u\n", rb_ec_ractor_ptr(ec)->threads.cnt);
         fputs("\n", stderr);
     }
 

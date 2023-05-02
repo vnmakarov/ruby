@@ -31,6 +31,8 @@
 #include "bits.h"
 #include "static_assert.h"
 
+#define BIGDECIMAL_VERSION "3.1.4"
+
 /* #define ENABLE_NUMERIC_STRING */
 
 #define SIGNED_VALUE_MAX INTPTR_MAX
@@ -313,7 +315,7 @@ static const rb_data_type_t BigDecimal_data_type = {
     "BigDecimal",
     { 0, BigDecimal_delete, BigDecimal_memsize, },
 #ifdef RUBY_TYPED_FREE_IMMEDIATELY
-    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_FROZEN_SHAREABLE
+    0, 0, RUBY_TYPED_FREE_IMMEDIATELY | RUBY_TYPED_FROZEN_SHAREABLE | RUBY_TYPED_WB_PROTECTED
 #endif
 };
 
@@ -2082,6 +2084,13 @@ BigDecimal_divremain(VALUE self, VALUE r, Real **dv, Real **rv)
     if (!b) return DoSomeOne(self, r, rb_intern("remainder"));
     SAVE(b);
 
+    if (VpIsPosInf(b) || VpIsNegInf(b)) {
+       GUARD_OBJ(*dv, NewZeroWrapLimited(1, 1));
+       VpSetZero(*dv, 1);
+       *rv = a;
+       return Qnil;
+    }
+
     mx = (a->MaxPrec + b->MaxPrec) *VpBaseFig();
     GUARD_OBJ(c,   NewZeroWrapLimited(1, mx));
     GUARD_OBJ(res, NewZeroWrapNolimit(1, (mx+1) * 2 + (VpBaseFig() + 1)));
@@ -3713,7 +3722,7 @@ rb_convert_to_BigDecimal(VALUE val, size_t digs, int raise_exception)
  *  - Other type:
  *
  *    - Raises an exception if keyword argument +exception+ is +true+.
- *    - Returns +nil+ if keyword argument +exception+ is +true+.
+ *    - Returns +nil+ if keyword argument +exception+ is +false+.
  *
  *  Raises an exception if +value+ evaluates to a Float
  *  and +digits+ is larger than Float::DIG + 1.
@@ -4133,11 +4142,11 @@ get_vp_value:
     }
     x = VpCheckGetValue(vx);
 
-    RB_GC_GUARD(one) = VpCheckGetValue(NewOneWrapLimited(1, 1));
-    RB_GC_GUARD(two) = VpCheckGetValue(VpCreateRbObject(1, "2", true));
+    one = VpCheckGetValue(NewOneWrapLimited(1, 1));
+    two = VpCheckGetValue(VpCreateRbObject(1, "2", true));
 
     n = prec + BIGDECIMAL_DOUBLE_FIGURES;
-    RB_GC_GUARD(vn) = SSIZET2NUM(n);
+    vn = SSIZET2NUM(n);
     expo = VpExponent10(vx);
     if (expo < 0 || expo >= 3) {
 	char buf[DECIMAL_SIZE_OF_BITS(SIZEOF_VALUE * CHAR_BIT) + 4];
@@ -4149,9 +4158,9 @@ get_vp_value:
     }
     w = BigDecimal_sub(x, one);
     x = BigDecimal_div2(w, BigDecimal_add(x, one), vn);
-    RB_GC_GUARD(x2) = BigDecimal_mult2(x, x, vn);
-    RB_GC_GUARD(y)  = x;
-    RB_GC_GUARD(d)  = y;
+    x2 = BigDecimal_mult2(x, x, vn);
+    y = x;
+    d = y;
     i = 1;
     while (!VpIsZero((Real*)DATA_PTR(d))) {
 	SIGNED_VALUE const ey = VpExponent10(DATA_PTR(y));
@@ -4178,6 +4187,13 @@ get_vp_value:
 	dy = BigDecimal_mult(log10, vexpo);
 	y = BigDecimal_add(y, dy);
     }
+
+    RB_GC_GUARD(one);
+    RB_GC_GUARD(two);
+    RB_GC_GUARD(vn);
+    RB_GC_GUARD(x2);
+    RB_GC_GUARD(y);
+    RB_GC_GUARD(d);
 
     return y;
 }
@@ -4395,13 +4411,10 @@ Init_bigdecimal(void)
 
     /* Constants definition */
 
-#ifndef RUBY_BIGDECIMAL_VERSION
-# error RUBY_BIGDECIMAL_VERSION is not defined
-#endif
     /*
      * The version of bigdecimal library
      */
-    rb_define_const(rb_cBigDecimal, "VERSION", rb_str_new2(RUBY_BIGDECIMAL_VERSION));
+    rb_define_const(rb_cBigDecimal, "VERSION", rb_str_new2(BIGDECIMAL_VERSION));
 
     /*
      * Base value used in internal calculations.  On a 32 bit system, BASE
@@ -6453,7 +6466,7 @@ VPrint(FILE *fp, const char *cntl_chr, Real *a)
                     }
                 }
                 nc += fprintf(fp, "E%"PRIdSIZE, VpExponent10(a));
-                nc += fprintf(fp, " (%"PRIdVALUE", %lu, %lu)", a->exponent, a->Prec, a->MaxPrec);
+                nc += fprintf(fp, " (%"PRIdVALUE", %"PRIuSIZE", %"PRIuSIZE")", a->exponent, a->Prec, a->MaxPrec);
             }
             else {
                 nc += fprintf(fp, "0.0");
@@ -7158,7 +7171,6 @@ VpSqrt(Real *y, Real *x)
     Real *r = NULL;
     size_t y_prec;
     SIGNED_VALUE n, e;
-    SIGNED_VALUE prec;
     ssize_t nr;
     double val;
 
@@ -7196,12 +7208,6 @@ VpSqrt(Real *y, Real *x)
 
     nr = 0;
     y_prec = y->MaxPrec;
-
-    prec = x->exponent - (ssize_t)y_prec;
-    if (x->exponent > 0)
-	++prec;
-    else
-	--prec;
 
     VpVtoD(&val, &e, x);    /* val <- x  */
     e /= (SIGNED_VALUE)BASE_FIG;

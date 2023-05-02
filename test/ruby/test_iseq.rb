@@ -637,6 +637,8 @@ class TestISeq < Test::Unit::TestCase
     }
 
     lines
+  ensure
+    Object.send(:remove_const, :A) rescue nil
   end
 
   def test_to_binary_line_tracepoint
@@ -756,5 +758,15 @@ class TestISeq < Test::Unit::TestCase
       }
       assert_equal :new, r.take
     RUBY
+  end
+
+  def test_ever_condition_loop
+    assert_ruby_status([], "BEGIN {exit}; while true && true; end")
+  end
+
+  def test_unreachable_syntax_error
+    mesg = /Invalid break/
+    assert_syntax_error("false and break", mesg)
+    assert_syntax_error("if false and break; end", mesg)
   end
 end

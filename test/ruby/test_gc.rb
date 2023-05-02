@@ -128,6 +128,8 @@ class TestGc < Test::Unit::TestCase
     omit 'stress' if GC.stress
 
     stat = GC.stat
+    # marking_time + sweeping_time could differ from time by 1 because they're stored in nanoseconds
+    assert_in_delta stat[:time], stat[:marking_time] + stat[:sweeping_time], 1
     assert_equal stat[:total_allocated_pages], stat[:heap_allocated_pages] + stat[:total_freed_pages]
     assert_operator stat[:heap_sorted_length], :>=, stat[:heap_eden_pages] + stat[:heap_allocatable_pages], "stat is: " + stat.inspect
     assert_equal stat[:heap_available_slots], stat[:heap_live_slots] + stat[:heap_free_slots] + stat[:heap_final_slots]
@@ -229,6 +231,7 @@ class TestGc < Test::Unit::TestCase
     assert_equal :force,  h[:major_by] if use_rgengc?
     assert_equal :method, h[:gc_by]
     assert_equal true,    h[:immediate_sweep]
+    assert_equal true,    h.key?(:need_major_by)
 
     GC.stress = true
     assert_equal :force, GC.latest_gc_info[:major_by]
@@ -244,6 +247,25 @@ class TestGc < Test::Unit::TestCase
     assert_equal info[:gc_by], GC.latest_gc_info(:gc_by)
     assert_raise(ArgumentError){ GC.latest_gc_info(:invalid) }
     assert_raise_with_message(ArgumentError, /\u{30eb 30d3 30fc}/) {GC.latest_gc_info(:"\u{30eb 30d3 30fc}")}
+  end
+
+  def test_latest_gc_info_need_major_by
+    return unless use_rgengc?
+    omit 'stress' if GC.stress
+
+    3.times { GC.start }
+    assert_nil GC.latest_gc_info(:need_major_by)
+
+    # allocate objects until need_major_by is set or major GC happens
+    major_count = GC.stat(:major_gc_count)
+    objects = []
+    while GC.stat(:major_gc_count) == major_count && GC.latest_gc_info(:need_major_by).nil?
+      objects.append(100.times.map { '*' })
+    end
+
+    assert_not_nil GC.latest_gc_info(:need_major_by)
+    GC.start(full_mark: false) # should be upgraded to major
+    assert_not_nil GC.latest_gc_info(:major_by)
   end
 
   def test_stress_compile_send
@@ -285,10 +307,30 @@ class TestGc < Test::Unit::TestCase
 
   def test_gc_parameter
     env = {
+      "RUBY_GC_HEAP_INIT_SLOTS" => "100"
+    }
+    assert_in_out_err([env, "-W0", "-e", "exit"], "", [], [], "[Bug #19284]")
+
+    env = {
       "RUBY_GC_MALLOC_LIMIT" => "60000000",
       "RUBY_GC_HEAP_INIT_SLOTS" => "100000"
     }
     assert_normal_exit("exit", "[ruby-core:39777]", :child_env => env)
+
+    env = {}
+    GC.stat_heap.each do |_, s|
+      env["RUBY_GC_HEAP_INIT_SIZE_#{s[:slot_size]}_SLOTS"] = "200000"
+    end
+    assert_normal_exit("exit", "", :child_env => env)
+
+    env["RUBY_GC_HEAP_INIT_SLOTS"] = "100000"
+    assert_normal_exit("exit", "", :child_env => env)
+
+    env = {}
+    GC.stat_heap.each do |_, s|
+      env["RUBY_GC_HEAP_INIT_SIZE_#{s[:slot_size]}_SLOTS"] = "0"
+    end
+    assert_normal_exit("exit", "", :child_env => env)
 
     env = {
       "RUBYOPT" => "",
@@ -310,13 +352,15 @@ class TestGc < Test::Unit::TestCase
     env = {
       "RUBY_GC_HEAP_INIT_SLOTS" => "100000",
       "RUBY_GC_HEAP_FREE_SLOTS" => "10000",
-      "RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR" => "0.9",
+      "RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR" => "0.4",
     }
     assert_normal_exit("exit", "", :child_env => env)
-    assert_in_out_err([env, "-w", "-e", "exit"], "", [], /RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR=0\.9/, "")
+    assert_in_out_err([env, "-w", "-e", "exit"], "", [], /RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR=0\.4/, "")
 
-    # always full GC when RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR < 1.0
-    assert_in_out_err([env, "-e", "1000_000.times{Object.new}; p(GC.stat[:minor_gc_count] < GC.stat[:major_gc_count])"], "", ['true'], //, "") if use_rgengc?
+    if use_rgengc?
+      # always full GC when RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR < 1.0
+      assert_in_out_err([env, "--disable-gems", "-e", "GC.start; 1000_000.times{Object.new}; p(GC.stat[:minor_gc_count] < GC.stat[:major_gc_count])"], "", ['true'], //, "")
+    end
 
     env = {
       "RUBY_GC_MALLOC_LIMIT"               => "60000000",

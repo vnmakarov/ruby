@@ -19,11 +19,13 @@ module TestIRB
       def Reline.get_screen_size
         [36, 80]
       end
+      save_encodings
     end
 
     def teardown
       Reline.instance_eval { undef :get_screen_size }
       Reline.define_singleton_method(:get_screen_size, @get_screen_size)
+      restore_encodings
     end
 
     def test_last_value
@@ -50,22 +52,19 @@ module TestIRB
     end
 
     def test_evaluate_with_encoding_error_without_lineno
-      pend if RUBY_ENGINE == 'truffleruby'
       assert_raise_with_message(EncodingError, /invalid symbol/) {
-        @context.evaluate(%q[{"\xAE": 1}], 1)
+        @context.evaluate(%q[:"\xAE"], 1)
         # The backtrace of this invalid encoding hash doesn't contain lineno.
       }
     end
 
-    def test_evaluate_with_onigmo_warning
-      pend if RUBY_ENGINE == 'truffleruby'
-      assert_warning("(irb):1: warning: character class has duplicated range: /[aa]/\n") do
-        @context.evaluate('/[aa]/', 1)
+    def test_evaluate_still_emits_warning
+      assert_warning("(irb):1: warning: END in method; use at_exit\n") do
+        @context.evaluate(%q[def foo; END {}; end], 1)
       end
     end
 
     def test_eval_input
-      pend if RUBY_ENGINE == 'truffleruby'
       verbose, $VERBOSE = $VERBOSE, nil
       input = TestInputMethod.new([
         "raise 'Foo'\n",
@@ -88,7 +87,6 @@ module TestIRB
     end
 
     def test_eval_input_raise2x
-      pend if RUBY_ENGINE == 'truffleruby'
       input = TestInputMethod.new([
         "raise 'Foo'\n",
         "raise 'Bar'\n",
@@ -129,16 +127,14 @@ module TestIRB
         [:marshal, "123", Marshal.dump(123)],
       ],
       failed: [
-        [false, "BasicObject.new", /\(Object doesn't support #inspect\)\n(=> )?\n/],
-        [:p, "class Foo; undef inspect ;end; Foo.new", /\(Object doesn't support #inspect\)\n(=> )?\n/],
-        [true, "BasicObject.new", /\(Object doesn't support #inspect\)\n(=> )?\n/],
-        [:yaml, "BasicObject.new", /\(Object doesn't support #inspect\)\n(=> )?\n/],
-        [:marshal, "[Object.new, Class.new]", /\(Object doesn't support #inspect\)\n(=> )?\n/]
+        [false, "BasicObject.new", /#<NoMethodError: undefined method `to_s' for/],
+        [:p, "class Foo; undef inspect ;end; Foo.new", /#<NoMethodError: undefined method `inspect' for/],
+        [:yaml, "BasicObject.new", /#<NoMethodError: undefined method `inspect' for/],
+        [:marshal, "[Object.new, Class.new]", /#<TypeError: can't dump anonymous class #<Class:/]
       ]
     }.each do |scenario, cases|
       cases.each do |inspect_mode, input, expected|
         define_method "test_#{inspect_mode}_inspect_mode_#{scenario}" do
-          pend if RUBY_ENGINE == 'truffleruby'
           verbose, $VERBOSE = $VERBOSE, nil
           irb = IRB::Irb.new(IRB::WorkSpace.new(Object.new), TestInputMethod.new([input]))
           irb.context.inspect_mode = inspect_mode
@@ -151,6 +147,69 @@ module TestIRB
           $VERBOSE = verbose
         end
       end
+    end
+
+    def test_object_inspection_handles_basic_object
+      verbose, $VERBOSE = $VERBOSE, nil
+      irb = IRB::Irb.new(IRB::WorkSpace.new(Object.new), TestInputMethod.new(["BasicObject.new"]))
+      out, err = capture_output do
+        irb.eval_input
+      end
+      assert_empty err
+      assert_not_match(/NoMethodError/, out)
+      assert_match(/#<BasicObject:.*>/, out)
+    ensure
+      $VERBOSE = verbose
+    end
+
+    def test_object_inspection_falls_back_to_kernel_inspect_when_errored
+      verbose, $VERBOSE = $VERBOSE, nil
+      main = Object.new
+      main.singleton_class.module_eval <<~RUBY
+        class Foo
+          def inspect
+            raise "foo"
+          end
+        end
+      RUBY
+
+      irb = IRB::Irb.new(IRB::WorkSpace.new(main), TestInputMethod.new(["Foo.new"]))
+      out, err = capture_output do
+        irb.eval_input
+      end
+      assert_empty err
+      assert_match(/An error occurred when inspecting the object: #<RuntimeError: foo>/, out)
+      assert_match(/Result of Kernel#inspect: #<#<Class:.*>::Foo:/, out)
+    ensure
+      $VERBOSE = verbose
+    end
+
+    def test_object_inspection_prints_useful_info_when_kernel_inspect_also_errored
+      verbose, $VERBOSE = $VERBOSE, nil
+      main = Object.new
+      main.singleton_class.module_eval <<~RUBY
+        class Foo
+          def initialize
+            # Kernel#inspect goes through instance variables with #inspect
+            # So this will cause Kernel#inspect to fail
+            @foo = BasicObject.new
+          end
+
+          def inspect
+            raise "foo"
+          end
+        end
+      RUBY
+
+      irb = IRB::Irb.new(IRB::WorkSpace.new(main), TestInputMethod.new(["Foo.new"]))
+      out, err = capture_output do
+        irb.eval_input
+      end
+      assert_empty err
+      assert_match(/An error occurred when inspecting the object: #<RuntimeError: foo>/, out)
+      assert_match(/An error occurred when running Kernel#inspect: #<NoMethodError: undefined method `inspect' for/, out)
+    ensure
+      $VERBOSE = verbose
     end
 
     def test_default_config
@@ -513,7 +572,6 @@ module TestIRB
     end
 
     def test_eval_input_with_invalid_byte_sequence_exception
-      pend if RUBY_ENGINE == 'truffleruby'
       verbose, $VERBOSE = $VERBOSE, nil
       input = TestInputMethod.new([
         %Q{def hoge() fuga; end; def fuga() raise "A\\xF3B"; end; hoge\n},
@@ -607,6 +665,26 @@ module TestIRB
       assert_pattern_list(expected, out)
     ensure
       $VERBOSE = verbose
+    end
+
+    def test_prompt_main_escape
+      main = Struct.new(:to_s).new("main\a\t\r\n")
+      irb = IRB::Irb.new(IRB::WorkSpace.new(main), TestInputMethod.new)
+      assert_equal("irb(main    )>", irb.prompt('irb(%m)>', nil, 1, 1))
+    end
+
+    def test_prompt_main_inspect_escape
+      main = Struct.new(:inspect).new("main\\n\nmain")
+      irb = IRB::Irb.new(IRB::WorkSpace.new(main), TestInputMethod.new)
+      assert_equal("irb(main\\n main)>", irb.prompt('irb(%M)>', nil, 1, 1))
+    end
+
+    def test_prompt_main_truncate
+      main = Struct.new(:to_s).new("a" * 100)
+      def main.inspect; to_s.inspect; end
+      irb = IRB::Irb.new(IRB::WorkSpace.new(main), TestInputMethod.new)
+      assert_equal('irb(aaaaaaaaaaaaaaaaaaaaaaaaaaaaa...)>', irb.prompt('irb(%m)>', nil, 1, 1))
+      assert_equal('irb("aaaaaaaaaaaaaaaaaaaaaaaaaaaa...)>', irb.prompt('irb(%M)>', nil, 1, 1))
     end
 
     def test_lineno

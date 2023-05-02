@@ -143,6 +143,7 @@ pub use rb_insn_name as raw_insn_name;
 pub use rb_insn_len as raw_insn_len;
 pub use rb_yarv_class_of as CLASS_OF;
 pub use rb_get_ec_cfp as get_ec_cfp;
+pub use rb_get_cfp_iseq as get_cfp_iseq;
 pub use rb_get_cfp_pc as get_cfp_pc;
 pub use rb_get_cfp_sp as get_cfp_sp;
 pub use rb_get_cfp_self as get_cfp_self;
@@ -183,7 +184,9 @@ pub use rb_get_cikw_keywords_idx as get_cikw_keywords_idx;
 pub use rb_get_call_data_ci as get_call_data_ci;
 pub use rb_yarv_str_eql_internal as rb_str_eql_internal;
 pub use rb_yarv_ary_entry_internal as rb_ary_entry_internal;
-pub use rb_yarv_fix_mod_fix as rb_fix_mod_fix;
+pub use rb_yjit_fix_div_fix as rb_fix_div_fix;
+pub use rb_yjit_fix_mod_fix as rb_fix_mod_fix;
+pub use rb_yjit_fix_mul_fix as rb_fix_mul_fix;
 pub use rb_FL_TEST as FL_TEST;
 pub use rb_FL_TEST_RAW as FL_TEST_RAW;
 pub use rb_RB_TYPE_P as RB_TYPE_P;
@@ -242,6 +245,12 @@ pub struct VALUE(pub usize);
 
 /// Pointer to an ISEQ
 pub type IseqPtr = *const rb_iseq_t;
+
+// Given an ISEQ pointer, convert PC to insn_idx
+pub fn iseq_pc_to_insn_idx(iseq: IseqPtr, pc: *mut VALUE) -> Option<u16> {
+    let pc_zero = unsafe { rb_iseq_pc_at_idx(iseq, 0) };
+    unsafe { pc.offset_from(pc_zero) }.try_into().ok()
+}
 
 /// Opaque execution-context type from vm_core.h
 #[repr(C)]
@@ -398,6 +407,10 @@ impl VALUE {
         unsafe { rb_obj_frozen_p(self) != VALUE(0) }
     }
 
+    pub fn shape_too_complex(self) -> bool {
+        unsafe { rb_shape_obj_too_complex(self) }
+    }
+
     pub fn shape_id_of(self) -> u32 {
         unsafe { rb_shape_get_shape_id(self) }
     }
@@ -446,7 +459,7 @@ impl VALUE {
 
     pub fn as_usize(self) -> usize {
         let VALUE(us) = self;
-        us as usize
+        us
     }
 
     pub fn as_ptr<T>(self) -> *const T {
@@ -459,7 +472,7 @@ impl VALUE {
         us as *mut T
     }
 
-    /// For working with opague pointers and encoding null check.
+    /// For working with opaque pointers and encoding null check.
     /// Similar to [std::ptr::NonNull], but for `*const T`. `NonNull<T>`
     /// is for `*mut T` while our C functions are setup to use `*const T`.
     /// Casting from `NonNull<T>` to `*const T` is too noisy.
@@ -560,8 +573,21 @@ pub fn rust_str_to_ruby(str: &str) -> VALUE {
 pub fn rust_str_to_sym(str: &str) -> VALUE {
     let c_str = CString::new(str).unwrap();
     let c_ptr: *const c_char = c_str.as_ptr();
-
     unsafe { rb_id2sym(rb_intern(c_ptr)) }
+}
+
+/// Produce an owned Rust String from a C char pointer
+#[cfg(feature = "disasm")]
+pub fn cstr_to_rust_string(c_char_ptr: *const c_char) -> Option<String> {
+    assert!(c_char_ptr != std::ptr::null());
+
+    use std::ffi::CStr;
+    let c_str: &CStr = unsafe { CStr::from_ptr(c_char_ptr) };
+
+    match c_str.to_str() {
+        Ok(rust_str) => Some(rust_str.to_string()),
+        Err(_) => None
+    }
 }
 
 /// A location in Rust code for integrating with debugging facilities defined in C.
@@ -650,6 +676,7 @@ mod manual_defs {
 
     pub const SIZEOF_VALUE: usize = 8;
     pub const SIZEOF_VALUE_I32: i32 = SIZEOF_VALUE as i32;
+    pub const VALUE_BITS: u8 = 8 * SIZEOF_VALUE as u8;
 
     pub const RUBY_LONG_MIN: isize = std::os::raw::c_long::MIN as isize;
     pub const RUBY_LONG_MAX: isize = std::os::raw::c_long::MAX as isize;

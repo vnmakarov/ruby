@@ -17,18 +17,6 @@ module Spec
       Gem::Platform.new(platform)
     end
 
-    # Returns a number smaller than the size of the index. Useful for specs that
-    # need the API request limit to be reached for some reason.
-    def low_api_request_limit_for(gem_repo)
-      all_gems = Dir[gem_repo.join("gems/*.gem")]
-
-      all_gem_names = all_gems.map do |file|
-        File.basename(file, ".gem").match(/\A(?<gem_name>[^-]+)-.*\z/)[:gem_name]
-      end.uniq
-
-      (all_gem_names - ["bundler"]).size
-    end
-
     def build_repo1
       rake_path = Dir["#{Path.base_system_gems}/**/rake*.gem"].first
 
@@ -298,10 +286,6 @@ module Spec
       end
     end
 
-    def build_dep(name, requirements = Gem::Requirement.default, type = :runtime)
-      Bundler::Dependency.new(name, :version => requirements)
-    end
-
     def build_lib(name, *args, &blk)
       build_with(LibBuilder, name, args, &blk)
     end
@@ -456,7 +440,7 @@ module Spec
         write "ext/extconf.rb", <<-RUBY
           require "mkmf"
 
-          $extout = "$(topdir)/" + RbConfig::CONFIG["EXTOUT"] unless RUBY_VERSION < "2.4"
+          $extout = "$(topdir)/" + RbConfig::CONFIG["EXTOUT"]
 
           extension_name = "#{name}_c"
           if extra_lib_dir = with_config("ext-lib")
@@ -639,7 +623,7 @@ module Spec
       end
     end
 
-    TEST_CERT = <<-CERT.gsub(/^\s*/, "")
+    TEST_CERT = <<~CERT
       -----BEGIN CERTIFICATE-----
       MIIDMjCCAhqgAwIBAgIBATANBgkqhkiG9w0BAQUFADAnMQwwCgYDVQQDDAN5b3Ux
       FzAVBgoJkiaJk/IsZAEZFgdleGFtcGxlMB4XDTE1MDIwODAwMTIyM1oXDTQyMDYy
@@ -662,7 +646,7 @@ module Spec
       -----END CERTIFICATE-----
     CERT
 
-    TEST_PKEY = <<-PKEY.gsub(/^\s*/, "")
+    TEST_PKEY = <<~PKEY
       -----BEGIN RSA PRIVATE KEY-----
       MIIEowIBAAKCAQEA2W8V2k3jdzgMxL0mjTqbRruTdtDcdZDXKtiFkyLvsXUXvc2k
       GSdgcjMOS1CkafqGz/hAUlPibjM0QEXjtQuMdTmdMrmuORLeeIZhSO+HdkTNV6j3

@@ -14,6 +14,7 @@ class TestParse < Test::Unit::TestCase
 
   def test_error_line
     assert_syntax_error('------,,', /\n\z/, 'Message to pipe should end with a newline')
+    assert_syntax_error("{hello\n  world}", /hello/)
   end
 
   def test_else_without_rescue
@@ -680,6 +681,16 @@ FOO
       eval "x = <<""FOO\r\n1\r\nFOO"
     end
     assert_equal("1\n", x)
+
+    assert_nothing_raised do
+      x = eval "<<' FOO'\n""[Bug #19539]\n"" FOO\n"
+    end
+    assert_equal("[Bug #19539]\n", x)
+
+    assert_nothing_raised do
+      x = eval "<<-' FOO'\n""[Bug #19539]\n"" FOO\n"
+    end
+    assert_equal("[Bug #19539]\n", x)
   end
 
   def test_magic_comment

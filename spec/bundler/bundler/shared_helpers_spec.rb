@@ -248,6 +248,8 @@ RSpec.describe Bundler::SharedHelpers do
 
     shared_examples_for "ENV['BUNDLER_SETUP'] gets set correctly" do
       it "ensures bundler/setup is set in ENV['BUNDLER_SETUP']" do
+        skip "Does not play well with DidYouMean being a bundled gem instead of a default gem in Ruby 2.6" if RUBY_VERSION < "2.7"
+
         subject.set_bundle_environment
         expect(ENV["BUNDLER_SETUP"]).to eq("#{source_lib_dir}/bundler/setup")
       end
@@ -288,7 +290,7 @@ RSpec.describe Bundler::SharedHelpers do
       if Gem.respond_to?(:path_separator)
         allow(Gem).to receive(:path_separator).and_return(":")
       else
-        stub_const("File::PATH_SEPARATOR", ":".freeze)
+        stub_const("File::PATH_SEPARATOR", ":")
       end
       allow(Bundler).to receive(:bundle_path) { Pathname.new("so:me/dir/bin") }
       expect { subject.send(:validate_bundle_path) }.to raise_error(

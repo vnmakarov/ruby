@@ -16,6 +16,7 @@ require "rubygems/specification"
 require "rubygems/source"
 
 require_relative "match_metadata"
+require_relative "force_platform"
 require_relative "match_platform"
 
 # Cherry-pick fixes to `Gem.ruby_version` to be useful for modern Bundler
@@ -65,12 +66,32 @@ module Gem
 
     alias_method :rg_extension_dir, :extension_dir
     def extension_dir
-      @bundler_extension_dir ||= if source.respond_to?(:extension_dir_name)
+      # following instance variable is already used in original method
+      # and that is the reason to prefix it with bundler_ and add rubocop exception
+      @bundler_extension_dir ||= if source.respond_to?(:extension_dir_name) # rubocop:disable Naming/MemoizedInstanceVariableName
         unique_extension_dir = [source.extension_dir_name, File.basename(full_gem_path)].uniq.join("-")
         File.expand_path(File.join(extensions_dir, unique_extension_dir))
       else
         rg_extension_dir
       end
+    end
+
+    alias_method :rg_missing_extensions?, :missing_extensions?
+    def missing_extensions?
+      # When we use this methods with local gemspec, we don't handle
+      # build status of extension correctly. So We need to find extension
+      # files in require_paths.
+      # TODO: Gem::Specification couldn't access extension name from extconf.rb
+      #       so we find them with heuristic way. We should improve it.
+      if source.respond_to?(:root)
+        return false if raw_require_paths.any? do |path|
+          ext_dir = File.join(full_gem_path, path)
+          File.exist?(File.join(ext_dir, "#{name}.#{RbConfig::CONFIG["DLEXT"]}")) ||
+          !Dir.glob(File.join(ext_dir, name, "*.#{RbConfig::CONFIG["DLEXT"]}")).empty?
+        end
+      end
+
+      rg_missing_extensions?
     end
 
     remove_method :gem_dir if instance_methods(false).include?(:gem_dir)
@@ -153,12 +174,16 @@ module Gem
   end
 
   class Dependency
+    include ::Bundler::ForcePlatform
+
     attr_accessor :source, :groups
 
     alias_method :eql?, :==
 
     def force_ruby_platform
-      false
+      return @force_ruby_platform if defined?(@force_ruby_platform) && !@force_ruby_platform.nil?
+
+      @force_ruby_platform = default_force_ruby_platform
     end
 
     def encode_with(coder)
@@ -198,9 +223,9 @@ module Gem
         protected
 
         def _requirements_sorted?
-          return @_are_requirements_sorted if defined?(@_are_requirements_sorted)
+          return @_requirements_sorted if defined?(@_requirements_sorted)
           strings = as_list
-          @_are_requirements_sorted = strings == strings.sort
+          @_requirements_sorted = strings == strings.sort
         end
 
         def _with_sorted_requirements
@@ -277,6 +302,10 @@ module Gem
         without_gnu_nor_abi_modifiers
       end
     end
+
+    if RUBY_ENGINE == "truffleruby" && !defined?(REUSE_AS_BINARY_ON_TRUFFLERUBY)
+      REUSE_AS_BINARY_ON_TRUFFLERUBY = %w[libv8 libv8-node sorbet-static].freeze
+    end
   end
 
   Platform.singleton_class.module_eval do
@@ -338,11 +367,7 @@ module Gem
     end
 
     def glob_files_in_dir(glob, base_path)
-      if RUBY_VERSION >= "2.5"
-        Dir.glob(glob, :base => base_path).map! {|f| File.expand_path(f, base_path) }
-      else
-        Dir.glob(File.join(base_path.to_s.gsub(/[\[\]]/, '\\\\\\&'), glob)).map! {|f| File.expand_path(f) }
-      end
+      Dir.glob(glob, :base => base_path).map! {|f| File.expand_path(f, base_path) }
     end
   end
 end

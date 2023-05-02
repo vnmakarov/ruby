@@ -3,19 +3,24 @@ on: [workflow_dispatch]
   push:
     paths-ignore:
       - 'doc/**'
+      - '**/man'
       - '**.md'
       - '**.rdoc'
       - '**/.document'
-      - '**.[1-8]'
-      - '**.ronn'
   pull_request:
     paths-ignore:
       - 'doc/**'
+      - '**/man'
       - '**.md'
       - '**.rdoc'
       - '**/.document'
-      - '**.[1-8]'
-      - '**.ronn'
+  merge_group:
+    paths-ignore:
+      - 'doc/**'
+      - '**/man'
+      - '**.md'
+      - '**.rdoc'
+      - '**/.document'
 
 concurrency:
   group: ${{ github.workflow }} / ${{ startsWith(github.event_name, 'pull') && github.ref_name || github.sha }}
@@ -30,7 +35,7 @@ jobs:
     # GitHub Action's image seems to already contain a Rust 1.58.0.
     runs-on: ubuntu-20.04
     steps:
-      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
       # For now we can't run cargo test --offline because it complains about the
       # capstone dependency, even though the dependency is optional
       #- run: cargo test --offline
@@ -42,12 +47,22 @@ jobs:
       # Check that we can build in release mode too
       - run: cargo build --release
         working-directory: yjit
+  lint:
+    name: Rust lint
+    # GitHub Action's image seems to already contain a Rust 1.58.0.
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+      # Check that we don't have linting errors in release mode, too
+      - run: cargo clippy --all-targets --all-features
+        working-directory: yjit
   make:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - test_task: "check-yjit-bindings"
+          - test_task: "yjit-bindgen"
+            hint: "To fix: use patch in logs"
             configure: "--with-gcc=clang-12 --enable-yjit=dev"
 
           - test_task: "check"
@@ -78,6 +93,7 @@ jobs:
       YJIT_BENCH_OPTS: ${{ matrix.yjit_bench_opts }}
       RUBY_DEBUG: ci
       BUNDLE_JOBS: 8 # for yjit-bench
+      RUST_BACKTRACE: 1
     runs-on: ubuntu-20.04
     if: ${{ !contains(github.event.head_commit.message, '[DOC]') && !contains(github.event.pull_request.labels.*.name, 'Documentation') }}
     steps:
@@ -95,10 +111,10 @@ jobs:
         run: |
           git config --global advice.detachedHead 0
           git config --global init.defaultBranch garbage
-      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
         with:
           path: src
-      - uses: actions/cache@9b0c1fce7a93df8e3bb8926b0d6e9d89e92f20a7 # v3.0.11
+      - uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
         with:
           path: src/.downloaded-cache
           key: downloaded-cache
@@ -118,8 +134,6 @@ jobs:
       - run: make prepare-gems
         if: ${{ matrix.test_task == 'test-bundled-gems' }}
       - run: make -j
-      - run: make leaked-globals
-        if: ${{ matrix.test_task == 'check' }}
       - name: Create dummy files in build dir
         run: |
           ./miniruby -e '(("a".."z").to_a+("A".."Z").to_a+("0".."9").to_a+%w[foo bar test zzz]).each{|basename|File.write("#{basename}.rb", "raise %(do not load #{basename}.rb)")}'
@@ -136,6 +150,7 @@ jobs:
           RUBY_TESTOPTS: "-q --tty=no"
           TEST_BUNDLED_GEMS_ALLOW_FAILURES: ""
           PRECHECK_BUNDLED_GEMS: "no"
+          SYNTAX_SUGGEST_TIMEOUT: "5"
         continue-on-error: ${{ matrix.test_task == 'yjit-bench' }}
       - name: Show ${{ github.event.pull_request.base.ref }} GitHub URL for yjit-bench comparison
         run: echo "https://github.com/${BASE_REPO}/commit/${BASE_SHA}"
@@ -143,7 +158,7 @@ jobs:
           BASE_REPO: ${{ github.event.pull_request.base.repo.full_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         if: ${{ matrix.test_task == 'yjit-bench' && startsWith(github.event_name, 'pull') }}
-      - uses: ruby/action-slack@b6882ea6ef8f556f9f9af9ec1220d3f1ced74acf # v3.0.0
+      - uses: ruby/action-slack@0bd85c72233cdbb6a0fe01d37aaeff1d21b5fce1 # v3.2.1
         with:
           payload: |
             {

@@ -7,8 +7,6 @@ module Bundler
     class Rubygems < Source
       autoload :Remote, File.expand_path("rubygems/remote", __dir__)
 
-      # Use the API when installing less than X gems
-      API_REQUEST_LIMIT = 500
       # Ask for X gems per API request
       API_REQUEST_SIZE = 50
 
@@ -145,7 +143,7 @@ module Bundler
         end
 
         if installed?(spec) && !force
-          print_using_message "Using #{version_message(spec)}"
+          print_using_message "Using #{version_message(spec, options[:previous_spec])}"
           return nil # no post-install message
         end
 
@@ -162,8 +160,6 @@ module Bundler
 
         install_path = rubygems_dir
         bin_path     = Bundler.system_bindir
-
-        Bundler.mkdir_p bin_path unless spec.executables.empty? || Bundler.rubygems.provides?(">= 2.7.5")
 
         require_relative "../rubygems_gem_installer"
 
@@ -294,7 +290,7 @@ module Bundler
       end
 
       def dependency_api_available?
-        api_fetchers.any?
+        @allow_remote && api_fetchers.any?
       end
 
       protected
@@ -339,8 +335,7 @@ module Bundler
       end
 
       def normalize_uri(uri)
-        uri = uri.to_s
-        uri = "#{uri}/" unless uri =~ %r{/$}
+        uri = URINormalizer.normalize_suffix(uri.to_s)
         require_relative "../vendored_uri"
         uri = Bundler::URI(uri)
         raise ArgumentError, "The source must be an absolute URI. For example:\n" \
@@ -383,7 +378,7 @@ module Bundler
           idx = @allow_local ? installed_specs.dup : Index.new
 
           Dir["#{cache_path}/*.gem"].each do |gemfile|
-            next if gemfile =~ /^bundler\-[\d\.]+?\.gem/
+            next if /^bundler\-[\d\.]+?\.gem/.match?(gemfile)
             s ||= Bundler.rubygems.spec_from_gem(gemfile)
             s.source = self
             idx << s
@@ -404,12 +399,11 @@ module Bundler
           # gather lists from non-api sites
           fetch_names(index_fetchers, nil, idx, false)
 
-          # because ensuring we have all the gems we need involves downloading
-          # the gemspecs of those gems, if the non-api sites contain more than
-          # about 500 gems, we treat all sites as non-api for speed.
-          allow_api = idx.size < API_REQUEST_LIMIT && dependency_names.size < API_REQUEST_LIMIT
-          Bundler.ui.debug "Need to query more than #{API_REQUEST_LIMIT} gems." \
-            " Downloading full index instead..." unless allow_api
+          # legacy multi-remote sources need special logic to figure out
+          # dependency names and that logic can be very costly if one remote
+          # uses the dependency API but others don't. So use full indexes
+          # consistently in that particular case.
+          allow_api = !multiple_remotes?
 
           fetch_names(api_fetchers, allow_api && dependency_names, idx, false)
         end

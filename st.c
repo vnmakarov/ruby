@@ -569,6 +569,12 @@ st_init_table_with_size(const struct st_hash_type *type, st_index_t size)
     return tab;
 }
 
+size_t
+st_table_size(const struct st_table *tbl)
+{
+    return tbl->num_entries;
+}
+
 /* Create and return table with TYPE which can hold a minimal number
    of entries (see comments for get_power2).  */
 st_table *
@@ -768,7 +774,7 @@ rebuild_table(st_table *tab)
 }
 
 /* Return the next secondary hash index for table TAB using previous
-   index IND and PERTERB.  Finally modulo of the function becomes a
+   index IND and PERTURB.  Finally modulo of the function becomes a
    full *cycle linear congruential generator*, in other words it
    guarantees traversing all table bins in extreme case.
 
@@ -780,10 +786,10 @@ rebuild_table(st_table *tab)
 
    For our case a is 5, c is 1, and m is a power of two.  */
 static inline st_index_t
-secondary_hash(st_index_t ind, st_table *tab, st_index_t *perterb)
+secondary_hash(st_index_t ind, st_table *tab, st_index_t *perturb)
 {
-    *perterb >>= 11;
-    ind = (ind << 2) + ind + *perterb + 1;
+    *perturb >>= 11;
+    ind = (ind << 2) + ind + *perturb + 1;
     return hash_bin(ind, tab);
 }
 
@@ -826,7 +832,7 @@ find_table_entry_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
 #ifdef QUADRATIC_PROBE
     st_index_t d;
 #else
-    st_index_t peterb;
+    st_index_t perturb;
 #endif
     st_index_t bin;
     st_table_entry *entries = tab->entries;
@@ -835,7 +841,7 @@ find_table_entry_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
 #ifdef QUADRATIC_PROBE
     d = 1;
 #else
-    peterb = hash_value;
+    perturb = hash_value;
 #endif
     FOUND_BIN;
     for (;;) {
@@ -853,7 +859,7 @@ find_table_entry_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
         ind = hash_bin(ind + d, tab);
         d++;
 #else
-        ind = secondary_hash(ind, tab, &peterb);
+        ind = secondary_hash(ind, tab, &perturb);
 #endif
         COLLISION;
     }
@@ -872,7 +878,7 @@ find_table_bin_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
 #ifdef QUADRATIC_PROBE
     st_index_t d;
 #else
-    st_index_t peterb;
+    st_index_t perturb;
 #endif
     st_index_t bin;
     st_table_entry *entries = tab->entries;
@@ -881,7 +887,7 @@ find_table_bin_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
 #ifdef QUADRATIC_PROBE
     d = 1;
 #else
-    peterb = hash_value;
+    perturb = hash_value;
 #endif
     FOUND_BIN;
     for (;;) {
@@ -899,7 +905,7 @@ find_table_bin_ind(st_table *tab, st_hash_t hash_value, st_data_t key)
         ind = hash_bin(ind + d, tab);
         d++;
 #else
-        ind = secondary_hash(ind, tab, &peterb);
+        ind = secondary_hash(ind, tab, &perturb);
 #endif
         COLLISION;
     }
@@ -916,7 +922,7 @@ find_table_bin_ind_direct(st_table *tab, st_hash_t hash_value, st_data_t key)
 #ifdef QUADRATIC_PROBE
     st_index_t d;
 #else
-    st_index_t peterb;
+    st_index_t perturb;
 #endif
     st_index_t bin;
 
@@ -924,7 +930,7 @@ find_table_bin_ind_direct(st_table *tab, st_hash_t hash_value, st_data_t key)
 #ifdef QUADRATIC_PROBE
     d = 1;
 #else
-    peterb = hash_value;
+    perturb = hash_value;
 #endif
     FOUND_BIN;
     for (;;) {
@@ -935,7 +941,7 @@ find_table_bin_ind_direct(st_table *tab, st_hash_t hash_value, st_data_t key)
         ind = hash_bin(ind + d, tab);
         d++;
 #else
-        ind = secondary_hash(ind, tab, &peterb);
+        ind = secondary_hash(ind, tab, &perturb);
 #endif
         COLLISION;
     }
@@ -960,7 +966,7 @@ find_table_bin_ptr_and_reserve(st_table *tab, st_hash_t *hash_value,
 #ifdef QUADRATIC_PROBE
     st_index_t d;
 #else
-    st_index_t peterb;
+    st_index_t perturb;
 #endif
     st_index_t entry_index;
     st_index_t first_deleted_bin_ind;
@@ -970,7 +976,7 @@ find_table_bin_ptr_and_reserve(st_table *tab, st_hash_t *hash_value,
 #ifdef QUADRATIC_PROBE
     d = 1;
 #else
-    peterb = curr_hash_value;
+    perturb = curr_hash_value;
 #endif
     FOUND_BIN;
     first_deleted_bin_ind = UNDEFINED_BIN_IND;
@@ -1000,7 +1006,7 @@ find_table_bin_ptr_and_reserve(st_table *tab, st_hash_t *hash_value,
         ind = hash_bin(ind + d, tab);
         d++;
 #else
-        ind = secondary_hash(ind, tab, &peterb);
+        ind = secondary_hash(ind, tab, &perturb);
 #endif
         COLLISION;
     }
@@ -2120,7 +2126,7 @@ st_rehash_indexed(st_table *tab)
 #ifdef QUADRATIC_PROBE
         st_index_t d = 1;
 #else
-        st_index_t peterb = p->hash;
+        st_index_t perturb = p->hash;
 #endif
 
         if (DELETED_ENTRY_P(p))
@@ -2153,7 +2159,7 @@ st_rehash_indexed(st_table *tab)
                     ind = hash_bin(ind + d, tab);
                     d++;
 #else
-                    ind = secondary_hash(ind, tab, &peterb);
+                    ind = secondary_hash(ind, tab, &perturb);
 #endif
                 }
             }

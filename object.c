@@ -42,6 +42,18 @@
 #include "builtin.h"
 #include "shape.h"
 
+/* Flags of RObject
+ *
+ * 1:    ROBJECT_EMBED
+ *           The object has its instance variables embedded (the array of
+ *           instance variables directly follow the object, rather than being
+ *           on a separately allocated buffer).
+ * if !SHAPE_IN_BASIC_FLAGS
+ * 4-19: SHAPE_FLAG_MASK
+ *           Shape ID for the object.
+ * endif
+ */
+
 /*!
  * \addtogroup object
  * \{
@@ -106,13 +118,19 @@ rb_obj_setup(VALUE obj, VALUE klass, VALUE type)
     return obj;
 }
 
-/**
- *  call-seq:
- *     obj === other   -> true or false
+/*
+ * call-seq:
+ *   true === other -> true or false
+ *   false === other -> true or false
+ *   nil === other -> true or false
  *
- *  Case Equality -- For class Object, effectively the same as calling
- *  <code>#==</code>, but typically overridden by descendants to provide
- *  meaningful semantics in +case+ statements.
+ * Returns +true+ or +false+.
+ *
+ * Like Object#==, if +object+ is an instance of Object
+ * (and not an instance of one of its many subclasses).
+ *
+ * This method is commonly overridden by those subclasses,
+ * to provide meaningful semantics in +case+ statements.
  */
 #define case_equal rb_equal
     /* The default implementation of #=== is
@@ -185,7 +203,7 @@ rb_eql(VALUE obj1, VALUE obj2)
  * \private
  *++
  */
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_obj_equal(VALUE obj1, VALUE obj2)
 {
     return RBOOL(obj1 == obj2);
@@ -203,7 +221,7 @@ VALUE rb_obj_hash(VALUE obj);
  *++
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_obj_not(VALUE obj)
 {
     return RBOOL(!RTEST(obj));
@@ -219,7 +237,7 @@ rb_obj_not(VALUE obj)
  *++
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_obj_not_equal(VALUE obj1, VALUE obj2)
 {
     VALUE result = rb_funcall(obj1, id_eq, 1, obj2);
@@ -266,14 +284,26 @@ rb_obj_singleton_class(VALUE obj)
 }
 
 /*! \private */
-MJIT_FUNC_EXPORTED void
+void
 rb_obj_copy_ivar(VALUE dest, VALUE obj)
 {
     RUBY_ASSERT(!RB_TYPE_P(obj, T_CLASS) && !RB_TYPE_P(obj, T_MODULE));
 
     RUBY_ASSERT(BUILTIN_TYPE(dest) == BUILTIN_TYPE(obj));
-    uint32_t src_num_ivs = RBASIC_IV_COUNT(obj);
     rb_shape_t * src_shape = rb_shape_get_shape(obj);
+
+    if (rb_shape_id(src_shape) == OBJ_TOO_COMPLEX_SHAPE_ID) {
+        st_table * table = rb_st_init_numtable_with_size(rb_st_table_size(ROBJECT_IV_HASH(obj)));
+
+        rb_ivar_foreach(obj, rb_obj_evacuate_ivs_to_hash_table, (st_data_t)table);
+        rb_shape_set_too_complex(dest);
+
+        ROBJECT(dest)->as.heap.ivptr = (VALUE *)table;
+
+        return;
+    }
+
+    uint32_t src_num_ivs = RBASIC_IV_COUNT(obj);
     rb_shape_t * shape_to_set_on_dest = src_shape;
     VALUE * src_buf;
     VALUE * dest_buf;
@@ -436,8 +466,7 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
             rb_shape_transition_shape_frozen(clone);
         }
         break;
-      case Qtrue:
-        {
+      case Qtrue: {
         static VALUE freeze_true_hash;
         if (!freeze_true_hash) {
             freeze_true_hash = rb_hash_new();
@@ -452,9 +481,8 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
         RBASIC(clone)->flags |= FL_FREEZE;
         rb_shape_transition_shape_frozen(clone);
         break;
-        }
-      case Qfalse:
-        {
+      }
+      case Qfalse: {
         static VALUE freeze_false_hash;
         if (!freeze_false_hash) {
             freeze_false_hash = rb_hash_new();
@@ -467,7 +495,7 @@ mutable_obj_clone(VALUE obj, VALUE kwfreeze)
         argv[1] = freeze_false_hash;
         rb_funcallv_kw(clone, id_init_clone, 2, argv, RB_PASS_KEYWORDS);
         break;
-        }
+      }
       default:
         rb_bug("invalid kwfreeze passed to mutable_obj_clone");
     }
@@ -557,12 +585,6 @@ VALUE
 rb_obj_size(VALUE self, VALUE args, VALUE obj)
 {
     return LONG2FIX(1);
-}
-
-static VALUE
-block_given_p(rb_execution_context_t *ec, VALUE self)
-{
-    return RBOOL(rb_block_given_p());
 }
 
 /**
@@ -677,8 +699,8 @@ inspect_i(st_data_t k, st_data_t v, st_data_t a)
     else {
         rb_str_cat2(str, ", ");
     }
-    rb_str_catf(str, "%"PRIsVALUE"=%+"PRIsVALUE,
-                rb_id2str(id), value);
+    rb_str_catf(str, "%"PRIsVALUE"=", rb_id2str(id));
+    rb_str_buf_append(str, rb_inspect(value));
 
     return ST_CONTINUE;
 }
@@ -1247,17 +1269,47 @@ rb_obj_frozen_p(VALUE obj)
 /*
  * Document-class: NilClass
  *
- *  The class of the singleton object <code>nil</code>.
+ * The class of the singleton object +nil+.
+ *
+ * Several of its methods act as operators:
+ *
+ * - #&
+ * - #|
+ * - #===
+ * - #=~
+ * - #^
+ *
+ * Others act as converters, carrying the concept of _nullity_
+ * to other classes:
+ *
+ * - #rationalize
+ * - #to_a
+ * - #to_c
+ * - #to_h
+ * - #to_r
+ * - #to_s
+ *
+ * Another method provides inspection:
+ *
+ * - #inspect
+ *
+ * Finally, there is this query method:
+ *
+ * - #nil?
+ *
  */
 
 /*
- *  call-seq:
- *     nil.to_s    -> ""
+ * call-seq:
+ *   to_s -> ''
  *
- *  Always returns the empty string.
+ * Returns an empty String:
+ *
+ *   nil.to_s # => ""
+ *
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_nil_to_s(VALUE obj)
 {
     return rb_cNilClass_to_s;
@@ -1266,12 +1318,13 @@ rb_nil_to_s(VALUE obj)
 /*
  * Document-method: to_a
  *
- *  call-seq:
- *     nil.to_a    -> []
+ * call-seq:
+ *   to_a -> []
  *
- *  Always returns an empty array.
+ * Returns an empty Array.
  *
- *     nil.to_a   #=> []
+ *   nil.to_a # => []
+ *
  */
 
 static VALUE
@@ -1283,12 +1336,13 @@ nil_to_a(VALUE obj)
 /*
  * Document-method: to_h
  *
- *  call-seq:
- *     nil.to_h    -> {}
+ * call-seq:
+ *   to_h -> {}
  *
- *  Always returns an empty hash.
+ * Returns an empty Hash.
  *
- *     nil.to_h   #=> {}
+ *   nil.to_h   #=> {}
+ *
  */
 
 static VALUE
@@ -1298,10 +1352,13 @@ nil_to_h(VALUE obj)
 }
 
 /*
- *  call-seq:
- *    nil.inspect  -> "nil"
+ * call-seq:
+ *   inspect -> 'nil'
  *
- *  Always returns the string "nil".
+ * Returns string <tt>'nil'</tt>:
+ *
+ *   nil.inspect # => "nil"
+ *
  */
 
 static VALUE
@@ -1311,12 +1368,17 @@ nil_inspect(VALUE obj)
 }
 
 /*
- *  call-seq:
- *     nil =~ other  -> nil
+ * call-seq:
+ *   nil =~ object -> nil
  *
- *  Dummy pattern matching -- always returns nil.
+ * Returns +nil+.
  *
- *  This method makes it possible to `while gets =~ /re/ do`.
+ * This method makes it useful to write:
+ *
+ *   while gets =~ /re/
+ *     # ...
+ *   end
+ *
  */
 
 static VALUE
@@ -1325,24 +1387,38 @@ nil_match(VALUE obj1, VALUE obj2)
     return Qnil;
 }
 
-/***********************************************************************
+/*
  *  Document-class: TrueClass
  *
- *  The global value <code>true</code> is the only instance of class
- *  TrueClass and represents a logically true value in
- *  boolean expressions. The class provides operators allowing
- *  <code>true</code> to be used in logical expressions.
+ * The class of the singleton object +true+.
+ *
+ * Several of its methods act as operators:
+ *
+ * - #&
+ * - #|
+ * - #===
+ * - #^
+ *
+ * One other method:
+ *
+ * - #to_s and its alias #inspect.
+ *
  */
 
 
 /*
  * call-seq:
- *   true.to_s   ->  "true"
+ *   true.to_s -> 'true'
  *
- * The string representation of <code>true</code> is "true".
+ * Returns string <tt>'true'</tt>:
+ *
+ *   true.to_s # => "true"
+ *
+ * TrueClass#inspect is an alias for TrueClass#to_s.
+ *
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_true_to_s(VALUE obj)
 {
     return rb_cTrueClass_to_s;
@@ -1351,10 +1427,14 @@ rb_true_to_s(VALUE obj)
 
 /*
  *  call-seq:
- *     true & obj    -> true or false
+ *    true & object -> true or false
  *
- *  And---Returns <code>false</code> if <i>obj</i> is
- *  <code>nil</code> or <code>false</code>, <code>true</code> otherwise.
+ *  Returns +false+ if +object+ is +false+ or +nil+, +true+ otherwise:
+ *
+ *  true & Object.new # => true
+ *  true & false      # => false
+ *  true & nil        # => false
+ *
  */
 
 static VALUE
@@ -1365,18 +1445,21 @@ true_and(VALUE obj, VALUE obj2)
 
 /*
  *  call-seq:
- *     true | obj   -> true
+ *    true | object -> true
  *
- *  Or---Returns <code>true</code>. As <i>obj</i> is an argument to
- *  a method call, it is always evaluated; there is no short-circuit
- *  evaluation in this case.
+ *  Returns +true+:
  *
- *     true |  puts("or")
- *     true || puts("logical or")
+ *    true | Object.new # => true
+ *    true | false      # => true
+ *    true | nil        # => true
  *
- *  <em>produces:</em>
+ *  Argument +object+ is evaluated.
+ *  This is different from +true+ with the short-circuit operator,
+ *  whose operand is evaluated only if necessary:
  *
- *     or
+ *    true | raise # => Raises RuntimeError.
+ *    true || raise # => true
+ *
  */
 
 static VALUE
@@ -1388,11 +1471,14 @@ true_or(VALUE obj, VALUE obj2)
 
 /*
  *  call-seq:
- *     true ^ obj   -> !obj
+ *    true ^ object -> !object
  *
- *  Exclusive Or---Returns <code>true</code> if <i>obj</i> is
- *  <code>nil</code> or <code>false</code>, <code>false</code>
- *  otherwise.
+ *  Returns +true+ if +object+ is +false+ or +nil+, +false+ otherwise:
+ *
+ *    true ^ Object.new # => false
+ *    true ^ false      # => true
+ *    true ^ nil        # => true
+ *
  */
 
 static VALUE
@@ -1419,22 +1505,27 @@ true_xor(VALUE obj, VALUE obj2)
  * The string representation of <code>false</code> is "false".
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_false_to_s(VALUE obj)
 {
     return rb_cFalseClass_to_s;
 }
 
 /*
- *  call-seq:
- *     false & obj   -> false
- *     nil & obj     -> false
+ * call-seq:
+ *   false & object -> false
+ *   nil & object   -> false
  *
- *  And---Returns <code>false</code>. <i>obj</i> is always
- *  evaluated as it is the argument to a method call---there is no
- *  short-circuit evaluation in this case.
+ * Returns +false+:
+ *
+ *   false & true       # => false
+ *   false & Object.new # => false
+ *
+ * Argument +object+ is evaluated:
+ *
+ *   false & raise # Raises RuntimeError.
+ *
  */
-
 static VALUE
 false_and(VALUE obj, VALUE obj2)
 {
@@ -1443,24 +1534,30 @@ false_and(VALUE obj, VALUE obj2)
 
 
 /*
- *  call-seq:
- *     false | obj   ->   true or false
- *     nil   | obj   ->   true or false
+ * call-seq:
+ *   false | object -> true or false
+ *   nil   | object -> true or false
  *
- *  Or---Returns <code>false</code> if <i>obj</i> is
- *  <code>nil</code> or <code>false</code>; <code>true</code> otherwise.
+ * Returns +false+ if +object+ is +nil+ or +false+, +true+ otherwise:
+ *
+ *   nil | nil        # => false
+ *   nil | false      # => false
+ *   nil | Object.new # => true
+ *
  */
 
 #define false_or true_and
 
 /*
- *  call-seq:
- *     false ^ obj    -> true or false
- *     nil   ^ obj    -> true or false
+ * call-seq:
+ *   false ^ object -> true or false
+ *   nil ^ object   -> true or false
  *
- *  Exclusive Or---If <i>obj</i> is <code>nil</code> or
- *  <code>false</code>, returns <code>false</code>; otherwise, returns
- *  <code>true</code>.
+ * Returns +false+ if +object+ is +nil+ or +false+, +true+ otherwise:
+ *
+ *   nil ^ nil        # => false
+ *   nil ^ false      # => false
+ *   nil ^ Object.new # => true
  *
  */
 
@@ -1468,9 +1565,10 @@ false_and(VALUE obj, VALUE obj2)
 
 /*
  * call-seq:
- *   nil.nil?               -> true
+ *   nil.nil?  -> true
  *
- * Only the object <i>nil</i> responds <code>true</code> to <code>nil?</code>.
+ * Returns +true+.
+ * For all other objects, method <tt>nil?</tt> returns +false+.
  */
 
 static VALUE
@@ -1490,7 +1588,7 @@ rb_true(VALUE obj)
  */
 
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_false(VALUE obj)
 {
     return Qfalse;
@@ -1575,7 +1673,7 @@ rb_obj_cmp(VALUE obj1, VALUE obj2)
  * show information on the thing we're attached to as well.
  */
 
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_mod_to_s(VALUE klass)
 {
     ID id_defined_at;
@@ -1583,7 +1681,7 @@ rb_mod_to_s(VALUE klass)
 
     if (FL_TEST(klass, FL_SINGLETON)) {
         VALUE s = rb_usascii_str_new2("#<Class:");
-        VALUE v = rb_ivar_get(klass, id__attached__);
+        VALUE v = RCLASS_ATTACHED_OBJECT(klass);
 
         if (CLASS_OR_MODULE_P(v)) {
             rb_str_append(s, rb_inspect(v));
@@ -3045,7 +3143,7 @@ rb_check_convert_type(VALUE val, int type, const char *tname, const char *method
 }
 
 /*! \private */
-MJIT_FUNC_EXPORTED VALUE
+VALUE
 rb_check_convert_type_with_id(VALUE val, int type, const char *tname, ID method)
 {
     VALUE v;
@@ -3233,7 +3331,7 @@ rb_opts_exception_p(VALUE opts, int default_value)
  *    Integer(-1)               # => -1
  *
  *  With floating-point argument +object+ given,
- *  returns +object+ truncated to an intger:
+ *  returns +object+ truncated to an integer:
  *
  *    Integer(1.9)              # => 1  # Rounds toward zero.
  *    Integer(-1.9)             # => -1 # Rounds toward zero.
@@ -3917,9 +4015,6 @@ rb_obj_dig(int argc, VALUE *argv, VALUE obj, VALUE notfound)
  *
  *  For details on +format_string+, see
  *  {Format Specifications}[rdoc-ref:format_specifications.rdoc].
- *
- *  Kernel#format is an alias for Kernel#sprintf.
- *
  */
 
 static VALUE
@@ -4159,27 +4254,6 @@ f_sprintf(int c, const VALUE *v, VALUE _)
  *  - #send: Calls the given method in +self+ with the given argument.
  *  - #to_s: Returns a string representation of +self+.
  *
- */
-
-/*!
- *--
- * \private
- * Initializes the world of objects and classes.
- *
- * At first, the function bootstraps the class hierarchy.
- * It initializes the most fundamental classes and their metaclasses.
- * - \c BasicObject
- * - \c Object
- * - \c Module
- * - \c Class
- * After the bootstrap step, the class hierarchy becomes as the following
- * diagram.
- *
- * \image html boottime-classes.png
- *
- * Then, the function defines classes, modules and methods as usual.
- * \ingroup class
- *++
  */
 
 void

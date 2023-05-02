@@ -106,6 +106,10 @@ describe "IO#readlines" do
     it "raises ArgumentError when passed 0 as a limit" do
       -> { @io.readlines(0) }.should raise_error(ArgumentError)
     end
+
+    it "does not accept Integers that don't fit in a C off_t" do
+      -> { @io.readlines(2**128) }.should raise_error(RangeError)
+    end
   end
 
   describe "when passed chomp" do
@@ -121,6 +125,12 @@ describe "IO#readlines" do
           @io.readlines("\n", 1, { chomp: true })
         }.should raise_error(ArgumentError, "wrong number of arguments (given 3, expected 0..2)")
       end
+    end
+  end
+
+  describe "when passed arbitrary keyword argument" do
+    it "tolerates it" do
+      @io.readlines(chomp: true, foo: :bar).should == IOSpecs.lines_without_newline_characters
     end
   end
 end

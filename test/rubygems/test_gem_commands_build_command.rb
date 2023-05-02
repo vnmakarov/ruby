@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require_relative "helper"
 require "rubygems/commands/build_command"
 require "rubygems/package"
@@ -39,6 +40,16 @@ class TestGemCommandsBuildCommand < Gem::TestCase
     assert @cmd.options[:strict]
     assert @cmd.handles?(%W[--platform #{Gem::Platform.local}])
     assert_includes Gem.platforms, Gem::Platform.local
+  end
+
+  def test_handle_deprecated_options
+    use_ui @ui do
+      @cmd.handle_options %w[-C ./test/dir]
+    end
+
+    assert_equal "WARNING:  The \"-C\" option has been deprecated and will be removed in Rubygems 4.0. " \
+                 "-C is a global flag now. Use `gem -C PATH build GEMSPEC_FILE [options]` instead\n",
+                 @ui.error
   end
 
   def test_options_filename
@@ -582,7 +593,7 @@ class TestGemCommandsBuildCommand < Gem::TestCase
   end
 
   def test_build_signed_gem
-    pend "openssl is missing" unless Gem::HAVE_OPENSSL && !java_platform?
+    pend "openssl is missing" unless Gem::HAVE_OPENSSL && !Gem.java_platform?
 
     trust_dir = Gem::Security.trust_dir
 
@@ -609,7 +620,7 @@ class TestGemCommandsBuildCommand < Gem::TestCase
   end
 
   def test_build_signed_gem_with_cert_expiration_length_days
-    pend "openssl is missing" unless Gem::HAVE_OPENSSL && !java_platform?
+    pend "openssl is missing" unless Gem::HAVE_OPENSSL && !Gem.java_platform?
 
     gem_path = File.join Gem.user_home, ".gem"
     Dir.mkdir gem_path
@@ -653,7 +664,7 @@ class TestGemCommandsBuildCommand < Gem::TestCase
   end
 
   def test_build_auto_resign_cert
-    pend "openssl is missing" unless Gem::HAVE_OPENSSL && !java_platform?
+    pend "openssl is missing" unless Gem::HAVE_OPENSSL && !Gem.java_platform?
 
     gem_path = File.join Gem.user_home, ".gem"
     Dir.mkdir gem_path
@@ -689,7 +700,7 @@ class TestGemCommandsBuildCommand < Gem::TestCase
 
     output = @ui.output.split "\n"
     assert_equal "INFO:  Your certificate has expired, trying to re-sign it...", output.shift
-    assert_equal "INFO:  Your cert: #{tmp_expired_cert_file } has been auto re-signed with the key: #{tmp_private_key_file}", output.shift
+    assert_equal "INFO:  Your cert: #{tmp_expired_cert_file} has been auto re-signed with the key: #{tmp_private_key_file}", output.shift
     assert_match(/INFO:  Your expired cert will be located at: .+\Wgem-public_cert\.pem\.expired\.[0-9]+/, output.shift)
   end
 

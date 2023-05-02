@@ -38,17 +38,17 @@ static inline void ROBJ_TRANSIENT_UNSET(VALUE obj);
 
 struct gen_ivtbl;
 int rb_gen_ivtbl_get(VALUE obj, ID id, struct gen_ivtbl **ivtbl);
+int rb_obj_evacuate_ivs_to_hash_table(ID key, VALUE val, st_data_t arg);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* variable.c (export) */
-void rb_mark_generic_ivar(VALUE);
+void rb_mark_and_update_generic_ivar(VALUE);
 void rb_mv_generic_ivar(VALUE src, VALUE dst);
 VALUE rb_const_missing(VALUE klass, VALUE name);
 int rb_class_ivar_set(VALUE klass, ID vid, VALUE value);
 void rb_iv_tbl_copy(VALUE dst, VALUE src);
 RUBY_SYMBOL_EXPORT_END
 
-MJIT_SYMBOL_EXPORT_BEGIN
 VALUE rb_ivar_lookup(VALUE obj, ID id, VALUE undef);
 VALUE rb_gvar_get(ID);
 VALUE rb_gvar_set(ID, VALUE);
@@ -56,9 +56,8 @@ VALUE rb_gvar_defined(ID);
 void rb_const_warn_if_deprecated(const rb_const_entry_t *, VALUE, ID);
 rb_shape_t * rb_grow_iv_list(VALUE obj);
 void rb_ensure_iv_list_size(VALUE obj, uint32_t len, uint32_t newsize);
-struct gen_ivtbl * rb_ensure_generic_iv_list_size(VALUE obj, uint32_t newsize);
+struct gen_ivtbl *rb_ensure_generic_iv_list_size(VALUE obj, rb_shape_t *shape, uint32_t newsize);
 attr_index_t rb_obj_ivar_set(VALUE obj, ID id, VALUE val);
-MJIT_SYMBOL_EXPORT_END
 
 static inline bool
 ROBJ_TRANSIENT_P(VALUE obj)

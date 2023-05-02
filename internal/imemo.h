@@ -11,7 +11,6 @@
 #include "ruby/internal/config.h"
 #include <stddef.h>             /* for size_t */
 #include "internal/array.h"     /* for rb_ary_hidden_new_fill */
-#include "internal/gc.h"        /* for RB_OBJ_WRITE */
 #include "ruby/internal/stdbool.h"     /* for bool */
 #include "ruby/ruby.h"          /* for rb_block_call_func_t */
 
@@ -83,7 +82,7 @@ struct vm_ifunc_argc {
 /*! IFUNC (Internal FUNCtion) */
 struct vm_ifunc {
     VALUE flags;
-    VALUE reserved;
+    VALUE *svar_lep;
     rb_block_call_func_t func;
     const void *data;
     struct vm_ifunc_argc argc;

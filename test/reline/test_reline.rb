@@ -321,6 +321,9 @@ class Reline::Test < Reline::TestCase
     d = Reline.dialog_proc(:test_proc)
     assert_equal(dummy_proc_2, d.dialog_proc)
 
+    Reline.add_dialog_proc(:test_proc, nil)
+    assert_nil(Reline.dialog_proc(:test_proc))
+
     l = lambda {}
     Reline.add_dialog_proc(:test_lambda, l)
     d = Reline.dialog_proc(:test_lambda)
@@ -370,7 +373,7 @@ class Reline::Test < Reline::TestCase
 
   def test_dumb_terminal
     lib = File.expand_path("../../lib", __dir__)
-    out = IO.popen([{"TERM"=>"dumb"}, "ruby", "-I#{lib}", "-rreline", "-e", "p Reline::IOGate"], &:read)
+    out = IO.popen([{"TERM"=>"dumb"}, Reline.test_rubybin, "-I#{lib}", "-rreline", "-e", "p Reline::IOGate"], &:read)
     assert_equal("Reline::GeneralIO", out.chomp)
   end
 

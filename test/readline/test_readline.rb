@@ -6,6 +6,8 @@ require "timeout"
 require "open3"
 
 module BasetestReadline
+  RUBY = EnvUtil.rubybin
+
   INPUTRC = "INPUTRC"
   TERM = "TERM"
   SAVED_ENV = %w[COLUMNS LINES]
@@ -494,6 +496,9 @@ module BasetestReadline
     # Maybe the same issue: https://github.com/facebookresearch/nle/issues/120
     omit if /i[3-6]86-linux/ =~ RUBY_PLATFORM
 
+    # likewise with 32-bit userspace on 64-bit kernel
+    omit if /\Ax86_64-linux-(?:x32|i[3-6]686)\z/ =~ RUBY_PLATFORM
+
     if defined?(TestReadline) && self.class == TestReadline
       use = "use_ext_readline"
     elsif defined?(TestRelineAsReadline) && self.class == TestRelineAsReadline
@@ -839,7 +844,7 @@ module BasetestReadline
       loader = "use_lib_reline"
     end
     if loader
-      res, exit_status = Open3.capture2e("ruby -I#{__dir__} -Ilib -rhelper -e '#{loader}; Readline.readline(%{y or n?})'", stdin_data: "y\n")
+      res, exit_status = Open3.capture2e("#{RUBY} -I#{__dir__} -Ilib -rhelper -e '#{loader}; Readline.readline(%{y or n?})'", stdin_data: "y\n")
       assert exit_status.success?, "It should work fine without tty, but it failed.\nError output:\n#{res}"
     end
   end

@@ -14,6 +14,23 @@ module BundledGem
     puts "Unpacked #{file}"
   end
 
+  def build(gemspec, version, outdir = ".", validation: true)
+    outdir = File.expand_path(outdir)
+    gemdir, gemfile = File.split(gemspec)
+    Dir.chdir(gemdir) do
+      spec = Gem::Specification.load(gemfile)
+      abort "Failed to load #{gemspec}" unless spec
+      unless spec.version == Gem::Version.new(version)
+        abort "Unexpected versions between bundled_gems:#{version} and gemspec:#{spec.version}"
+      end
+      output = File.join(outdir, spec.file_name)
+      FileUtils.rm_rf(output)
+      package = Gem::Package.new(output)
+      package.spec = spec
+      package.build(validation == false)
+    end
+  end
+
   def copy(path, *rest)
     path, n = File.split(path)
     spec = Dir.chdir(path) {Gem::Specification.load(n)} or raise "Cannot load #{path}"
@@ -51,5 +68,37 @@ module BundledGem
       end
     end
     FileUtils.rm_rf(Dir.glob("#{gem_dir}/.git*"))
+  end
+
+  def dummy_gemspec(gemspec)
+    return if File.exist?(gemspec)
+    gemdir, gemfile = File.split(gemspec)
+    Dir.chdir(gemdir) do
+      spec = Gem::Specification.new do |s|
+        s.name = gemfile.chomp(".gemspec")
+        s.version = File.read("lib/#{s.name}.rb")[/VERSION = "(.+?)"/, 1]
+        s.authors = ["DUMMY"]
+        s.email = ["dummy@ruby-lang.org"]
+        s.files = Dir.glob("{lib,ext}/**/*").select {|f| File.file?(f)}
+        s.licenses = ["Ruby"]
+        s.description = "DO NOT USE; dummy gemspec only for test"
+        s.summary = "(dummy gemspec)"
+      end
+      File.write(gemfile, spec.to_ruby)
+    end
+  end
+
+  def checkout(gemdir, repo, rev, git: $git)
+    return unless rev or !git or git.empty?
+    unless File.exist?("#{gemdir}/.git")
+      puts "Cloning #{repo}"
+      command = "#{git} clone #{repo} #{gemdir}"
+      system(command) or raise "failed: #{command}"
+    end
+    puts "Update #{File.basename(gemdir)} to #{rev}"
+    command = "#{git} fetch origin #{rev}"
+    system(command, chdir: gemdir) or raise "failed: #{command}"
+    command = "#{git} checkout --detach #{rev}"
+    system(command, chdir: gemdir) or raise "failed: #{command}"
   end
 end

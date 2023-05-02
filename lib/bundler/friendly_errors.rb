@@ -36,9 +36,6 @@ module Bundler
         end
       when Thor::Error
         Bundler.ui.error error.message
-      when LoadError
-        raise error unless error.message =~ /cannot load such file -- openssl|openssl.so|libcrypto.so/
-        Bundler.ui.error "\nCould not load OpenSSL. #{error.class}: #{error}\n#{error.backtrace.join("\n  ")}"
       when Interrupt
         Bundler.ui.error "\nQuitting..."
         Bundler.ui.trace error
@@ -64,7 +61,7 @@ module Bundler
     end
 
     def request_issue_report_for(e)
-      Bundler.ui.error <<-EOS.gsub(/^ {8}/, ""), nil, nil
+      Bundler.ui.error <<~EOS, nil, nil
         --- ERROR REPORT TEMPLATE -------------------------------------------------------
 
         ```
@@ -78,7 +75,7 @@ module Bundler
 
       Bundler.ui.error "Unfortunately, an unexpected error occurred, and Bundler cannot continue."
 
-      Bundler.ui.error <<-EOS.gsub(/^ {8}/, ""), nil, :yellow
+      Bundler.ui.error <<~EOS, nil, :yellow
 
         First, try this link to see if there are any existing issue reports for this error:
         #{issues_url(e)}
@@ -96,9 +93,9 @@ module Bundler
     end
 
     def serialized_exception_for(e)
-      <<-EOS.gsub(/^ {8}/, "")
+      <<~EOS
         #{e.class}: #{e.message}
-          #{e.backtrace && e.backtrace.join("\n          ").chomp}
+          #{e.backtrace&.join("\n          ")&.chomp}
       EOS
     end
 

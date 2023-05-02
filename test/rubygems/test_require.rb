@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require_relative "helper"
 require "rubygems"
 
@@ -91,12 +92,10 @@ class TestGemRequire < Gem::TestCase
 
   def create_sync_thread
     Thread.new do
-      begin
-        yield
-      ensure
-        FILE_ENTERED_LATCH.release
-        FILE_EXIT_LATCH.await
-      end
+      yield
+    ensure
+      FILE_ENTERED_LATCH.release
+      FILE_EXIT_LATCH.await
     end
   end
 
@@ -226,7 +225,7 @@ class TestGemRequire < Gem::TestCase
     pend "Not sure what's going on. If another spec creates a 'a' gem before
       this test, somehow require will load the benchmark in b, and ignore that the
       stdlib one is already in $LOADED_FEATURES?. Reproducible by running the
-      spaceship_specific_file test before this one" if java_platform?
+      spaceship_specific_file test before this one" if Gem.java_platform?
 
     pend "not installed yet" unless RbConfig::TOPDIR
 
@@ -383,8 +382,8 @@ class TestGemRequire < Gem::TestCase
 
     # Remove an old default gem version directly from disk as if someone ran
     # gem cleanup.
-    FileUtils.rm_rf(File.join @gemhome, "#{b1.full_name}")
-    FileUtils.rm_rf(File.join @gemhome, "specifications", "default", "#{b1.full_name}.gemspec")
+    FileUtils.rm_rf(File.join(@gemhome, b1.full_name.to_s))
+    FileUtils.rm_rf(File.join(@gemhome, "specifications", "default", "#{b1.full_name}.gemspec"))
 
     # Require gems that have not been removed.
     assert_require "a/b"
@@ -425,7 +424,7 @@ class TestGemRequire < Gem::TestCase
 
     times_called = 0
 
-    Kernel.stub(:gem, ->(name, requirement) { times_called += 1 }) do
+    Kernel.stub(:gem, ->(_name, _requirement) { times_called += 1 }) do
       refute_require "default/gem"
     end
 
@@ -541,8 +540,10 @@ class TestGemRequire < Gem::TestCase
   def test_try_activate_error_unlocks_require_monitor
     silence_warnings do
       class << ::Gem
-        alias old_try_activate try_activate
-        def try_activate(*); raise "raised from try_activate"; end
+        alias_method :old_try_activate, :try_activate
+        def try_activate(*)
+          raise "raised from try_activate"
+        end
       end
     end
 
@@ -553,7 +554,7 @@ class TestGemRequire < Gem::TestCase
   ensure
     silence_warnings do
       class << ::Gem
-        alias try_activate old_try_activate
+        alias_method :try_activate, :old_try_activate
       end
     end
     Kernel::RUBYGEMS_ACTIVATION_MONITOR.exit
@@ -596,77 +597,91 @@ class TestGemRequire < Gem::TestCase
     assert_empty unresolved_names
   end
 
-  # uplevel is 2.5+ only
-  if RUBY_VERSION >= "2.5"
-    ["", "Kernel."].each do |prefix|
-      define_method "test_no_kernel_require_in_#{prefix.tr(".", "_")}warn_with_uplevel" do
-        Dir.mktmpdir("warn_test") do |dir|
-          File.write(dir + "/sub.rb", "#{prefix}warn 'uplevel', 'test', uplevel: 1\n")
-          File.write(dir + "/main.rb", "require 'sub'\n")
-          _, err = capture_subprocess_io do
-            system(*ruby_with_rubygems_in_load_path, "-w", "--disable=gems", "-C", dir, "-I", dir, "main.rb")
-          end
-          assert_match(/main\.rb:1: warning: uplevel\ntest\n$/, err)
-          _, err = capture_subprocess_io do
-            system(*ruby_with_rubygems_in_load_path, "-w", "--enable=gems", "-C", dir, "-I", dir, "main.rb")
-          end
-          assert_match(/main\.rb:1: warning: uplevel\ntest\n$/, err)
-        end
-      end
-
-      define_method "test_no_other_behavioral_changes_with_#{prefix.tr(".", "_")}warn" do
-        Dir.mktmpdir("warn_test") do |dir|
-          File.write(dir + "/main.rb", "#{prefix}warn({x:1}, {y:2}, [])\n")
-          _, err = capture_subprocess_io do
-            system(*ruby_with_rubygems_in_load_path, "-w", "--disable=gems", "-C", dir, "main.rb")
-          end
-          assert_match(/{:x=>1}\n{:y=>2}\n$/, err)
-          _, err = capture_subprocess_io do
-            system(*ruby_with_rubygems_in_load_path, "-w", "--enable=gems", "-C", dir, "main.rb")
-          end
-          assert_match(/{:x=>1}\n{:y=>2}\n$/, err)
-        end
-      end
-    end
-
-    def test_no_crash_when_overriding_warn_with_warning_module
+  ["", "Kernel."].each do |prefix|
+    define_method "test_no_kernel_require_in_#{prefix.tr(".", "_")}warn_with_uplevel" do
       Dir.mktmpdir("warn_test") do |dir|
-        File.write(dir + "/main.rb", "module Warning; def warn(str); super; end; end; warn 'Foo Bar'")
-        _, err = capture_subprocess_io do
-          system(*ruby_with_rubygems_in_load_path, "-w", "--disable=gems", "-C", dir, "main.rb")
-        end
-        assert_match(/Foo Bar\n$/, err)
-        _, err = capture_subprocess_io do
-          system(*ruby_with_rubygems_in_load_path, "-w", "--enable=gems", "-C", dir, "main.rb")
-        end
-        assert_match(/Foo Bar\n$/, err)
-      end
-    end
-
-    def test_expected_backtrace_location_when_inheriting_from_basic_object_and_including_kernel
-      Dir.mktmpdir("warn_test") do |dir|
-        File.write(dir + "/main.rb", "\nrequire 'sub'\n")
-        File.write(dir + "/sub.rb", <<-'RUBY')
-          require 'rubygems'
-          class C < BasicObject
-            include ::Kernel
-            def deprecated
-              warn "This is a deprecated method", uplevel: 2
-            end
-          end
-          C.new.deprecated
-        RUBY
-
+        File.write(dir + "/sub.rb", "#{prefix}warn 'uplevel', 'test', uplevel: 1\n")
+        File.write(dir + "/main.rb", "require 'sub'\n")
         _, err = capture_subprocess_io do
           system(*ruby_with_rubygems_in_load_path, "-w", "--disable=gems", "-C", dir, "-I", dir, "main.rb")
         end
-        assert_match(/main\.rb:2: warning: This is a deprecated method$/, err)
+        assert_match(/main\.rb:1: warning: uplevel\ntest\n$/, err)
         _, err = capture_subprocess_io do
           system(*ruby_with_rubygems_in_load_path, "-w", "--enable=gems", "-C", dir, "-I", dir, "main.rb")
         end
-        assert_match(/main\.rb:2: warning: This is a deprecated method$/, err)
+        assert_match(/main\.rb:1: warning: uplevel\ntest\n$/, err)
       end
     end
+
+    define_method "test_no_other_behavioral_changes_with_#{prefix.tr(".", "_")}warn" do
+      Dir.mktmpdir("warn_test") do |dir|
+        File.write(dir + "/main.rb", "#{prefix}warn({x:1}, {y:2}, [])\n")
+        _, err = capture_subprocess_io do
+          system(*ruby_with_rubygems_in_load_path, "-w", "--disable=gems", "-C", dir, "main.rb")
+        end
+        assert_match(/{:x=>1}\n{:y=>2}\n$/, err)
+        _, err = capture_subprocess_io do
+          system(*ruby_with_rubygems_in_load_path, "-w", "--enable=gems", "-C", dir, "main.rb")
+        end
+        assert_match(/{:x=>1}\n{:y=>2}\n$/, err)
+      end
+    end
+  end
+
+  def test_no_crash_when_overriding_warn_with_warning_module
+    Dir.mktmpdir("warn_test") do |dir|
+      File.write(dir + "/main.rb", "module Warning; def warn(str); super; end; end; warn 'Foo Bar'")
+      _, err = capture_subprocess_io do
+        system(*ruby_with_rubygems_in_load_path, "-w", "--disable=gems", "-C", dir, "main.rb")
+      end
+      assert_match(/Foo Bar\n$/, err)
+      _, err = capture_subprocess_io do
+        system(*ruby_with_rubygems_in_load_path, "-w", "--enable=gems", "-C", dir, "main.rb")
+      end
+      assert_match(/Foo Bar\n$/, err)
+    end
+  end
+
+  def test_expected_backtrace_location_when_inheriting_from_basic_object_and_including_kernel
+    Dir.mktmpdir("warn_test") do |dir|
+      File.write(dir + "/main.rb", "\nrequire 'sub'\n")
+      File.write(dir + "/sub.rb", <<-'RUBY')
+        require 'rubygems'
+        class C < BasicObject
+          include ::Kernel
+          def deprecated
+            warn "This is a deprecated method", uplevel: 2
+          end
+        end
+        C.new.deprecated
+      RUBY
+
+      _, err = capture_subprocess_io do
+        system(*ruby_with_rubygems_in_load_path, "-w", "--disable=gems", "-C", dir, "-I", dir, "main.rb")
+      end
+      assert_match(/main\.rb:2: warning: This is a deprecated method$/, err)
+      _, err = capture_subprocess_io do
+        system(*ruby_with_rubygems_in_load_path, "-w", "--enable=gems", "-C", dir, "-I", dir, "main.rb")
+      end
+      assert_match(/main\.rb:2: warning: This is a deprecated method$/, err)
+    end
+  end
+
+  def test_require_does_not_crash_when_utilizing_bundler_version_finder
+    a1 = util_spec "a", "1.1", { "bundler" => ">= 0" }
+    a2 = util_spec "a", "1.2", { "bundler" => ">= 0" }
+    b1 = util_spec "bundler", "2.3.7"
+    b2 = util_spec "bundler", "2.3.24"
+    c = util_spec "c", "1", { "a" => [">= 1.1", "< 99.0"] }, "lib/test_gem_require_c.rb"
+
+    install_specs a1, a2, b1, b2, c
+
+    cmd = <<-RUBY
+      require "test_gem_require_c"
+      require "json"
+    RUBY
+    out = Gem::Util.popen({ "GEM_HOME" => @gemhome }, *ruby_with_rubygems_in_load_path, "-e", cmd)
+    assert_predicate $?, :success?, "Require failed due to #{out}"
   end
 
   private
@@ -694,13 +709,13 @@ class TestGemRequire < Gem::TestCase
 
     spec.files += ["extconf.rb", "depend", "#{name}.c"]
 
-    so = File.join(spec.gem_dir, "#{name}.#{RbConfig::CONFIG["DLEXT"]}")
-    assert_path_not_exist so
+    extension_file = File.join(spec.extension_dir, "#{name}.#{RbConfig::CONFIG["DLEXT"]}")
+    assert_path_not_exist extension_file
 
     path = Gem::Package.build spec
     installer = Gem::Installer.at path
     installer.install
-    assert_path_exist so
+    assert_path_exist extension_file
 
     spec.gem_dir
   end

@@ -9,6 +9,10 @@ on: [workflow_dispatch] # switched off because of failure on timezone tests
     paths-ignore:
       - 'spec/**'
       - '!spec/*.md'
+  merge_group:
+    paths-ignore:
+      - 'spec/**'
+      - '!spec/*.md'
 
 concurrency:
   group: ${{ github.workflow }} / ${{ startsWith(github.event_name, 'pull') && github.ref_name || github.sha }}
@@ -29,10 +33,11 @@ jobs:
         ruby:
           - ruby-2.7
           - ruby-3.1
+          - ruby-3.2
 
     steps:
-      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
-      - uses: ruby/setup-ruby@c7079efafd956afb5d823e8999c2506e1053aefa # v1.126.0
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+      - uses: ruby/setup-ruby@6cecb48364174b0952995175c55f9bf5527e6682 # v1.147.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler: none
@@ -41,7 +46,7 @@ jobs:
         working-directory: spec/ruby
         env:
           CHECK_LEAKS: true
-      - uses: ruby/action-slack@b6882ea6ef8f556f9f9af9ec1220d3f1ced74acf # v3.0.0
+      - uses: ruby/action-slack@0bd85c72233cdbb6a0fe01d37aaeff1d21b5fce1 # v3.2.1
         with:
           payload: |
             {

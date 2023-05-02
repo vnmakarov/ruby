@@ -556,12 +556,12 @@ RSpec.describe "Bundler.setup" do
 
       gemfile <<-G
         source "#{file_uri_for(gem_repo1)}"
-        gem "rack", :git => "#{lib_path("rack-0.8")}", :ref => "main", :branch => "nonexistant"
+        gem "rack", :git => "#{lib_path("rack-0.8")}", :ref => "main", :branch => "nonexistent"
       G
 
       bundle %(config set local.rack #{lib_path("local-rack")})
       run "require 'rack'", :raise_on_error => false
-      expect(err).to match(/is using branch main but Gemfile specifies nonexistant/)
+      expect(err).to match(/is using branch main but Gemfile specifies nonexistent/)
     end
   end
 
@@ -1304,11 +1304,7 @@ end
 
     describe "default gem activation" do
       let(:exemptions) do
-        exempts = if Gem.rubygems_version >= Gem::Version.new("2.7")
-          %w[did_you_mean]
-        else
-          %w[io-console openssl]
-        end << "bundler"
+        exempts = %w[did_you_mean bundler]
         exempts << "uri" if Gem.ruby_version >= Gem::Version.new("2.7")
         exempts << "pathname" if Gem.ruby_version >= Gem::Version.new("3.0")
         exempts << "set" unless Gem.rubygems_version >= Gem::Version.new("3.2.6")
@@ -1522,5 +1518,30 @@ end
 
       expect(err).to be_empty
     end
+  end
+
+  it "does not undo the Kernel.require decorations", :rubygems => ">= 3.4.6" do
+    install_gemfile "source \"#{file_uri_for(gem_repo1)}\""
+    script = bundled_app("bin/script")
+    create_file(script, <<~RUBY)
+      module Kernel
+        module_function
+
+        alias_method :require_before_extra_monkeypatches, :require
+
+        def require(path)
+          puts "requiring \#{path} used the monkeypatch"
+
+          require_before_extra_monkeypatches(path)
+        end
+      end
+
+      require "bundler/setup"
+
+      require "foo"
+    RUBY
+
+    sys_exec "#{Gem.ruby} #{script}", :raise_on_error => false
+    expect(out).to include("requiring foo used the monkeypatch")
   end
 end

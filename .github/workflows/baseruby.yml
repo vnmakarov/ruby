@@ -4,19 +4,24 @@ on:
   push:
     paths-ignore:
       - 'doc/**'
+      - '**/man'
       - '**.md'
       - '**.rdoc'
       - '**/.document'
-      - '**.[1-8]'
-      - '**.ronn'
   pull_request:
     paths-ignore:
       - 'doc/**'
+      - '**/man'
       - '**.md'
       - '**.rdoc'
       - '**/.document'
-      - '**.[1-8]'
-      - '**.ronn'
+  merge_group:
+    paths-ignore:
+      - 'doc/**'
+      - '**/man'
+      - '**.md'
+      - '**.rdoc'
+      - '**/.document'
 
 concurrency:
   group: ${{ github.workflow }} / ${{ startsWith(github.event_name, 'pull') && github.ref_name || github.sha }}
@@ -33,22 +38,20 @@ jobs:
     strategy:
       matrix:
         ruby:
-##          - ruby-2.2
-#         - ruby-2.3
-#         - ruby-2.4
-#         - ruby-2.5
+          - ruby-2.5
 #         - ruby-2.6
 #         - ruby-2.7
           - ruby-3.0
           - ruby-3.1
+          - ruby-3.2
 
     steps:
-      - uses: actions/checkout@93ea575cb5d8a053eaa0ac8fa3b40d7e05a33cc8 # v3.1.0
-      - uses: actions/cache@9b0c1fce7a93df8e3bb8926b0d6e9d89e92f20a7 # v3.0.11
+      - uses: actions/checkout@8e5e7e5ab8b370d6c329ec480221332ada57f0ab # v3.5.2
+      - uses: actions/cache@88522ab9f39a2ea568f7027eddc7d8d8bc9d59c8 # v3.3.1
         with:
           path: .downloaded-cache
           key: downloaded-cache
-      - uses: ruby/setup-ruby@c7079efafd956afb5d823e8999c2506e1053aefa # v1.126.0
+      - uses: ruby/setup-ruby@6cecb48364174b0952995175c55f9bf5527e6682 # v1.147.0
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler: none
@@ -60,7 +63,7 @@ jobs:
       - run: make incs
       - run: make all
       - run: make test
-      - uses: ruby/action-slack@b6882ea6ef8f556f9f9af9ec1220d3f1ced74acf # v3.0.0
+      - uses: ruby/action-slack@0bd85c72233cdbb6a0fe01d37aaeff1d21b5fce1 # v3.2.1
         with:
           payload: |
             {
