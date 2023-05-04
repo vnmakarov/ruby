@@ -149,8 +149,6 @@ static const char *header = "typedef void *CALL_DATA;\n"
 #endif
     "extern VALUE *rb_sir_get_jump_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);\n"
 #ifdef FLONUM_INSNS
-    "extern DBL mirjit_float(VALUE);\n"
-#if 0
     "extern VALUE mirjit_fplus(VALUE, VALUE);\n"
     "extern VALUE mirjit_fplusf(VALUE, DBL);\n"
     "extern VALUE mirjit_frplusf(DBL, VALUE);\n"
@@ -166,28 +164,6 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "extern VALUE mirjit_fmod(VALUE, VALUE);\n"
     "extern VALUE mirjit_fmodf(VALUE, DBL);\n"
     "extern VALUE mirjit_frmodf(DBL, VALUE);\n"
-#else
-    "extern VALUE mirjit_fplus(VALUE, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fplusf(VALUE, DBL, DBL *);\n"
-    "extern VALUE mirjit_ffplusf(DBL, DBL, DBL *);\n"
-    "extern VALUE mirjit_frplusf(DBL, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fminus(VALUE, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fminusf(VALUE, DBL, DBL *);\n"
-    "extern VALUE mirjit_ffminusf(DBL, DBL, DBL *);\n"
-    "extern VALUE mirjit_frminusf(DBL, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fmult(VALUE, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fmultf(VALUE, DBL, DBL *);\n"
-    "extern VALUE mirjit_ffmultf(DBL, DBL, DBL *);\n"
-    "extern VALUE mirjit_frmultf(DBL, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fdiv(VALUE, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fdivf(VALUE, DBL, DBL *);\n"
-    "extern VALUE mirjit_ffdivf(DBL, DBL, DBL *);\n"
-    "extern VALUE mirjit_frdivf(DBL, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fmod(VALUE, VALUE, DBL *);\n"
-    "extern VALUE mirjit_fmodf(VALUE, DBL, DBL *);\n"
-    "extern VALUE mirjit_ffmodf(DBL, DBL, DBL *);\n"
-    "extern VALUE mirjit_frmodf(DBL, VALUE, DBL *);\n"
-#endif
     "extern VALUE mirjit_feq(VALUE, VALUE);\n"
     "extern VALUE mirjit_feqf(VALUE, DBL);\n"
     "extern VALUE mirjit_freqf(DBL, VALUE);\n"
@@ -380,41 +356,31 @@ static void gen_obj_shape(VARR(char) *buff, const char *shape, const char *obj){
       shape, obj, (int)offsetof(struct RBasic, flags), (int)SHAPE_FLAG_SHIFT, (unsigned long)SHAPE_MASK);
 }
 
-struct fops {
-    char v1_stack_p, v2_stack_p, res_stack_p;
-    int v1_num, v2_num, res_num;
-};
-
 static int
-gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn_id, struct fops *fops, int *env_res) {
+gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn_id) {
     const VALUE *operands = &insn_pc[1];
-    const char *op, *fn, *fn2 = NULL;
-    int level, rv_p, v1_p, v2_p, imm1_p, imm2_p, fop_p, fp_res_p, check_p, siaset_p, nil_p, start, stack_ops_num;
+    const char *op, *fn;
+    int level, rv_p, v1_p, v2_p, imm1_p, imm2_p, fop_p, check_p, siaset_p, nil_p, start, stack_ops_num;
 
-    if (env_res != NULL) *env_res = -1;
     fop_p = check_p = siaset_p = FALSE;
     switch (insn_id) {
     case BIN(nop):
     case BIN(nop2):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(pop):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  *sp--;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(dup):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  val = sp[-1];\n");
         O("  *sp++ = val;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(dupn): {
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         rb_num_t n = (rb_num_t)operands[0];
         O("  pv = &sp[-%ld];\n", (long)n);
@@ -424,7 +390,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     }
     case BIN(swap):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  val = sp[-1];\n");
         O("  sp[-1] = sp[-2];\n");
@@ -432,7 +397,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(topn): {
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         rb_num_t n = (rb_num_t)operands[0];
         O("  val = sp[-%ld];\n", (long)n + 1);
@@ -441,7 +405,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     }
     case BIN(setn): {
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         rb_num_t n = (rb_num_t)operands[0];
         O("  val = sp[- 1];\n");
@@ -450,7 +413,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     }
     case BIN(adjuststack): {
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         rb_num_t n = (rb_num_t)operands[0];
         O("  sp -= %ld;\n", (long)n);
@@ -458,41 +420,34 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     }
     case BIN(putnil):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  *sp++ = (VALUE)0x%x;\n", (int)Qnil);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putself):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  *sp++ = cfp->self;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putobject):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  *sp++ = 0x%"PRIxVALUE ";\n", operands[0]);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putobject_INT2FIX_0_):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  *sp++ = 1;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(putobject_INT2FIX_1_):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  *sp++ = 3;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(getlocal_WC_1):
-        if (buff == NULL) return TRUE;
         level = 1;
         goto getlocal;
     case BIN(getlocal):
-        if (buff == NULL) return TRUE;
         level = (int)(rb_num_t)operands[1];
     getlocal:
         if (level != 0) {
@@ -513,20 +468,15 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         }
         /* fall through */
     case BIN(getlocal_WC_0):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  val = ep[-%d];\n", (int)(lindex_t)operands[0]);
-        if (fops->res_num >= 0)
-            O("  sd%d = ed%d;\n", fops->res_num, (int)(lindex_t)operands[0]);
         O("  *sp++ = val;\n");
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(setlocal_WC_1):
-        if (buff == NULL) return TRUE;
         level = 1;
         goto setlocal;
     case BIN(setlocal):
-        if (buff == NULL) return TRUE;
         level = (int)(rb_num_t)operands[1];
     setlocal:
         if (level != 0) {
@@ -549,29 +499,22 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         }
         /* fall through */
     case BIN(setlocal_WC_0):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
         O("  if (__builtin_expect((flags & 0x%lx) != 0, 0)) goto restart;\n", (long)VM_ENV_FLAG_WB_REQUIRED);
         O("  val = *--sp;\n");
         O("  ep[-%d] = val;\n", (int)(lindex_t)operands[0]);
-        if (fops->res_num >= 0)
-            O("  ed%d = sd%d;\n", (int)(lindex_t)operands[0], fops->v1_num);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_mov):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
         O("  if (__builtin_expect((flags & 0x%lx) != 0, 0)) goto restart;\n", (long)VM_ENV_FLAG_WB_REQUIRED);
         O("  val = ep[%d];\n", (int)(EPDISP)operands[1]);
         O("  ep[%d] = val;\n", (int)(EPDISP)operands[0]);
-        if (fops->res_num >= 0 && fops->v1_num >= 0)
-            O("  ed%d = ed%d;\n", fops->res_num, fops->v1_num);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_movi):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
         O("  if (__builtin_expect((flags & 0x%lx) != 0, 0)) goto restart;\n", (long)VM_ENV_FLAG_WB_REQUIRED);
@@ -579,12 +522,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_setlocal): /* setlocal w/o write barrier check */
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  val = *--sp;\n");
         O("  ep[%d] = val;\n", (int)(EPDISP)operands[0]);
-        if (fops->res_num >= 0)
-            O("  ed%d = sd%d;\n", (int)(lindex_t)operands[0], fops->res_num);
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_sfminussvv):
@@ -598,7 +538,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sfgtsvv):
     case BIN(sir_sflesvv):
     case BIN(sir_sfgesvv):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_fminussvv):
@@ -612,7 +551,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtsvv):
     case BIN(sir_flesvv):
     case BIN(sir_fgesvv):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         goto svv;
     case BIN(sir_siminussvv):
@@ -628,7 +566,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sigtsvv):
     case BIN(sir_silesvv):
     case BIN(sir_sigesvv):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_iminussvv):
@@ -646,7 +583,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igesvv):
     case BIN(sir_iarefsvv):
     case BIN(sir_siarefsvv):
-        if (buff == NULL) return TRUE;
     svv:
         rv_p = imm1_p = imm2_p = FALSE;
         v1_p = v2_p = TRUE;
@@ -662,7 +598,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sfgtsvi):
     case BIN(sir_sflesvi):
     case BIN(sir_sfgesvi):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_fminussvi):
@@ -676,7 +611,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtsvi):
     case BIN(sir_flesvi):
     case BIN(sir_fgesvi):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         goto svi;
     case BIN(sir_siminussvi):
@@ -692,7 +626,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sigtsvi):
     case BIN(sir_silesvi):
     case BIN(sir_sigesvi):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_iminussvi):
@@ -710,7 +643,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igesvi):
     case BIN(sir_iarefsvi):
     case BIN(sir_siarefsvi):
-        if (buff == NULL) return TRUE;
     svi:
         rv_p = v2_p = imm1_p = FALSE;
         v1_p = imm2_p = TRUE;
@@ -726,7 +658,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sfgtsiv):
     case BIN(sir_sflesiv):
     case BIN(sir_sfgesiv):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_fminussiv):
@@ -740,7 +671,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtsiv):
     case BIN(sir_flesiv):
     case BIN(sir_fgesiv):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         goto siv;
     case BIN(sir_siminussiv):
@@ -756,7 +686,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sigtsiv):
     case BIN(sir_silesiv):
     case BIN(sir_sigesiv):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_iminussiv):
@@ -774,7 +703,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igesiv):
     case BIN(sir_iarefsiv):
     case BIN(sir_siarefsiv):
-        if (buff == NULL) return TRUE;
     siv:
         rv_p = v1_p = imm2_p = FALSE;
         v2_p = imm1_p = TRUE;
@@ -790,7 +718,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sfgtsvs):
     case BIN(sir_sflesvs):
     case BIN(sir_sfgesvs):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_fminussvs):
@@ -804,7 +731,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtsvs):
     case BIN(sir_flesvs):
     case BIN(sir_fgesvs):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         goto svs;
     case BIN(sir_siminussvs):
@@ -820,7 +746,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sigtsvs):
     case BIN(sir_silesvs):
     case BIN(sir_sigesvs):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_iminussvs):
@@ -838,7 +763,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igesvs):
     case BIN(sir_iarefsvs):
     case BIN(sir_siarefsvs):
-        if (buff == NULL) return TRUE;
     svs:
         rv_p = v2_p = imm1_p = imm2_p = FALSE;
         v1_p = TRUE;
@@ -854,7 +778,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sfgtssv):
     case BIN(sir_sflessv):
     case BIN(sir_sfgessv):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_fminusssv):
@@ -868,7 +791,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtssv):
     case BIN(sir_flessv):
     case BIN(sir_fgessv):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         goto ssv;
     case BIN(sir_siminusssv):
@@ -884,7 +806,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sigtssv):
     case BIN(sir_silessv):
     case BIN(sir_sigessv):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_iminusssv):
@@ -902,7 +823,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igessv):
     case BIN(sir_iarefssv):
     case BIN(sir_siarefssv):
-        if (buff == NULL) return TRUE;
     ssv:
         rv_p = v1_p = imm1_p = imm2_p = FALSE;
         v2_p = TRUE;
@@ -918,7 +838,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sfgtssi):
     case BIN(sir_sflessi):
     case BIN(sir_sfgessi):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_fminusssi):
@@ -932,7 +851,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtssi):
     case BIN(sir_flessi):
     case BIN(sir_fgessi):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         goto ssi;
     case BIN(sir_siminusssi):
@@ -948,7 +866,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sigtssi):
     case BIN(sir_silessi):
     case BIN(sir_sigessi):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_iminusssi):
@@ -966,7 +883,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igessi):
     case BIN(sir_iarefssi):
     case BIN(sir_siarefssi):
-        if (buff == NULL) return TRUE;
     ssi:
         rv_p = v1_p = v2_p = imm1_p = FALSE;
         imm2_p = TRUE;
@@ -982,7 +898,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sfgtsis):
     case BIN(sir_sflesis):
     case BIN(sir_sfgesis):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_fminussis):
@@ -996,7 +911,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtsis):
     case BIN(sir_flesis):
     case BIN(sir_fgesis):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         goto sis;
     case BIN(sir_siminussis):
@@ -1012,7 +926,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sigtsis):
     case BIN(sir_silesis):
     case BIN(sir_sigesis):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_iminussis):
@@ -1030,7 +943,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igesis):
     case BIN(sir_iarefsis):
     case BIN(sir_siarefsis):
-        if (buff == NULL) return TRUE;
     sis:
         rv_p = v1_p = v2_p = imm2_p = FALSE;
         imm1_p = TRUE;
@@ -1046,7 +958,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sfgtsss):
     case BIN(sir_sflesss):
     case BIN(sir_sfgesss):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_fminussss):
@@ -1060,7 +971,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtsss):
     case BIN(sir_flesss):
     case BIN(sir_fgesss):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         goto sss;
     case BIN(sir_siminussss):
@@ -1076,7 +986,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_sigtsss):
     case BIN(sir_silesss):
     case BIN(sir_sigesss):
-        if (buff == NULL) return TRUE;
         check_p = TRUE;
         /* fall through */
     case BIN(sir_iminussss):
@@ -1094,7 +1003,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igesss):
     case BIN(sir_iarefsss):
     case BIN(sir_siarefsss):
-        if (buff == NULL) return TRUE;
     sss:
         rv_p = v1_p = v2_p = imm1_p = imm2_p = FALSE;
         goto op2;
@@ -1104,7 +1012,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtvvv):
     case BIN(sir_flevvv):
     case BIN(sir_fgevvv):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         /* fall through */
     case BIN(sir_iminusvvv):
@@ -1120,7 +1027,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvvv):
     case BIN(sir_ilevvv):
     case BIN(sir_igevvv):
-        if (buff == NULL) return TRUE;
         rv_p = v1_p = v2_p = TRUE;
         imm1_p = imm2_p = FALSE;
         goto op2;
@@ -1130,7 +1036,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtvvi):
     case BIN(sir_flevvi):
     case BIN(sir_fgevvi):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         /* fall through */
     case BIN(sir_iminusvvi):
@@ -1146,7 +1051,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvvi):
     case BIN(sir_ilevvi):
     case BIN(sir_igevvi):
-        if (buff == NULL) return TRUE;
         rv_p = v1_p = imm2_p = TRUE;
         v2_p = imm1_p = FALSE;
         goto op2;
@@ -1156,7 +1060,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtviv):
     case BIN(sir_fleviv):
     case BIN(sir_fgeviv):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         /* fall through */
     case BIN(sir_iminusviv):
@@ -1172,7 +1075,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtviv):
     case BIN(sir_ileviv):
     case BIN(sir_igeviv):
-        if (buff == NULL) return TRUE;
         rv_p = v2_p = imm1_p = TRUE;
         v1_p = imm2_p = FALSE;
         goto op2;
@@ -1182,7 +1084,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtvvs):
     case BIN(sir_flevvs):
     case BIN(sir_fgevvs):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         /* fall through */
     case BIN(sir_iminusvvs):
@@ -1198,7 +1099,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvvs):
     case BIN(sir_ilevvs):
     case BIN(sir_igevvs):
-        if (buff == NULL) return TRUE;
         rv_p = v1_p = TRUE;
         v2_p = imm1_p = imm2_p = FALSE;
         goto op2;
@@ -1208,7 +1108,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtvsv):
     case BIN(sir_flevsv):
     case BIN(sir_fgevsv):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         /* fall through */
     case BIN(sir_iminusvsv):
@@ -1224,7 +1123,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvsv):
     case BIN(sir_ilevsv):
     case BIN(sir_igevsv):
-        if (buff == NULL) return TRUE;
         rv_p = v2_p = TRUE;
         v1_p = imm1_p = imm2_p = FALSE;
         goto op2;
@@ -1234,7 +1132,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtvsi):
     case BIN(sir_flevsi):
     case BIN(sir_fgevsi):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         /* fall through */
     case BIN(sir_iminusvsi):
@@ -1250,7 +1147,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvsi):
     case BIN(sir_ilevsi):
     case BIN(sir_igevsi):
-        if (buff == NULL) return TRUE;
         rv_p = imm2_p = TRUE;
         v1_p = v2_p = imm1_p = FALSE;
         goto op2;
@@ -1260,7 +1156,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtvis):
     case BIN(sir_flevis):
     case BIN(sir_fgevis):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         /* fall through */
     case BIN(sir_iminusvis):
@@ -1276,7 +1171,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvis):
     case BIN(sir_ilevis):
     case BIN(sir_igevis):
-        if (buff == NULL) return TRUE;
         rv_p = imm1_p = TRUE;
         v1_p = v2_p = imm2_p = FALSE;
         goto op2;
@@ -1286,7 +1180,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_fgtvss):
     case BIN(sir_flevss):
     case BIN(sir_fgevss):
-        if (buff == NULL) return TRUE;
         fop_p = TRUE;
         /* fall through */
     case BIN(sir_iminusvss):
@@ -1302,7 +1195,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     case BIN(sir_igtvss):
     case BIN(sir_ilevss):
     case BIN(sir_igevss):
-        if (buff == NULL) return TRUE;
         rv_p = TRUE;
         v1_p = v2_p = imm1_p = imm2_p = FALSE;
     op2:
@@ -1310,35 +1202,31 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         start = rv_p ? 1 : 0;
         stack_ops_num = 0;
         if (v2_p) {
-            if (!fop_p || check_p || fops->v2_num < 0)
-                O("  val2 = ep[%d];\n", (int)(EPDISP)operands[v1_p || imm1_p ? start + 1 : start]);
+            O("  val2 = ep[%d];\n", (int)(EPDISP)operands[v1_p || imm1_p ? start + 1 : start]);
         } else if (imm2_p) {
             if (fop_p)
                 O("  d = %.*e;\n", DECIMAL_DIG, ((double *)operands)[v1_p || imm1_p ? start + 1 : start]);
             else
                 O("  val2 = 0x%"PRIxVALUE ";\n", operands[v1_p || imm1_p ? start + 1 : start]);
         } else {
-            if (!fop_p || check_p || fops->v2_num < 0)
-                O("  val2 = sp[-1];\n");
+            O("  val2 = sp[-1];\n");
             stack_ops_num++;
         }
         if (v1_p) {
-            if (!fop_p || check_p || fops->v1_num < 0)
-                O("  val = ep[%d];\n", (int)(EPDISP)operands[start]);
+            O("  val = ep[%d];\n", (int)(EPDISP)operands[start]);
         } else if (imm1_p) {
             if (fop_p)
                 O("  d = %.*e;\n", DECIMAL_DIG, ((double *)operands)[start]);
             else
                 O("  val = 0x%"PRIxVALUE ";\n", operands[start]);
         } else {
-            if (!fop_p || check_p || fops->v1_num < 0)
-                O("  val = sp[-%d];\n", v2_p || imm2_p ? 1 : 2);
+            O("  val = sp[-%d];\n", v2_p || imm2_p ? 1 : 2);
             stack_ops_num++;
         }
         if (check_p) {
             if (fop_p) {
-                if (!imm1_p && fops->v1_num < 0) gen_float_guard(buff, "val");
-                if (!imm2_p && fops->v2_num < 0) gen_float_guard(buff, "val2");
+                if (!imm1_p) gen_float_guard(buff, "val");
+                if (!imm2_p) gen_float_guard(buff, "val2");
             } else if (imm1_p) {
                 O("  if (!(val2 & 0x%x)) goto restart;\n", (int)RUBY_FIXNUM_FLAG);
             } else if (imm2_p) {
@@ -1723,7 +1611,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfplusssi):
         case BIN(sir_sfplussis):
             fn = "plus";
-            fp_res_p = TRUE;
             goto fop;
         case BIN(sir_fminussss):
         case BIN(sir_fminussvv):
@@ -1742,7 +1629,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfminusssi):
         case BIN(sir_sfminussis):
             fn = "minus";
-            fp_res_p = TRUE;
             goto fop;
         case BIN(sir_fmultsss):
         case BIN(sir_fmultsvv):
@@ -1761,7 +1647,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfmultssi):
         case BIN(sir_sfmultsis):
             fn = "mult";
-            fp_res_p = TRUE;
             goto fop;
         case BIN(sir_fdivsss):
         case BIN(sir_fdivsvv):
@@ -1780,7 +1665,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfdivssi):
         case BIN(sir_sfdivsis):
             fn = "div";
-            fp_res_p = TRUE;
             goto fop;
         case BIN(sir_fmodsss):
         case BIN(sir_fmodsvv):
@@ -1799,7 +1683,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfmodssi):
         case BIN(sir_sfmodsis):
             fn = "mod";
-            fp_res_p = TRUE;
             goto fop;
         case BIN(sir_feqsss):
         case BIN(sir_feqsvv):
@@ -1826,8 +1709,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfeqssi):
         case BIN(sir_sfeqsis):
             fn = "eq";
-            fn2 = "==";
-            fp_res_p = FALSE;
             goto fop;
         case BIN(sir_fneqsss):
         case BIN(sir_fneqsvv):
@@ -1854,8 +1735,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfneqssi):
         case BIN(sir_sfneqsis):
             fn = "neq";
-            fn2 = "!=";
-            fp_res_p = FALSE;
             goto fop;
         case BIN(sir_fltsss):
         case BIN(sir_fltsvv):
@@ -1882,8 +1761,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfltssi):
         case BIN(sir_sfltsis):
             fn = "lt";
-            fn2 = "<";
-            fp_res_p = FALSE;
             goto fop;
         case BIN(sir_fgtsss):
         case BIN(sir_fgtsvv):
@@ -1910,8 +1787,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfgtssi):
         case BIN(sir_sfgtsis):
             fn = "gt";
-            fn2 = ">";
-            fp_res_p = FALSE;
             goto fop;
         case BIN(sir_flesss):
         case BIN(sir_flesvv):
@@ -1938,8 +1813,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sflessi):
         case BIN(sir_sflesis):
             fn = "le";
-            fn2 = "<=";
-            fp_res_p = FALSE;
             goto fop;
         case BIN(sir_fgesss):
         case BIN(sir_fgesvv):
@@ -1966,45 +1839,13 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         case BIN(sir_sfgessi):
         case BIN(sir_sfgesis):
             fn = "ge";
-            fn2 = ">=";
-            fp_res_p = FALSE;
         fop:
-            if (fops->v1_num >= 0) {
-                assert (!imm1_p);
-                if (fops->v2_num < 0 && !imm2_p) {
-                    O("  r = mirjit_fr%sf(%sd%d, val2", fn, fops->v1_stack_p ? "s" : "e", fops->v1_num);
-                } else if (fp_res_p) {
-                    O("  r = mirjit_ff%sf(%sd%d, ", fn, fops->v1_stack_p ? "s" : "e", fops->v1_num);
-                    if (imm2_p) O("d");
-                    else O("%sd%d", fops->v2_stack_p ? "s" : "e", fops->v2_num);
-                } else {
-                    O("  r = (((%sd%d %s ", fops->v1_stack_p ? "s" : "e", fops->v1_num, fn2);
-                    if (imm2_p) O("d");
-                    else O("%sd%d", fops->v2_stack_p ? "s" : "e", fops->v2_num);
-                    O(") << 1) | %d", (int)RUBY_FIXNUM_FLAG);
-                }
-            } else if (fops->v2_num >= 0) {
-                assert (!imm2_p);
-                if (!imm1_p) {
-                    O("  r = mirjit_f%sf(val, %sd%d", fn, fops->v2_stack_p ? "s" : "e", fops->v2_num);
-                } else if (fp_res_p) {
-                    O("  r = mirjit_ff%sf(d, %sd%d", fn, fops->v2_stack_p ? "s" : "e", fops->v2_num);
-                } else {
-                    O("  r = (((d %s %sd%d) << 1) | %d", fn2, fops->v2_stack_p ? "s" : "e", fops->v2_num,
-                      (int)RUBY_FIXNUM_FLAG);
-                }
-            } else if (imm1_p) {
-                O("  r = mirjit_fr%sf(d, val2", fn);
-            } else if (imm2_p) {
-                O("  r = mirjit_f%sf(val, d", fn);
-            } else {
-                O("  r = mirjit_f%s(val, val2", fn);
-            }
-            if (! fp_res_p) {
-                O(");\n");
-            } else {
-                O(", &sd%d);\n", fops->res_num);
-            }
+            if (imm1_p)
+                O("  r = mirjit_fr%sf(d, val2);\n", fn);
+            else if (imm2_p)
+                O("  r = mirjit_f%sf(val, d);\n", fn);
+            else
+                O("  r = mirjit_f%s(val, val2);\n", fn);
             break;
 #endif
         case BIN(sir_siarefsss):
@@ -2049,31 +1890,25 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             assert(FALSE);
         }
         if (stack_ops_num != 0) O("  sp -= %d;\n", stack_ops_num);
-        if (rv_p) {
-            if (env_res != NULL) *env_res = (int)(EPDISP)operands[0];
+        if (rv_p)
             O("  ep[%d] = r;\n", (int)(EPDISP)operands[0]);
-        } else {
+        else
             O("  *sp++ = r;\n");
-        }
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_siasetsis):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetsis):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val2 = sp[-1];\n");
         O("  val = 0x%"PRIxVALUE ";\n", operands[0]);
         goto iaset;
     case BIN(sir_siasetsiv):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetsiv):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = sp[-1];\n");
@@ -2081,11 +1916,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[1]);
         goto iaset;
     case BIN(sir_siasetviv):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetviv):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 0;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
@@ -2093,11 +1926,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[2]);
         goto iaset;
     case BIN(sir_siasetvis):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetvis):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
@@ -2105,21 +1936,17 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val2 = sp[-1];\n");
         goto iaset;
     case BIN(sir_siasetsss):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetsss):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 3;
         O("  r = sp[-3]; val = sp[-2]; val2 = sp[-1];\n");
         goto iaset;
     case BIN(sir_siasetsvv):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetsvv):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = sp[-1];\n");
@@ -2127,44 +1954,36 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[1]);
         goto iaset;
     case BIN(sir_siasetsvs):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetsvs):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val2 = sp[-1];\n");
         O("  val = ep[%d];\n", (int)(EPDISP)operands[0]);
         goto iaset;
     case BIN(sir_siasetssv):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetssv):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = sp[-2]; val = sp[-1];\n");
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[0]);
         goto iaset;
     case BIN(sir_siasetvss):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetvss):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 2;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
         O("  val = sp[-2]; val2 = sp[-1];\n");
         goto iaset;
     case BIN(sir_siasetvvv):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetvvv):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 0;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
@@ -2172,11 +1991,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val2 = ep[%d];\n", (int)(EPDISP)operands[2]);
         goto iaset;
     case BIN(sir_siasetvvs):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetvvs):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
@@ -2184,11 +2001,9 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  val2 = sp[-1];\n");
         goto iaset;
     case BIN(sir_siasetvsv):
-        if (buff == NULL) return TRUE;
         siaset_p = TRUE;
         /* fall through */
     case BIN(sir_iasetvsv):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         stack_ops_num = 1;
         O("  r = ep[%d];\n", (int)(EPDISP)operands[0]);
@@ -2218,161 +2033,125 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  pc += %d;\n", insn_len(insn_id));
         break;
     case BIN(sir_ibeqss):
-        if (buff == NULL) return TRUE;
         op = "==";
         goto ibss;
     case BIN(sir_ibneqss):
-        if (buff == NULL) return TRUE;
         op = "!=";
         goto ibss;
     case BIN(sir_ibltss):
-        if (buff == NULL) return TRUE;
         op = "<";
         goto ibss;
     case BIN(sir_ibgtss):
-        if (buff == NULL) return TRUE;
         op = ">";
         goto ibss;
     case BIN(sir_ibless):
-        if (buff == NULL) return TRUE;
         op = "<=";
         goto ibss;
     case BIN(sir_ibgess):
-        if (buff == NULL) return TRUE;
         op = ">=";
     ibss:
         v1_p = v2_p = imm2_p = FALSE;
         goto ib;
     case BIN(sir_ibeqvv):
-        if (buff == NULL) return TRUE;
         op = "==";
         goto ibvv;
     case BIN(sir_ibneqvv):
-        if (buff == NULL) return TRUE;
         op = "!=";
         goto ibvv;
     case BIN(sir_ibltvv):
-        if (buff == NULL) return TRUE;
         op = "<";
         goto ibvv;
     case BIN(sir_ibgtvv):
-        if (buff == NULL) return TRUE;
         op = ">";
         goto ibvv;
     case BIN(sir_iblevv):
-        if (buff == NULL) return TRUE;
         op = "<=";
         goto ibvv;
     case BIN(sir_ibgevv):
-        if (buff == NULL) return TRUE;
         op = ">=";
     ibvv:
         v1_p = v2_p = TRUE;
         imm2_p = FALSE;
         goto ib;
     case BIN(sir_ibeqvi):
-        if (buff == NULL) return TRUE;
         op = "==";
         goto ibvi;
     case BIN(sir_ibneqvi):
-        if (buff == NULL) return TRUE;
         op = "!=";
         goto ibvi;
     case BIN(sir_ibltvi):
-        if (buff == NULL) return TRUE;
         op = "<";
         goto ibvi;
     case BIN(sir_ibgtvi):
-        if (buff == NULL) return TRUE;
         op = ">";
         goto ibvi;
     case BIN(sir_iblevi):
-        if (buff == NULL) return TRUE;
         op = "<=";
         goto ibvi;
     case BIN(sir_ibgevi):
-        if (buff == NULL) return TRUE;
         op = ">=";
     ibvi:
         v1_p = imm2_p = TRUE;
         v2_p = FALSE;
         goto ib;
     case BIN(sir_ibeqvs):
-        if (buff == NULL) return TRUE;
         op = "==";
         goto ibvs;
     case BIN(sir_ibneqvs):
-        if (buff == NULL) return TRUE;
         op = "!=";
         goto ibvs;
     case BIN(sir_ibltvs):
-        if (buff == NULL) return TRUE;
         op = "<";
         goto ibvs;
     case BIN(sir_ibgtvs):
-        if (buff == NULL) return TRUE;
         op = ">";
         goto ibvs;
     case BIN(sir_iblevs):
-        if (buff == NULL) return TRUE;
         op = "<=";
         goto ibvs;
     case BIN(sir_ibgevs):
-        if (buff == NULL) return TRUE;
         op = ">=";
     ibvs:
         v1_p = TRUE;
         v2_p = imm2_p = FALSE;
         goto ib;
     case BIN(sir_ibeqsv):
-        if (buff == NULL) return TRUE;
         op = "==";
         goto ibsv;
     case BIN(sir_ibneqsv):
-        if (buff == NULL) return TRUE;
         op = "!=";
         goto ibsv;
     case BIN(sir_ibltsv):
-        if (buff == NULL) return TRUE;
         op = "<";
         goto ibsv;
     case BIN(sir_ibgtsv):
-        if (buff == NULL) return TRUE;
         op = ">";
         goto ibsv;
     case BIN(sir_iblesv):
-        if (buff == NULL) return TRUE;
         op = "<=";
         goto ibsv;
     case BIN(sir_ibgesv):
-        if (buff == NULL) return TRUE;
         op = ">=";
     ibsv:
         v1_p = imm2_p = FALSE;
         v2_p = TRUE;
         goto ib;
     case BIN(sir_ibeqsi):
-        if (buff == NULL) return TRUE;
         op = "==";
         goto ibsi;
     case BIN(sir_ibneqsi):
-        if (buff == NULL) return TRUE;
         op = "!=";
         goto ibsi;
     case BIN(sir_ibltsi):
-        if (buff == NULL) return TRUE;
         op = "<";
         goto ibsi;
     case BIN(sir_ibgtsi):
-        if (buff == NULL) return TRUE;
         op = ">";
         goto ibsi;
     case BIN(sir_iblesi):
-        if (buff == NULL) return TRUE;
         op = "<=";
         goto ibsi;
     case BIN(sir_ibgesi):
-        if (buff == NULL) return TRUE;
         op = ">=";
     ibsi:
         v1_p = v2_p = FALSE;
@@ -2397,18 +2176,15 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* false label */
         break;
     case BIN(sir_jump): // ??? test only for backward jumps/branches
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  if (*(rb_atomic_t *)((char*)ec+%d) & ~(VALUE)*(rb_atomic_t *)((char*)ec+%d)) goto restart;\n",
           (int)offsetof(rb_execution_context_t, interrupt_flag), (int)offsetof(rb_execution_context_t, interrupt_mask));
         O("  pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[0]); /* label */
         break;
     case BIN(sir_branchnil):
-        if (buff == NULL) return TRUE;
         nil_p = TRUE;
         goto branch;
     case BIN(sir_branch):
-        if (buff == NULL) return TRUE;
         nil_p = FALSE;
     branch:
         gen_insn_stat(buff, insn_id);
@@ -2424,7 +2200,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("    pc += %d;\n", insn_len(insn_id) + (int)(OFFSET)operands[1]); /* false label */
         break;
     case BIN(leave):
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         O("  flags = *ep;\n");
         O("  if (flags & 0x%"PRIxVALUE ") goto restart;\n", (VALUE)VM_FRAME_FLAG_FINISH);
@@ -2433,7 +2208,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         gen_pop_frame(buff, TRUE);
         break;
     case BIN(sir_iseq_send_without_block): { // ??? visibility
-        if (buff == NULL) return TRUE;
         SEND_INFO si = (SEND_INFO)operands[0];
         struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)operands[1];
         rb_iseq_t *iseq = bbv_ref->iseq;
@@ -2461,7 +2235,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         // ??? general rtl insns
     case BIN(sir_getivar):
     case BIN(sir_setivar): {
-        if (buff == NULL) return TRUE;
         shape_id_t shape_id = (lindex_t)operands[1];
         uint32_t index = (uint32_t)operands[0];
 
@@ -2495,7 +2268,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     }
     case BIN(sir_send_ivget):
     case BIN(sir_send_ivset): {
-        if (buff == NULL) return TRUE;
         shape_id_t shape_id = (lindex_t)operands[0];
         unsigned index = (unsigned)(lindex_t)operands[1];
         gen_insn_stat(buff, insn_id);
@@ -2532,7 +2304,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     }
 #ifdef MIRJIT_ITER_INSNS
     case BIN(sir_iter_start): {
-        if (buff == NULL) return TRUE;
         gen_insn_stat(buff, insn_id);
         int (*f)(VALUE, VALUE *) = (void *)operands[0];
         O("  val = sp[-1];\n");
@@ -2544,7 +2315,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         break;
     }
     case BIN(sir_iter_body): {
-        if (buff == NULL) return TRUE;
         struct rb_iseq_bbv *bbv_ref = (struct rb_iseq_bbv *)operands[0];
         rb_iseq_t *iseq = bbv_ref->iseq;
         struct rb_iseq_constant_body * body = ISEQ_BODY(iseq);
@@ -2612,7 +2382,6 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     }
 #endif
     case BIN(sir_cfunc_send): {
-        if (buff == NULL) return TRUE;
         SEND_INFO si = (SEND_INFO)operands[0];
         rb_iseq_t *block_iseq = (rb_iseq_t *)operands[1];
         int argc = si->argc;
@@ -2698,7 +2467,6 @@ static sir_inline DBL mirjit_float(VALUE v) {
     return RFLOAT(v)->float_value;
 }
 
-#if 0
 static VALUE mirjit_fplus(VALUE v1, VALUE v2){ return DBL2NUM(mirjit_float(v1) + mirjit_float(v2)); }
 static VALUE mirjit_fplusf(VALUE v, DBL d){ return DBL2NUM(mirjit_float(v) + d); }
 static VALUE mirjit_frplusf(DBL d, VALUE v){ return DBL2NUM(d + mirjit_float(v)); }
@@ -2714,28 +2482,6 @@ static VALUE mirjit_frdivf(DBL d, VALUE v){ return DBL2NUM(ruby_float_div(d, mir
 static VALUE mirjit_fmod(VALUE v1, VALUE v2){ return DBL2NUM(ruby_float_mod(mirjit_float(v1), mirjit_float(v2))); }
 static VALUE mirjit_fmodf(VALUE v, DBL d){ return DBL2NUM(ruby_float_mod(mirjit_float(v), d)); }
 static VALUE mirjit_frmodf(DBL d, VALUE v){ return DBL2NUM(ruby_float_mod(d, mirjit_float(v))); }
-#else
-static VALUE mirjit_fplus(VALUE v1, VALUE v2, DBL *dp){DBL d; *dp = d = mirjit_float(v1) + mirjit_float(v2); return DBL2NUM(d); }
-static VALUE mirjit_fplusf(VALUE v, DBL d, DBL *dp){ *dp = d = mirjit_float(v) + d; return DBL2NUM(d); }
-static VALUE mirjit_ffplusf(DBL d1, DBL d2, DBL *dp){ *dp = d1 = d1 + d2; return DBL2NUM(d1); }
-static VALUE mirjit_frplusf(DBL d, VALUE v, DBL *dp){ *dp = d = d + mirjit_float(v); return DBL2NUM(d); }
-static VALUE mirjit_fminus(VALUE v1, VALUE v2, DBL *dp){DBL d; *dp = d = mirjit_float(v1) - mirjit_float(v2); return DBL2NUM(d); }
-static VALUE mirjit_fminusf(VALUE v, DBL d, DBL *dp){ *dp = d = mirjit_float(v) - d; return DBL2NUM(d); }
-static VALUE mirjit_ffminusf(DBL d1, DBL d2, DBL *dp){ *dp = d1 = d1 - d2; return DBL2NUM(d1); }
-static VALUE mirjit_frminusf(DBL d, VALUE v, DBL *dp){ *dp = d = d - mirjit_float(v); return DBL2NUM(d); }
-static VALUE mirjit_fmult(VALUE v1, VALUE v2, DBL *dp){DBL d; *dp = d = mirjit_float(v1) * mirjit_float(v2); return DBL2NUM(d); }
-static VALUE mirjit_fmultf(VALUE v, DBL d, DBL *dp){ *dp = d = mirjit_float(v) * d; return DBL2NUM(d); }
-static VALUE mirjit_ffmultf(DBL d1, DBL d2, DBL *dp){ *dp = d1 = d1 * d2; return DBL2NUM(d1); }
-static VALUE mirjit_frmultf(DBL d, VALUE v, DBL *dp){ *dp = d = d * mirjit_float(v); return DBL2NUM(d); }
-static VALUE mirjit_fdiv(VALUE v1, VALUE v2, DBL *dp){DBL d; *dp = d = ruby_float_div(mirjit_float(v1), mirjit_float(v2)); return DBL2NUM(d); }
-static VALUE mirjit_fdivf(VALUE v, DBL d, DBL *dp){ *dp = d = ruby_float_div(mirjit_float(v), d); return DBL2NUM(d); }
-static VALUE mirjit_ffdivf(DBL d1, DBL d2, DBL *dp){ *dp = d1 = ruby_float_div(d1, d2); return DBL2NUM(d1); }
-static VALUE mirjit_frdivf(DBL d, VALUE v, DBL *dp){ *dp = d = ruby_float_div(d, mirjit_float(v)); return DBL2NUM(d); }
-static VALUE mirjit_fmod(VALUE v1, VALUE v2, DBL *dp){DBL d; *dp = d = ruby_float_mod(mirjit_float(v1), mirjit_float(v2)); return DBL2NUM(d); }
-static VALUE mirjit_fmodf(VALUE v, DBL d, DBL *dp){ *dp = d = ruby_float_mod(mirjit_float(v), d); return DBL2NUM(d); }
-static VALUE mirjit_ffmodf(DBL d1, DBL d2, DBL *dp){ *dp = d1 = ruby_float_mod(d1, d2); return DBL2NUM(d1); }
-static VALUE mirjit_frmodf(DBL d, VALUE v, DBL *dp){ *dp = d = ruby_float_mod(d, mirjit_float(v)); return DBL2NUM(d); }
-#endif
 static VALUE mirjit_feq(VALUE v1, VALUE v2){ return RBOOL(mirjit_float(v1) == mirjit_float(v2)); }
 static VALUE mirjit_feqf(VALUE v, DBL d){ return RBOOL(mirjit_float(v) == d); }
 static VALUE mirjit_freqf(DBL d, VALUE v){ return RBOOL(d == mirjit_float(v)); }
@@ -2769,26 +2515,20 @@ static resolver_el_t resolver_els[] = {
     {"rb_check_cfp_consistency", rb_check_cfp_consistency},
     {"rb_sir_get_jump_safe_pc", rb_sir_get_jump_safe_pc},
 #ifdef FLONUM_INSNS
-    {"mirjit_float", mirjit_float},
     {"mirjit_fplus", mirjit_fplus},
     {"mirjit_fplusf", mirjit_fplusf},
-    {"mirjit_ffplusf", mirjit_ffplusf},
     {"mirjit_frplusf", mirjit_frplusf},
     {"mirjit_fminus", mirjit_fminus},
     {"mirjit_fminusf", mirjit_fminusf},
-    {"mirjit_ffminusf", mirjit_ffminusf},
     {"mirjit_frminusf", mirjit_frminusf},
     {"mirjit_fmult", mirjit_fmult},
     {"mirjit_fmultf", mirjit_fmultf},
-    {"mirjit_ffmultf", mirjit_ffmultf},
     {"mirjit_frmultf", mirjit_frmultf},
     {"mirjit_fdiv", mirjit_fdiv},
     {"mirjit_fdivf", mirjit_fdivf},
-    {"mirjit_ffdivf", mirjit_ffdivf},
     {"mirjit_frdivf", mirjit_frdivf},
     {"mirjit_fmod", mirjit_fmod},
     {"mirjit_fmodf", mirjit_fmodf},
-    {"mirjit_ffmodf", mirjit_ffmodf},
     {"mirjit_frmodf", mirjit_frmodf},
     {"mirjit_feq", mirjit_feq},
     {"mirjit_feqf", mirjit_feqf},
@@ -2868,201 +2608,14 @@ static void resolver_finish(void) {
     case CONCAT(name, vv):	\
     case CONCAT(name, vi)
 
-static int get_fp_flag(VARR(char) *flags, int n, int base) {
-    if (n < base) return 0;
-    int off = n - base;
-    if (off >= (int) VARR_LENGTH(char, flags)) return 0;
-    return VARR_GET(char, flags, off);
-}
-
-static void rebase_stack_top(VARR(char) *flags, int top, int *base) {
-    if (top >= *base) return;
-    size_t len = VARR_LENGTH(char, flags);
-    int diff = *base - top;
-    *base = top;
-    for (int i = 0; i < diff; i++) VARR_PUSH(char, flags, 0);
-    memmove(VARR_ADDR(char, flags) + diff, VARR_ADDR(char, flags), len);
-    for (int i = 0; i < diff; i++) VARR_SET(char, flags, i, 0);
-}
-
-static void change_stack_top(VARR(char) *flags, int *top, int inc, int *base) {
-    *top += inc;
-    rebase_stack_top(flags, *top, base);
-}
-
-static void setup_fp_flag(VARR(char) *flags, int n, int v, int *base) {
-    if(!(n >= *base)) abort ();
-    n -= *base;
-    while ((int)VARR_LENGTH(char, flags) <= n) VARR_PUSH(char, flags, 0);
-    VARR_SET(char, flags, n, v);
-}
-
-DEF_VARR(int);
-
-static void collect_temp_double_decls(VARR(int) *fp_decls, VARR(char) *flags, int stack_p) {
-    for (int i = 0; i < (int)VARR_LENGTH(char, flags); i++)
-        if (VARR_GET(char, flags, i)) VARR_PUSH (int, fp_decls, stack_p ? -1 - i : i);
-}
-
-static void gen_temp_double_decls(VARR(char) *buff, VARR(int) *fp_decls) {
-    for (int i = 0; i < (int)VARR_LENGTH(int, fp_decls); i++) {
-        int n = VARR_GET(int, fp_decls, i);
-        O("  DBL %sd%d;\n", n < 0 ? "s" : "e", n < 0 ? -1 - n : n);
-    }
-}
-
-static void update_fp_flags (VALUE *insn_pc, enum ruby_vminsn_type insn_id,
-                             VARR(char) *fp_stack_flags, VARR(char) *fp_env_flags,
-                             int *top, int *stack_base, int *env_base) {
-    int n, level;
-
-    switch (insn_id) {
-#ifdef FLONUM_INSNS
-    case BIN(sir_fplussss):
-    case BIN(sir_fminussss):
-    case BIN(sir_fmultsss):
-    case BIN(sir_fdivsss):
-    case BIN(sir_fmodsss):
-    case BIN(sir_sfplussss):
-    case BIN(sir_sfminussss):
-    case BIN(sir_sfmultsss):
-    case BIN(sir_sfdivsss):
-    case BIN(sir_sfmodsss):
-        change_stack_top(fp_stack_flags, top, -2, stack_base);
-        change_stack_top(fp_stack_flags, top, 1, stack_base);
-        setup_fp_flag(fp_stack_flags, *top, 1, stack_base);
-        break;
-    case BIN(sir_fplussvv):
-    case BIN(sir_fminussvv):
-    case BIN(sir_fmultsvv):
-    case BIN(sir_fdivsvv):
-    case BIN(sir_fmodsvv):
-    case BIN(sir_sfplussvv):
-    case BIN(sir_sfminussvv):
-    case BIN(sir_sfmultsvv):
-    case BIN(sir_sfdivsvv):
-    case BIN(sir_sfmodsvv):
-    case BIN(sir_fplussvi):
-    case BIN(sir_fminussvi):
-    case BIN(sir_fmultsvi):
-    case BIN(sir_fdivsvi):
-    case BIN(sir_fmodsvi):
-    case BIN(sir_sfplussvi):
-    case BIN(sir_sfminussvi):
-    case BIN(sir_sfmultsvi):
-    case BIN(sir_sfdivsvi):
-    case BIN(sir_sfmodsvi):
-    case BIN(sir_fplussiv):
-    case BIN(sir_fminussiv):
-    case BIN(sir_fmultsiv):
-    case BIN(sir_fdivsiv):
-    case BIN(sir_fmodsiv):
-    case BIN(sir_sfplussiv):
-    case BIN(sir_sfminussiv):
-    case BIN(sir_sfmultsiv):
-    case BIN(sir_sfdivsiv):
-    case BIN(sir_sfmodsiv):
-        change_stack_top(fp_stack_flags, top, 1, stack_base);
-        setup_fp_flag(fp_stack_flags, *top, 1, stack_base);
-        break;
-    case BIN(sir_fplussvs):
-    case BIN(sir_fminussvs):
-    case BIN(sir_fmultsvs):
-    case BIN(sir_fdivsvs):
-    case BIN(sir_fmodsvs):
-    case BIN(sir_sfplussvs):
-    case BIN(sir_sfminussvs):
-    case BIN(sir_sfmultsvs):
-    case BIN(sir_sfdivsvs):
-    case BIN(sir_sfmodsvs):
-    case BIN(sir_fplusssv):
-    case BIN(sir_fminusssv):
-    case BIN(sir_fmultssv):
-    case BIN(sir_fdivssv):
-    case BIN(sir_fmodssv):
-    case BIN(sir_sfplusssv):
-    case BIN(sir_sfminusssv):
-    case BIN(sir_sfmultssv):
-    case BIN(sir_sfdivssv):
-    case BIN(sir_sfmodssv):
-    case BIN(sir_fplusssi):
-    case BIN(sir_fminusssi):
-    case BIN(sir_fmultssi):
-    case BIN(sir_fdivssi):
-    case BIN(sir_fmodssi):
-    case BIN(sir_sfplusssi):
-    case BIN(sir_sfminusssi):
-    case BIN(sir_sfmultssi):
-    case BIN(sir_sfdivssi):
-    case BIN(sir_sfmodssi):
-    case BIN(sir_fplussis):
-    case BIN(sir_fminussis):
-    case BIN(sir_fmultsis):
-    case BIN(sir_fdivsis):
-    case BIN(sir_fmodsis):
-    case BIN(sir_sfplussis):
-    case BIN(sir_sfminussis):
-    case BIN(sir_sfmultsis):
-    case BIN(sir_sfdivsis):
-    case BIN(sir_sfmodsis):
-        setup_fp_flag(fp_stack_flags, *top, 1, stack_base);
-        break;
-#endif
-    case BIN(getlocal):
-        level = (int)(rb_num_t)insn_pc[2];
-        if (level != 0) {
-            change_stack_top(fp_stack_flags, top, 1, stack_base);
-            break;
-        }
-    case BIN(getlocal_WC_0):
-        n = (int)(lindex_t)insn_pc[1];
-        assert (n >= 0);
-        change_stack_top(fp_stack_flags, top, 1, stack_base);
-        if (get_fp_flag(fp_env_flags, n, *env_base))
-            setup_fp_flag(fp_stack_flags, *top, 1, stack_base);
-        break;
-    case BIN(setlocal):
-        level = (int)(rb_num_t)insn_pc[2];
-        if (level != 0) {
-            change_stack_top(fp_stack_flags, top, -1, stack_base);
-            break;
-        }
-    case BIN(setlocal_WC_0):
-    case BIN(sir_setlocal):
-        n = (int)(lindex_t)insn_pc[1];
-        assert (n >= 0);
-        if (get_fp_flag(fp_stack_flags, *top, *stack_base))
-            setup_fp_flag(fp_env_flags, n, 1, env_base);
-        change_stack_top(fp_stack_flags, top, -1, stack_base);
-        break;
-    default: {
-        int retn = (int)insn_stack_retn(insn_id, &insn_pc[1]);
-        int inc = insn_stack_increase(insn_id, &insn_pc[1]);
-        change_stack_top(fp_stack_flags, top, inc - retn, stack_base);
-        change_stack_top(fp_stack_flags, top, retn, stack_base);
-#if 0
-        fprintf (stderr, "%s,retn=%d,inc=%d,top=%d,base=%d\n", insn_name(insn_id), retn, inc, *top, *stack_base);
-#endif
-        break;
-    }
-    }
-}
-
-static void gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
-    int len, pc, next_pc;
-    int mirjit_debug_level = rb_mirjit_debug_level(), insns_num = 0, bbv_pc = -1;
-    int top = 0, max_top, stack_base = 0, env_base, level, n, env_res, inc, retn;
+static void
+gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p) {
+    int len, pc, next_pc, mirjit_debug_level = rb_mirjit_debug_level(), insns_num = 0, bbv_pc = -1;
     int finish_jit_code_p;
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = ISEQ_BODY(iseq);
     enum ruby_vminsn_type insn_id, next_insn_id;
-    VALUE *operands;
-    struct fops fops;
-    VARR (char) *fp_stack_flags, *fp_env_flags;
-    VARR (int) *fp_decls;
 
-    VARR_CREATE(char, fp_stack_flags, 0);
-    VARR_CREATE(char, fp_env_flags, 0);
     finish_jit_code_p = FALSE;
     assert(bbv->bbv_start < bbv->bbv_bound);
     if (rejit_p) {
@@ -3078,37 +2631,12 @@ static void gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p)
             rb_sir_print_bbv(bbv);
         }
     }
-    VARR_TRUNC(char, fp_stack_flags, 0);
-    VARR_TRUNC(char, fp_env_flags, 0);
-    max_top = top = stack_base = env_base = 0;
     for (pc = bbv->bbv_start, insn_id = rb_mirjit_insn_decode(&body->bbv_code[pc]);
          pc < bbv->bbv_bound;
          pc = next_pc, insn_id = next_insn_id) {
         len = insn_len(insn_id);
         next_pc = pc + len;
         next_insn_id = next_pc < bbv->bbv_bound ? rb_mirjit_insn_decode(&body->bbv_code[next_pc]) : 0;
-        update_fp_flags (&body->bbv_code[pc], insn_id,
-                         fp_stack_flags, fp_env_flags, &top, &stack_base, &env_base);
-        if (max_top < top) max_top = top;
-    }
-    assert (env_base == 0);
-    rebase_stack_top(fp_stack_flags, -max_top, &stack_base);
-    VARR_CREATE(int, fp_decls, 0);
-    collect_temp_double_decls (fp_decls, fp_stack_flags, TRUE);
-    collect_temp_double_decls (fp_decls, fp_env_flags, FALSE);
-    VARR_TRUNC(char, fp_stack_flags, 0);
-    VARR_TRUNC(char, fp_env_flags, 0);
-    top = 0;
-    for (pc = bbv->bbv_start, insn_id = rb_mirjit_insn_decode(&body->bbv_code[pc]);
-         pc < bbv->bbv_bound;
-         pc = next_pc, insn_id = next_insn_id) {
-        len = insn_len(insn_id);
-        next_pc = pc + len;
-        next_insn_id = next_pc < bbv->bbv_bound ? rb_mirjit_insn_decode(&body->bbv_code[next_pc]) : 0;
-        fops.v1_num = fops.v2_num = fops.res_num = -1;
-        fops.v1_stack_p = fops.v2_stack_p = FALSE;
-        fops.res_stack_p = TRUE;
-        operands = &body->bbv_code[pc + 1];
         switch (insn_id) {
         case BIN(sir_bbv_cont):
             if (bbv_pc >= 0) { /* generate code for previous bbv part and start generation for this part */
@@ -3129,7 +2657,7 @@ static void gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p)
             O("void jit_bbv%d(void) {\n", pc);
 #endif
             O("  VALUE val, val2, r, t, flags, *pv, *pv2;\n");
-            O("  DBL d, d2;\n");
+            O("  DBL d;\n");
             O("  VALUE *ep /*__mirc_attribute__ ((antialias (val)))*/ = cfp->ep;\n");
             O("  VALUE *sp /*__mirc_attribute__ ((antialias (val)))*/ = cfp->sp;\n");
 #if defined(__x86_64__) && defined(JRET)
@@ -3139,214 +2667,11 @@ static void gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p)
 #ifdef MIRJIT_STAT
             O("  mirjit_run_nums++;\n");
 #endif
-            gen_temp_double_decls (buff, fp_decls);
             break;
-#ifdef FLONUM_INSNS
-        case BIN(sir_fplussss):
-        case BIN(sir_fminussss):
-        case BIN(sir_fmultsss):
-        case BIN(sir_fdivsss):
-        case BIN(sir_fmodsss):
-        case BIN(sir_sfplussss):
-        case BIN(sir_sfminussss):
-        case BIN(sir_sfmultsss):
-        case BIN(sir_sfdivsss):
-        case BIN(sir_sfmodsss):
-            if (get_fp_flag(fp_stack_flags, top - 1, stack_base)) {
-                fops.v1_num = top - 1 - stack_base;
-                fops.v1_stack_p = TRUE;
-            }
-            if (get_fp_flag(fp_stack_flags, top, stack_base)) {
-                fops.v2_num = top - stack_base;
-                fops.v2_stack_p = TRUE;
-            }
-            fops.res_num = top - 1 - stack_base;
-            setup_fp_flag(fp_stack_flags, top - 1, 1, &stack_base);
-            goto cont;
-        case BIN(sir_fplussvv):
-        case BIN(sir_fminussvv):
-        case BIN(sir_fmultsvv):
-        case BIN(sir_fdivsvv):
-        case BIN(sir_fmodsvv):
-        case BIN(sir_sfplussvv):
-        case BIN(sir_sfminussvv):
-        case BIN(sir_sfmultsvv):
-        case BIN(sir_sfdivsvv):
-        case BIN(sir_sfmodsvv):
-            n = -(int)(EPDISP)operands[0];
-            if (get_fp_flag(fp_env_flags, n, 0)) {
-                fops.v1_num = n;
-            }
-            n = -(int)(EPDISP)operands[1];
-            if (get_fp_flag(fp_env_flags, n, 0)) {
-                fops.v2_num = n;
-            }
-            fops.res_num = top + 1 - stack_base;
-            setup_fp_flag(fp_stack_flags, top + 1, 1, &stack_base);
-            goto cont;
-        case BIN(sir_fplussvi):
-        case BIN(sir_fminussvi):
-        case BIN(sir_fmultsvi):
-        case BIN(sir_fdivsvi):
-        case BIN(sir_fmodsvi):
-        case BIN(sir_sfplussvi):
-        case BIN(sir_sfminussvi):
-        case BIN(sir_sfmultsvi):
-        case BIN(sir_sfdivsvi):
-        case BIN(sir_sfmodsvi):
-            n = -(int)(EPDISP)operands[0];
-            if (get_fp_flag(fp_env_flags, n, 0)) {
-                fops.v1_num = n;
-            }
-            fops.res_num = top + 1 - stack_base;
-            setup_fp_flag(fp_stack_flags, top + 1, 1, &stack_base);
-            goto cont;
-        case BIN(sir_fplussiv):
-        case BIN(sir_fminussiv):
-        case BIN(sir_fmultsiv):
-        case BIN(sir_fdivsiv):
-        case BIN(sir_fmodsiv):
-        case BIN(sir_sfplussiv):
-        case BIN(sir_sfminussiv):
-        case BIN(sir_sfmultsiv):
-        case BIN(sir_sfdivsiv):
-        case BIN(sir_sfmodsiv):
-            n = -(int)(EPDISP)operands[1];
-            if (get_fp_flag(fp_env_flags, n, 0)) {
-                fops.v2_num = n;
-            }
-            fops.res_num = top + 1 - stack_base;
-            setup_fp_flag(fp_stack_flags, top + 1, 1, &stack_base);
-            goto cont;
-        case BIN(sir_fplussvs):
-        case BIN(sir_fminussvs):
-        case BIN(sir_fmultsvs):
-        case BIN(sir_fdivsvs):
-        case BIN(sir_fmodsvs):
-        case BIN(sir_sfplussvs):
-        case BIN(sir_sfminussvs):
-        case BIN(sir_sfmultsvs):
-        case BIN(sir_sfdivsvs):
-        case BIN(sir_sfmodsvs):
-            n = -(int)(EPDISP)operands[0];
-            if (get_fp_flag(fp_env_flags, n, 0)) {
-                fops.v1_num = n;
-            }
-            if (get_fp_flag(fp_stack_flags, top, stack_base)) {
-                fops.v2_num = top - stack_base;
-                fops.v2_stack_p = TRUE;
-            }
-            fops.res_num = top - stack_base;
-            setup_fp_flag(fp_stack_flags, top, 1, &stack_base);
-            goto cont;
-        case BIN(sir_fplusssv):
-        case BIN(sir_fminusssv):
-        case BIN(sir_fmultssv):
-        case BIN(sir_fdivssv):
-        case BIN(sir_fmodssv):
-        case BIN(sir_sfplusssv):
-        case BIN(sir_sfminusssv):
-        case BIN(sir_sfmultssv):
-        case BIN(sir_sfdivssv):
-        case BIN(sir_sfmodssv):
-            n = -(int)(EPDISP)operands[0];
-            if (get_fp_flag(fp_env_flags, n, 0)) {
-                fops.v2_num = n;
-            }
-            if (get_fp_flag(fp_stack_flags, top, stack_base)) {
-                fops.v1_num = top - stack_base;
-                fops.v1_stack_p = TRUE;
-            }
-            fops.res_num = top - stack_base;
-            setup_fp_flag(fp_stack_flags, top, 1, &stack_base);
-            goto cont;
-        case BIN(sir_fplusssi):
-        case BIN(sir_fminusssi):
-        case BIN(sir_fmultssi):
-        case BIN(sir_fdivssi):
-        case BIN(sir_fmodssi):
-        case BIN(sir_sfplusssi):
-        case BIN(sir_sfminusssi):
-        case BIN(sir_sfmultssi):
-        case BIN(sir_sfdivssi):
-        case BIN(sir_sfmodssi):
-            if (get_fp_flag(fp_stack_flags, top, stack_base)) {
-                fops.v1_num = top - stack_base;
-                fops.v1_stack_p = TRUE;
-            }
-            fops.res_num = top - stack_base;
-            setup_fp_flag(fp_stack_flags, top, 1, &stack_base);
-            goto cont;
-        case BIN(sir_fplussis):
-        case BIN(sir_fminussis):
-        case BIN(sir_fmultsis):
-        case BIN(sir_fdivsis):
-        case BIN(sir_fmodsis):
-        case BIN(sir_sfplussis):
-        case BIN(sir_sfminussis):
-        case BIN(sir_sfmultsis):
-        case BIN(sir_sfdivsis):
-        case BIN(sir_sfmodsis):
-            if (get_fp_flag(fp_stack_flags, top, stack_base)) {
-                fops.v2_num = top - stack_base;
-                fops.v2_stack_p = TRUE;
-            }
-            fops.res_num = top - stack_base;
-            setup_fp_flag(fp_stack_flags, top, 1, &stack_base);
-            goto cont;
-#endif
-        case BIN(getlocal):
-            level = (int)(rb_num_t)operands[1];
-            if (level != 0) goto cont;
-        case BIN(getlocal_WC_0):
-            n = (int)(lindex_t)operands[0];
-            assert (n >= 0);
-            if (get_fp_flag(fp_env_flags, n, 0)) {
-                setup_fp_flag(fp_stack_flags, top + 1, 1, &stack_base);
-                fops.res_num = top + 1 - stack_base;
-            }
-            goto cont;
-        case BIN(setlocal):
-            level = (int)(rb_num_t)operands[1];
-            if (level != 0) goto cont;
-        case BIN(setlocal_WC_0):
-        case BIN(sir_setlocal):
-            n = (int)(lindex_t)operands[0];
-            assert (n >= 0);
-            if (get_fp_flag(fp_stack_flags, top, stack_base)) {
-                setup_fp_flag(fp_env_flags, n, 1, &env_base);
-                fops.v1_num = top - stack_base;
-                fops.v1_stack_p = TRUE;
-                fops.res_num = n;
-                fops.res_stack_p = FALSE;
-            }
-            goto cont;
-        case BIN(sir_mov):
-            n = (int)(lindex_t)operands[1];
-            if (get_fp_flag(fp_env_flags, n, env_base)) {
-                fops.v1_num = n;
-                n = (int)(lindex_t)operands[0];
-                setup_fp_flag(fp_env_flags, n, 1, &env_base);
-                fops.res_num = n;
-                fops.res_stack_p = FALSE;
-            }
-            goto cont;
         default:
-        cont:
-            inc = insn_stack_increase(insn_id, operands);
-            if (!gen_insn_code(buff, body->bbv_code + pc, insn_id, &fops, &env_res) || insn_id == BIN(leave)) {
-                change_stack_top(fp_stack_flags, &top, inc, &stack_base);
+            if (!gen_insn_code(buff, body->bbv_code + pc, insn_id) || insn_id == BIN(leave)) {
                 finish_jit_code_p = TRUE;
             } else {
-                change_stack_top(fp_stack_flags, &top, inc, &stack_base);
-                if (fops.res_num < 0) { /* non fp results */
-                    if (env_res >= 0) setup_fp_flag(fp_env_flags, env_res, 0, &env_base);
-                    if ((int)VARR_LENGTH(char, fp_stack_flags) > top - stack_base)
-                        VARR_TRUNC(char, fp_stack_flags, top - stack_base);
-                    retn = (int)insn_stack_retn(insn_id, operands);
-                    assert(inc <= retn && top >= retn);
-                    for (int i = 1; i <= retn; i++) setup_fp_flag(fp_stack_flags, top - retn + i, 0, &stack_base);
-                }
                 insns_num++;
                 O("l%d:;\n", (int)(pc - bbv->bbv_start));
 #if 0
@@ -3360,8 +2685,8 @@ static void gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p)
                 case BIN(branch2):
                 case BIN(branchnil2): {
                     OFFSET dst;
-                    if (((dst = (OFFSET)operands[0]) < 0 && pc + len + dst >= bbv_pc)
-                        || ((dst = (OFFSET)operands[1]) < 0 && pc + len + dst >= bbv_pc)) {
+                    if (((dst = (OFFSET)body->bbv_code[pc + 1]) < 0 && pc + len + dst >= bbv_pc)
+                        || ((dst = (OFFSET)body->bbv_code[pc + 2]) < 0 && pc + len + dst >= bbv_pc)) {
                         O("  if ((VALUE)pc == 0x%llx) goto l%d;\n",
                                    (long long unsigned)(body->bbv_code + pc + len + dst),
                                    (int)(pc + len + dst - bbv->bbv_start));
@@ -3398,8 +2723,8 @@ static void gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p)
             O("  return pc;\n}\n");
 #endif
             if (mirjit_debug_level >= 1) {
-                fprintf(stderr, "C code for BBV 0x%llx @ %d (stack base=%d):\n%s",
-                        (unsigned long long)bbv, bbv_pc - bbv->bbv_start, stack_base, VARR_ADDR(char, buff));
+                fprintf(stderr, "C code for BBV 0x%llx @ %d:\n%s",
+                        (unsigned long long)bbv, bbv_pc - bbv->bbv_start, VARR_ADDR(char, buff));
             }
             curr_input.code = (uint8_t *)VARR_ADDR(char, buff);
             curr_input.code_len = strlen((char *)curr_input.code);
@@ -3438,12 +2763,7 @@ static void gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p)
         }
         bbv_pc = -1;
         finish_jit_code_p = FALSE;
-        VARR_TRUNC(char, fp_stack_flags, 0);
-        VARR_TRUNC(char, fp_env_flags, 0);
     }
-    VARR_DESTROY(int, fp_decls);
-    VARR_DESTROY(char, fp_stack_flags);
-    VARR_DESTROY(char, fp_env_flags);
 }
 
 void
