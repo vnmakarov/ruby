@@ -1,18 +1,6 @@
 name: Rubyspec Version Guards Check
 
 on: [workflow_dispatch] # switched off because of failure on timezone tests
-  push:
-    paths:
-      - 'spec/**'
-      - '!spec/*.md'
-  pull_request:
-    paths-ignore:
-      - 'spec/**'
-      - '!spec/*.md'
-  merge_group:
-    paths-ignore:
-      - 'spec/**'
-      - '!spec/*.md'
 
 concurrency:
   group: ${{ github.workflow }} / ${{ startsWith(github.event_name, 'pull') && github.ref_name || github.sha }}

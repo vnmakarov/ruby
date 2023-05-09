@@ -1,27 +1,6 @@
 name: Compilations
 
-on: [workflow_dispatch] # switched off because of failure in download for MSP-Greg/ruby-setup-ruby/00-win-ucrt
-  push:
-    paths-ignore:
-      - 'doc/**'
-      - '**/man'
-      - '**.md'
-      - '**.rdoc'
-      - '**/.document'
-  pull_request:
-    paths-ignore:
-      - 'doc/**'
-      - '**/man'
-      - '**.md'
-      - '**.rdoc'
-      - '**/.document'
-  merge_group:
-    paths-ignore:
-      - 'doc/**'
-      - '**/man'
-      - '**.md'
-      - '**.rdoc'
-      - '**/.document'
+on: [workflow_dispatch]
 
 concurrency:
   group: ${{ github.workflow }} / ${{ startsWith(github.event_name, 'pull') && github.ref_name || github.sha }}
