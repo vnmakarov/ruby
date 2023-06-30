@@ -22,6 +22,16 @@
 
 #include "mirjit.h"
 
+#if defined(__x86_64__) || defined(__aarch64__)
+#ifdef JRET
+#define USE_JRET 1
+#else
+#define USE_JRET 0
+#endif
+#else
+#define USE_JRET 0
+#endif
+
 #if !defined(HAVE_LIBMIR) || !defined(HAVE_PTHREAD_H)
 
 int
@@ -146,6 +156,10 @@ static const char *header = "typedef void *CALL_DATA;\n"
     "register void *ec asm(\"r13\");\n"
     "register VALUE *pc asm(\"r14\") /*__mirc_attribute__ ((antialias (val)))*/;\n"
     "register rb_control_frame_t *cfp asm(\"r15\");\n"
+#elif defined(__aarch64__)
+    "register void *ec asm(\"r21\");\n"
+    "register VALUE *pc asm(\"r19\") /*__mirc_attribute__ ((antialias (val)))*/;\n"
+    "register rb_control_frame_t *cfp asm(\"r20\");\n"
 #endif
     "extern VALUE *rb_sir_get_jump_safe_pc(const rb_control_frame_t *cfp, const VALUE *pc);\n"
 #ifdef FLONUM_INSNS
@@ -2961,10 +2975,10 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_n
         if (curr_part_num == 0) {
             VARR_TRUNC(char, buff, 0);
             O("%s", header);
-#if !defined(__x86_64__)
-            O("VALUE *jit_bbv%d(void *ec, void *cfp, VALUE *pc) {\n", pc);
-#else
+#if USE_JRET
             O("void jit_bbv%d(void) {\n", pc);
+#else
+            O("VALUE *jit_bbv%d(void *ec, void *cfp, VALUE *pc) {\n", pc);
 #endif
 #if 0
             O("  printf(\"starting bbv 0x%lx pc=%ld\\n\");\n", bbv, (unsigned long)pc);
@@ -3000,7 +3014,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_n
             case BIN(sir_bbv_start):
                 O("l%d_0:;", curr_part_num);
             case BIN(sir_bbv_cont):
-#if defined(__x86_64__) && defined(JRET)
+#if USE_JRET
                 /* skip sir_bbv_{start, cont} but not after method whose start bbv to be inlined */
                 if (pc == start_pc) O("  pc += %d;\n", insn_len(insn_id));
 #endif
@@ -3053,7 +3067,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_n
                         if (cont_p) O("  goto l%d_%d;\n", curr_part_num, (int)(prev_pc - bbv->bbv_start)); /* restart body */
                         O("el%d_%d:;\n", curr_part_num, (int)prev_pc); /* body exit */
                     }
-#if defined(__x86_64__) && defined(JRET)
+#if USE_JRET
                     /* skip sir_bbv_cont */
                     if (cont_p) O("  pc += %d;\n", insn_len(insn_id));
 #endif
@@ -3062,7 +3076,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_n
                 }
                 if (cont_p) continue;
             } else if (insn_id == BIN(sir_bbv_cont) && prev_insn_id == BIN(sir_iter_start)) {
-#if defined(__x86_64__) && defined(JRET)
+#if USE_JRET
                 /* skip sir_bbv_cont */
                 O("  pc += %d;\n", insn_len(insn_id));
 #endif
@@ -3091,12 +3105,8 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_n
 #endif
             O("  cfp->sp = sp;\n");
             O("  cfp->pc = pc;\n");
-#if defined(__x86_64__)
-#ifdef JRET
+#if USE_JRET
             O("  __builtin_jret (*(void **)pc);\n}\n");
-#else
-            O("  return;\n}\n");
-#endif
 #else
             O("  return pc;\n}\n");
 #endif
@@ -3131,7 +3141,7 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_n
                 VALUE *pc_addr = &body->bbv_code[start_pc];
                 if (rb_mirjit_get_pc_dispatch_addr(pc_addr) == NULL) /* set up only original dispatch addr */
                     rb_mirjit_set_pc_dispatch_addr(pc_addr, (void*)*pc_addr);
-#ifdef JRET
+#if USE_JRET
                 body->bbv_code[start_pc] = (VALUE) _MIR_get_thunk_addr(ctx, thunk);
 #else
                 body->bbv_code[start_pc] = (VALUE)sir_dispatch_table[BIN(sir_bbv_jit_call)];
