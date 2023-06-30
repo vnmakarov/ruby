@@ -3116,6 +3116,7 @@ void
 rb_mirjit_init(struct rb_mirjit_options *options) {
     mirjit_options = *options;
     ctx = MIR_init();
+    MIR_set_func_redef_permission (ctx, TRUE);
     VARR_CREATE(char, jit_c_code, 0);
     c2mir_init(ctx);
     MIR_gen_init(ctx, 1);
