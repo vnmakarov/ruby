@@ -843,8 +843,13 @@ bbv_encode(VALUE *bbv_encoded, int len) {
 static int
 sir_insn_trace_update(const rb_iseq_t *iseq, VALUE *pc, int on_p) {
     rb_insn_data_t *e;
+    void *addr;
 
     e = rb_get_insn_data(pc);
+    if (e == NULL && rb_mirjit_enabled_p() && (addr = rb_mirjit_get_pc_dispatch_addr(pc)) != NULL) {
+        *pc = (VALUE)addr;
+        e = rb_get_insn_data(pc);
+    }
     switch (e->insn) {
     case BIN(sir_make_bbv):
     case BIN(sir_make_optpc_bbv):
