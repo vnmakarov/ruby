@@ -252,7 +252,7 @@ static void gen_rb_ractor_main_p(VARR(char) *buff, const char *t) {
       t, (int)offsetof(rb_execution_context_t, thread_ptr));
     O(" || *(VALUE **)((char *)%s + %d)", /* t->ractor */
       t, (int)offsetof(rb_thread_t, ractor));
-    O(" == *(VALUE **)((char *)*(VALUE **)((char *)%s + %d)) + %d)", /* t->vm->ractor.main_ractor */
+    O(" == *(VALUE **)((char *)*(VALUE **)((char *)%s + %d) + %d))", /* t->vm->ractor.main_ractor */
       t, (int)offsetof(rb_thread_t, vm), (int)offsetof(rb_vm_t, ractor.main_ractor));
 }
 
