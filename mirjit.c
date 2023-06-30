@@ -357,8 +357,13 @@ static void gen_obj_shape(VARR(char) *buff, const char *shape, const char *obj){
       shape, obj, (int)offsetof(struct RBasic, flags), (int)SHAPE_FLAG_SHIFT, (unsigned long)SHAPE_MASK);
 }
 
+static const int MAX_LOCAL_ACCESS_LEVEL = 5;
+
+#define USE_EP_CACHE
+
 static int
-gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn_id, int inline_level, int pc, int start_pc, int sp, char *curr_stack_var_set_p) {
+gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn_id, int inline_level,
+              int pc, int start_pc, int sp, char *curr_stack_var_set_p, int *max_local_access_level) {
     const VALUE *operands = &insn_pc[1];
     const char *op, *fn;
     int level, rv_p, v1_p, v2_p, imm1_p, imm2_p, fop_p, check_p, siaset_p, nil_p, start, stack_ops_num;
@@ -504,6 +509,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     getlocal:
         if (level != 0) {
             gen_insn_stat(buff, insn_id);
+#ifndef USE_EP_CACHE
             O("  {\n");
             O("    VALUE *vp = ep;\n");
             if (level <= 3) {
@@ -520,6 +526,31 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             }
             O("    pc += %d;\n", insn_len(insn_id));
             O("  }\n");
+#else
+            for (int i = *max_local_access_level + 1; i <= level; i++) {
+                if (i == 1) {
+                    O("  ep%d = (VALUE *)(ep[-1] & ~0x03);\n", i);
+                } else if (i <= MAX_LOCAL_ACCESS_LEVEL) {
+                    O("  ep%d = (VALUE *)(ep%d[-1] & ~0x03);\n", i, i - 1);
+                } else {
+                    if (level == MAX_LOCAL_ACCESS_LEVEL + 1) O("  vp = ep%d;\n", i - 1);
+                    O("  vp = (VALUE *)(vp[-1] & ~0x03);\n");
+                }
+            }
+            *max_local_access_level = level;
+            if (level <= MAX_LOCAL_ACCESS_LEVEL) {
+                O("  val = ep%d[-%d];\n", level, (int)(lindex_t)operands[0]);
+            } else {
+                O("  val = vp[-%d];\n", (int)(lindex_t)operands[0]);
+                *max_local_access_level = MAX_LOCAL_ACCESS_LEVEL;
+            }
+            O("  *sp++ = val;\n");
+            if (sp >= 0) {
+                curr_stack_var_set_p[sp] = TRUE;
+                O("  st%d = val;\n", sp);
+            }
+            O("  pc += %d;\n", insn_len(insn_id));
+#endif
             break;
         }
         /* fall through */
@@ -541,6 +572,7 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
     setlocal:
         if (level != 0) {
             gen_insn_stat(buff, insn_id);
+#ifndef USE_EP_CACHE
             O("  {\n");
             O("    VALUE *vp = ep;");
             if (level <= 3) {
@@ -559,6 +591,36 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
             O("    vp[-%d] = val;\n", (int)(lindex_t)operands[0]);
             O("    pc += %d;\n", insn_len(insn_id));
             O("  }\n");
+#else
+            for (int i = *max_local_access_level + 1; i <= level; i++) {
+                if (i == 1) {
+                    O("  ep%d = (VALUE *)(ep[-1] & ~0x03);\n", i);
+                } else if (i <= MAX_LOCAL_ACCESS_LEVEL) {
+                    O("  ep%d = (VALUE *)(ep%d[-1] & ~0x03);\n", i, i - 1);
+                } else {
+                    if (level == MAX_LOCAL_ACCESS_LEVEL + 1) O("  vp = ep%d;\n", i - 1);
+                    O("  vp = (VALUE *)(vp[-1] & ~0x03);\n");
+                }
+            }
+            *max_local_access_level = level;
+            if (level <= MAX_LOCAL_ACCESS_LEVEL) {
+                O("  flags = *ep%d;\n", level);
+            } else {
+                O("  flags = *vp;\n");
+            }
+            O("  if (__builtin_expect((flags & 0x%lx) != 0, 0)) goto restart;\n", (long)VM_ENV_FLAG_WB_REQUIRED);
+            if (sp >= 1 && curr_stack_var_set_p[sp - 1]) {
+                O("  val = st%d; --sp;\n", sp - 1);
+            } else {
+                O("  val = *--sp;\n");
+            }
+            if (level <= MAX_LOCAL_ACCESS_LEVEL) {
+                O("  ep%d[-%d] = val;\n", level, (int)(lindex_t)operands[0]);
+            } else {
+                O("  vp[-%d] = val;\n", (int)(lindex_t)operands[0]);
+            }
+            O("  pc += %d;\n", insn_len(insn_id));
+#endif
             break;
         }
         /* fall through */
@@ -2852,7 +2914,7 @@ static int
 gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_num) {
     int curr_part_num = *part_num;
     int len, prev_pc, pc, next_pc, mirjit_debug_level = rb_mirjit_debug_level(), insns_num = 0, start_pc = -1;
-    int finish_jit_code_p, res_p = FALSE, sp, max_sp, inc;
+    int finish_jit_code_p, res_p = FALSE, sp, max_sp, max_local_access_level, inc;
     VALUE *operands;
     rb_iseq_t *iseq = bbv->iseq;
     struct rb_iseq_constant_body *body = ISEQ_BODY(iseq);
@@ -2922,6 +2984,11 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_n
         O("  VALUE st0");
         for (int i = 1; i < max_sp; i++) O(", st%d", i);
         O(";\n");
+#ifdef USE_EP_CACHE
+        O("  VALUE *vp");
+        for (int i = 1; i <= MAX_LOCAL_ACCESS_LEVEL; i++) O(", *ep%d", i);
+        O(";\n");
+#endif
         finish_jit_code_p = FALSE;
         for (prev_pc = -1, prev_insn_id = BIN(nop);
              pc < bbv->bbv_bound;
@@ -2937,11 +3004,12 @@ gen_bbv_code(VARR(char) *buff, struct rb_iseq_bbv *bbv, int rejit_p, int *part_n
                 /* skip sir_bbv_{start, cont} but not after method whose start bbv to be inlined */
                 if (pc == start_pc) O("  pc += %d;\n", insn_len(insn_id));
 #endif
+                max_local_access_level = 0;
                 break;
             default:
                 O("l%d_%d:;\n", curr_part_num, (int)(pc - bbv->bbv_start));
                 if (!gen_insn_code(buff, body->bbv_code + pc, insn_id, curr_part_num, pc, start_pc,
-                                   sp, VARR_ADDR(char, stack_var_set_p))
+                                   sp, VARR_ADDR(char, stack_var_set_p), &max_local_access_level)
                     || insn_id == BIN(leave)) {
                     finish_jit_code_p = TRUE;
                 } else {
