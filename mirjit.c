@@ -2649,6 +2649,31 @@ gen_insn_code(VARR(char) *buff, const VALUE *insn_pc, enum ruby_vminsn_type insn
         O("  }\n");
         break;
     }
+    case BIN(opt_getconstant_path):
+#if 0
+        return FALSE;
+#else
+        O("  {\n");
+        O("    char *ice = *(char **)((char *)0x%lx + %d);\n", (unsigned long)operands[0],
+          (int)offsetof(struct iseq_inline_constant_cache, entry));
+        O("    if (!ice) goto restart;\n");
+        O("    flags = *(VALUE *)(ice + %d);\n", (int)offsetof(struct iseq_inline_constant_cache_entry, flags));
+        O("    VALUE *vp;\n");
+        O("    if (!(flags & 0x%lx) && !(", (long unsigned) IMEMO_FL_USER0);
+        gen_rb_ractor_main_p(buff, "vp");
+        O(")) goto restart;\n");
+        O("    char *ic_cref = *(char **)(ice + %d);\n", (int)offsetof(struct iseq_inline_constant_cache_entry, ic_cref));
+        O("    if (ic_cref != 0) goto restart;\n");
+        O("    pc += %d;\n", (int)insn_len(insn_id));
+        O("    val = *(VALUE *)(ice + %d);\n", (int)offsetof(struct iseq_inline_constant_cache_entry, value));
+        O("    *sp++ = val;\n");
+        if (sp >= 0) {
+            curr_stack_var_set_p[sp] = TRUE;
+            O("  st%d = val;\n", sp);
+        }
+        O("  }\n");
+        break;
+#endif
     case BIN(specialize_bbv): abort();
     case BIN(sir_send_without_block):
     default: return FALSE;
