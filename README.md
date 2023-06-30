@@ -22,7 +22,7 @@
         sir_{plus,minus,mult,div,mod,or,and,eq,neq,lt,gt,le,ge,aref,aset}s{s,v,i}{s,v,i}
 ```
     where suffix `s` means value on stack, `v` means local variable value, `i` means immediate value.
-    Some sufix combinations (like `vii`, `sii`, `sss`) are not permitted.
+    Some suffix combinations (like `vii`, `sii`, `sss`) are not permitted.
   * type-specialized insns:
 ```
         sir_i{plus,minus,mult,div,mod,or,and,eq,neq,lt,gt,le,ge,aref,aset}{s,v}{s,v,i}{s,v,i}
@@ -70,21 +70,24 @@
 * The code is made public only for introducing CRuby developers to the project
 * The code is only good enough to run optcarrot and micro-benchmarks from directory `sir-bench`
   * To run benchmarks:
-    * optional (for x86-64 mirjit): build and install [MIR](https://github.com/vnmakarov/mir) `bbv` branch with default install prefix (`/usr/local`)
-      * if you have already installed MIR in `/usr/local` and want build ruby w/o mirjit,
+    * optional (for x86-64 or aarch64 mirjit): build and install [MIR](https://github.com/vnmakarov/mir) `bbv` branch with default install prefix (`/usr/local`)
+      * branch ``bbv` is in development and therefore can be unstable.
+        Please use commit 0abe8498defc99f8a257588bd42b6e59f168cff7 which was used for benchmarking results below
+      * if you have already installed MIR in `/usr/local` and want to build ruby w/o mirjit,
         use option `--without-mir` for ruby `configure`
     * build ruby from this branch
     * run microbenchmarks:
 ```
       cd sir-bench
-      ruby compare.rb "<list ruby benchmarks from sir-bench>" base:../miniruby sir:'../miniruby --sir' yjit:'../miniruby --yjit-call-threshold=1' ...
+      taskset -cpu-list <a cpu-number> ruby compare.rb "<list ruby benchmarks from sir-bench>" base:../miniruby sir:'../miniruby --sir' yjit:'../miniruby --yjit' ...
 ```
+      * use `taskset` as modern CPUs can have cores of different speed
     * clone [optcarrot](https://github.com/mame/optcarrot) from github and run it:
 ```
       cd sir-bench
-      ../miniruby [--sir|--yjit-call-threshold=1|...]  -v -Ilib -r<path-to-optcarrot>/tools/shim <path-to-optcarrot>/bin/optcarrot --benchmark [--opt] -f=3000 <path-to-optcarrot>/examples/Lan_Master.nes
+      ../miniruby [--sir|--yjit|...]  -v -Ilib -r<path-to-optcarrot>/tools/shim <path-to-optcarrot>/bin/optcarrot --benchmark [--opt] -f=3000 <path-to-optcarrot>/examples/Lan_Master.nes
 ```
-* The status will be changed to reflect the project progress
+* The project development has been stopped because competition with YJIT is not reasonable anymore
 
 ## Major differences between MIRJIT and YJIT
 
@@ -98,12 +101,18 @@
    * Implement code generation for more one BBVs for better code locality, removing some branches, and avoiding indirect branches:
      * it can be generation code for all reachable BBVs of Ruby method
      * it can be generation for BBVs trace, most frequently executable BBVs
-   * Implement polymorphic caches (caching more one called methods).  YJIT already implemented this
-     * this can improve performance of `red-black` and `trees` benchmarks
+   * Implement polymorphic caches (caching more one called methods or instance variable access).  YJIT already
+     implemented this
+     * this can improve performance of `red-black`, `trees`, `optcarrot` and some other benchmarks
    * Implement more VM insn generation
      * currently MIRJIT stops code generation of BBV on the 1st unimplemented VM insn in the BBV
+   * Keep and use Ruby local variables in MIR vars besides stack slots.  Most probably MIR vars will be
+     kept in machine registers
+   * Avoid double switching `generated code -> SIR -> safe VM insn code` when the speculation assumptions
+     are not held.  Switch to the safe VM insn code directly from the generated code
+   * Avoid writing values to VM-stack when we can guarantee that there will be no switch to the interpreter.
+     Writing can be quite expensive as it requires to inform Ruby generational GC
    * Implement FP boxing/unboxing optimization
-   * Keep and use Ruby local variables in MIR vars besides stack slots
    * Generate directly MIR code instead of C code and using `c2m`
      * it could speed up code generation
      * it could permit generate more efficient MIR code
@@ -124,7 +133,7 @@
     * yjit - YJIT (`miniruby --yjit`)
     * mir - MIR-based JIT (`miniruby --mirjit`)
 
-* I used the following micro-benchmarks (see MJIT-benchmarks directory):
+* I used the following micro-benchmarks (see sir-bench directory):
     * aread - reading an instance variable through attr_reader
     * aref - reading an array element
     * aset - assignment to an array element
@@ -132,7 +141,7 @@
     * bench - rendering
     * call - empty method calls
     * complex-mandelbrot - complex mandelbrot
-    * const2 - reading Class::Const 
+    * const2 - reading Class::Const
     * const - reading Const
     * fannk - fannkuch
     * fib - fibonacci
@@ -155,42 +164,42 @@
 * I also used optcarrot for more serious program performance comparison
     * I used **3000** frames to run optcarrot
 
-## Microbenchmark results (May 11, 2023)
+## Micro-benchmark results (May 11, 2023)
 
 * Wall time speedup:
 
 Elapsed time:
 |                     | base   | sir    | yjit   | mir    |
 :---------------------|-------:|-------:|-------:|-------:|
-aread.rb              | 1.0    | 3.99   | 7.47   | 8.48   |
-aref.rb               | 1.0    | 4.01   | 5.3    | 8.88   |
-aset.rb               | 1.0    | 3.8    | 3.44   | 7.18   |
-awrite.rb             | 1.0    | 3.86   | 2.8    | 8.28   |
-bench.rb              | 1.0    | 1.25   | 1.7    | 1.21   |
-call.rb               | 1.0    | 2.18   | 4.87   | 4.56   |
-complex-mandelbrot.rb | 1.0    | 1.13   | 1.39   | 1.15   |
-const2.rb             | 1.0    | 2.95   | 2.76   | 3.46   |
-const.rb              | 1.0    | 2.97   | 2.78   | 3.49   |
-fannk.rb              | 1.0    | 1.14   | 1.0    | 1.2    |
-fib.rb                | 1.0    | 1.95   | 5.58   | 3.39   |
-ivread.rb             | 1.0    | 2.56   | 7.47   | 4.24   |
-ivwrite.rb            | 1.0    | 3.25   | 6.15   | 5.76   |
-mandelbrot.rb         | 1.0    | 1.63   | 1.93   | 1.7    |
-meteor.rb             | 1.0    | 1.3    | 1.36   | 1.26   |
-nbody.rb              | 1.0    | 1.55   | 1.82   | 1.53   |
-nest-ntimes.rb        | 1.0    | 2.07   | 1.29   | 1.87   |
-nest-while.rb         | 1.0    | 4.59   | 1.0    | 13.26  |
-norm.rb               | 1.0    | 1.69   | 2.15   | 2.17   |
-pent.rb               | 1.0    | 1.01   | 1.31   | 0.85   |
-red-black.rb          | 1.0    | 1.35   | 3.94   | 1.76   |
-sieve.rb              | 1.0    | 2.61   | 1.31   | 3.14   |
-trees.rb              | 1.0    | 1.37   | 2.17   | 1.47   |
-while.rb              | 1.0    | 2.22   | 5.66   | 9.64   |
-GeoMean.              | 1.0    | 2.12   | 2.6    | 3.04   |
+aread.rb              | 1.0    | 3.74   | 7.21   | 8.78   |
+aref.rb               | 1.0    | 3.76   | 5.06   | 9.24   |
+aset.rb               | 1.0    | 3.41   | 3.12   | 8.91   |
+awrite.rb             | 1.0    | 4.44   | 3.2    | 10.09  |
+bench.rb              | 1.0    | 1.19   | 1.63   | 1.17   |
+call.rb               | 1.0    | 2.1    | 4.82   | 4.87   |
+complex-mandelbrot.rb | 1.0    | 1.16   | 1.48   | 1.16   |
+const2.rb             | 1.0    | 2.47   | 2.66   | 6.66   |
+const.rb              | 1.0    | 2.46   | 2.66   | 6.7    |
+fannk.rb              | 1.0    | 1.15   | 1.0    | 1.22   |
+fib.rb                | 1.0    | 1.94   | 5.63   | 3.86   |
+ivread.rb             | 1.0    | 2.19   | 6.22   | 3.54   |
+ivwrite.rb            | 1.0    | 2.86   | 5.57   | 5.44   |
+mandelbrot.rb         | 1.0    | 1.43   | 1.91   | 1.78   |
+meteor.rb             | 1.0    | 1.29   | 1.35   | 1.25   |
+nbody.rb              | 1.0    | 1.3    | 1.8    | 1.69   |
+nest-ntimes.rb        | 1.0    | 2.06   | 1.3    | 1.96   |
+nest-while.rb         | 1.0    | 3.53   | 0.99   | 10.24  |
+norm.rb               | 1.0    | 1.67   | 2.13   | 2.2    |
+pent.rb               | 1.0    | 1.11   | 1.31   | 0.9    |
+red-black.rb          | 1.0    | 1.39   | 3.84   | 1.77   |
+sieve.rb              | 1.0    | 2.41   | 1.25   | 3.15   |
+trees.rb              | 1.0    | 1.38   | 2.23   | 1.48   |
+while.rb              | 1.0    | 2.23   | 5.66   | 9.85   |
+GeoMean.              | 1.0    | 2.0    | 2.55   | 3.28   |
 
 ---
 
-* CPU time improvements is aprroximately the same except MJIT which has lower CPU time improvement
+* CPU time improvements is approximately the same except MJIT which has lower CPU time improvement
 
 ---
 
@@ -198,7 +207,7 @@ GeoMean.              | 1.0    | 2.12   | 2.6    | 3.04   |
 
 |                     | base   | sir    | yjit   | mir    |
 :---------------------|-------:|-------:|-------:|-------:|
-GeoMean.              | 1.0    | 1.21   | 1.03   | 2.27   |
+GeoMean.              | 1.0    | 1.21   | 1.03   | 2.41   |
 
 ---
 
@@ -208,5 +217,5 @@ GeoMean.              | 1.0    | 1.21   | 1.03   | 2.27   |
 
 |                                  | base   | sir    | yjit   | mir    |
 :----------------------------------|-------:|-------:|-------:|-------:|
-optcarrot                          |  76.9  | 100.8  | 257.9  | 116.3  |
-optcarrot --opt                    | 198.2  | 346.9  | 218.2  | 418.1  |
+optcarrot                          |  82.4  | 105.0  | 262.1  | 123.1  |
+optcarrot --opt                    | 211.5  | 356.4  | 232.9  | 416.4  |
